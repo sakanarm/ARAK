@@ -1,0 +1,61 @@
+# Data Access Control Platform — Dropwizard configuration.
+#
+# Every ${VAR} is substituted from the environment at startup. This file is
+# committed; secrets are not. Copy .env.example to .env and fill it in.
+
+server:
+  applicationConnectors:
+    - type: http
+      port: ${APP_PORT:-8080}
+  adminConnectors:
+    - type: http
+      port: ${APP_ADMIN_PORT:-8081}
+  rootPath: /api/*
+  requestLog:
+    appenders:
+      - type: console
+
+logging:
+  level: INFO
+  loggers:
+    com.mfec.dac: DEBUG
+    org.flywaydb: INFO
+  appenders:
+    - type: console
+
+database:
+  driverClass: org.postgresql.Driver
+  url: jdbc:postgresql://${APP_DB_HOST:-localhost}:${APP_DB_PORT:-5432}/${APP_DB_NAME:-dac}
+  user: ${APP_DB_USER:-dac}
+  password: ${APP_DB_PASSWORD:-}
+  properties:
+    charSet: UTF-8
+  maxWaitForConnection: 5s
+  validationQuery: "SELECT 1"
+  minSize: 4
+  maxSize: 32
+  checkConnectionWhileIdle: true
+
+migrateOnStartup: ${APP_DB_MIGRATE_ON_STARTUP:-true}
+
+openMetadata:
+  baseUrl: ${OM_BASE_URL:-http://localhost:8585}
+  # Use a BOT token (Settings -> Bots in the OpenMetadata UI), not a human account.
+  jwtToken: ${OM_JWT_TOKEN:-}
+  expectedVersion: ${OM_EXPECTED_VERSION:-2.0.1}
+  # Turn this on once the deployment is pinned: the generated client is built
+  # from one spec version and talking to another drifts silently.
+  failOnVersionMismatch: ${OM_FAIL_ON_VERSION_MISMATCH:-false}
+
+identity:
+  entraTenantId: ${ENTRA_TENANT_ID:-}
+  entraClientId: ${ENTRA_CLIENT_ID:-}
+  entraClientSecret: ${ENTRA_CLIENT_SECRET:-}
+  allowLocalUsers: ${IDENTITY_ALLOW_LOCAL_USERS:-true}
+  attributeCacheTtlSeconds: 300
+
+secrets:
+  provider: ${SECRETS_PROVIDER:-FERNET}
+  fernetKey: ${FERNET_KEY:-}
+  vaultAddress: ${VAULT_ADDR:-}
+  vaultToken: ${VAULT_TOKEN:-}

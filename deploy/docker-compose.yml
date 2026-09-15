@@ -1,0 +1,112 @@
+# Local development stack.
+#
+#   docker compose -f deploy/docker-compose.yml up -d
+#
+# OpenMetadata is deliberately NOT here: the team already runs 2.0.1 at the
+# address in .env, and a second instance would drift from it and produce
+# governance metadata that does not exist anywhere real. Point OM_BASE_URL at
+# the shared instance.
+#
+# srcpg and mssql are SOURCE databases, the ones policies get enforced on. They
+# are separate from appdb on purpose — enforcement writes DDL to sources, and it
+# must never be possible for that to land on our own schema.
+
+name: dac
+
+services:
+  appdb:
+    image: postgres:16-alpine
+    container_name: dac-appdb
+    environment:
+      POSTGRES_DB: dac
+      POSTGRES_USER: dac
+      POSTGRES_PASSWORD: ${APP_DB_PASSWORD:-dac_dev_only}
+    ports:
+      - "${APP_DB_PORT:-5432}:5432"
+    volumes:
+      - appdb-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dac -d dac"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  srcpg:
+    image: postgres:16-alpine
+    container_name: dac-srcpg
+    environment:
+      POSTGRES_DB: salesdb
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${SRC_PG_PASSWORD:-src_dev_only}
+    ports:
+      - "${SRC_PG_PORT:-5433}:5432"
+    volumes:
+      - srcpg-data:/var/lib/postgresql/data
+      - ./seed/postgres:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d salesdb"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  mssql:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: dac-mssql
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: ${SRC_MSSQL_PASSWORD:-Src_dev_only_1}
+      # 2022 is required for column-level GRANT UNMASK; on earlier versions
+      # UNMASK is database-wide and native masking is unusable (FR-6.2).
+      MSSQL_PID: Developer
+    ports:
+      - "${SRC_MSSQL_PORT:-1433}:1433"
+    volumes:
+      - mssql-data:/var/opt/mssql
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P \"$$MSSQL_SA_PASSWORD\" -C -Q 'SELECT 1' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+
+  vault:
+    image: hashicorp/vault:1.18
+    container_name: dac-vault
+    cap_add:
+      - IPC_LOCK
+    environment:
+      # Dev mode only: in-memory, unsealed, root token printed. Never a model
+      # for how the deployed system stores source credentials (NFR-1).
+      VAULT_DEV_ROOT_TOKEN_ID: ${VAULT_TOKEN:-dev-root-token}
+      VAULT_DEV_LISTEN_ADDRESS: 0.0.0.0:8200
+    ports:
+      - "8200:8200"
+
+  app:
+    # Built only when asked for: `docker compose --profile app up -d`.
+    # Day-to-day the service runs from the IDE against these containers.
+    profiles: ["app"]
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    container_name: dac-app
+    depends_on:
+      appdb:
+        condition: service_healthy
+    environment:
+      APP_DB_HOST: appdb
+      APP_DB_PORT: 5432
+      APP_DB_NAME: dac
+      APP_DB_USER: dac
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD:-dac_dev_only}
+      OM_BASE_URL: ${OM_BASE_URL}
+      OM_JWT_TOKEN: ${OM_JWT_TOKEN}
+      OM_EXPECTED_VERSION: ${OM_EXPECTED_VERSION:-2.0.1}
+      FERNET_KEY: ${FERNET_KEY}
+    ports:
+      - "8080:8080"
+      - "8081:8081"
+
+volumes:
+  appdb-data:
+  srcpg-data:
+  mssql-data:

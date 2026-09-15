@@ -1,0 +1,57 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://mfec.com/dac/schema/type/facet.json",
+  "title": "Facet",
+  "description": "The governance facets an asset can be selected by (FR-2A). One vocabulary used identically by asset selectors, column selectors and expressions, so a policy author learns it once.",
+  "definitions": {
+    "facetType": {
+      "type": "string",
+      "enum": [
+        "classifications", "tags", "glossaries", "terms", "domains", "dataProducts",
+        "owners", "tier", "certification", "customProperty",
+        "service", "database", "schema", "table", "columnName", "dataType"
+      ]
+    },
+    "facetOperator": {
+      "description": "contains walks descendants ('PII' matches 'PII.Sensitive', 'Finance' matches 'Finance.Risk.Credit'); eq matches that level only; startsWith is a segment-aware prefix. The distinction is deliberate: a broad policy survives a steward adding a tag, a narrow one does not, and both are legitimate intents.",
+      "type": "string",
+      "enum": ["contains", "eq", "ne", "startsWith", "matches", "in", "notIn", "gt", "gte", "lt", "lte", "exists", "notExists"]
+    },
+    "facetCondition": {
+      "type": "object",
+      "properties": {
+        "facet": { "$ref": "#/definitions/facetType" },
+        "property": {
+          "description": "Custom property name; required when facet is customProperty. Typed from custom_property_def so the builder shows the right editor (FR-1.9).",
+          "type": "string"
+        },
+        "operator": { "$ref": "#/definitions/facetOperator" },
+        "value": { "type": ["string", "number", "boolean", "null"] },
+        "values": { "type": "array", "items": { "type": ["string", "number", "boolean"] } },
+        "includeSuggested": {
+          "description": "OpenMetadata tag labels carry state Suggested|Confirmed. Enforcing on Suggested lets an ML guess lock data with nobody approving it, so it is opt-in per condition (FR-1.3a).",
+          "type": "boolean",
+          "default": false
+        },
+        "includePropagated": {
+          "description": "Accept labelType Propagated/Derived from OpenMetadata. Off by default: we compute inheritance ourselves and would otherwise count it twice.",
+          "type": "boolean",
+          "default": false
+        }
+      },
+      "required": ["facet", "operator"],
+      "additionalProperties": false
+    },
+    "assetSelector": {
+      "description": "A boolean tree over facet conditions. Named and/or/not rather than allOf/anyOf/not so the JSON Schema keywords stay free to validate this document itself.",
+      "type": "object",
+      "properties": {
+        "condition": { "$ref": "#/definitions/facetCondition" },
+        "and": { "type": "array", "items": { "$ref": "#/definitions/assetSelector" } },
+        "or": { "type": "array", "items": { "$ref": "#/definitions/assetSelector" } },
+        "not": { "$ref": "#/definitions/assetSelector" }
+      },
+      "additionalProperties": false
+    }
+  }
+}

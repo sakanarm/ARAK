@@ -1,0 +1,82 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://mfec.com/dac/schema/entity/policy/policy.json",
+  "title": "Policy",
+  "description": "One access control policy. This is the document the Policy Builder edits, the engine evaluates, and policy-as-code export writes to YAML (FR-9.3). It is deliberately the only definition of these fields anywhere in the system: Java and TypeScript are both generated from it.",
+  "type": "object",
+  "definitions": {
+    "scopeLevel": {
+      "description": "Where the policy sits in the hierarchy. Layers compose by intersection from ORG downwards; they never replace each other (FR-3.1.3). DOMAIN policies nest further by sub-domain depth.",
+      "type": "string",
+      "enum": ["ORG", "DOMAIN", "SERVICE", "DATABASE", "SCHEMA", "TABLE", "COLUMN"]
+    },
+    "lifecycleState": {
+      "type": "string",
+      "enum": ["DRAFT", "PENDING_APPROVAL", "ACTIVE", "DISABLED", "ARCHIVED"]
+    },
+    "exemption": {
+      "description": "Takes a named principal out of this policy. The expiry is mandatory by design: an exemption with no end date is how a temporary carve-out becomes permanent without anyone deciding it should (FR-3.5).",
+      "type": "object",
+      "properties": {
+        "principal": { "type": "string" },
+        "reason": { "type": "string", "minLength": 1 },
+        "grantedBy": { "type": "string" },
+        "expiresAt": { "$ref": "../../type/basic.json#/definitions/timestamp" }
+      },
+      "required": ["principal", "reason", "expiresAt"],
+      "additionalProperties": false
+    }
+  },
+  "properties": {
+    "id": { "$ref": "../../type/basic.json#/definitions/uuid" },
+    "name": { "$ref": "../../type/basic.json#/definitions/entityName" },
+    "displayName": { "type": "string" },
+    "description": { "type": "string" },
+    "policyType": {
+      "description": "SUBSCRIPTION answers who may reach the table at all; DATA answers what they see inside it. Immuta splits these for a reason: they are authored by different people at different times.",
+      "type": "string",
+      "enum": ["SUBSCRIPTION", "DATA"]
+    },
+    "scopeLevel": { "$ref": "#/definitions/scopeLevel" },
+    "scopeFqn": {
+      "description": "The anchor of the scope, for example the domain FQN for a DOMAIN policy. Empty for ORG.",
+      "$ref": "../../type/basic.json#/definitions/fullyQualifiedName"
+    },
+    "selector": {
+      "description": "Which assets this policy binds to, resolved into policy_binding and re-resolved whenever facets change, so an asset tagged tomorrow is covered tomorrow without anyone pressing a button (FR-3.1.6).",
+      "$ref": "../../type/facet.json#/definitions/assetSelector"
+    },
+    "subject": { "$ref": "subjectRule.json" },
+    "effect": {
+      "description": "DENY always beats ALLOW, and no match at all is a deny. Fail-closed is not configurable.",
+      "type": "string",
+      "enum": ["ALLOW", "DENY"],
+      "default": "ALLOW"
+    },
+    "data": {
+      "description": "Row filters and column rules. Present when policyType is DATA.",
+      "$ref": "dataPolicy.json"
+    },
+    "allowLocalOverride": {
+      "description": "Whether a lower layer may relax this policy. Default false: local policies add strictness only. Turning it on is an explicit, audited decision by the author of the higher layer (FR-3.1.4).",
+      "type": "boolean",
+      "default": false
+    },
+    "requiresApproval": {
+      "description": "Present from Phase 1 so the Phase 2 request workflow needs no migration. In Phase 1 an owner grants directly and this field only records intent (FR-3.4).",
+      "type": "boolean",
+      "default": false
+    },
+    "approvers": { "type": "array", "items": { "$ref": "../../type/basic.json#/definitions/entityReference" } },
+    "validFrom": { "$ref": "../../type/basic.json#/definitions/timestamp" },
+    "validUntil": { "$ref": "../../type/basic.json#/definitions/timestamp" },
+    "exemptions": { "type": "array", "items": { "$ref": "#/definitions/exemption" } },
+    "lifecycleState": { "$ref": "#/definitions/lifecycleState" },
+    "version": { "type": "integer", "minimum": 1, "default": 1 },
+    "environment": { "type": "string", "enum": ["dev", "uat", "prod"] },
+    "updatedAt": { "$ref": "../../type/basic.json#/definitions/timestamp" },
+    "updatedBy": { "type": "string" }
+  },
+  "required": ["name", "policyType", "scopeLevel", "selector"],
+  "additionalProperties": false
+}

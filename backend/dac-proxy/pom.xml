@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <parent>
+    <groupId>com.mfec.dac</groupId>
+    <artifactId>dac-parent</artifactId>
+    <version>0.1.0-SNAPSHOT</version>
+    <relativePath>../../pom.xml</relativePath>
+  </parent>
+  <artifactId>dac-proxy</artifactId>
+  <name>DAC :: Query Proxy</name>
+  <description>Enforcement mode 5.2a: parse incoming SQL, rewrite per PolicyDecision, execute, stream. Fail-closed on anything it cannot resolve.</description>
+
+  <dependencies>
+    <dependency><groupId>${project.groupId}</groupId><artifactId>dac-spec</artifactId></dependency>
+    <dependency><groupId>${project.groupId}</groupId><artifactId>dac-common</artifactId></dependency>
+    <dependency><groupId>${project.groupId}</groupId><artifactId>dac-engine</artifactId></dependency>
+    <dependency><groupId>${project.groupId}</groupId><artifactId>dac-compiler-sql</artifactId></dependency>
+    <dependency><groupId>${project.groupId}</groupId><artifactId>dac-connector-source</artifactId></dependency>
+    <dependency><groupId>com.github.jsqlparser</groupId><artifactId>jsqlparser</artifactId></dependency>
+  </dependencies>
+</project>

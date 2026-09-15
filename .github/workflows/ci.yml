@@ -1,0 +1,92 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend (JDK 21)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - name: Build and unit test
+        run: ./mvnw -B verify -DskipITs
+      - name: Fail if generated sources were committed
+        # Both generators write into gitignored directories. A generated file in
+        # a diff means someone edited output instead of the schema, and the next
+        # build silently reverts their change.
+        run: |
+          if git ls-files --error-unmatch 'backend/*/src/main/generated/*' >/dev/null 2>&1; then
+            echo "Generated sources are committed. Edit the JSON Schema instead."
+            exit 1
+          fi
+
+  frontend:
+    name: Frontend (Node 22)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend/app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.17.0'
+          cache: yarn
+          cache-dependency-path: frontend/app/yarn.lock
+      - run: yarn install --frozen-lockfile
+      - name: Generate types from the shared JSON Schema
+        run: yarn parse-schema
+      - run: yarn type-check
+      - run: yarn lint
+      - run: yarn test --passWithNoTests
+      - run: yarn build
+
+  design-system-drift:
+    name: Vendored design system untouched
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Reject hand edits to frontend/ui-core-components
+        # The directory is a vendored copy of OpenMetadata at a pinned tag
+        # (Apache-2.0). Editing it in place looks fine until the next resync
+        # wipes it, so overrides belong in frontend/app/src/theme instead.
+        # Legitimate resyncs update VENDORED.md in the same commit.
+        run: |
+          base="${{ github.event.pull_request.base.sha }}"
+          [ -n "$base" ] || exit 0
+          changed=$(git diff --name-only "$base"...HEAD -- frontend/ui-core-components | grep -v 'VENDORED.md' || true)
+          if [ -n "$changed" ] && ! git diff --name-only "$base"...HEAD -- frontend/ui-core-components/VENDORED.md | grep -q .; then
+            echo "Vendored files changed without a VENDORED.md update:"
+            echo "$changed"
+            exit 1
+          fi
+
+  integration:
+    name: Integration (Testcontainers)
+    # Real PostgreSQL and SQL Server, because generated DDL that only passes
+    # against a mock proves nothing (NFR-5). Kept off every push: it is slow,
+    # and the unit suite already covers the compilers through golden files.
+    if: github.event_name == 'push' || contains(github.event.pull_request.labels.*.name, 'integration')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - run: ./mvnw -B verify -Pintegration

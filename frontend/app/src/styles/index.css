@@ -1,0 +1,24 @@
+/*
+ * Stylesheet entry point.
+ *
+ * Order matters: Tailwind first, then the vendored OpenMetadata token layer
+ * (@theme static — fonts, spacing, the text scale, the full colour system),
+ * then our own overrides last so they win without editing vendored files.
+ *
+ * The @source lines exist because we consume the design system from source
+ * rather than from its built dist: Tailwind 4 scans files it is told about, and
+ * its own globals.css points at ../../dist, which we never build.
+ */
+
+@import 'tailwindcss';
+
+@source "../../../ui-core-components/src/**/*.{ts,tsx}";
+@source "../**/*.{ts,tsx}";
+
+@plugin "@tailwindcss/typography";
+@plugin "tailwindcss-animate";
+@plugin "tailwindcss-react-aria-components";
+
+@import '../../../ui-core-components/src/styles/globals.css';
+
+@import '../theme/overrides.css';

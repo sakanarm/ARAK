@@ -1,0 +1,17 @@
+# Normalise on commit, check out native. Set before the first commit so the
+# history never contains a mixed-ending file.
+* text=auto
+
+# These are executed by a POSIX shell (CI runners, Docker builds, Linux
+# developers). A CRLF in the shebang line makes them fail with a confusing
+# "bad interpreter" error, so they are LF regardless of platform.
+*.sh        text eol=lf
+mvnw        text eol=lf
+Dockerfile  text eol=lf
+
+# Windows-only, and cmd.exe wants CRLF.
+*.cmd       text eol=crlf
+*.ps1       text eol=crlf
+
+# Not text. Diffing it is meaningless and it is large; treat it as opaque.
+spec/*.json -diff

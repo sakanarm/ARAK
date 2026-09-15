@@ -1,0 +1,96 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://mfec.com/dac/schema/api/policyDecision.json",
+  "title": "PolicyDecision",
+  "description": "The contract between the engine and every enforcement mode. ViewCompiler (5.1.2), NativeCompiler (5.1.1) and RewriteCompiler (5.2) all consume exactly this and nothing else, which is the only reason three enforcement modes can be built in parallel and still agree byte for byte (FR-6.0c). Nothing in here mentions SQL: the engine does not know which mode will run.",
+  "type": "object",
+  "definitions": {
+    "resolvedRowPredicate": {
+      "description": "A row restriction after composition, still structural rather than SQL text so each dialect can render it its own way.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": ["ATTRIBUTE_COMPARE", "IN_LIST", "ENTITLEMENT_JOIN", "ALWAYS_FALSE", "RAW_PREDICATE"]
+        },
+        "column": { "type": "string" },
+        "operator": { "$ref": "../type/facet.json#/definitions/facetOperator" },
+        "values": {
+          "description": "User attribute values already resolved for this principal. The compilers never look up identity themselves.",
+          "type": "array",
+          "items": { "type": ["string", "number", "boolean"] }
+        },
+        "entitlementKey": { "type": "string" },
+        "rawPredicate": { "type": "string" },
+        "sourcePolicyId": { "$ref": "../type/basic.json#/definitions/uuid" }
+      },
+      "required": ["kind"],
+      "additionalProperties": false
+    },
+    "resolvedColumnMask": {
+      "type": "object",
+      "properties": {
+        "column": { "type": "string" },
+        "masking": { "$ref": "../entity/policy/dataPolicy.json#/definitions/maskingSpec" },
+        "condition": { "type": "string" },
+        "sourcePolicyId": { "$ref": "../type/basic.json#/definitions/uuid" },
+        "sourceScopeLevel": { "$ref": "../entity/policy/policy.json#/definitions/scopeLevel" }
+      },
+      "required": ["column", "masking"],
+      "additionalProperties": false
+    },
+    "decisionReason": {
+      "description": "Why the answer is what it is. Every restriction traces back to a policy and a layer, because a decision nobody can explain is a decision nobody will trust enough to enforce (FR-5.4).",
+      "type": "object",
+      "properties": {
+        "policyId": { "$ref": "../type/basic.json#/definitions/uuid" },
+        "policyName": { "type": "string" },
+        "scopeLevel": { "$ref": "../entity/policy/policy.json#/definitions/scopeLevel" },
+        "scopeFqn": { "$ref": "../type/basic.json#/definitions/fullyQualifiedName" },
+        "effect": { "type": "string", "enum": ["ALLOW", "DENY"] },
+        "matched": { "type": "boolean" },
+        "explanation": { "type": "string" }
+      },
+      "required": ["policyName", "matched"],
+      "additionalProperties": false
+    },
+    "unenforceable": {
+      "description": "A restriction the chosen mode cannot express, for example a conditional cell mask under SQL Server dynamic data masking. Surfaced so apply can warn or refuse; a policy must never go missing quietly (FR-6.0b).",
+      "type": "object",
+      "properties": {
+        "policyId": { "$ref": "../type/basic.json#/definitions/uuid" },
+        "detail": { "type": "string" },
+        "suggestedMode": { "type": "string", "enum": ["NATIVE_CONFIG", "SECURE_VIEW", "PROXY"] }
+      },
+      "required": ["detail"],
+      "additionalProperties": false
+    }
+  },
+  "properties": {
+    "principal": { "type": "string" },
+    "assetFqn": { "$ref": "../type/basic.json#/definitions/fullyQualifiedName" },
+    "allowed": {
+      "description": "Subscription outcome. False means the principal does not reach the table at all, and the row and column sections are then irrelevant.",
+      "type": "boolean",
+      "default": false
+    },
+    "rowPredicates": {
+      "description": "ANDed. An empty list means no row restriction; ALWAYS_FALSE means the schema is visible but no rows are.",
+      "type": "array",
+      "items": { "$ref": "#/definitions/resolvedRowPredicate" }
+    },
+    "columnMasks": { "type": "array", "items": { "$ref": "#/definitions/resolvedColumnMask" } },
+    "hiddenColumns": {
+      "description": "Columns removed from the projection entirely, as opposed to masked. They do not appear in the schema the caller sees (FR-4.5).",
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "reasons": { "type": "array", "items": { "$ref": "#/definitions/decisionReason" } },
+    "unenforceable": { "type": "array", "items": { "$ref": "#/definitions/unenforceable" } },
+    "evaluatedAt": { "$ref": "../type/basic.json#/definitions/timestamp" },
+    "cacheKey": { "type": "string" },
+    "fromCache": { "type": "boolean", "default": false }
+  },
+  "required": ["allowed"],
+  "additionalProperties": false
+}

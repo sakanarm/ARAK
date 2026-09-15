@@ -1,0 +1,90 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://mfec.com/dac/schema/entity/policy/dataPolicy.json",
+  "title": "DataPolicy",
+  "description": "What a principal sees inside a table they are allowed to reach: row filters, column masks, hidden columns (FR-4). Kept separate from the subscription decision because the two answer different questions and compose differently.",
+  "type": "object",
+  "definitions": {
+    "maskingFunction": {
+      "description": "Strictness order, used verbatim by the conflict resolver when two policies mask the same column: NULLIFY > CONSTANT > HASH > REGEX_REPLACE > PARTIAL > ROUNDING > plaintext (FR-5.1).",
+      "type": "string",
+      "enum": ["NULLIFY", "CONSTANT", "HASH", "PARTIAL", "REGEX_REPLACE", "ROUNDING", "CONDITIONAL"]
+    },
+    "maskingSpec": {
+      "type": "object",
+      "properties": {
+        "function": { "$ref": "#/definitions/maskingFunction" },
+        "constant": { "type": "string", "default": "***REDACTED***" },
+        "showLast": {
+          "description": "PARTIAL: number of trailing characters kept, e.g. 4 for a national ID, phone number or card number.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "showFirst": { "type": "integer", "minimum": 0 },
+        "regex": { "type": "string" },
+        "replacement": { "type": "string" },
+        "roundTo": {
+          "description": "ROUNDING: YEAR or MONTH for dates, or a numeric bucket size. Date of birth to year of birth, salary to a band.",
+          "type": "string"
+        },
+        "saltRef": {
+          "description": "HASH: reference to a per-column salt held in the secret store. Per-column and not global, so hashes stay joinable within a column but cannot be correlated across columns.",
+          "type": "string"
+        }
+      },
+      "required": ["function"],
+      "additionalProperties": false
+    },
+    "rowFilter": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": ["ATTRIBUTE_COMPARE", "IN_LIST", "ENTITLEMENT_JOIN", "ALWAYS_FALSE", "RAW_PREDICATE"]
+        },
+        "column": { "type": "string" },
+        "operator": { "$ref": "../../type/facet.json#/definitions/facetOperator" },
+        "userAttribute": {
+          "description": "ATTRIBUTE_COMPARE and IN_LIST: the user-side attribute the column is compared against, for example branch.",
+          "type": "string"
+        },
+        "entitlementKey": {
+          "description": "ENTITLEMENT_JOIN: the key column in row_entitlement that the secure view joins on, for mappings too complex to express as a comparison.",
+          "type": "string"
+        },
+        "rawPredicate": {
+          "description": "RAW_PREDICATE: escape hatch, dialect-checked and never interpolated with user input. Authoring it requires elevated rights because it bypasses the IR the other kinds are validated against.",
+          "type": "string"
+        }
+      },
+      "required": ["kind"],
+      "additionalProperties": false
+    },
+    "columnRule": {
+      "type": "object",
+      "properties": {
+        "columns": {
+          "description": "Which columns this rule covers, by any facet: name, pattern, classification, tag, glossary term, data type or custom property (FR-4.2). Selecting by facet is what makes a newly tagged PII column masked the moment a steward tags it, with no policy edit.",
+          "$ref": "../../type/facet.json#/definitions/assetSelector"
+        },
+        "action": { "type": "string", "enum": ["MASK", "HIDE", "ALLOW"] },
+        "masking": { "$ref": "#/definitions/maskingSpec" },
+        "condition": {
+          "description": "Cell masking: mask only on rows where this expression holds, for example dept not equal to user.department (FR-4.3). SQL Server dynamic data masking cannot express this, so the capability matrix must warn before apply rather than drop it silently.",
+          "type": "string"
+        }
+      },
+      "required": ["columns", "action"],
+      "additionalProperties": false
+    }
+  },
+  "properties": {
+    "rowFilters": {
+      "description": "ANDed with every other policy row filter at every scope level. Strictest wins; nothing here can widen what another layer restricted.",
+      "type": "array",
+      "items": { "$ref": "#/definitions/rowFilter" }
+    },
+    "columnRules": { "type": "array", "items": { "$ref": "#/definitions/columnRule" } }
+  },
+  "additionalProperties": false
+}

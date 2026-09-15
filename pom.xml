@@ -1,0 +1,235 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <groupId>com.mfec.dac</groupId>
+  <artifactId>dac-parent</artifactId>
+  <version>0.1.0-SNAPSHOT</version>
+  <packaging>pom</packaging>
+  <name>Data Access Control Platform</name>
+
+  <!--
+    Dependency versions are deliberately pinned to the exact versions used by
+    OpenMetadata 2.0.1 (verified against tag 2.0.1-release). Keeping them in
+    lockstep is the whole point of the stack choice: engineers move between the
+    two codebases, and we copy patterns (resource layout, auth filters,
+    JSON-Schema-to-POJO codegen) directly from theirs.
+
+    When bumping, bump against a specific OpenMetadata tag and name it here.
+  -->
+  <properties>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <maven.compiler.release>21</maven.compiler.release>
+    <openmetadata.aligned.version>2.0.1</openmetadata.aligned.version>
+
+    <!-- ===== aligned with OpenMetadata 2.0.1 ===== -->
+    <dropwizard.version>5.0.0</dropwizard.version>
+    <dropwizard-jdbi3.version>5.0.0</dropwizard-jdbi3.version>
+    <dropwizard-micrometer.version>3.0.0</dropwizard-micrometer.version>
+    <jersey-bom.version>3.1.11</jersey-bom.version>
+    <jdbi3.version>3.37.1</jdbi3.version>
+    <hikaricp.version>7.0.2</hikaricp.version>
+    <flyway.version>9.22.3</flyway.version>
+    <jackson.version>2.18.9</jackson.version>
+    <lombok.version>1.18.36</lombok.version>
+    <!-- slf4j, jakarta.*, metrics-core and friends come from the
+         dropwizard-dependencies BOM below, at the versions Dropwizard 5.0.0
+         was tested against. Pinning them here would mean guessing at a
+         combination nobody has run. -->
+    <antlr.version>4.13.2</antlr.version>
+    <jsonschema2pojo.version>1.3.1</jsonschema2pojo.version>
+    <java-jwt.version>4.4.0</java-jwt.version>
+    <fernet.version>1.5.0</fernet.version>
+    <postgres.connector.version>42.7.12</postgres.connector.version>
+    <org.junit.jupiter.version>5.11.4</org.junit.jupiter.version>
+    <mockito.version>5.14.2</mockito.version>
+
+    <!-- ===== ours: no counterpart in OpenMetadata ===== -->
+    <!-- SQL Server JDBC: required by enforcement modes 5.1.1 / 5.1.2 / 5.2. -->
+    <mssql-jdbc.version>12.8.1.jre11</mssql-jdbc.version>
+    <!-- SQL AST parse + rewrite for enforcement mode 5.2 (app proxy). -->
+    <jsqlparser.version>4.9</jsqlparser.version>
+    <!-- Real PG / SQL Server in integration tests (NFR-5). -->
+    <testcontainers.version>1.20.4</testcontainers.version>
+    <assertj.version>3.26.3</assertj.version>
+    <!-- Generates the OpenMetadata client from the pinned spec/ swagger file. -->
+    <openapi-generator.version>7.10.0</openapi-generator.version>
+  </properties>
+
+  <modules>
+    <module>backend/dac-spec</module>
+    <module>backend/dac-common</module>
+    <module>backend/dac-engine</module>
+    <module>backend/dac-compiler-sql</module>
+    <module>backend/dac-connector-openmetadata</module>
+    <module>backend/dac-connector-identity</module>
+    <module>backend/dac-connector-source</module>
+    <module>backend/dac-proxy</module>
+    <module>backend/dac-service</module>
+  </modules>
+
+  <dependencyManagement>
+    <dependencies>
+      <dependency>
+        <groupId>io.dropwizard</groupId>
+        <artifactId>dropwizard-bom</artifactId>
+        <version>${dropwizard.version}</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
+      <dependency>
+        <groupId>org.glassfish.jersey</groupId>
+        <artifactId>jersey-bom</artifactId>
+        <version>${jersey-bom.version}</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
+      <dependency>
+        <groupId>com.fasterxml.jackson</groupId>
+        <artifactId>jackson-bom</artifactId>
+        <version>${jackson.version}</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
+      <dependency>
+        <groupId>org.jdbi</groupId>
+        <artifactId>jdbi3-bom</artifactId>
+        <version>${jdbi3.version}</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
+      <dependency>
+        <groupId>org.testcontainers</groupId>
+        <artifactId>testcontainers-bom</artifactId>
+        <version>${testcontainers.version}</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
+      <dependency>
+        <groupId>org.junit</groupId>
+        <artifactId>junit-bom</artifactId>
+        <version>${org.junit.jupiter.version}</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
+
+      <!--
+        Third-party versions Dropwizard itself was built and tested against:
+        jakarta.validation-api, jakarta.annotation-api, slf4j, metrics-core,
+        Jetty, Guava and so on. dropwizard-bom manages only Dropwizard's own
+        artifacts, which is why these were unresolvable without this import.
+
+        Imported LAST on purpose: Maven takes the first managed version it
+        finds, so every BOM above — and every explicit pin below — still wins.
+        This one fills the gaps rather than overriding our OpenMetadata-aligned
+        choices (Jackson 2.18.9 in particular).
+      -->
+      <dependency>
+        <groupId>io.dropwizard</groupId>
+        <artifactId>dropwizard-dependencies</artifactId>
+        <version>${dropwizard.version}</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
+
+      <!-- internal modules -->
+      <dependency><groupId>${project.groupId}</groupId><artifactId>dac-spec</artifactId><version>${project.version}</version></dependency>
+      <dependency><groupId>${project.groupId}</groupId><artifactId>dac-common</artifactId><version>${project.version}</version></dependency>
+      <dependency><groupId>${project.groupId}</groupId><artifactId>dac-engine</artifactId><version>${project.version}</version></dependency>
+      <dependency><groupId>${project.groupId}</groupId><artifactId>dac-compiler-sql</artifactId><version>${project.version}</version></dependency>
+      <dependency><groupId>${project.groupId}</groupId><artifactId>dac-connector-openmetadata</artifactId><version>${project.version}</version></dependency>
+      <dependency><groupId>${project.groupId}</groupId><artifactId>dac-connector-identity</artifactId><version>${project.version}</version></dependency>
+      <dependency><groupId>${project.groupId}</groupId><artifactId>dac-connector-source</artifactId><version>${project.version}</version></dependency>
+      <dependency><groupId>${project.groupId}</groupId><artifactId>dac-proxy</artifactId><version>${project.version}</version></dependency>
+
+      <!-- third party not covered by an imported BOM -->
+      <dependency><groupId>io.dropwizard.modules</groupId><artifactId>dropwizard-jdbi3</artifactId><version>${dropwizard-jdbi3.version}</version></dependency>
+      <dependency><groupId>com.zaxxer</groupId><artifactId>HikariCP</artifactId><version>${hikaricp.version}</version></dependency>
+      <dependency><groupId>org.flywaydb</groupId><artifactId>flyway-core</artifactId><version>${flyway.version}</version></dependency>
+      <dependency><groupId>org.projectlombok</groupId><artifactId>lombok</artifactId><version>${lombok.version}</version><scope>provided</scope></dependency>
+      <dependency><groupId>org.antlr</groupId><artifactId>antlr4-runtime</artifactId><version>${antlr.version}</version></dependency>
+      <dependency><groupId>com.auth0</groupId><artifactId>java-jwt</artifactId><version>${java-jwt.version}</version></dependency>
+      <dependency><groupId>com.macasaet.fernet</groupId><artifactId>fernet-java8</artifactId><version>${fernet.version}</version></dependency>
+      <dependency><groupId>org.postgresql</groupId><artifactId>postgresql</artifactId><version>${postgres.connector.version}</version></dependency>
+      <dependency><groupId>com.microsoft.sqlserver</groupId><artifactId>mssql-jdbc</artifactId><version>${mssql-jdbc.version}</version></dependency>
+      <dependency><groupId>com.github.jsqlparser</groupId><artifactId>jsqlparser</artifactId><version>${jsqlparser.version}</version></dependency>
+      <dependency><groupId>org.assertj</groupId><artifactId>assertj-core</artifactId><version>${assertj.version}</version><scope>test</scope></dependency>
+      <dependency><groupId>org.mockito</groupId><artifactId>mockito-core</artifactId><version>${mockito.version}</version><scope>test</scope></dependency>
+    </dependencies>
+  </dependencyManagement>
+
+  <dependencies>
+    <dependency><groupId>org.projectlombok</groupId><artifactId>lombok</artifactId></dependency>
+    <dependency><groupId>org.junit.jupiter</groupId><artifactId>junit-jupiter</artifactId><scope>test</scope></dependency>
+    <dependency><groupId>org.assertj</groupId><artifactId>assertj-core</artifactId></dependency>
+  </dependencies>
+
+  <build>
+    <pluginManagement>
+      <plugins>
+        <plugin>
+          <groupId>org.jsonschema2pojo</groupId>
+          <artifactId>jsonschema2pojo-maven-plugin</artifactId>
+          <version>${jsonschema2pojo.version}</version>
+        </plugin>
+        <plugin>
+          <groupId>org.openapitools</groupId>
+          <artifactId>openapi-generator-maven-plugin</artifactId>
+          <version>${openapi-generator.version}</version>
+        </plugin>
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-shade-plugin</artifactId>
+          <version>3.6.0</version>
+        </plugin>
+      </plugins>
+    </pluginManagement>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <version>3.13.0</version>
+        <configuration>
+          <release>21</release>
+          <annotationProcessorPaths>
+            <path><groupId>org.projectlombok</groupId><artifactId>lombok</artifactId><version>${lombok.version}</version></path>
+          </annotationProcessorPaths>
+        </configuration>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <version>3.1.2</version>
+        <configuration>
+          <!-- Integration tests need Docker (Testcontainers); keep them out of the unit run. -->
+          <excludes><exclude>**/*IT.java</exclude></excludes>
+        </configuration>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-failsafe-plugin</artifactId>
+        <version>3.1.2</version>
+        <configuration><includes><include>**/*IT.java</include></includes></configuration>
+      </plugin>
+    </plugins>
+  </build>
+
+  <profiles>
+    <profile>
+      <id>integration</id>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-failsafe-plugin</artifactId>
+            <executions>
+              <execution><goals><goal>integration-test</goal><goal>verify</goal></goals></execution>
+            </executions>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+  </profiles>
+</project>

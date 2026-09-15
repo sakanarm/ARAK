@@ -1,0 +1,96 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://mfec.com/dac/schema/entity/policy/subjectRule.json",
+  "title": "SubjectRule",
+  "description": "Who a policy applies to. RBAC, ABAC, rule-based and time-based are NOT four engines: they are four views of one predicate, and every field below is ANDed with the others (FR-3.2). An empty rule matches nobody, never everybody.",
+  "type": "object",
+  "definitions": {
+    "principalMatch": {
+      "description": "One alternative in an OR list. Exactly one field is meaningful per entry.",
+      "type": "object",
+      "properties": {
+        "role": { "type": "string" },
+        "team": { "type": "string" },
+        "group": { "type": "string" },
+        "user": { "type": "string" },
+        "assetOwner": {
+          "description": "Dynamic subject: whoever OpenMetadata lists as an owner of the asset being evaluated. Written once, applies to every table, and follows ownership changes without a policy edit (FR-3.2a).",
+          "type": "boolean",
+          "default": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "attributeCondition": {
+      "type": "object",
+      "properties": {
+        "key": { "type": "string" },
+        "operator": { "$ref": "../../type/facet.json#/definitions/facetOperator" },
+        "value": { "type": ["string", "number", "boolean", "null"] },
+        "values": { "type": "array", "items": { "type": ["string", "number", "boolean"] } },
+        "source": {
+          "description": "Restrict which attribute source may satisfy this condition (FR-2.4). Unset means any source, in configured priority order.",
+          "type": "string",
+          "enum": ["entra", "openmetadata", "local"]
+        }
+      },
+      "required": ["key", "operator"],
+      "additionalProperties": false
+    },
+    "timeWindow": {
+      "type": "object",
+      "properties": {
+        "days": {
+          "description": "Day tokens or ranges: MON, SAT, MON-FRI.",
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "from": { "type": "string", "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$" },
+        "to": { "type": "string", "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$" },
+        "timezone": {
+          "description": "IANA zone. Required, and never taken from the server clock: a policy that means office hours in Bangkok must not change meaning when the pod moves region.",
+          "type": "string",
+          "default": "Asia/Bangkok"
+        }
+      },
+      "required": ["from", "to", "timezone"],
+      "additionalProperties": false
+    },
+    "timeRule": {
+      "type": "object",
+      "properties": {
+        "windows": { "type": "array", "items": { "$ref": "#/definitions/timeWindow" } },
+        "validFrom": { "$ref": "../../type/basic.json#/definitions/date" },
+        "validTo": { "$ref": "../../type/basic.json#/definitions/date" }
+      },
+      "additionalProperties": false
+    },
+    "contextRule": {
+      "type": "object",
+      "properties": {
+        "ipCidr": { "type": "array", "items": { "type": "string" } },
+        "purpose": { "type": "array", "items": { "type": "string" } }
+      },
+      "additionalProperties": false
+    }
+  },
+  "properties": {
+    "principals": {
+      "description": "OR list. Matching any entry satisfies this part of the predicate.",
+      "type": "array",
+      "items": { "$ref": "#/definitions/principalMatch" }
+    },
+    "attributes": {
+      "description": "AND list over user-side attributes.",
+      "type": "array",
+      "items": { "$ref": "#/definitions/attributeCondition" }
+    },
+    "expression": {
+      "description": "Free-form predicate parsed by the ANTLR grammar, for comparisons that need both sides at once: user.country equals asset.prop(dataResidency), user.department in asset.domains, user.email in asset.owners. This is what lets one policy cover the whole organisation (FR-2A.4).",
+      "type": "string"
+    },
+    "time": { "$ref": "#/definitions/timeRule" },
+    "context": { "$ref": "#/definitions/contextRule" }
+  },
+  "additionalProperties": false
+}

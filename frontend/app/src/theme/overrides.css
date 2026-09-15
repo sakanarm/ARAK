@@ -1,0 +1,19 @@
+/*
+ * Local overrides.
+ *
+ * This is the only place our look may diverge from OpenMetadata. Changing a
+ * token in ../../../ui-core-components would be silently reverted the next time
+ * scripts/sync-om-design-system.sh runs; changing it here survives.
+ *
+ * Keep it small. Every rule here is a place where the two products stop looking
+ * alike, and a reader has to be told why.
+ */
+
+:root {
+  /* Accent for enforcement state chips: APPLIED / DRIFTED / FAILED. These have
+     no counterpart in the catalog product, so they need tokens of their own. */
+  --color-enforcement-applied: var(--color-success-600, #079455);
+  --color-enforcement-drifted: var(--color-warning-600, #dc6803);
+  --color-enforcement-failed: var(--color-error-600, #d92d20);
+  --color-enforcement-pending: var(--color-gray-400, #98a2b3);
+}

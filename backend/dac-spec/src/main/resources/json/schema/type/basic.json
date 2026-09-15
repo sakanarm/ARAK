@@ -1,0 +1,38 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://mfec.com/dac/schema/type/basic.json",
+  "title": "Basic",
+  "description": "Primitive types shared by every other schema. Mirrors OpenMetadata's type/basic.json so the two models line up where they overlap.",
+  "definitions": {
+    "uuid": {
+      "description": "Technical key. Stable across renames.",
+      "type": "string",
+      "format": "uuid"
+    },
+    "fullyQualifiedName": {
+      "description": "Business key, dot-separated: service.database.schema.table.column. Segments containing a dot are quoted, which is why matching must be segment-aware and never a raw LIKE 'x.%' (FR-2A.2).",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 3072
+    },
+    "entityName": { "type": "string", "minLength": 1, "maxLength": 256 },
+    "timestamp": { "type": "string", "format": "date-time" },
+    "date": { "type": "string", "format": "date" },
+    "provenance": {
+      "description": "Where a facet or attribute came from. Local values are never overwritten by a sync (FR-1.7).",
+      "type": "string",
+      "enum": ["openmetadata", "local", "discovered"]
+    },
+    "entityReference": {
+      "type": "object",
+      "properties": {
+        "id": { "$ref": "#/definitions/uuid" },
+        "type": { "type": "string" },
+        "name": { "$ref": "#/definitions/entityName" },
+        "fullyQualifiedName": { "$ref": "#/definitions/fullyQualifiedName" },
+        "displayName": { "type": "string" }
+      },
+      "required": ["type"]
+    }
+  }
+}

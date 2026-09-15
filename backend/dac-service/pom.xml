@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <parent>
+    <groupId>com.mfec.dac</groupId>
+    <artifactId>dac-parent</artifactId>
+    <version>0.1.0-SNAPSHOT</version>
+    <relativePath>../../pom.xml</relativePath>
+  </parent>
+  <artifactId>dac-service</artifactId>
+  <name>DAC :: Service</name>
+  <description>
+    The Dropwizard application: the only module with a main(), the only module
+    that owns Flyway migrations, and the only module that produces a fat jar.
+    Everything else is a library it wires together.
+  </description>
+
+  <dependencies>
+    <dependency><groupId>${project.groupId}</groupId><artifactId>dac-spec</artifactId></dependency>
+    <dependency><groupId>${project.groupId}</groupId><artifactId>dac-common</artifactId></dependency>
+    <dependency><groupId>${project.groupId}</groupId><artifactId>dac-engine</artifactId></dependency>
+    <dependency><groupId>${project.groupId}</groupId><artifactId>dac-compiler-sql</artifactId></dependency>
+    <dependency><groupId>${project.groupId}</groupId><artifactId>dac-connector-openmetadata</artifactId></dependency>
+    <dependency><groupId>${project.groupId}</groupId><artifactId>dac-connector-identity</artifactId></dependency>
+    <dependency><groupId>${project.groupId}</groupId><artifactId>dac-connector-source</artifactId></dependency>
+    <dependency><groupId>${project.groupId}</groupId><artifactId>dac-proxy</artifactId></dependency>
+
+    <dependency><groupId>io.dropwizard</groupId><artifactId>dropwizard-core</artifactId></dependency>
+    <dependency><groupId>io.dropwizard</groupId><artifactId>dropwizard-auth</artifactId></dependency>
+    <dependency><groupId>io.dropwizard</groupId><artifactId>dropwizard-assets</artifactId></dependency>
+    <dependency><groupId>io.dropwizard</groupId><artifactId>dropwizard-db</artifactId></dependency>
+    <dependency><groupId>io.dropwizard</groupId><artifactId>dropwizard-health</artifactId></dependency>
+    <dependency><groupId>io.dropwizard.modules</groupId><artifactId>dropwizard-jdbi3</artifactId></dependency>
+    <dependency><groupId>io.dropwizard.metrics</groupId><artifactId>metrics-core</artifactId></dependency>
+
+    <dependency><groupId>org.jdbi</groupId><artifactId>jdbi3-core</artifactId></dependency>
+    <dependency><groupId>org.jdbi</groupId><artifactId>jdbi3-sqlobject</artifactId></dependency>
+    <dependency><groupId>org.jdbi</groupId><artifactId>jdbi3-jackson2</artifactId></dependency>
+    <dependency><groupId>org.jdbi</groupId><artifactId>jdbi3-postgres</artifactId></dependency>
+
+    <dependency><groupId>com.zaxxer</groupId><artifactId>HikariCP</artifactId></dependency>
+    <dependency><groupId>org.flywaydb</groupId><artifactId>flyway-core</artifactId></dependency>
+    <dependency><groupId>org.postgresql</groupId><artifactId>postgresql</artifactId></dependency>
+    <dependency><groupId>com.auth0</groupId><artifactId>java-jwt</artifactId></dependency>
+    <dependency><groupId>com.macasaet.fernet</groupId><artifactId>fernet-java8</artifactId></dependency>
+
+    <dependency><groupId>io.dropwizard</groupId><artifactId>dropwizard-testing</artifactId><scope>test</scope></dependency>
+    <dependency><groupId>org.testcontainers</groupId><artifactId>postgresql</artifactId><scope>test</scope></dependency>
+    <dependency><groupId>org.testcontainers</groupId><artifactId>junit-jupiter</artifactId><scope>test</scope></dependency>
+  </dependencies>
+
+  <build>
+    <finalName>dac-service</finalName>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-shade-plugin</artifactId>
+        <executions>
+          <execution>
+            <phase>package</phase>
+            <goals><goal>shade</goal></goals>
+            <configuration>
+              <createDependencyReducedPom>false</createDependencyReducedPom>
+              <transformers>
+                <!-- Dropwizard/Jersey discover commands and providers through
+                     META-INF/services; without ServicesResourceTransformer the
+                     fat jar silently loses them and the app starts with no
+                     resources registered. -->
+                <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
+                <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
+                  <mainClass>com.mfec.dac.DacApplication</mainClass>
+                </transformer>
+              </transformers>
+              <filters>
+                <filter>
+                  <artifact>*:*</artifact>
+                  <excludes>
+                    <exclude>META-INF/*.SF</exclude>
+                    <exclude>META-INF/*.DSA</exclude>
+                    <exclude>META-INF/*.RSA</exclude>
+                    <exclude>module-info.class</exclude>
+                  </excludes>
+                </filter>
+              </filters>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
+</project>

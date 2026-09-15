@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <parent>
+    <groupId>com.mfec.dac</groupId>
+    <artifactId>dac-parent</artifactId>
+    <version>0.1.0-SNAPSHOT</version>
+    <relativePath>../../pom.xml</relativePath>
+  </parent>
+  <artifactId>dac-connector-openmetadata</artifactId>
+  <name>DAC :: OpenMetadata Connector</name>
+  <description>
+    Crawl, webhook receiver, change-event poller, FQN mapper and effective-facet
+    computation against OpenMetadata.
+
+    The client is GENERATED from a pinned OpenAPI spec, not hand-written, and not
+    taken from Maven Central: org.open-metadata:openmetadata-java-client is only
+    published up to 1.8.0, while the instance we target runs 2.0.1. The running
+    server serves the full spec unauthenticated at GET /swagger.json, so we pin
+    that file into spec/ and generate from it. Re-pin with
+    scripts/sync-om-openapi.sh, then bump openmetadata.spec.file below.
+  </description>
+
+  <properties>
+    <openmetadata.spec.file>${project.basedir}/../../spec/openmetadata-2.0.1-swagger.json</openmetadata.spec.file>
+  </properties>
+
+  <dependencies>
+    <dependency><groupId>${project.groupId}</groupId><artifactId>dac-spec</artifactId></dependency>
+    <dependency><groupId>${project.groupId}</groupId><artifactId>dac-common</artifactId></dependency>
+    <dependency><groupId>com.fasterxml.jackson.core</groupId><artifactId>jackson-databind</artifactId></dependency>
+    <dependency><groupId>com.fasterxml.jackson.datatype</groupId><artifactId>jackson-datatype-jsr310</artifactId></dependency>
+    <dependency><groupId>org.glassfish.jersey.core</groupId><artifactId>jersey-client</artifactId></dependency>
+    <dependency><groupId>org.glassfish.jersey.inject</groupId><artifactId>jersey-hk2</artifactId></dependency>
+    <dependency><groupId>org.glassfish.jersey.media</groupId><artifactId>jersey-media-json-jackson</artifactId></dependency>
+    <!--
+      Not optional, and not something the OpenMetadata spec asks for: the
+      generator's jersey3 ApiClient template imports MultiPart unconditionally,
+      so the module does not compile without it. Version comes from jersey-bom.
+    -->
+    <dependency><groupId>org.glassfish.jersey.media</groupId><artifactId>jersey-media-multipart</artifactId></dependency>
+    <dependency><groupId>jakarta.annotation</groupId><artifactId>jakarta.annotation-api</artifactId></dependency>
+    <dependency><groupId>jakarta.validation</groupId><artifactId>jakarta.validation-api</artifactId></dependency>
+    <dependency><groupId>io.swagger.core.v3</groupId><artifactId>swagger-annotations</artifactId><version>2.2.25</version></dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.openapitools</groupId>
+        <artifactId>openapi-generator-maven-plugin</artifactId>
+        <executions>
+          <execution>
+            <id>generate-openmetadata-client</id>
+            <goals><goal>generate</goal></goals>
+            <configuration>
+              <inputSpec>${openmetadata.spec.file}</inputSpec>
+              <generatorName>java</generatorName>
+              <library>jersey3</library>
+              <apiPackage>com.mfec.dac.om.client.api</apiPackage>
+              <modelPackage>com.mfec.dac.om.client.model</modelPackage>
+              <invokerPackage>com.mfec.dac.om.client</invokerPackage>
+              <generateApiTests>false</generateApiTests>
+              <generateModelTests>false</generateModelTests>
+              <generateApiDocumentation>false</generateApiDocumentation>
+              <generateModelDocumentation>false</generateModelDocumentation>
+              <skipValidateSpec>true</skipValidateSpec>
+              <configOptions>
+                <sourceFolder>src/gen/java</sourceFolder>
+                <dateLibrary>java8</dateLibrary>
+                <useJakartaEe>true</useJakartaEe>
+                <openApiNullable>false</openApiNullable>
+                <hideGenerationTimestamp>true</hideGenerationTimestamp>
+              </configOptions>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
+</project>
