@@ -32,7 +32,10 @@
     <dependency><groupId>io.dropwizard</groupId><artifactId>dropwizard-assets</artifactId></dependency>
     <dependency><groupId>io.dropwizard</groupId><artifactId>dropwizard-db</artifactId></dependency>
     <dependency><groupId>io.dropwizard</groupId><artifactId>dropwizard-health</artifactId></dependency>
-    <dependency><groupId>io.dropwizard.modules</groupId><artifactId>dropwizard-jdbi3</artifactId></dependency>
+    <!-- io.dropwizard, not io.dropwizard.modules: the jdbi3 bundle lives in the
+         Dropwizard core repo from 4.x on and dropwizard-bom manages its version.
+         io.dropwizard.modules:dropwizard-jdbi3 was never published at 5.0.0. -->
+    <dependency><groupId>io.dropwizard</groupId><artifactId>dropwizard-jdbi3</artifactId></dependency>
     <dependency><groupId>io.dropwizard.metrics</groupId><artifactId>metrics-core</artifactId></dependency>
 
     <dependency><groupId>org.jdbi</groupId><artifactId>jdbi3-core</artifactId></dependency>

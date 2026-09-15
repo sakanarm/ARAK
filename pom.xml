@@ -26,7 +26,6 @@
 
     <!-- ===== aligned with OpenMetadata 2.0.1 ===== -->
     <dropwizard.version>5.0.0</dropwizard.version>
-    <dropwizard-jdbi3.version>5.0.0</dropwizard-jdbi3.version>
     <dropwizard-micrometer.version>3.0.0</dropwizard-micrometer.version>
     <jersey-bom.version>3.1.11</jersey-bom.version>
     <jdbi3.version>3.37.1</jdbi3.version>
@@ -145,7 +144,6 @@
       <dependency><groupId>${project.groupId}</groupId><artifactId>dac-proxy</artifactId><version>${project.version}</version></dependency>
 
       <!-- third party not covered by an imported BOM -->
-      <dependency><groupId>io.dropwizard.modules</groupId><artifactId>dropwizard-jdbi3</artifactId><version>${dropwizard-jdbi3.version}</version></dependency>
       <dependency><groupId>com.zaxxer</groupId><artifactId>HikariCP</artifactId><version>${hikaricp.version}</version></dependency>
       <dependency><groupId>org.flywaydb</groupId><artifactId>flyway-core</artifactId><version>${flyway.version}</version></dependency>
       <dependency><groupId>org.projectlombok</groupId><artifactId>lombok</artifactId><version>${lombok.version}</version><scope>provided</scope></dependency>
