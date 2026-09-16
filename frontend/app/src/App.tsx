@@ -2,6 +2,8 @@ import { Navigate, Outlet, Route, Routes } from 'react-router-dom';
 import RequireAuth from './auth/RequireAuth';
 import AppShell from './layout/AppShell';
 import { NAV_SECTIONS } from './layout/navigation';
+import AssetDetailPage from './pages/catalog/AssetDetailPage';
+import CatalogPage from './pages/catalog/CatalogPage';
 import HomePage from './pages/HomePage';
 import LoginPage from './pages/LoginPage';
 import NotBuiltYetPage from './pages/NotBuiltYetPage';
@@ -24,6 +26,12 @@ export default function App() {
 
         <Route element={<GuardedLayout />}>
           <Route element={<HomePage />} path="/" />
+          <Route element={<CatalogPage />} path="/catalog" />
+          {/*
+            Splat, not :fqn — an FQN is dotted and a service name may contain a
+            slash, which a single dynamic segment would cut in half.
+          */}
+          <Route element={<AssetDetailPage />} path="/catalog/*" />
           <Route element={<SystemStatusPage />} path="/system" />
           {placeholders.map((section) => (
             <Route

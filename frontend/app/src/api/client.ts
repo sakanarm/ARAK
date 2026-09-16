@@ -109,3 +109,134 @@ export async function changePassword(
 ): Promise<void> {
   await apiClient.post('/v1/auth/password', { currentPassword, newPassword });
 }
+
+// ------------------------------------------------------------------ catalog
+
+/** A governance binding, with where it came from if it was inherited. */
+export interface FacetRow {
+  facetType: string;
+  facetFqn: string;
+  property: string | null;
+  depth: number;
+  direct: boolean;
+  inheritedFrom: string | null;
+  provenance: string;
+  omState: string | null;
+  omLabelType: string | null;
+}
+
+export interface AssetOwner {
+  type: string;
+  name: string;
+  direct: boolean;
+  inheritedFrom: string | null;
+}
+
+export interface AssetSummary {
+  id: string;
+  fqn: string;
+  name: string;
+  displayName: string | null;
+  assetType: string;
+  parentFqn: string | null;
+  description: string | null;
+  tier: string | null;
+  certification: string | null;
+  dataSource: string | null;
+  columnCount: number;
+  taggedColumnCount: number;
+  facets: FacetRow[];
+  owners: AssetOwner[];
+}
+
+export interface AssetPage {
+  items: AssetSummary[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface ColumnDetail {
+  id: string;
+  fqn: string;
+  name: string;
+  ordinal: number | null;
+  dataType: string | null;
+  dataLength: number | null;
+  nullable: boolean | null;
+  description: string | null;
+  facets: FacetRow[];
+}
+
+export interface AssetDetail {
+  asset: AssetSummary;
+  customProperties: Record<string, unknown>;
+  columns: ColumnDetail[];
+  facets: FacetRow[];
+  owners: AssetOwner[];
+}
+
+export interface FacetValue {
+  facetType: string;
+  facetFqn: string;
+  assets: number;
+}
+
+export interface CatalogSummary {
+  assetsByType: Record<string, number>;
+  columns: number;
+  taggedAssets: number;
+  taggedColumns: number;
+  assetsWithoutOwner: number;
+  facetsByType: Record<string, number>;
+}
+
+export interface AssetQuery {
+  search?: string;
+  assetType?: string;
+  /** Each entry is `<facetType>:<facetFqn>`; they are AND-ed by the backend. */
+  facets?: string[];
+  owner?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export async function fetchAssets(query: AssetQuery): Promise<AssetPage> {
+  // URLSearchParams rather than axios params, so repeating `facet` stays
+  // repeated: axios would fold a facets array into facet[]= and the backend
+  // would see no filters at all.
+  const params = new URLSearchParams();
+  if (query.search) params.set('q', query.search);
+  if (query.assetType) params.set('type', query.assetType);
+  if (query.owner) params.set('owner', query.owner);
+  for (const facet of query.facets ?? []) params.append('facet', facet);
+  params.set('limit', String(query.limit ?? 50));
+  params.set('offset', String(query.offset ?? 0));
+
+  const { data } = await apiClient.get<AssetPage>(`/v1/catalog/assets?${params}`);
+  return data;
+}
+
+export async function fetchAsset(fqn: string): Promise<AssetDetail> {
+  const { data } = await apiClient.get<AssetDetail>(
+    `/v1/catalog/assets/${encodeURIComponent(fqn)}`
+  );
+  return data;
+}
+
+export async function fetchFacetValues(
+  facetType?: string,
+  limit = 100
+): Promise<FacetValue[]> {
+  const params = new URLSearchParams({ limit: String(limit) });
+  if (facetType) params.set('type', facetType);
+  const { data } = await apiClient.get<{ values: FacetValue[] }>(
+    `/v1/catalog/facets?${params}`
+  );
+  return data.values;
+}
+
+export async function fetchCatalogSummary(): Promise<CatalogSummary> {
+  const { data } = await apiClient.get<CatalogSummary>('/v1/catalog/summary');
+  return data;
+}

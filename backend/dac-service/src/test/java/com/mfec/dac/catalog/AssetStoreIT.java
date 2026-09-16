@@ -62,7 +62,15 @@ class AssetStoreIT {
   void clean() {
     jdbi.useHandle(
         handle -> {
-          handle.execute("TRUNCATE asset_facet, asset_owner, asset_fqn_map, asset_column, asset");
+          // policy_binding and enforcement_state reference asset, so PostgreSQL
+          // refuses to truncate it without them. Listed rather than CASCADE:
+          // a table added later should fail here loudly, not be emptied
+          // silently by a test that was never meant to touch it.
+          handle.execute(
+              """
+              TRUNCATE policy_binding, enforcement_state, asset_facet, asset_owner,
+                       asset_fqn_map, asset_column, asset
+              """);
           handle.execute("DELETE FROM data_source");
           handle.execute(
               """

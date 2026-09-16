@@ -5,6 +5,7 @@ import com.mfec.dac.auth.JwtService;
 import com.mfec.dac.auth.LocalIdentityDao;
 import com.mfec.dac.auth.PasswordHasher;
 import com.mfec.dac.catalog.CatalogChangeApplier;
+import com.mfec.dac.catalog.CatalogQuery;
 import com.mfec.dac.catalog.CatalogSyncService;
 import com.mfec.dac.catalog.ChangeEventPoller;
 import com.mfec.dac.catalog.NightlyReconcile;
@@ -15,6 +16,7 @@ import com.mfec.dac.config.OpenMetadataConfiguration;
 import com.mfec.dac.health.AppDatabaseHealthCheck;
 import com.mfec.dac.om.OpenMetadataClient;
 import com.mfec.dac.resources.AuthResource;
+import com.mfec.dac.resources.CatalogResource;
 import com.mfec.dac.resources.SyncResource;
 import com.mfec.dac.resources.SystemResource;
 import com.mfec.dac.resources.WebhookResource;
@@ -106,6 +108,8 @@ public class DacApplication extends Application<DacConfiguration> {
     environment.jersey().register(new SystemResource(config));
     environment.jersey().register(new AuthResource(identities, tokens, identity));
     environment.jersey().register(new SyncResource(sync));
+    environment.jersey().register(
+        new CatalogResource(new CatalogQuery(jdbi, environment.getObjectMapper())));
     // Registered before the auth filter for no reason other than reading order;
     // the filter is a @Secured name binding and this resource carries no
     // annotation, so it is never in its path. Its authentication is the HMAC.

@@ -36,7 +36,7 @@ export const NAV_SECTIONS: NavSection[] = [
     label: 'Catalog',
     href: '/catalog',
     icon: Database01,
-    milestone: 'M1',
+    milestone: null,
     description:
       'Assets synced from OpenMetadata with their tags, terms, domains and owners.',
   },

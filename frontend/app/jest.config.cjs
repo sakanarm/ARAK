@@ -10,6 +10,7 @@ module.exports = {
   setupFilesAfterEnv: ['<rootDir>/src/setupTests.ts'],
   moduleNameMapper: {
     '\\.(css|less)$': '<rootDir>/src/__mocks__/styleMock.cjs',
+    '\\.(png|jpe?g|gif|svg|webp|avif|ico)$': '<rootDir>/src/__mocks__/fileMock.cjs',
     '^~/(.*)$': '<rootDir>/src/$1',
     '^@openmetadata/ui-core-components$': '<rootDir>/../ui-core-components/src',
     '^@openmetadata/ui-core-components/(.*)$': '<rootDir>/../ui-core-components/src/$1',
