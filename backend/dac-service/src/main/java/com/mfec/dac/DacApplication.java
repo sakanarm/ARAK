@@ -4,10 +4,14 @@ import com.mfec.dac.auth.AuthFilter;
 import com.mfec.dac.auth.JwtService;
 import com.mfec.dac.auth.LocalIdentityDao;
 import com.mfec.dac.auth.PasswordHasher;
+import com.mfec.dac.catalog.CatalogSyncService;
 import com.mfec.dac.config.DacConfiguration;
 import com.mfec.dac.config.IdentityConfiguration;
+import com.mfec.dac.config.OpenMetadataConfiguration;
 import com.mfec.dac.health.AppDatabaseHealthCheck;
+import com.mfec.dac.om.OpenMetadataClient;
 import com.mfec.dac.resources.AuthResource;
+import com.mfec.dac.resources.SyncResource;
 import com.mfec.dac.resources.SystemResource;
 import io.dropwizard.configuration.EnvironmentVariableSubstitutor;
 import io.dropwizard.configuration.SubstitutingSourceProvider;
@@ -73,9 +77,25 @@ public class DacApplication extends Application<DacConfiguration> {
 
     bootstrapLocalAdmin(identity, identities);
 
+    OpenMetadataConfiguration om = config.getOpenMetadata();
+    OpenMetadataClient omClient =
+        new OpenMetadataClient(
+            om.getBaseUrl(),
+            om.getJwtToken(),
+            om.getExpectedVersion(),
+            om.getConnectTimeoutMs(),
+            om.getReadTimeoutMs());
+    // Checked at startup rather than at the first crawl: the generated client is
+    // built from a spec pinned at one version, and finding out it no longer fits
+    // halfway through a crawl leaves the cache half rewritten.
+    omClient.checkVersion(om.isFailOnVersionMismatch());
+    CatalogSyncService sync =
+        new CatalogSyncService(jdbi, environment.getObjectMapper(), omClient);
+
     environment.healthChecks().register("app-db", new AppDatabaseHealthCheck(jdbi));
     environment.jersey().register(new SystemResource(config));
     environment.jersey().register(new AuthResource(identities, tokens, identity));
+    environment.jersey().register(new SyncResource(sync));
     environment.jersey().register(new AuthFilter(tokens));
 
     LOG.info("Data Access Control Platform started against OpenMetadata {}",

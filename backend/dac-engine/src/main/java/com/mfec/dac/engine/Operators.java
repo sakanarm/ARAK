@@ -1,5 +1,6 @@
 package com.mfec.dac.engine;
 
+import com.mfec.dac.common.Fqns;
 import com.mfec.dac.schema.api.ResolvedRowPredicate.FacetOperator;
 import java.util.List;
 import java.util.regex.Pattern;

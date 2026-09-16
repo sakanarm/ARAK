@@ -1,5 +1,6 @@
 package com.mfec.dac.engine;
 
+import com.mfec.dac.common.Fqns;
 import com.mfec.dac.schema.entity.policy.FacetCondition;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;

@@ -1,5 +1,6 @@
 package com.mfec.dac.engine;
 
+import com.mfec.dac.common.Fqns;
 import com.mfec.dac.schema.api.DecisionReason;
 import com.mfec.dac.schema.api.MaskingSpec;
 import com.mfec.dac.schema.api.PolicyDecision;
