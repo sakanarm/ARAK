@@ -1,6 +1,6 @@
 # HANDOFF — ARAK (Data Access Control Platform)
 
-> อัปเดต: 2026-09-16 · commit ล่าสุด `c90d486` · **รอบล่าสุด: catalog read API + Catalog UI** · repo https://github.com/sakanarm/ARAK (**public**)
+> อัปเดต: 2026-09-16 · commit ล่าสุด `757ba33` (push แล้ว) · **รอบล่าสุด: catalog read API + Catalog UI** · repo https://github.com/sakanarm/ARAK (**public**)
 >
 > อ่านคู่กับ **[docs/DESIGN.md](docs/DESIGN.md)** — ไฟล์นั้นคือ requirement + feature catalogue + สถานะครบทุกข้อ
 > ไฟล์นี้บอกเฉพาะ "ทำถึงไหน จะไปต่อยังไง อะไรที่ลองแล้วไม่เวิร์ค"
