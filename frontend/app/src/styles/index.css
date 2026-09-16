@@ -1,24 +1,69 @@
 /*
  * Stylesheet entry point.
  *
- * Order matters: Tailwind first, then the vendored OpenMetadata token layer
- * (@theme static — fonts, spacing, the text scale, the full colour system),
- * then our own overrides last so they win without editing vendored files.
+ * This mirrors ../../../ui-core-components/src/styles/storybook.css, which is
+ * the design system's own consumer stylesheet and therefore the contract every
+ * component in it was built against. Three things in it are not optional:
+ *
+ *  - `prefix(tw)`. Every class inside the vendored components is written
+ *    `tw:flex`, `tw:bg-brand-solid`, `tw:hover:bg-brand-solid_hover`. Import
+ *    Tailwind without the prefix and none of those utilities are generated, so
+ *    the components render as unstyled HTML while our own classes still work —
+ *    which looks like a theme problem and is not one. Our own markup therefore
+ *    carries the prefix too.
+ *  - the custom variants. `dark`, `label` and `focus-input-within` are used by
+ *    the components; an unknown variant drops the whole declaration.
+ *  - the two @utility rules. `transition-inherit-all` is on every button.
+ *
+ * Order matters: Tailwind first, then the vendored token layer (@theme static —
+ * fonts, spacing, the text scale, the colour system), then ours last so it wins
+ * without editing vendored files.
  *
  * The @source lines exist because we consume the design system from source
- * rather than from its built dist: Tailwind 4 scans files it is told about, and
- * its own globals.css points at ../../dist, which we never build.
+ * rather than from its built dist: Tailwind 4 only scans what it is told about,
+ * and the package's own globals.css points at ../../dist, which we never build.
  */
 
-@import 'tailwindcss';
+@import 'tailwindcss/theme.css' prefix(tw);
+@import 'tailwindcss/preflight.css' prefix(tw);
+@import 'tailwindcss/utilities.css' prefix(tw);
 
 @source "../../../ui-core-components/src/**/*.{ts,tsx}";
 @source "../**/*.{ts,tsx}";
+
+@import '../../../ui-core-components/src/styles/globals.css';
+
+/* Ours last, and unlayered, so it wins over @layer theme without editing it. */
+@import '../theme/overrides.css';
 
 @plugin "@tailwindcss/typography";
 @plugin "tailwindcss-animate";
 @plugin "tailwindcss-react-aria-components";
 
-@import '../../../ui-core-components/src/styles/globals.css';
+@custom-variant dark (&:where(.dark-mode, .dark-mode *));
+@custom-variant label (& [data-label]);
+@custom-variant focus-input-within (&:has(input:focus));
 
-@import '../theme/overrides.css';
+@utility scrollbar-hide {
+  &::-webkit-scrollbar {
+    display: none;
+    -webkit-appearance: none;
+  }
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+@utility transition-inherit-all {
+  transition-property: inherit;
+  transition-duration: inherit;
+  transition-timing-function: inherit;
+}
+
+@layer base {
+  /* Preflight makes every img a block at its natural size; the design system
+     puts icons and avatars inline inside text, and undoes it here. */
+  img {
+    height: revert-layer;
+    display: inline;
+  }
+}

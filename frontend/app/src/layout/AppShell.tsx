@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { useLocation } from 'react-router-dom';
-import { LogOut01, ShieldTick } from '@untitledui/icons';
+import { LogOut01 } from '@untitledui/icons';
 import { Avatar } from '@openmetadata/ui-core-components/components/base/avatar/avatar';
 import { Badge } from '@openmetadata/ui-core-components/components/base/badges/badges';
 import { Button } from '@openmetadata/ui-core-components/components/base/buttons/button';
@@ -9,6 +9,7 @@ import { MobileNavigationHeader } from '@openmetadata/ui-core-components/compone
 import type { NavItemType } from '@openmetadata/ui-core-components/components/application/app-navigation/config';
 import { useAuthStore } from '../auth/authStore';
 import { NAV_SECTIONS } from './navigation';
+import mark from '../assets/arak-mark.png';
 
 /**
  * The signed-in frame: sidebar, account footer, content.
@@ -29,17 +30,17 @@ export default function AppShell({ children }: { children: ReactNode }) {
   const sidebar = <Sidebar activeUrl={pathname} items={items} />;
 
   return (
-    <div className="min-h-screen bg-secondary">
-      <div className="lg:hidden">
+    <div className="tw:min-h-screen tw:bg-secondary">
+      <div className="tw:lg:hidden">
         <MobileNavigationHeader>{sidebar}</MobileNavigationHeader>
       </div>
 
-      <div className="hidden lg:fixed lg:inset-y-0 lg:left-0 lg:z-40 lg:block lg:w-70">
+      <div className="tw:hidden tw:lg:fixed tw:lg:inset-y-0 tw:lg:left-0 tw:lg:z-40 tw:lg:block tw:lg:w-70">
         {sidebar}
       </div>
 
-      <div className="lg:pl-70">
-        <main className="mx-auto max-w-6xl px-4 py-8 sm:px-8">{children}</main>
+      <div className="tw:lg:pl-70">
+        <main className="tw:mx-auto tw:max-w-6xl tw:px-4 tw:py-8 tw:sm:px-8">{children}</main>
       </div>
     </div>
   );
@@ -59,27 +60,25 @@ function Sidebar({
   const roles = user?.roles ?? [];
 
   return (
-    <div className="flex h-full flex-col justify-between border-r border-secondary bg-primary">
+    <div className="tw:flex tw:h-full tw:flex-col tw:justify-between tw:border-r tw:border-secondary tw:bg-primary">
       <div>
-        <div className="flex items-center gap-3 px-5 pt-6">
-          <span className="flex size-9 items-center justify-center rounded-lg bg-brand-solid">
-            <ShieldTick aria-hidden className="size-5 text-white" />
-          </span>
+        <div className="tw:flex tw:items-center tw:gap-3 tw:px-5 tw:pt-6">
+          <img alt="" aria-hidden className="tw:size-9 tw:shrink-0" src={mark} />
           <span>
-            <p className="text-md font-semibold text-primary">ARAK</p>
-            <p className="text-xs text-tertiary">Data access control</p>
+            <p className="tw:text-md tw:font-semibold tw:text-primary">ARAK</p>
+            <p className="tw:text-xs tw:text-tertiary">Data access control</p>
           </span>
         </div>
 
         <NavList activeUrl={activeUrl} items={items} />
       </div>
 
-      <div className="border-t border-secondary p-4">
-        <div className="flex items-center gap-3">
+      <div className="tw:border-t tw:border-secondary tw:p-4">
+        <div className="tw:flex tw:items-center tw:gap-3">
           <Avatar initials={initialsOf(name)} size="md" />
-          <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-semibold text-primary">{name}</p>
-            <p className="truncate text-xs text-tertiary">
+          <div className="tw:min-w-0 tw:flex-1">
+            <p className="tw:truncate tw:text-sm tw:font-semibold tw:text-primary">{name}</p>
+            <p className="tw:truncate tw:text-xs tw:text-tertiary">
               {user?.email || user?.username}
             </p>
           </div>
@@ -93,7 +92,7 @@ function Sidebar({
         </div>
 
         {roles.length > 0 && (
-          <div className="mt-3 flex flex-wrap gap-1">
+          <div className="tw:mt-3 tw:flex tw:flex-wrap tw:gap-1">
             {roles.map((role) => (
               <Badge color="gray" key={role} size="sm" type="pill-color">
                 {humaniseRole(role)}

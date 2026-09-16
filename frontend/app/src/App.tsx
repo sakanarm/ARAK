@@ -18,7 +18,7 @@ export default function App() {
   const placeholders = NAV_SECTIONS.filter((section) => section.milestone);
 
   return (
-    <div className="min-h-screen bg-primary text-primary font-body">
+    <div className="tw:min-h-screen tw:bg-primary tw:text-primary tw:font-body">
       <Routes>
         <Route element={<LoginPage />} path="/login" />
 

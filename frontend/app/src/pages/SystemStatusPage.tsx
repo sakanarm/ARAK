@@ -13,28 +13,28 @@ export default function SystemStatusPage() {
   });
 
   return (
-    <main className="mx-auto max-w-3xl px-6 py-12">
-      <h1 className="text-display-sm font-semibold text-primary">Data Access Control</h1>
-      <p className="mt-2 text-md text-tertiary">
+    <main className="tw:mx-auto tw:max-w-3xl tw:px-6 tw:py-12">
+      <h1 className="tw:text-display-sm tw:font-semibold tw:text-primary">Data Access Control</h1>
+      <p className="tw:mt-2 tw:text-md tw:text-tertiary">
         Subscription and data policies over OpenMetadata governance.
       </p>
 
-      <section className="mt-8 rounded-xl border border-secondary bg-primary p-6">
-        <h2 className="text-lg font-medium text-primary">Service</h2>
-        {isLoading && <p className="mt-2 text-sm text-tertiary">Checking…</p>}
+      <section className="tw:mt-8 tw:rounded-xl tw:border tw:border-secondary tw:bg-primary tw:p-6">
+        <h2 className="tw:text-lg tw:font-medium tw:text-primary">Service</h2>
+        {isLoading && <p className="tw:mt-2 tw:text-sm tw:text-tertiary">Checking…</p>}
         {error && (
-          <p className="mt-2 text-sm text-error-primary">
+          <p className="tw:mt-2 tw:text-sm tw:text-error-primary">
             Backend unreachable. Start it with: java -jar backend/dac-service/target/dac-service.jar server conf/dac.yml
           </p>
         )}
         {data && (
-          <dl className="mt-4 grid grid-cols-[max-content_1fr] gap-x-6 gap-y-2 text-sm">
-            <dt className="text-tertiary">Version</dt>
-            <dd className="text-primary">{data.version}</dd>
-            <dt className="text-tertiary">OpenMetadata</dt>
-            <dd className="text-primary">{data.openMetadataBaseUrl}</dd>
-            <dt className="text-tertiary">Expected OM version</dt>
-            <dd className="text-primary">{data.openMetadataExpectedVersion}</dd>
+          <dl className="tw:mt-4 tw:grid tw:grid-cols-[max-content_1fr] tw:gap-x-6 tw:gap-y-2 tw:text-sm">
+            <dt className="tw:text-tertiary">Version</dt>
+            <dd className="tw:text-primary">{data.version}</dd>
+            <dt className="tw:text-tertiary">OpenMetadata</dt>
+            <dd className="tw:text-primary">{data.openMetadataBaseUrl}</dd>
+            <dt className="tw:text-tertiary">Expected OM version</dt>
+            <dd className="tw:text-primary">{data.openMetadataExpectedVersion}</dd>
           </dl>
         )}
       </section>

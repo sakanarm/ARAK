@@ -15,23 +15,23 @@ export default function NotBuiltYetPage() {
   const section = findSection(pathname);
 
   return (
-    <div className="mx-auto max-w-lg py-16 text-center">
-      <h1 className="text-display-xs font-semibold text-primary">
+    <div className="tw:mx-auto tw:max-w-lg tw:py-16 tw:text-center">
+      <h1 className="tw:text-display-xs tw:font-semibold tw:text-primary">
         {section?.label ?? 'Not here yet'}
       </h1>
-      <p className="mt-3 text-md text-tertiary">
+      <p className="tw:mt-3 tw:text-md tw:text-tertiary">
         {section?.description ??
           'This part of the console has not been built yet.'}
       </p>
       {section?.milestone && (
-        <p className="mt-3 text-sm text-quaternary">
+        <p className="tw:mt-3 tw:text-sm tw:text-quaternary">
           Planned for milestone {section.milestone}.
         </p>
       )}
       <Link
-        className="mt-8 inline-flex items-center gap-2 text-sm font-medium text-brand-secondary hover:text-brand-secondary_hover"
+        className="tw:mt-8 tw:inline-flex tw:items-center tw:gap-2 tw:text-sm tw:font-medium tw:text-brand-secondary tw:hover:text-brand-secondary_hover"
         to="/">
-        <ArrowLeft className="size-4" />
+        <ArrowLeft className="tw:size-4" />
         Back to home
       </Link>
     </div>

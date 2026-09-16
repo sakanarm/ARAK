@@ -30,8 +30,8 @@ export default function RequireAuth({ children }: { children: ReactNode }) {
 
   if (initialising) {
     return (
-      <div className="flex min-h-screen items-center justify-center">
-        <p className="text-sm text-tertiary">Restoring your session…</p>
+      <div className="tw:flex tw:min-h-screen tw:items-center tw:justify-center">
+        <p className="tw:text-sm tw:text-tertiary">Restoring your session…</p>
       </div>
     );
   }

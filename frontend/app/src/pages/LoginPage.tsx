@@ -7,6 +7,7 @@ import { Input } from '@openmetadata/ui-core-components/components/base/input/in
 import { PasswordInput } from '@openmetadata/ui-core-components/components/base/input/password-input';
 import { apiErrorMessage, fetchAuthConfig } from '../api/client';
 import { useAuthStore } from '../auth/authStore';
+import logo from '../assets/arak-logo.png';
 
 interface FromState {
   from?: { pathname?: string };
@@ -68,21 +69,27 @@ export default function LoginPage() {
   const localDisabled = config?.localLoginEnabled === false;
 
   return (
-    <div className="grid min-h-screen grid-cols-1 bg-primary lg:grid-cols-2">
-      <main className="flex items-center justify-center px-4 py-12 sm:px-8">
-        <div className="w-full max-w-sm">
-          <div className="flex size-12 items-center justify-center rounded-lg bg-brand-solid">
-            <ShieldTick aria-hidden className="size-6 text-white" />
-          </div>
+    <div className="tw:grid tw:min-h-screen tw:grid-cols-1 tw:bg-primary tw:lg:grid-cols-2">
+      <main className="tw:flex tw:items-center tw:justify-center tw:px-4 tw:py-12 tw:sm:px-8">
+        <div className="tw:w-full tw:max-w-sm">
+          {/*
+            The lockup already spells out the product and what the initials
+            stand for, so the heading below says only what this screen is for.
+          */}
+          <img
+            alt="ARAK — Access Rights and Authorization Keeper"
+            className="tw:h-20 tw:w-auto"
+            src={logo}
+          />
 
-          <h1 className="mt-6 text-display-xs font-semibold text-primary">
-            Sign in to ARAK
+          <h1 className="tw:mt-8 tw:text-display-xs tw:font-semibold tw:text-primary">
+            Sign in
           </h1>
-          <p className="mt-2 text-sm text-tertiary">
+          <p className="tw:mt-2 tw:text-sm tw:text-tertiary">
             Data access control over your OpenMetadata catalog.
           </p>
 
-          <form className="mt-8 flex flex-col gap-5" onSubmit={onSubmit}>
+          <form className="tw:mt-8 tw:flex tw:flex-col tw:gap-5" onSubmit={onSubmit}>
             <Input
               // The visible label carries a required asterisk, and PasswordInput
               // renders its label outside the field so the input ends up with no
@@ -114,15 +121,15 @@ export default function LoginPage() {
 
             {error && (
               <div
-                className="flex items-start gap-2 rounded-lg border border-error_subtle bg-error-primary p-3"
+                className="tw:flex tw:items-start tw:gap-2 tw:rounded-lg tw:border tw:border-error_subtle tw:bg-error-primary tw:p-3"
                 role="alert">
-                <AlertCircle aria-hidden className="mt-0.5 size-4 shrink-0 text-error-primary" />
-                <p className="text-sm text-error-primary">{error}</p>
+                <AlertCircle aria-hidden className="tw:mt-0.5 tw:size-4 tw:shrink-0 tw:text-error-primary" />
+                <p className="tw:text-sm tw:text-error-primary">{error}</p>
               </div>
             )}
 
             <Button
-              className="w-full"
+              className="tw:w-full"
               isDisabled={localDisabled}
               isLoading={submitting}
               showTextWhileLoading
@@ -133,28 +140,28 @@ export default function LoginPage() {
           </form>
 
           {config?.entraEnabled && (
-            <div className="mt-6">
-              <div className="flex items-center gap-3">
-                <hr className="h-px flex-1 border-none bg-border-secondary" />
-                <span className="text-xs text-quaternary">or</span>
-                <hr className="h-px flex-1 border-none bg-border-secondary" />
+            <div className="tw:mt-6">
+              <div className="tw:flex tw:items-center tw:gap-3">
+                <hr className="tw:h-px tw:flex-1 tw:border-none tw:bg-border-secondary" />
+                <span className="tw:text-xs tw:text-quaternary">or</span>
+                <hr className="tw:h-px tw:flex-1 tw:border-none tw:bg-border-secondary" />
               </div>
               <Button
-                className="mt-6 w-full"
+                className="tw:mt-6 tw:w-full"
                 color="secondary"
                 isDisabled
                 size="lg"
                 type="button">
                 Continue with Microsoft Entra ID
               </Button>
-              <p className="mt-2 text-center text-xs text-quaternary">
+              <p className="tw:mt-2 tw:text-center tw:text-xs tw:text-quaternary">
                 Single sign-on is configured but not yet enabled in this build.
               </p>
             </div>
           )}
 
           {localDisabled && (
-            <p className="mt-6 text-sm text-tertiary">
+            <p className="tw:mt-6 tw:text-sm tw:text-tertiary">
               Local sign-in is disabled on this deployment. Use single sign-on.
             </p>
           )}
@@ -166,11 +173,11 @@ export default function LoginPage() {
         the one thing a person standing at a login screen may legitimately not
         know yet.
       */}
-      <aside className="hidden flex-col justify-center gap-8 border-l border-secondary bg-secondary px-16 lg:flex">
-        <h2 className="text-display-sm font-semibold text-primary">
+      <aside className="tw:hidden tw:flex-col tw:justify-center tw:gap-8 tw:border-l tw:border-secondary tw:bg-secondary tw:px-16 tw:lg:flex">
+        <h2 className="tw:text-display-sm tw:font-semibold tw:text-primary">
           One policy. Every engine.
         </h2>
-        <ul className="flex flex-col gap-6">
+        <ul className="tw:flex tw:flex-col tw:gap-6">
           <Feature
             icon={ShieldTick}
             text="Subscription policies decide who reaches a table; data policies decide what they see in it."
@@ -202,13 +209,13 @@ function Feature({
   text: string;
 }) {
   return (
-    <li className="flex gap-4">
-      <span className="flex size-10 shrink-0 items-center justify-center rounded-lg border border-secondary bg-primary">
-        <Icon className="size-5 text-fg-brand-primary" />
+    <li className="tw:flex tw:gap-4">
+      <span className="tw:flex tw:size-10 tw:shrink-0 tw:items-center tw:justify-center tw:rounded-lg tw:border tw:border-secondary tw:bg-primary">
+        <Icon className="tw:size-5 tw:text-fg-brand-primary" />
       </span>
       <span>
-        <p className="text-sm font-medium text-primary">{title}</p>
-        <p className="mt-1 text-sm text-tertiary">{text}</p>
+        <p className="tw:text-sm tw:font-medium tw:text-primary">{title}</p>
+        <p className="tw:mt-1 tw:text-sm tw:text-tertiary">{text}</p>
       </span>
     </li>
   );
