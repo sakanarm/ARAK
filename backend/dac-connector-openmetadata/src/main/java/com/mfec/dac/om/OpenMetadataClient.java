@@ -7,6 +7,7 @@ import com.mfec.dac.om.client.api.DatabaseSchemasApi;
 import com.mfec.dac.om.client.api.DatabaseServicesApi;
 import com.mfec.dac.om.client.api.DatabasesApi;
 import com.mfec.dac.om.client.api.DomainsApi;
+import com.mfec.dac.om.client.api.EventsApi;
 import com.mfec.dac.om.client.api.GlossariesApi;
 import com.mfec.dac.om.client.api.MetadataApi;
 import com.mfec.dac.om.client.api.SystemApi;
@@ -98,6 +99,20 @@ public class OpenMetadataClient {
 
   public DomainsApi domains() {
     return new DomainsApi(apiClient);
+  }
+
+  /**
+   * The change feed and its subscriptions.
+   *
+   * <p>Only {@code GET /v1/events} is used here. The subscription endpoints on
+   * the same API create the webhook that pushes to us, and that is registered by
+   * an operator rather than by the platform: a service that creates its own
+   * subscription on every start leaves a trail of duplicates behind every
+   * rename, and the callback URL it would have to invent is the one thing it
+   * cannot know about its own deployment.
+   */
+  public EventsApi events() {
+    return new EventsApi(apiClient);
   }
 
   public SystemApi system() {

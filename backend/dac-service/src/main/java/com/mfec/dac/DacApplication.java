@@ -4,7 +4,11 @@ import com.mfec.dac.auth.AuthFilter;
 import com.mfec.dac.auth.JwtService;
 import com.mfec.dac.auth.LocalIdentityDao;
 import com.mfec.dac.auth.PasswordHasher;
+import com.mfec.dac.catalog.CatalogChangeApplier;
 import com.mfec.dac.catalog.CatalogSyncService;
+import com.mfec.dac.catalog.ChangeEventPoller;
+import com.mfec.dac.catalog.NightlyReconcile;
+import com.mfec.dac.catalog.SyncStateDao;
 import com.mfec.dac.config.DacConfiguration;
 import com.mfec.dac.config.IdentityConfiguration;
 import com.mfec.dac.config.OpenMetadataConfiguration;
@@ -13,12 +17,15 @@ import com.mfec.dac.om.OpenMetadataClient;
 import com.mfec.dac.resources.AuthResource;
 import com.mfec.dac.resources.SyncResource;
 import com.mfec.dac.resources.SystemResource;
+import com.mfec.dac.resources.WebhookResource;
 import io.dropwizard.configuration.EnvironmentVariableSubstitutor;
 import io.dropwizard.configuration.SubstitutingSourceProvider;
 import io.dropwizard.core.Application;
 import io.dropwizard.core.setup.Bootstrap;
 import io.dropwizard.core.setup.Environment;
 import java.time.Duration;
+import java.time.LocalTime;
+import java.time.ZoneId;
 import java.util.Optional;
 import java.util.UUID;
 import javax.sql.DataSource;
@@ -91,15 +98,76 @@ public class DacApplication extends Application<DacConfiguration> {
     omClient.checkVersion(om.isFailOnVersionMismatch());
     CatalogSyncService sync =
         new CatalogSyncService(jdbi, environment.getObjectMapper(), omClient);
+    SyncStateDao syncState = new SyncStateDao(jdbi);
+    CatalogChangeApplier applier =
+        new CatalogChangeApplier(jdbi, environment.getObjectMapper(), omClient);
 
     environment.healthChecks().register("app-db", new AppDatabaseHealthCheck(jdbi));
     environment.jersey().register(new SystemResource(config));
     environment.jersey().register(new AuthResource(identities, tokens, identity));
     environment.jersey().register(new SyncResource(sync));
+    // Registered before the auth filter for no reason other than reading order;
+    // the filter is a @Secured name binding and this resource carries no
+    // annotation, so it is never in its path. Its authentication is the HMAC.
+    environment.jersey().register(
+        new WebhookResource(environment.getObjectMapper(), applier, om.getWebhookSecret()));
     environment.jersey().register(new AuthFilter(tokens));
+
+    startCatalogSync(environment, om, omClient, sync, applier, syncState);
 
     LOG.info("Data Access Control Platform started against OpenMetadata {}",
         config.getOpenMetadata().getBaseUrl());
+  }
+
+  /**
+   * Starts the two things that keep the cache current (FR-1.5).
+   *
+   * <p>Both are {@link io.dropwizard.lifecycle.Managed} so that a shutdown stops
+   * them before the connection pool closes underneath them. A poll caught
+   * mid-apply by a closing pool would fail, and the cursor would stay where it
+   * was — harmless, but it fills the log with a failure that is really just a
+   * restart.
+   */
+  private void startCatalogSync(
+      Environment environment,
+      OpenMetadataConfiguration om,
+      OpenMetadataClient omClient,
+      CatalogSyncService sync,
+      CatalogChangeApplier applier,
+      SyncStateDao syncState) {
+
+    if (om.getWebhookSecret() == null || om.getWebhookSecret().isBlank()) {
+      LOG.warn(
+          "No OM_WEBHOOK_SECRET is set: POST /v1/webhooks/openmetadata will refuse every "
+              + "delivery. Changes will still arrive, but only as fast as the poller reads them.");
+    }
+
+    if (om.isPollEnabled()) {
+      environment
+          .lifecycle()
+          .manage(
+              new ChangeEventPoller(
+                  omClient,
+                  applier,
+                  syncState,
+                  om.getMaxEventsPerPoll(),
+                  Duration.ofSeconds(om.getPollIntervalSeconds())));
+    } else {
+      LOG.warn(
+          "Change-event polling is disabled. A missed webhook then stays missed until the "
+              + "nightly reconcile.");
+    }
+
+    if (om.isReconcileEnabled()) {
+      environment
+          .lifecycle()
+          .manage(
+              new NightlyReconcile(
+                  sync,
+                  syncState,
+                  LocalTime.parse(om.getReconcileAt()),
+                  ZoneId.of(om.getReconcileZone())));
+    }
   }
 
   /**

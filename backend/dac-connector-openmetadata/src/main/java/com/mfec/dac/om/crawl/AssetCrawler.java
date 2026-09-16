@@ -166,7 +166,13 @@ public class AssetCrawler {
     return stats;
   }
 
-  private void crawlService(
+  /**
+   * Package-private rather than private so {@link AssetRefresher} can re-enter
+   * the descent part-way down with an ancestor chain it fetched itself. A
+   * targeted refresh that reimplemented the descent would be a second place for
+   * inheritance to be computed, and the two would drift.
+   */
+  void crawlService(
       DatabaseService service, Set<String> exclusive, AssetSink sink, Stats stats) {
 
     CrawledAsset.AssetRow row = AssetMapper.service(service);
@@ -197,7 +203,7 @@ public class AssetCrawler {
         });
   }
 
-  private void crawlDatabase(
+  void crawlDatabase(
       Database database,
       List<Level> chain,
       List<AssetMapper.OwnerLevel> ownerChain,
@@ -240,7 +246,7 @@ public class AssetCrawler {
         });
   }
 
-  private void crawlSchema(
+  void crawlSchema(
       DatabaseSchema schema,
       List<Level> chain,
       List<AssetMapper.OwnerLevel> ownerChain,
@@ -361,6 +367,18 @@ public class AssetCrawler {
   private static void emit(AssetSink sink, Stats stats, CrawledAsset asset) {
     sink.asset(asset);
     stats.facets += asset.facets().size();
+  }
+
+  /**
+   * The {@code ?fields=} lists this crawler was built with.
+   *
+   * <p>For {@link AssetRefresher}, which re-reads a single entity and has to ask
+   * for exactly the fields the crawl asked for. A refresh that requested fewer
+   * would write an asset with, say, no tags — indistinguishable in the cache
+   * from an asset whose tags had been removed.
+   */
+  Fields fields() {
+    return fields;
   }
 
   /** {@link OmPager#forEachPage} with the checked exception carried across. */

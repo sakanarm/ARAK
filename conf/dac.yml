@@ -46,6 +46,23 @@ openMetadata:
   # Turn this on once the deployment is pinned: the generated client is built
   # from one spec version and talking to another drifts silently.
   failOnVersionMismatch: ${OM_FAIL_ON_VERSION_MISMATCH:-false}
+  # Shared secret on the OpenMetadata event subscription that pushes to
+  # POST /v1/webhooks/openmetadata. Leave it unset and the receiver answers 503
+  # rather than trusting unsigned deliveries -- it is that endpoint's only
+  # authentication.
+  webhookSecret: ${OM_WEBHOOK_SECRET:-}
+  # The pull side of FR-1.5, and what makes a missed webhook a delay rather than
+  # a permanently wrong cache. It is also the whole sync mechanism where nobody
+  # registered a subscription.
+  pollEnabled: ${OM_POLL_ENABLED:-true}
+  pollIntervalSeconds: ${OM_POLL_INTERVAL_SECONDS:-60}
+  maxEventsPerPoll: ${OM_MAX_EVENTS_PER_POLL:-2000}
+  # The nightly full crawl. It catches what no event describes: a classification
+  # becoming mutually exclusive, a domain gaining a parent, an asset deleted
+  # while this service was down.
+  reconcileEnabled: ${OM_RECONCILE_ENABLED:-true}
+  reconcileAt: ${OM_RECONCILE_AT:-02:30}
+  reconcileZone: ${OM_RECONCILE_ZONE:-Asia/Bangkok}
 
 identity:
   entraTenantId: ${ENTRA_TENANT_ID:-}
