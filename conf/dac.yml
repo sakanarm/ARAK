@@ -53,6 +53,17 @@ identity:
   entraClientSecret: ${ENTRA_CLIENT_SECRET:-}
   allowLocalUsers: ${IDENTITY_ALLOW_LOCAL_USERS:-true}
   attributeCacheTtlSeconds: 300
+  # Console session token. No default on purpose: the app refuses to start
+  # without it rather than sign tokens with a key that is in this repository.
+  # Generate one with: openssl rand -base64 48
+  jwtSecret: ${IDENTITY_JWT_SECRET:-}
+  jwtIssuer: ${IDENTITY_JWT_ISSUER:-data-access-control}
+  jwtTtlSeconds: ${IDENTITY_JWT_TTL_SECONDS:-3600}
+  maxFailedLoginAttempts: ${IDENTITY_MAX_FAILED_LOGIN_ATTEMPTS:-5}
+  lockoutSeconds: ${IDENTITY_LOCKOUT_SECONDS:-900}
+  # Applied to the seeded admin account on first start only, and only while no
+  # local credential exists at all.
+  bootstrapAdminPassword: ${IDENTITY_BOOTSTRAP_ADMIN_PASSWORD:-}
 
 secrets:
   provider: ${SECRETS_PROVIDER:-FERNET}

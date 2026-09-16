@@ -21,7 +21,12 @@
       "~/*": ["src/*"],
       "@openmetadata/ui-core-components": ["../ui-core-components/src"],
       "@openmetadata/ui-core-components/*": ["../ui-core-components/src/*"],
-      "@/*": ["../ui-core-components/src/*"]
+      "@/*": ["../ui-core-components/src/*"],
+      // The vendored design system lives outside this package, so walking up
+      // from its files never reaches a node_modules. This sends its bare
+      // imports (react, react-aria-components, ...) to ours. Jest is told the
+      // same thing through modulePaths.
+      "*": ["./node_modules/@types/*", "./node_modules/*"]
     },
     "types": ["node", "jest", "@testing-library/jest-dom"]
   },

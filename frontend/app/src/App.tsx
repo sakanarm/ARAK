@@ -1,16 +1,50 @@
-import { Route, Routes } from 'react-router-dom';
+import { Navigate, Outlet, Route, Routes } from 'react-router-dom';
+import RequireAuth from './auth/RequireAuth';
+import AppShell from './layout/AppShell';
+import { NAV_SECTIONS } from './layout/navigation';
+import HomePage from './pages/HomePage';
+import LoginPage from './pages/LoginPage';
+import NotBuiltYetPage from './pages/NotBuiltYetPage';
 import SystemStatusPage from './pages/SystemStatusPage';
 
 /**
- * Route shell. Pages arrive per milestone: Catalog (M1), Policy Builder and
- * Simulator (M4), Enforcement (M5-M7), Audit (M8).
+ * Routes.
+ *
+ * /login is the only public one. Everything else is a child of the guarded
+ * layout route, so a screen added later sits behind the guard by belonging to
+ * the tree rather than by somebody remembering to wrap it.
  */
 export default function App() {
+  const placeholders = NAV_SECTIONS.filter((section) => section.milestone);
+
   return (
     <div className="min-h-screen bg-primary text-primary font-body">
       <Routes>
-        <Route path="/" element={<SystemStatusPage />} />
+        <Route element={<LoginPage />} path="/login" />
+
+        <Route element={<GuardedLayout />}>
+          <Route element={<HomePage />} path="/" />
+          <Route element={<SystemStatusPage />} path="/system" />
+          {placeholders.map((section) => (
+            <Route
+              element={<NotBuiltYetPage />}
+              key={section.href}
+              path={section.href}
+            />
+          ))}
+          <Route element={<Navigate replace to="/" />} path="*" />
+        </Route>
       </Routes>
     </div>
+  );
+}
+
+function GuardedLayout() {
+  return (
+    <RequireAuth>
+      <AppShell>
+        <Outlet />
+      </AppShell>
+    </RequireAuth>
   );
 }

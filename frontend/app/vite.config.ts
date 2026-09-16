@@ -1,4 +1,4 @@
-import { defineConfig } from 'vite';
+import { defineConfig, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 import { resolve } from 'path';
@@ -13,8 +13,35 @@ import { resolve } from 'path';
  */
 const uiCore = resolve(__dirname, '../ui-core-components/src');
 
+/**
+ * Resolves the vendored design system's own dependencies.
+ *
+ * Those files sit outside this package, so Node's walk up from them never
+ * reaches a node_modules and `import 'react'` fails. Rather than duplicate an
+ * install or alias each package by hand, re-resolve any bare import from a
+ * vendored file as if this package had written it. tsconfig `paths` and Jest
+ * `modulePaths` say the same thing to the other two resolvers.
+ */
+const appEntry = resolve(__dirname, 'src/main.tsx');
+
+// Rollup ids use forward slashes even on Windows, where resolve() does not.
+const uiCoreId = uiCore.replace(/\\/g, '/');
+
+const vendoredDependencies: Plugin = {
+  name: 'dac:vendored-dependencies',
+  enforce: 'pre',
+  async resolveId(source, importer) {
+    if (!importer || !importer.replace(/\\/g, '/').startsWith(uiCoreId)) {
+      return null;
+    }
+    if (/^[./]/.test(source) || source.startsWith('@/')) return null;
+    const resolved = await this.resolve(source, appEntry, { skipSelf: true });
+    return resolved?.id ?? null;
+  },
+};
+
 export default defineConfig({
-  plugins: [react(), tailwindcss()],
+  plugins: [vendoredDependencies, react(), tailwindcss()],
   resolve: {
     alias: [
       { find: '@openmetadata/ui-core-components/colors', replacement: resolve(uiCore, 'colors') },
