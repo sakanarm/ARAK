@@ -12,6 +12,7 @@ import com.mfec.dac.om.client.api.MetadataApi;
 import com.mfec.dac.om.client.api.SystemApi;
 import com.mfec.dac.om.client.api.TablesApi;
 import com.mfec.dac.om.client.model.OpenMetadataServerVersion;
+import jakarta.ws.rs.ProcessingException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -116,9 +117,28 @@ public class OpenMetadataClient {
       OpenMetadataServerVersion version = system().getCatalogVersion();
       return version == null ? null : version.getVersion();
     } catch (ApiException e) {
+      // The instance answered, but not with a version: wrong path, an auth
+      // failure, or an error page from something in front of it.
       LOG.warn("Could not read the OpenMetadata version from {}: {}", baseUrl, e.getMessage());
       return null;
+    } catch (ProcessingException e) {
+      // The request never completed at all -- connection refused, DNS failure,
+      // timeout. This is the case that must not escape: an unreachable catalog
+      // is exactly when the operator's failOnVersionMismatch choice applies,
+      // and letting the transport exception through takes that choice away and
+      // stops the platform from starting (NFR-3).
+      LOG.warn("Could not reach OpenMetadata at {}: {}", baseUrl, rootCauseOf(e));
+      return null;
     }
+  }
+
+  /** The innermost message, since a transport failure nests several wrappers. */
+  private static String rootCauseOf(Throwable t) {
+    Throwable cause = t;
+    while (cause.getCause() != null && cause.getCause() != cause) {
+      cause = cause.getCause();
+    }
+    return cause.toString();
   }
 
   /**

@@ -78,7 +78,10 @@ export default function LoginPage() {
           */}
           <img
             alt="ARAK — Access Rights and Authorization Keeper"
-            className="tw:h-20 tw:w-auto"
+            // Sized by width, not height: the lockup carries its own subtitle
+            // and at the height that suited a plain wordmark that line renders
+            // at around ten pixels, which is decoration rather than text.
+            className="tw:h-auto tw:w-64"
             src={logo}
           />
 
