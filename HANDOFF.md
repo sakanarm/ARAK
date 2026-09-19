@@ -1,6 +1,6 @@
 # HANDOFF — ARAK (Data Access Control Platform)
 
-> อัปเดต: 2026-09-19 · commit ล่าสุดที่ push แล้ว `757ba33` · **รอบล่าสุด: policy persistence + binding materializer + Policy/Governance/People UI ทั้งชุด (ยังไม่ commit)** · repo https://github.com/sakanarm/ARAK (**public**)
+> อัปเดต: 2026-09-19 · commit ล่าสุดที่ push สำเร็จ `e3aaa52` · **local นำหน้าอยู่ — `5267516` (policy persistence + binding + UI) กับ commit ของ `PolicyBindingMaterializerIT` ยังรอ push, `git push` ค้าง ดู What Didn't Work** · repo https://github.com/sakanarm/ARAK (**public**)
 >
 > อ่านคู่กับ **[docs/DESIGN.md](docs/DESIGN.md)** — ไฟล์นั้นคือ requirement + feature catalogue + สถานะครบทุกข้อ
 > ไฟล์นี้บอกเฉพาะ "ทำถึงไหน จะไปต่อยังไง อะไรที่ลองแล้วไม่เวิร์ค"
@@ -27,7 +27,7 @@ Phase 1 รองรับ SQL Server + PostgreSQL · identity หลักค�
 | **M0 Foundation** | ✅ เสร็จ — Maven multi-module, Dropwizard 5, Vite+React+Tailwind shell, vendor `ui-core-components`, JSON Schema → Java/TS codegen, OM client จาก swagger ที่ pin ไว้, Flyway V1–V8, docker-compose, CI 4 jobs |
 | **M1 OM Connector** | 🚧 ~95% — full crawl + governance + effective facet + FR-1.5 webhook/poller/reconcile + catalog read API + Catalog UI + **governance read API + Governance UI** · **sync กับ OM จริงสำเร็จแล้ว** · เหลือ FR-1.6 (reconcile กับ JDBC จริง — **รอ connection จริง**), FR-1.7 (local tag + push-back — **ผู้ใช้สั่ง read-only ตอนนี้**) |
 | **M2 Identity** | 🚧 ~35% — local sign-in ใช้ได้ · schema `principal`/`principal_attribute`/`group_member`/`app_role_assignment` มีตั้งแต่ V2 · **read API + หน้า People & attributes เสร็จ** · ยังไม่มี Entra OIDC / Graph sync |
-| **M3 Policy Engine** | 🚧 ~85% — engine 78 tests ผ่าน · **persistence (`PolicyStore`) + `policy_binding` materializer + REST เสร็จรอบนี้** · เหลือ decision cache (FR-5.5), ANTLR grammar ของ `expr` (FR-3.2), `PolicyBindingMaterializerIT` |
+| **M3 Policy Engine** | 🚧 ~88% — engine 78 tests ผ่าน · persistence (`PolicyStore`) + `policy_binding` materializer + REST · **`PolicyBindingMaterializerIT` 10 tests เขียวรอบนี้ → binding path มี integration coverage ครบแล้ว** · เหลือ decision cache (FR-5.5), ANTLR grammar ของ `expr` (FR-3.2) |
 | **M4 Policy Authoring UI** | 🚧 ~70% — **Policy list + Policy builder (selector / subject / RLS / masking) + readback + capability matrix เสร็จรอบนี้** · เหลือ "policy ที่มีผลกับ asset นี้" ในหน้า asset (FR-3.1.5), View-as-user (FR-5.2), impact analysis (FR-5.3) |
 | **M5–M8** | ⬜ |
 
@@ -44,7 +44,7 @@ Phase 1 รองรับ SQL Server + PostgreSQL · identity หลักค�
 | ชุด | จำนวน | คำสั่ง |
 |---|---|---|
 | Backend unit | dac-common 6 · **dac-engine 78** · dac-connector-openmetadata 88 · dac-service 25 | `./mvnw -am -pl backend/dac-service test` |
-| **Backend integration** (Testcontainers `postgres:16-alpine`) | **40 tests** — `AssetStoreIT` 6 · `CatalogQueryIT` 15 · **`GovernanceStoreIT` 9** · **`PolicyStoreIT` 10** | `./mvnw -am -pl backend/dac-service verify -Pintegration` |
+| **Backend integration** (Testcontainers `postgres:16-alpine`) | **50 tests** — `AssetStoreIT` 6 · `CatalogQueryIT` 15 · `GovernanceStoreIT` 9 · `PolicyStoreIT` 10 · **`PolicyBindingMaterializerIT` 10** | `./mvnw -am -pl backend/dac-service verify -Pintegration` |
 | Frontend | **5 suites / 20 tests** — LoginPage · SystemStatusPage · CatalogPage 5 · AssetDetailPage 5 · **policyLanguage 6** | `yarn test` ใน `frontend/app` |
 
 `yarn type-check` · `yarn lint` · `yarn build` ผ่านหมด → **BUILD SUCCESS** ทั้งสองฝั่ง
@@ -140,6 +140,28 @@ Phase 1 รองรับ SQL Server + PostgreSQL · identity หลักค�
 
 ---
 
+### 5. `PolicyBindingMaterializerIT` — 10 tests บน Postgres จริง
+
+ไฟล์: `backend/dac-service/src/test/java/com/mfec/dac/policy/PolicyBindingMaterializerIT.java`
+
+fixture คือ crawl เต็มรอบผ่าน `AssetStore` (ไม่ใช่ INSERT มือ) — เพราะ "tag ถูกถอดใน OM" กับ "crawl รอบใหม่ไม่มี tag นั้น" ต้องเป็นเหตุการณ์เดียวกัน
+estate ที่ใช้: `prod-mssql.SalesDB.dbo.{customer, order}` + **`prod-mssql.SalesDBArchive.dbo.customer`** ที่ติด tag เหมือนกันเป๊ะ
+
+| test | คุมอะไร |
+|---|---|
+| `bindsMatchingAssets` | ORG policy → `scanned 3 / matched 2 / added 2` และไม่ผูก table ที่ไม่มี tag |
+| `bindingsAreJoinedToTheAsset` | แถว binding มี `asset_id` จริง ไม่ใช่แค่ FQN — FR-3.1.5 จะได้ไม่ต้อง match string ที่ rename แล้วพัง |
+| `scopeIsComparedBySegment` | **กับดักหลัก** — scope `…SalesDB` ต้องเห็นแค่ 2 ตาราง และ **ไม่ลาก `SalesDBArchive`** (archive ติด tag เดียวกัน ตัวกันมีแค่ prefix guard) |
+| `columnRulesBindColumns` | data policy ผูกถึง column + `match_reason` บอก `columnRule: 0` และ `MASK` |
+| `resolvedAtSurvivesReResolve` | re-resolve ที่ไม่มีอะไรเปลี่ยน → `changed() == false` และ **`resolved_at` ไม่ขยับ** (เขียนเป็น diff ไม่ใช่ rebuild) |
+| `unbindsWhenTagRemoved` | ถอด tag → crawl ใหม่ → `removed 1`, binding หายจริง |
+| `newlyTaggedAssetIsCoveredOnRefresh` | ติด tag ให้ `order` แล้ว `refresh([order])` → ถูกคุ้มครองเองโดยไม่มีใครกดอะไร (FR-3.1.6) และ `resolved_at` ของ `customer` ไม่ถูกแตะ |
+| `refreshOnlyTouchesNamedAssets` | `customer` เสีย tag แต่ refresh บอกแค่ `order` → **`customer` ต้องยังผูกอยู่** · ถ้าลบสิ่งที่ไม่ได้ evaluate = webhook ใบเดียวปลด policy ทั้ง estate |
+| `refreshSkipsPoliciesOutOfScope` | refresh asset นอก scope → `scanned 0`, ไม่มีอะไรเปลี่ยน |
+| `materializeAllCoversEveryPolicy` | nightly reconcile ครอบ policy ทุกตัว (รวม `DRAFT`) และแต่ละตัวได้ binding ตาม scope ของตัวเอง |
+
+---
+
 ## What Worked
 
 - **re-read by FQN แทนการ replay payload ของ event** — apply ซ้ำฟรี → poller rewind cursor ได้ และ webhook รับ redelivery ได้
@@ -167,6 +189,7 @@ Phase 1 รองรับ SQL Server + PostgreSQL · identity หลักค�
 - ❌ **`.env` ไม่ถูกโหลดเอง** — ต้อง `set -a && . ./.env && set +a` ก่อนรัน
 - ❌ **`sleep 25 && tail`** ถูก harness บล็อก → ใช้ `until <check>; do sleep 2; done`
 - ❌ ผลการรัน IT อ่านจาก `backend/dac-service/target/failsafe-reports/*.txt` **ไม่ใช่** `surefire-reports`
+- ❌ **`git push origin main` ค้าง** — ค้างเกิน 3 นาทีสองรอบแล้ว (`git ls-remote origin` ตอบปกติ → remote เข้าถึงได้ ปัญหาน่าจะอยู่ที่ credential prompt ตอน push) · ครั้งต่อไปให้ `GIT_TERMINAL_PROMPT=0 git push` เพื่อให้ fail เร็วแทนที่จะแขวน แล้วเช็ก credential helper / PAT · **ยืนยันด้วย `git ls-remote --heads origin` เสมอว่า remote ขยับจริง อย่าเชื่อว่า push สำเร็จเพราะคำสั่งไม่ error**
 
 ### API / integration
 - ❌ **login แล้วอ่าน `token`** — field ที่ backend คืนคือ **`accessToken`** ไม่ใช่ `token`
@@ -191,13 +214,12 @@ Phase 1 รองรับ SQL Server + PostgreSQL · identity หลักค�
 
 ## Next Steps
 
-1. **commit + push รอบนี้** — scan secret ก่อน (repo public) · ไฟล์ที่ยังไม่ commit: 3 ไฟล์ Java ใหม่ใน `policy/`, `identity/PrincipalQuery.java`, `GovernanceQuery.java`, 3 resource, 2 IT, และฝั่ง frontend `api/policies.ts`, `api/governance.ts`, `pages/policies/*`, `pages/governance/*` + `App.tsx`, `navigation.ts` · **ไฟล์ logo `*.png` ที่ root ตั้งใจไม่ commit**
-2. **`PolicyBindingMaterializerIT`** — วางไว้แล้วแต่ยังไม่ได้เขียน: `bindsMatchingAssets`, กับดัก scope prefix (`prod.SalesDB` ต้องไม่ลาก `prod.SalesDBArchive`), `newlyTaggedAssetIsCoveredOnRefresh`, `unbindsWhenTagRemoved`, `resolvedAtSurvivesReResolve`, `columnRulesBindColumns`, `refreshOnlyTouchesNamedAssets`
-3. **ปิด M3** — decision cache (FR-5.5) + ANTLR grammar ของ `expr` (FR-3.2)
-4. **ปิด M4** — หน้า asset ต้องโชว์ "policy ที่มีผลกับ asset นี้" (มี endpoint `/policies/affecting/{fqn}` รออยู่แล้ว), View-as-user (FR-5.2), impact analysis (FR-5.3)
-5. **FR-1.6** — reconcile cache กับ JDBC introspection จริง (**รอ connection database จริงจากผู้ใช้**)
-6. **หน้าเปลี่ยนรหัสผ่าน** — `mustChangePassword` ไหลถึง `auth/authStore.ts` แล้วแต่ไม่มีใครอ่าน
-7. **ก่อน M6** ต้องได้คำตอบ: SQL Server production เป็น **2022+** ไหม (ต้องการสำหรับ `GRANT UNMASK` ระดับ column) และลง extension `anon` บน PostgreSQL ได้ไหม
+1. **push ให้ขึ้น** — local นำหน้า remote อยู่ (remote main ยังอยู่ที่ `e3aaa52`) · secret scan ผ่านแล้วทั้งสอง commit · แก้เรื่อง `git push` ค้างก่อน (ดู What Didn't Work) แล้วยืนยันด้วย `git ls-remote --heads origin`
+2. **ปิด M3** — decision cache (FR-5.5) + ANTLR grammar ของ `expr` (FR-3.2)
+3. **ปิด M4** — หน้า asset ต้องโชว์ "policy ที่มีผลกับ asset นี้" (มี endpoint `/policies/affecting/{fqn}` รออยู่แล้ว), View-as-user (FR-5.2), impact analysis (FR-5.3)
+4. **FR-1.6** — reconcile cache กับ JDBC introspection จริง (**รอ connection database จริงจากผู้ใช้**)
+5. **หน้าเปลี่ยนรหัสผ่าน** — `mustChangePassword` ไหลถึง `auth/authStore.ts` แล้วแต่ไม่มีใครอ่าน
+6. **ก่อน M6** ต้องได้คำตอบ: SQL Server production เป็น **2022+** ไหม (ต้องการสำหรับ `GRANT UNMASK` ระดับ column) และลง extension `anon` บน PostgreSQL ได้ไหม
 
 **กติกาที่ต้องถือไว้ทุกครั้งที่ commit:** repo เป็น public → scan หา password / JWT / hostname และ IP ภายใน ก่อน push เสมอ · ค่าจริง (`IDENTITY_BOOTSTRAP_ADMIN_PASSWORD`, `OM_WEBHOOK_SECRET`, bot JWT) อยู่ใน `.env` ที่ gitignore เท่านั้น · `.env.example` มีแต่ placeholder
 **ข้อจำกัดที่ผู้ใช้สั่งไว้:** ต่อ OpenMetadata **read อย่างเดียว** ตอนนี้ — ห้าม PATCH กลับ (FR-1.7 จึงยังไม่ทำ)
