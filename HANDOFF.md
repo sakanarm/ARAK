@@ -189,7 +189,7 @@ estate ที่ใช้: `prod-mssql.SalesDB.dbo.{customer, order}` + **`prod-
 - ❌ **`.env` ไม่ถูกโหลดเอง** — ต้อง `set -a && . ./.env && set +a` ก่อนรัน
 - ❌ **`sleep 25 && tail`** ถูก harness บล็อก → ใช้ `until <check>; do sleep 2; done`
 - ❌ ผลการรัน IT อ่านจาก `backend/dac-service/target/failsafe-reports/*.txt` **ไม่ใช่** `surefire-reports`
-- ❌ **`git push origin main` ค้าง** — ค้างเกิน 3 นาทีสองรอบแล้ว (`git ls-remote origin` ตอบปกติ → remote เข้าถึงได้ ปัญหาน่าจะอยู่ที่ credential prompt ตอน push) · ครั้งต่อไปให้ `GIT_TERMINAL_PROMPT=0 git push` เพื่อให้ fail เร็วแทนที่จะแขวน แล้วเช็ก credential helper / PAT · **ยืนยันด้วย `git ls-remote --heads origin` เสมอว่า remote ขยับจริง อย่าเชื่อว่า push สำเร็จเพราะคำสั่งไม่ error**
+- ❌ **`git push origin main` ค้าง — หาเจอสาเหตุแล้ว** `credential.helper = manager` (Git Credential Manager) ถูกตั้งไว้ระดับ repo · GCM จะเปิดหน้าต่าง GUI ขอ login ซึ่ง session แบบ non-interactive กดไม่ได้ → push แขวนไปจน timeout (`GIT_TERMINAL_PROMPT=0` ไม่ช่วย เพราะมันกันแค่ prompt บน terminal) · `git ls-remote origin` ตอบปกติเพราะ repo เป็น public อ่านได้โดยไม่ต้อง auth · `gh` **ไม่ได้ติดตั้งบนเครื่องนี้** → **ผู้ใช้ต้อง `git push origin main` เองใน terminal ของตัวเองหนึ่งครั้ง** (หรือตั้ง PAT ไว้) · หลัง push ยืนยันด้วย `git ls-remote --heads origin` เสมอ อย่าเชื่อว่าสำเร็จเพราะคำสั่งไม่ error
 
 ### API / integration
 - ❌ **login แล้วอ่าน `token`** — field ที่ backend คืนคือ **`accessToken`** ไม่ใช่ `token`
