@@ -6,7 +6,11 @@ import AssetDetailPage from './pages/catalog/AssetDetailPage';
 import CatalogPage from './pages/catalog/CatalogPage';
 import HomePage from './pages/HomePage';
 import LoginPage from './pages/LoginPage';
+import GovernancePage from './pages/governance/GovernancePage';
 import NotBuiltYetPage from './pages/NotBuiltYetPage';
+import PrincipalsPage from './pages/governance/PrincipalsPage';
+import PolicyBuilderPage from './pages/policies/PolicyBuilderPage';
+import PolicyListPage from './pages/policies/PolicyListPage';
 import SystemStatusPage from './pages/SystemStatusPage';
 
 /**
@@ -32,6 +36,11 @@ export default function App() {
             slash, which a single dynamic segment would cut in half.
           */}
           <Route element={<AssetDetailPage />} path="/catalog/*" />
+          <Route element={<GovernancePage />} path="/governance" />
+          <Route element={<PrincipalsPage />} path="/principals" />
+          <Route element={<PolicyListPage />} path="/policies" />
+          <Route element={<PolicyBuilderPage />} path="/policies/new" />
+          <Route element={<PolicyBuilderPage />} path="/policies/:id" />
           <Route element={<SystemStatusPage />} path="/system" />
           {placeholders.map((section) => (
             <Route

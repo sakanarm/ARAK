@@ -1,6 +1,6 @@
 # HANDOFF — ARAK (Data Access Control Platform)
 
-> อัปเดต: 2026-09-16 · commit ล่าสุด `757ba33` (push แล้ว) · **รอบล่าสุด: catalog read API + Catalog UI** · repo https://github.com/sakanarm/ARAK (**public**)
+> อัปเดต: 2026-09-19 · commit ล่าสุดที่ push แล้ว `757ba33` · **รอบล่าสุด: policy persistence + binding materializer + Policy/Governance/People UI ทั้งชุด (ยังไม่ commit)** · repo https://github.com/sakanarm/ARAK (**public**)
 >
 > อ่านคู่กับ **[docs/DESIGN.md](docs/DESIGN.md)** — ไฟล์นั้นคือ requirement + feature catalogue + สถานะครบทุกข้อ
 > ไฟล์นี้บอกเฉพาะ "ทำถึงไหน จะไปต่อยังไง อะไรที่ลองแล้วไม่เวิร์ค"
@@ -25,128 +25,181 @@ Phase 1 รองรับ SQL Server + PostgreSQL · identity หลักค�
 | Milestone | สถานะ |
 |---|---|
 | **M0 Foundation** | ✅ เสร็จ — Maven multi-module, Dropwizard 5, Vite+React+Tailwind shell, vendor `ui-core-components`, JSON Schema → Java/TS codegen, OM client จาก swagger ที่ pin ไว้, Flyway V1–V8, docker-compose, CI 4 jobs |
-| **M1 OM Connector** | 🚧 ~92% — full crawl + governance + effective facet + FR-1.5 webhook/poller/reconcile + **catalog read API + Catalog UI (`/catalog`, `/catalog/<fqn>`) เสร็จแล้ว** · เหลือ FR-1.6 (reconcile กับ JDBC จริง — **รอ connection จริง**), FR-1.7 (local tag + push-back) |
-| **M2 Identity** | ⬜ ยังไม่เริ่ม (มีแต่ local sign-in ที่ใช้ได้แล้ว) |
-| **M3 Policy Engine** | 🚧 engine เสร็จ (72 tests ผ่าน) · เหลือ persistence, `policy_binding` materializer, decision cache, ANTLR grammar ของ `expr` |
-| **M4–M8** | ⬜ |
+| **M1 OM Connector** | 🚧 ~95% — full crawl + governance + effective facet + FR-1.5 webhook/poller/reconcile + catalog read API + Catalog UI + **governance read API + Governance UI** · **sync กับ OM จริงสำเร็จแล้ว** · เหลือ FR-1.6 (reconcile กับ JDBC จริง — **รอ connection จริง**), FR-1.7 (local tag + push-back — **ผู้ใช้สั่ง read-only ตอนนี้**) |
+| **M2 Identity** | 🚧 ~35% — local sign-in ใช้ได้ · schema `principal`/`principal_attribute`/`group_member`/`app_role_assignment` มีตั้งแต่ V2 · **read API + หน้า People & attributes เสร็จ** · ยังไม่มี Entra OIDC / Graph sync |
+| **M3 Policy Engine** | 🚧 ~85% — engine 78 tests ผ่าน · **persistence (`PolicyStore`) + `policy_binding` materializer + REST เสร็จรอบนี้** · เหลือ decision cache (FR-5.5), ANTLR grammar ของ `expr` (FR-3.2), `PolicyBindingMaterializerIT` |
+| **M4 Policy Authoring UI** | 🚧 ~70% — **Policy list + Policy builder (selector / subject / RLS / masking) + readback + capability matrix เสร็จรอบนี้** · เหลือ "policy ที่มีผลกับ asset นี้" ในหน้า asset (FR-3.1.5), View-as-user (FR-5.2), impact analysis (FR-5.3) |
+| **M5–M8** | ⬜ |
 
 **ที่รันอยู่ตอนนี้**
 | | |
 |---|---|
-| Backend (Dropwizard, jar ใหม่) | `:8080` (API อยู่ใต้ `/api`), admin `:8081/ping` |
+| Backend (Dropwizard) | `:8080` (API อยู่ใต้ `/api`), admin `:8081/ping` |
 | Frontend (Vite) | `http://127.0.0.1:5274/` |
 | App DB (docker `dac-appdb`, postgres:16-alpine) | `:5432` db/user `dac` |
+| OpenMetadata ของทีม | `2.0.1` — sync ผ่าน **ingestion-bot JWT** (ดู What Didn't Work) |
 
-เทสต์ทั้งหมดเขียว
+เทสต์ทั้งหมดเขียว (รันครบเมื่อ 2026-09-19)
 
 | ชุด | จำนวน | คำสั่ง |
 |---|---|---|
-| Backend unit | dac-common 6 · dac-engine 72 · dac-connector-openmetadata 88 · dac-service 25 | `./mvnw -am -pl backend/dac-service test` |
-| **Backend integration** (Testcontainers `postgres:16-alpine`) | **`AssetStoreIT` 6 · `CatalogQueryIT` 15** | `./mvnw -am -pl backend/dac-service verify -Pintegration` |
-| Frontend | **4 suites / 14 tests** — LoginPage · SystemStatusPage · **CatalogPage 5** · **AssetDetailPage 5** | `yarn test` ใน `frontend/app` |
+| Backend unit | dac-common 6 · **dac-engine 78** · dac-connector-openmetadata 88 · dac-service 25 | `./mvnw -am -pl backend/dac-service test` |
+| **Backend integration** (Testcontainers `postgres:16-alpine`) | **40 tests** — `AssetStoreIT` 6 · `CatalogQueryIT` 15 · **`GovernanceStoreIT` 9** · **`PolicyStoreIT` 10** | `./mvnw -am -pl backend/dac-service verify -Pintegration` |
+| Frontend | **5 suites / 20 tests** — LoginPage · SystemStatusPage · CatalogPage 5 · AssetDetailPage 5 · **policyLanguage 6** | `yarn test` ใน `frontend/app` |
 
 `yarn type-check` · `yarn lint` · `yarn build` ผ่านหมด → **BUILD SUCCESS** ทั้งสองฝั่ง
 
 ---
 
-## รอบล่าสุดทำอะไรไป — Catalog read API + Catalog UI (ปิดงาน M1 ส่วน UI)
+## รอบล่าสุดทำอะไรไป
 
-### Backend — ฝั่ง "อ่าน" catalog ที่ก่อนหน้านี้ไม่มีเลย
+### 1. Backend — policy persistence + binding (ปิดช่องว่างใหญ่ที่สุดของ M3)
 
-`AssetStore` / `GovernanceStore` เป็น sink ของ crawl อย่างเดียว (write-only) → จะทำ Catalog UI ต้องสร้าง query layer ขึ้นมาก่อนทั้งชั้น
+ก่อนหน้านี้ engine evaluate ได้แต่ **ไม่มีที่เก็บ policy** — policy มีอยู่แค่ใน unit test
 
 | ไฟล์ | หน้าที่ |
 |---|---|
-| `backend/dac-service/.../catalog/CatalogQuery.java` | **ใหม่** — read side ทั้งหมด · แยกจาก `AssetStore` โดยตั้งใจ (policy selector อยากได้ index lookup ตัวเดียว แต่หน้าจออยากได้ asset ทั้งหน้าพร้อม facet/owner) |
-| `backend/dac-service/.../resources/CatalogResource.java` | **ใหม่** — `@Path("/v1/catalog")` + `@Secured` (authenticated ใครก็อ่านได้ เพราะเห็นแค่ "รูปร่าง" ของข้อมูล ไม่ใช่ตัวข้อมูล) · **read-only แม้กับ platform admin** เพราะ OM เป็นเจ้าของเนื้อหา แก้ตรงนี้เดี๋ยว sync รอบหน้าทับ |
-| `backend/dac-service/.../DacApplication.java` | register `CatalogResource` |
-| `backend/dac-service/src/test/.../catalog/CatalogQueryIT.java` | **ใหม่** — 15 tests บน Postgres จริง |
+| `backend/dac-service/.../policy/PolicyStore.java` | **ใหม่** — CRUD + lifecycle + versioning บน `policy` / `policy_version` |
+| `backend/dac-service/.../policy/AssetContextLoader.java` | **ใหม่** — โหลด asset + facet + column facet + custom property เป็น `AssetContext` ที่ engine กิน · ใช้ร่วมกันทั้ง materializer และ (ต่อไป) decision path |
+| `backend/dac-service/.../policy/PolicyBindingMaterializer.java` | **ใหม่** — resolve selector → `policy_binding` (FR-3.1.6) · `materialize(id)` / `materializeAll()` / `refresh(fqns)` |
+| `backend/dac-service/.../resources/PolicyResource.java` | **ใหม่** — `@Path("/v1/policies")` |
+| `backend/dac-service/src/test/.../policy/PolicyStoreIT.java` | **ใหม่** — 10 tests บน Postgres จริง |
 
-Endpoint (อยู่ใต้ `/api` ทั้งหมดเพราะ `rootPath: /api/*`):
+การตัดสินใจที่สำคัญ:
+- **ทุก write append เข้า `policy_version` ก่อนแล้วค่อยแก้ `policy`** — version history ไม่ขึ้นกับว่าใครจำได้ว่าต้องเขียน log
+- **optimistic locking ด้วย `expectedVersion`** — UI ส่ง version ที่เปิดฟอร์มมา ถ้าไม่ตรง = `StaleVersionException` → 409 · **ไม่ใช่ last-write-wins** เพราะ policy ที่ถูกเขียนทับเงียบๆ = ข้อจำกัดหายไปโดยไม่มีใครรู้
+- **เช็ค `ARCHIVED` ก่อนเช็ค version** — archived policy ถูกปฏิเสธไม่ว่าถืออยู่ version ไหน และข้อความ "reload แล้วลองใหม่" จะผิดถ้าตอบ version conflict
+- **`transition()` bump version ด้วย** — การ activate คือการเปลี่ยนความหมายของระบบ คนที่ถือ v3 อยู่ระหว่างที่อีกคน activate ต้องกลับไปดูก่อน
+- transition ที่ถูกกฎหมาย: `DRAFT → {PENDING_APPROVAL, ACTIVE, ARCHIVED}` · `PENDING_APPROVAL → {ACTIVE, DRAFT, ARCHIVED}` · `ACTIVE → {DISABLED, ARCHIVED}` · `DISABLED → {ACTIVE, ARCHIVED}` · **`ARCHIVED` เป็น terminal**
+- **materializer รับ `AssetContextLoader` เข้ามา ไม่สร้างเอง** — webhook path กับ authoring path จะได้อ่าน facet ด้วย code ชุดเดียวกัน ไม่มีทาง drift
+- `refresh(fqns)` แตะเฉพาะ asset ที่ระบุ → webhook เปลี่ยน tag 1 ตาราง ไม่ต้อง re-resolve ทั้ง estate
+
+### 2. Backend — governance + identity read API (ของที่ UI ฝั่ง policy ต้องใช้)
+
+| ไฟล์ | หน้าที่ |
+|---|---|
+| `backend/dac-service/.../catalog/GovernanceQuery.java` | **ใหม่** — อ่าน classification/tag, glossary/term, domain/sub-domain, data product, custom property def เป็น **tree** พร้อมยอด asset (รวม + direct) และยอด policy ที่อ้างถึงค่านั้น |
+| `backend/dac-service/.../resources/GovernanceResource.java` | **ใหม่** — `@Path("/v1/governance")` |
+| `backend/dac-service/.../identity/PrincipalQuery.java` | **ใหม่** — list principal, detail, **`attributeKeys()`** (key + จำนวนคนที่ถือ + ค่าที่มีจริง) |
+| `backend/dac-service/.../resources/PrincipalResource.java` | **ใหม่** — `@Path("/v1/principals")` |
+| `backend/dac-service/.../catalog/GovernanceStore.java` | **แก้** — `customProperties()` ตอน snapshot ว่าง เดิม `return` เฉยๆ ทำให้ definition ที่ถูกลบใน OM ค้างอยู่ตลอดกาล → เพิ่ม `DELETE FROM custom_property_def` ให้เหมือนตารางอื่น (ไม่งั้น builder เสนอ ABAC attribute ที่ไม่มี asset ไหนถืออยู่) |
+| `backend/dac-service/src/test/.../catalog/GovernanceStoreIT.java` | **ใหม่** — 9 tests (เป็นตัวที่จับ bug ข้างบน) |
+| `backend/dac-service/.../DacApplication.java` | register `PolicyResource`, `GovernanceResource`, `PrincipalResource` |
+
+**ตัวเลขคู่ที่เป็นเหตุผลทั้งหมดของหน้า Governance:** OM แสดง tag/term/domain อยู่แล้ว สิ่งที่มันตอบไม่ได้คือ "ค่านี้แตะ asset กี่ตัวในระบบเรา และมี policy กี่ตัวพึ่งอยู่" — สองเลขนี้คือตัวบอกว่า tag ตัวไหน load-bearing และการลบมันจะปลดการป้องกันอะไรไปบ้าง
+
+### 3. Endpoint ที่เพิ่มรอบนี้ (อยู่ใต้ `/api` ทั้งหมดเพราะ `rootPath: /api/*`)
 
 | Method | Path | หมายเหตุ |
 |---|---|---|
-| GET | `/api/v1/catalog/assets` | `q`, `type`, `facet` (ซ้ำได้ รูปแบบ `<type>:<fqn>`), `owner`, `limit`=50 (max 500), `offset` |
-| GET | `/api/v1/catalog/assets/{fqn}` | path เป็น `{fqn: .+}` · ไม่มีใน cache = **404** |
-| GET | `/api/v1/catalog/facets` | `type`, `limit`=100 → `{"values":[…]}` สำหรับ filter menu |
-| GET | `/api/v1/catalog/summary` | ยอดรวมทั้ง cache (asset ต่อชนิด, column, tagged, asset ที่ไม่มี owner) |
+| GET | `/api/v1/policies` | `state`, `type`, `scopeLevel`, `limit`, `offset` |
+| GET | `/api/v1/policies/{id}` | |
+| GET | `/api/v1/policies/{id}/versions` | ประวัติจาก `policy_version` |
+| GET | `/api/v1/policies/affecting/{fqn: .+}` | policy ที่ ACTIVE และผูกกับ asset นี้ (ฐานของ FR-3.1.5) |
+| POST | `/api/v1/policies` | สร้าง (DRAFT) |
+| PUT | `/api/v1/policies/{id}` | ต้องส่ง `expectedVersion` · mismatch = **409** |
+| POST | `/api/v1/policies/{id}/lifecycle` | body `{"to":"ACTIVE"}` |
+| POST | `/api/v1/policies/{id}/bindings/resolve` | re-resolve selector → คืน `{scanned, matched, added, removed}` |
+| GET | `/api/v1/governance/vocabulary` | ก้อนเดียวจบ: classifications + glossaries + domains + dataProducts + customProperties |
+| GET | `/api/v1/governance/{classifications,glossaries,domains,data-products,custom-properties}` | แยกชิ้น |
+| GET | `/api/v1/principals` | `type`, `source`, `search`, `limit` |
+| GET | `/api/v1/principals/attributes` | **vocabulary ของ attribute** — key, source, จำนวนคน, ค่าที่มีจริง |
+| GET | `/api/v1/principals/{username}` | |
 
-การตัดสินใจที่สำคัญ:
-- **facet filter เป็น AND ไม่ใช่ OR** — `EXISTS` หนึ่งอันต่อหนึ่ง filter และ **เผื่อไปถึง facet ของ column ด้วย** (`f.asset_id = a.id OR fc.asset_id = a.id`) เพราะคนเขียน policy มักรู้ว่า "ตารางนี้มีข้อมูลอ่อนไหว" แต่ไม่รู้ว่าอยู่ column ไหน
-- **พิสูจน์แล้วว่าการกาง ancestor ไว้ล่วงหน้าคุ้มบน read path ด้วย** — `domains:Finance` เจอ asset ที่อยู่ `Finance.Risk.Credit` ด้วย equality ธรรมดา ไม่ต้อง recursive query (FR-2A.2)
-- อ่านเฉพาะแถว `is_current` → asset ที่ retire หายจากลิสต์ แต่แถวเดิมยังอยู่ให้ audit
-- `taggedColumnCount` นับ `count(DISTINCT f.column_id)` ไม่ใช่นับแถว facet
-- facet ที่รูปแบบพัง (`facet=abc`) **ถูกข้ามเงียบ ไม่ตอบ 400** — filter อื่นยังทำงาน
-
-### Frontend — `/catalog` และ `/catalog/<fqn>`
+### 4. Frontend — Policy Builder + Governance + People
 
 | ไฟล์ | หน้าที่ |
 |---|---|
-| `frontend/app/src/api/client.ts` | เพิ่ม type + fetcher ของ catalog · **ใช้ `URLSearchParams` ไม่ใช่ axios `params`** เพราะ axios จะยุบ array เป็น `facet[]=` แล้ว backend มองไม่เห็น filter เลยสักอัน |
-| `frontend/app/src/pages/catalog/facets.tsx` | **ใหม่** — `FacetChip` / `OwnerChip` / `groupFacets` / `listFacets` / `FACET_LABELS` / `FILTERABLE_FACETS` · สีต่อชนิด facet คงที่ทุกหน้าจอ |
-| `frontend/app/src/pages/catalog/CatalogPage.tsx` | **ใหม่** — search + type filter + facet picker + paging + summary header |
-| `frontend/app/src/pages/catalog/AssetDetailPage.tsx` | **ใหม่** — header, governance แยกกลุ่ม, owners, custom properties, ตาราง column พร้อม facet ของแต่ละ column |
-| `frontend/app/src/App.tsx` | route `/catalog` และ `/catalog/*` |
-| `frontend/app/src/layout/navigation.ts` | Catalog `milestone: 'M1'` → `null` (เลิกเป็น placeholder) |
-| `frontend/app/src/__mocks__/fileMock.cjs` + `jest.config.cjs` | map ไฟล์รูปให้ Jest (ดู What Didn't Work) |
-| `CatalogPage.test.tsx` · `AssetDetailPage.test.tsx` | **ใหม่** — 10 tests |
+| `frontend/app/src/api/policies.ts` | **ใหม่** — fetch/create/update/transition/resolveBindings + re-export `Policy` จาก generated IR |
+| `frontend/app/src/api/governance.ts` | **ใหม่** — vocabulary, principals, attribute vocabulary, `flatten()` |
+| `frontend/app/src/pages/policies/controls.tsx` | **ใหม่** — `Select` / `TextField` / ปุ่มเล็ก ที่ใช้ `<select>`/`<input>` ดิบ + token class ร่วม (convention ของเรโป) |
+| `frontend/app/src/pages/policies/policyLanguage.ts` | **ใหม่** — readback: แปลง policy document เป็นประโยคภาษาคน |
+| `frontend/app/src/pages/policies/enforcement.ts` | **ใหม่** — **capability matrix (FR-6.0b)** ต่อโหมด × engine |
+| `frontend/app/src/pages/policies/SelectorBuilder.tsx` | **ใหม่** — "ผูกกับ asset ไหน" (facet + operator + value, and/or/not) |
+| `frontend/app/src/pages/policies/SubjectBuilder.tsx` | **ใหม่** — "ใคร" — principal OR-list + attribute AND-list + `expr` + time window + context |
+| `frontend/app/src/pages/policies/DataPolicyBuilder.tsx` | **ใหม่** — RLS (5 kinds) + column rule (MASK/HIDE/ALLOW) + masking function 6 ตัว + cell condition |
+| `frontend/app/src/pages/policies/PolicyListPage.tsx` | **ใหม่** — `/policies` · ทุกแถวมี readback ของตัวเอง |
+| `frontend/app/src/pages/policies/PolicyBuilderPage.tsx` | **ใหม่** — `/policies/new`, `/policies/:id` · ฟอร์มซ้าย + rail ขวา |
+| `frontend/app/src/pages/policies/policyLanguage.test.ts` | **ใหม่** — 6 tests คุมสองความผิดพลาดที่อันตรายที่สุด (ดูด้านล่าง) |
+| `frontend/app/src/pages/governance/GovernancePage.tsx` | **ใหม่** — `/governance` · 4 แท็บ tree |
+| `frontend/app/src/pages/governance/PrincipalsPage.tsx` | **ใหม่** — `/principals` · read-only |
+| `frontend/app/src/App.tsx` | route `/governance`, `/principals`, `/policies`, `/policies/new`, `/policies/:id` |
+| `frontend/app/src/layout/navigation.ts` | เพิ่มหมวด **Governance** + **People** · `Policies` เลิกเป็น placeholder (`milestone: 'M3'` → `null`) |
 
-การตัดสินใจที่สำคัญ:
-- **filter state อยู่ใน URL** (`?q=&type=&facet=&offset=`) → ลิงก์เดียวส่งต่อผลการกรองให้คนอื่นเปิดเห็นเหมือนกัน
-- เปลี่ยน filter ใดๆ = กลับหน้าแรกเสมอ (ไม่งั้นค้างหน้า 4 ของผลลัพธ์ที่แคบลงแล้วเห็นตารางว่าง อ่านเหมือน "ไม่เจออะไรเลย")
-- **facet ที่ inherit มา วาดจางลง + มี `↑` + `title` บอกว่ามาจากไหน** (FR-2A.1) · **`Suggested` วาดสีเทา + `?`** เพราะ default ไม่ enforce (FR-1.3a) — ถ้าวาดเหมือน `Confirmed` คนจะเข้าใจผิดว่าข้อมูลถูกป้องกันแล้ว
-- facet เชิงกายภาพ (service/database/schema/columnName/dataType) **ไม่โชว์ในลิสต์** (ซ้ำกับ FQN) แต่ **โชว์ในหน้า asset** เพราะเป็นคำตอบของ "policy ที่เขียนว่า `schema = dbo` ครอบอะไรบ้าง"
-- route ใช้ **splat `/catalog/*` ไม่ใช่ `:fqn`** — FQN มีจุด และชื่อ service บางตัวมี `/`
-- หน้า asset ที่ **ไม่มี owner เตือนเป็นสีเหลือง** เพราะแปลว่าไม่มีใครเขียน local policy ให้ asset นั้นได้ (FR-3.1.2)
-- 404 ของหน้า asset เขียนชัดว่า **"ไม่อยู่ใน cache ≠ ไม่มีใน OpenMetadata"** เพราะทางแก้คนละเรื่องกัน (sync vs. ไปคุยกับทีม catalog)
+**การตัดสินใจที่สำคัญของ Policy Builder:**
+- **ฟอร์มอยู่ซ้าย ความหมายของฟอร์มอยู่ขวา และเห็นตลอดเวลา** — rail ขวาอ่าน policy กลับมาเป็นประโยค, บอกว่าจะแตะ asset กี่ตัว, และบอกว่า **โหมดไหนใน 3 โหมดแบกมันไหว** — *ก่อน* กด apply ไม่ใช่หลัง
+- **ไม่แยกแท็บ RBAC / ABAC / rule / time** — comment ในไฟล์เขียนไว้ตรงๆ ว่ามันคือ predicate เดียวกันมองคนละมุม ทุกบล็อกถูก AND เข้าด้วยกัน การแยกแท็บจะสื่อว่าเป็น 4 ระบบ
+- **selector ว่าง = save ไม่ได้** — `hasCondition()` กันไว้ที่ปุ่ม เพราะ policy ที่ผูกกับศูนย์ asset จะขึ้นเป็น ACTIVE ในลิสต์ทั้งที่ไม่ทำอะไรเลย
+- **เปลี่ยน action จาก MASK เป็น HIDE/ALLOW แล้ว `masking` ถูกทิ้ง** — document ที่พูดสองเรื่องพร้อมกัน compiler ต้องเลือกเอง และคนอ่านไม่มีทางรู้ว่ามันเลือกอันไหน
+- **`describeSelector(ว่าง)` ต้องคืน `'nothing'` ห้ามคืน `'everything'`** — เป็น mistranslation ที่อันตรายที่สุดที่หน้านี้ทำได้ → มี unit test คุมไว้
+- rail แสดง **PostgreSQL / SQL Server สลับได้** เพราะข้อจำกัดต่างกันจริง (DDM ของ MSSQL เป็น on/off ต่อ column · PG ไม่มี column masking ใน core)
 
-ยังไม่มีในหน้า asset (ตั้งใจ รอ milestone): **policy ที่มีผลกับ asset นี้** (FR-3.1.5 → M3) และ **enforcement state** (M5)
+**หน้า Governance:** filter tree แบบ **เก็บ ancestor ของทุก match** (ตัด node ที่ไม่ match ทิ้งดื้อๆ = ซ่อน parent ของ match ซึ่งคือสิ่งเดียวที่ต้องเห็นใน hierarchy)
+
+**หน้า People:** อ่านอย่างเดียวโดยตั้งใจ — Entra กับ OM เป็นเจ้าของเนื้อหา sync รอบหน้าจะทับทุกอย่างที่พิมพ์ที่นี่ · ส่วนที่มีค่าที่สุดคือ **รายการ attribute key + จำนวนคนที่ถือจริง** เพราะ condition ที่อ้าง attribute ที่ไม่มีใครถือ = deny ทุกคน เงียบๆ และถูกต้องตาม logic ซึ่งเป็นความผิดพลาดที่มองเห็นยากที่สุดหลังจากนั้น
 
 ---
 
 ## What Worked
 
-- **re-read by FQN แทนการ replay payload ของ event** — ทำให้ apply ซ้ำฟรี → poller rewind cursor 1 นาทีได้โดยไม่ต้องจำ event id และ webhook รับ redelivery ได้
-- **`AssetRefresher` เข้าไปใช้ descent ของ `AssetCrawler` กลางทาง** (เปิด 3 method เป็น package-private) แทนการเขียน inheritance ซ้ำ → logic อยู่ที่เดียว
-- **แยก 404 ออกจาก error อื่น** — 404 = race ปกติ (`MissingAncestorException`, ข้าม) · error อื่น = failed (cursor ไม่ขยับ)
-- **retire ด้วย prefix ที่ผูกจุดและ escape LIKE** (`fqn + ".%"`, escape `_ % \`) — กันลบ `prod.Sales` แล้วลาก `prod.SalesArchive` ไปด้วย
-- **webhook ไม่ใส่ `@Secured`** (Jersey `@NameBinding` — resource ที่ไม่มี annotation คือ unauthenticated โดยตั้งใจ) แล้วใช้ HMAC แทน · unconfigured = **503 ไม่ใช่รับทุกอย่าง**
-- **รับ body เป็น raw `String`** เพราะ signature เซ็นบน byte จริง — ถ้าให้ Jersey deserialize ก่อนจะเทียบไม่ตรง
-- **cursor hold เมื่อ apply ไม่ผ่าน + เพดาน 10 รอบ** — ได้ทั้ง "ไม่เสียของเงียบๆ" และ "ไม่ค้างถาวรจน window โตไม่หยุด"
-- **แยก `CatalogQuery` (read) ออกจาก `AssetStore` (write)** แทนที่จะเพิ่ม method อ่านเข้าไปใน writer — คนละ query shape คนละเหตุผลในการเปลี่ยน
-- **สองรอบ query ต่อหนึ่งหน้า** (asset หนึ่งรอบ · facet + owner อีกรอบโดย key ด้วย FQN ที่เพิ่งได้มา) — ไม่ใช่ N+1 และไม่ใช่ join ที่ทำให้แถว asset ซ้ำตามจำนวน facet
-- **เก็บ filter state ไว้ใน URL** — หน้าผลการกรอง governance เป็นของที่คนส่งต่อกัน ลิงก์มีค่ากว่า scroll position
-- เขียนไฟล์ Java ขนาดใหญ่ด้วย **Write tool หรือ python heredoc** เชื่อถือได้
+- **re-read by FQN แทนการ replay payload ของ event** — apply ซ้ำฟรี → poller rewind cursor ได้ และ webhook รับ redelivery ได้
+- **`AssetRefresher` ใช้ descent ของ `AssetCrawler` กลางทาง** แทนเขียน inheritance ซ้ำ
+- **แยก 404 ออกจาก error อื่น** — 404 = race ปกติ (ข้าม) · error อื่น = failed (cursor ไม่ขยับ)
+- **retire ด้วย prefix ที่ผูกจุดและ escape LIKE** — กันลบ `prod.Sales` แล้วลาก `prod.SalesArchive` ไปด้วย
+- **webhook ไม่ใส่ `@Secured` + ใช้ HMAC · unconfigured = 503**
+- **แยก read query ออกจาก write store** (`CatalogQuery`/`GovernanceQuery`/`PrincipalQuery` vs `AssetStore`/`GovernanceStore`) — คนละ query shape คนละเหตุผลในการเปลี่ยน
+- **เก็บ filter state ไว้ใน URL** ทั้ง `/catalog`, `/policies`, `/governance`
+- **`AssetContextLoader` ตัวเดียวใช้ทั้ง materializer และ decision path** — ส่งเข้าไปทาง constructor ไม่ให้ใครสร้างเอง
+- **append `policy_version` ก่อนแก้ `policy` เสมอ** — history ไม่ขึ้นกับความจำของคนเขียน code
+- **unit test ที่เลือกคุมเฉพาะ failure mode ที่อันตราย** ไม่ใช่คุม output ทุกบรรทัด — `describeSelector(ว่าง) === 'nothing'` และ capability gap ของ cell masking
+- เขียนไฟล์ใหญ่ด้วย **Write tool หรือ python heredoc** เชื่อถือได้
 
 ## What Didn't Work
 
-- ❌ **Bash heredoc เขียนไฟล์ Java ใหญ่** — พังด้วย `unexpected EOF while looking for matching` ทั้งที่ใช้ `<<'JAVA'` → ใช้ Write tool / python แทน
-- ❌ **curl ไปที่ `/v1/...` ตรงๆ** — ได้ 404/405 เพราะ `conf/dac.yml` ตั้ง `rootPath: /api/*` → ต้องเป็น `/api/v1/...`
-- ❌ **ลืม restart backend หลัง build** — โปรเซสเก่ายังถือ jar เดิม ทำให้ endpoint ใหม่ไม่โผล่
+### Build / รันระบบ
+- ❌ **Bash heredoc เขียนไฟล์ใหญ่** — พังซ้ำอีกรอบนี้ (`unexpected EOF while looking for matching '` ตอนเขียน `DataPolicyBuilder.tsx`) ทั้งที่ใช้ `<<'TSX'` → **ใช้ Write tool หรือ python patch script เท่านั้น**
+- ❌ **`-DfailIfNoSpecifiedTests=false` อย่างเดียว** — ต้องมี **ทั้งสองตัว**: `-Dsurefire.failIfNoSpecifiedTests=false` **และ** `-Dfailsafe.failIfNoSpecifiedTests=false` ไม่งั้นรัน IT ตัวเดียวแล้ว build แดง
 - ❌ **`./mvnw` โดยไม่มี `-am`** — module ต้นน้ำไม่ถูก build
-- ❌ **`-DfailIfNoSpecifiedTests=false`** — flag ที่ถูกคือ `-Dsurefire.failIfNoSpecifiedTests=false`
-- ❌ **Vite พอร์ต 3000** — `listen EACCES` บนเครื่องนี้ ต้องส่ง `--port` ทุกครั้ง (ใช้ 5274)
-- ❌ **`.env` ไม่ถูกโหลดเอง** — ไม่มี dotenv loader ต้อง `set -a && . ./.env && set +a` ก่อนรัน
+- ❌ **curl ไปที่ `/v1/...` ตรงๆ** — 404/405 เพราะ `rootPath: /api/*` → ต้อง `/api/v1/...`
+- ❌ **ลืม restart backend หลัง build** — โปรเซสเก่ายังถือ jar เดิม
+- ❌ **`pkill java` บน Windows** — ไม่มี `pkill` ใน Git Bash ของเครื่องนี้ → ใช้ PowerShell `Get-CimInstance Win32_Process` กรอง `CommandLine` แล้ว `Stop-Process`
+- ❌ **Vite พอร์ต 3000** — `listen EACCES` บนเครื่องนี้ (`vite.config.ts` ยัง default 3000 อยู่) ต้องส่ง `--port 5274`
+- ❌ **`.env` ไม่ถูกโหลดเอง** — ต้อง `set -a && . ./.env && set +a` ก่อนรัน
 - ❌ **`sleep 25 && tail`** ถูก harness บล็อก → ใช้ `until <check>; do sleep 2; done`
-- ❌ **`TRUNCATE asset, …` ใน IT ล้มทั้งชุด** — `PSQLException: cannot truncate a table referenced in a foreign key constraint` เพราะ `policy_binding` (V3) และ `enforcement_state` (V4) อ้าง `asset(id)` · `AssetStoreIT` **ไม่เคยถูกรันมาก่อน** ของพังจึงเพิ่งโผล่ตอนนี้ · แก้โดย **ไล่ชื่อตารางให้ครบ ไม่ใช้ `CASCADE`** — ตารางที่เพิ่มมาทีหลังจะได้ fail ดังๆ ตรงนี้ ไม่ใช่ถูกล้างเงียบๆ โดยเทสต์ที่ไม่ได้ตั้งใจแตะ
-- ❌ **`assertThat(jdbi.withHandle(…))` → `reference to assertThat is ambiguous`** — inference เลือกไม่ได้ระหว่าง `IntPredicate` / `Predicate<T>` · แก้โดยดึงออกมาเป็น local ที่ type ชัด (`int rowsForOrder = …`)
-- ❌ **Jest พังทั้ง suite เพราะ `import logo from '…png'`** — `LoginPage.test.tsx` ตายมาตั้งแต่ตอนใส่โลโก้ (`SyntaxError: Invalid or unexpected token` ที่ไฟล์ PNG) แต่ไม่มีใครเห็นเพราะรันเฉพาะ suite ที่เพิ่งแก้ · แก้ด้วย `moduleNameMapper` → `src/__mocks__/fileMock.cjs` · **บทเรียน: รัน `yarn test` เต็มชุดทุกครั้ง ไม่ใช่เฉพาะไฟล์ที่แตะ**
-- ❌ **`type="badge-modern"` ของ `Badge`** — ค่าที่ถูกคือ `type="modern"` (`badgeTypes = { pillColor: 'pill-color', badgeColor: 'color', badgeModern: 'modern' }`)
-- ❌ **`onClick` บน `Button` ของ design system** — เป็น react-aria `Button` ต้องใช้ **`onPress`** (`<button>` ธรรมดายังใช้ `onClick` ตามปกติ)
-- ❌ **`@testing-library/user-event` ไม่ได้ติดตั้งในเรโป** — ใช้ `fireEvent` แทน
+- ❌ ผลการรัน IT อ่านจาก `backend/dac-service/target/failsafe-reports/*.txt` **ไม่ใช่** `surefire-reports`
+
+### API / integration
+- ❌ **login แล้วอ่าน `token`** — field ที่ backend คืนคือ **`accessToken`** ไม่ใช่ `token`
+- ❌ **ใช้ account คนจริงของ OpenMetadata เป็น connector credential** — เปลี่ยนไปใช้ **ingestion-bot JWT** แล้ว (mint ครั้งเดียว เก็บใน `.env`) · password ของ account คนจริงที่เคยวางในแชต **ผู้ใช้ควร rotate**
+- ✅ **full sync กับ OM จริงสำเร็จ**: ~9 วินาที · **33 tables · 352 columns · 4,302 แถวใน `asset_facet`**
+- ⚠️ **glossary facet ว่างเปล่า** — ไม่ใช่บั๊ก: OM instance นี้ยังไม่มีใครติด glossary term ให้ asset เลย (มีแต่ตัว glossary) → อย่าไปไล่หาสาเหตุใน mapper
+- ❌ **`TRUNCATE asset, …` ใน IT** — `cannot truncate a table referenced in a foreign key constraint` เพราะ `policy_binding` (V3) / `enforcement_state` (V4) อ้าง `asset(id)` · แก้โดย **ไล่ชื่อตารางให้ครบ ไม่ใช้ `CASCADE`** — ตารางใหม่จะได้ fail ดังๆ ไม่ใช่ถูกล้างเงียบๆ
+- ❌ **`assertThat(jdbi.withHandle(…))` → ambiguous** — ดึงออกมาเป็น local ที่ type ชัดก่อน
+
+### Frontend
+- ❌ **`apiErrorMessage(error)`** — signature คือ **`apiErrorMessage(error: unknown, fallback: string)` สองอาร์กิวเมนต์** ลืมตัวที่สอง = compile error (เจอ 4 จุดรอบนี้)
+- ❌ **`<Button href="/policies/new">`** — design-system `Button` จะ render เป็น `AriaLink` = **full page reload กลางๆ SPA** → ใช้ `useNavigate()` + `onPress` แทน
+- ❌ **`onClick` บน `Button` ของ design system** — ต้อง **`onPress`** และ **`isDisabled`** ไม่ใช่ `disabled` (`<button>` ธรรมดายังใช้ `onClick` ตามปกติ)
+- ❌ **ใช้ชื่อแท็บเป็น facet type ตอนลิงก์ไป catalog** — `facet_type` จริงคือ `tags | classifications | terms | glossaries | domains | dataProducts` · root ใต้ Classifications เป็น `classifications` แต่ลูกของมันเป็น `tags` → ถ้าส่งชื่อแท็บไปทั้งก้อน แถว tag จะลิงก์ไปที่ filter ที่ match ศูนย์แถว · แก้ด้วย `facetOf(tab, value)`
+- ❌ **`type="badge-modern"`** — ค่าที่ถูกคือ `type="modern"` · และ `Badge` ควรส่ง `type` ชัดเจนเสมอเพื่อให้ generic `BadgeColor<T>` inference ทำงาน
+- ❌ **Jest พังทั้ง suite เพราะ `import logo from '…png'`** — แก้ด้วย `moduleNameMapper` → `src/__mocks__/fileMock.cjs` · **บทเรียน: รัน `yarn test` เต็มชุดทุกครั้ง**
+- ❌ **`@testing-library/user-event` ไม่ได้ติดตั้ง** — ใช้ `fireEvent`
 - ❌ Playwright browsers ไม่ได้ติดตั้ง — ใช้ `chromium.launch({ channel: 'msedge' })` และ script ต้องอยู่ใน `frontend/app/`
+- ⚠️ MCP connector หลายตัวของ claude.ai ยังไม่ได้ authorize — session แบบ non-interactive ทำ OAuth ไม่ได้ ต้องไปกดใน claude.ai connector settings
 
 ---
 
 ## Next Steps
 
-1. ~~Catalog UI~~ ✅ เสร็จรอบนี้ · ~~รัน `AssetStoreIT`~~ ✅ รันแล้ว (เจอของพังจริง แก้แล้ว)
-2. **ลอง `/catalog` กับข้อมูลจริง** — cache ยังว่าง ต้อง `POST /api/v1/sync/full` ก่อนถึงจะเห็นอะไร · และเขียน **`GovernanceStoreIT`** ที่ยังไม่มี
-3. **FR-1.6** — reconcile cache กับ JDBC introspection จริง + รายงาน orphan / column ใหม่ที่ยังไม่มี policy (**รอ connection database จริงจากผู้ใช้**)
-4. **M3 ต่อ** — persistence ของ policy, `policy_binding` materializer (re-resolve เมื่อ facet/asset/policy เปลี่ยน), decision cache, ANTLR grammar ของ `expr`
-5. **หน้าเปลี่ยนรหัสผ่าน** — `mustChangePassword` ไหลถึง `auth/authStore.ts` แล้วแต่ไม่มีใครอ่าน (ไม่มี route/guard)
-6. **ก่อน M6** ต้องได้คำตอบ: SQL Server production เป็น **2022+** ไหม (ต้องการสำหรับ `GRANT UNMASK` ระดับ column) และลง extension `anon` บน PostgreSQL ได้ไหม
+1. **commit + push รอบนี้** — scan secret ก่อน (repo public) · ไฟล์ที่ยังไม่ commit: 3 ไฟล์ Java ใหม่ใน `policy/`, `identity/PrincipalQuery.java`, `GovernanceQuery.java`, 3 resource, 2 IT, และฝั่ง frontend `api/policies.ts`, `api/governance.ts`, `pages/policies/*`, `pages/governance/*` + `App.tsx`, `navigation.ts` · **ไฟล์ logo `*.png` ที่ root ตั้งใจไม่ commit**
+2. **`PolicyBindingMaterializerIT`** — วางไว้แล้วแต่ยังไม่ได้เขียน: `bindsMatchingAssets`, กับดัก scope prefix (`prod.SalesDB` ต้องไม่ลาก `prod.SalesDBArchive`), `newlyTaggedAssetIsCoveredOnRefresh`, `unbindsWhenTagRemoved`, `resolvedAtSurvivesReResolve`, `columnRulesBindColumns`, `refreshOnlyTouchesNamedAssets`
+3. **ปิด M3** — decision cache (FR-5.5) + ANTLR grammar ของ `expr` (FR-3.2)
+4. **ปิด M4** — หน้า asset ต้องโชว์ "policy ที่มีผลกับ asset นี้" (มี endpoint `/policies/affecting/{fqn}` รออยู่แล้ว), View-as-user (FR-5.2), impact analysis (FR-5.3)
+5. **FR-1.6** — reconcile cache กับ JDBC introspection จริง (**รอ connection database จริงจากผู้ใช้**)
+6. **หน้าเปลี่ยนรหัสผ่าน** — `mustChangePassword` ไหลถึง `auth/authStore.ts` แล้วแต่ไม่มีใครอ่าน
+7. **ก่อน M6** ต้องได้คำตอบ: SQL Server production เป็น **2022+** ไหม (ต้องการสำหรับ `GRANT UNMASK` ระดับ column) และลง extension `anon` บน PostgreSQL ได้ไหม
 
-**กติกาที่ต้องถือไว้ทุกครั้งที่ commit:** repo เป็น public → scan หา password / JWT / IP ภายใน ก่อน push เสมอ · ค่าจริงอยู่ใน `.env` ที่ gitignore เท่านั้น · `.env.example` มีแต่ placeholder
+**กติกาที่ต้องถือไว้ทุกครั้งที่ commit:** repo เป็น public → scan หา password / JWT / hostname และ IP ภายใน ก่อน push เสมอ · ค่าจริง (`IDENTITY_BOOTSTRAP_ADMIN_PASSWORD`, `OM_WEBHOOK_SECRET`, bot JWT) อยู่ใน `.env` ที่ gitignore เท่านั้น · `.env.example` มีแต่ placeholder
+**ข้อจำกัดที่ผู้ใช้สั่งไว้:** ต่อ OpenMetadata **read อย่างเดียว** ตอนนี้ — ห้าม PATCH กลับ (FR-1.7 จึงยังไม่ทำ)
 
 **คำสั่งที่ใช้บ่อย** — ดูหัวข้อ 7 ของ [docs/DESIGN.md](docs/DESIGN.md)

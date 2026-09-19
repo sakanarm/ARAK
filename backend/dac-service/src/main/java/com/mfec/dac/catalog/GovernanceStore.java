@@ -250,6 +250,11 @@ public class GovernanceStore {
    */
   private void customProperties(Handle handle, List<GovernanceSnapshot.CustomPropertyRow> rows) {
     if (rows.isEmpty()) {
+      // The same rule the other tables follow: the snapshot is the whole of
+      // what OpenMetadata has, so an empty list means the last definition was
+      // deleted there. Keeping a stale one would leave the policy builder
+      // offering an ABAC attribute no asset can carry (FR-1.9).
+      handle.execute("DELETE FROM custom_property_def");
       return;
     }
     PreparedBatch batch =

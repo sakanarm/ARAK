@@ -1,0 +1,254 @@
+package com.mfec.dac.resources;
+
+import com.mfec.dac.auth.AuthenticatedUser;
+import com.mfec.dac.auth.Secured;
+import com.mfec.dac.common.Fqns;
+import com.mfec.dac.policy.PolicyBindingMaterializer;
+import com.mfec.dac.policy.PolicyStore;
+import com.mfec.dac.schema.entity.policy.Policy;
+import jakarta.ws.rs.BadRequestException;
+import jakarta.ws.rs.Consumes;
+import jakarta.ws.rs.DefaultValue;
+import jakarta.ws.rs.ForbiddenException;
+import jakarta.ws.rs.GET;
+import jakarta.ws.rs.NotFoundException;
+import jakarta.ws.rs.POST;
+import jakarta.ws.rs.PUT;
+import jakarta.ws.rs.Path;
+import jakarta.ws.rs.PathParam;
+import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.QueryParam;
+import jakarta.ws.rs.WebApplicationException;
+import jakarta.ws.rs.core.Context;
+import jakarta.ws.rs.core.MediaType;
+import jakarta.ws.rs.core.Response;
+import jakarta.ws.rs.core.SecurityContext;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+
+/**
+ * Authoring policies (FR-3, FR-9).
+ *
+ * <p>Reading is open to any authenticated caller, because a data owner has to
+ * be able to see what already governs their tables before writing anything —
+ * that is FR-3.1.5, and it is the screen this API exists for. Writing is
+ * narrowed by role and, for a data owner, by the scope their ownership covers.
+ */
+@Path("/v1/policies")
+@Produces(MediaType.APPLICATION_JSON)
+@Consumes(MediaType.APPLICATION_JSON)
+@Secured
+public class PolicyResource {
+
+  private final PolicyStore policies;
+  private final PolicyBindingMaterializer materializer;
+
+  public PolicyResource(PolicyStore policies, PolicyBindingMaterializer materializer) {
+    this.policies = policies;
+    this.materializer = materializer;
+  }
+
+  @GET
+  public List<PolicyStore.StoredPolicy> list(
+      @QueryParam("state") String lifecycleState,
+      @QueryParam("type") String policyType,
+      @QueryParam("scopeLevel") String scopeLevel,
+      @QueryParam("limit") @DefaultValue("50") int limit,
+      @QueryParam("offset") @DefaultValue("0") int offset) {
+    return policies.list(lifecycleState, policyType, scopeLevel, Math.min(limit, 200), offset);
+  }
+
+  @GET
+  @Path("/{id}")
+  public PolicyStore.StoredPolicy get(@PathParam("id") UUID id) {
+    return policies.find(id).orElseThrow(() -> new NotFoundException("No policy " + id));
+  }
+
+  /** The history of one policy, for the diff and rollback screens (FR-9.2). */
+  @GET
+  @Path("/{id}/versions")
+  public List<PolicyStore.StoredPolicy> versions(@PathParam("id") UUID id) {
+    policies.find(id).orElseThrow(() -> new NotFoundException("No policy " + id));
+    return policies.history(id);
+  }
+
+  /**
+   * Every active policy that reaches an asset, outermost first (FR-3.1.5).
+   *
+   * <p>The order is the order they compose in, so the screen can be read top to
+   * bottom as "this is what the org says, then the domain, then you".
+   */
+  @GET
+  @Path("/affecting/{fqn: .+}")
+  public List<PolicyStore.StoredPolicy> affecting(
+      @PathParam("fqn") String fqn, @QueryParam("environment") @DefaultValue("dev") String environment) {
+    return policies.activeFor(fqn, environment);
+  }
+
+  @POST
+  public Response create(Policy document, @Context SecurityContext security) {
+    AuthenticatedUser caller = caller(security);
+    authorise(caller, document);
+    PolicyStore.StoredPolicy created = guard(() -> policies.create(document, caller.username()));
+    // Bound at creation, while still DRAFT. Nothing is enforced from a draft,
+    // but the author needs the impact analysis (FR-5.3) before deciding to
+    // activate, and that is a count of these rows.
+    materializer.materialize(created.id());
+    return Response.status(Response.Status.CREATED).entity(policies.find(created.id()).orElseThrow()).build();
+  }
+
+  @PUT
+  @Path("/{id}")
+  public PolicyStore.StoredPolicy update(
+      @PathParam("id") UUID id,
+      Policy document,
+      @QueryParam("version") int expectedVersion,
+      @QueryParam("reason") String reason,
+      @Context SecurityContext security) {
+
+    AuthenticatedUser caller = caller(security);
+    PolicyStore.StoredPolicy existing =
+        policies.find(id).orElseThrow(() -> new NotFoundException("No policy " + id));
+    // Both sides: a data owner may not edit a policy outside their scope, and
+    // may not move one into their scope either.
+    authorise(caller, existing.document());
+    authorise(caller, document);
+
+    PolicyStore.StoredPolicy updated =
+        guard(() -> policies.update(id, document, expectedVersion, caller.username(), reason));
+    materializer.materialize(id);
+    return policies.find(updated.id()).orElseThrow();
+  }
+
+  /**
+   * Moves a policy along its lifecycle (FR-9.1).
+   *
+   * <p>Approving is not editing: the body carries only the target state, so
+   * nobody can smuggle a document change through the step that is meant to be a
+   * second pair of eyes.
+   */
+  @POST
+  @Path("/{id}/lifecycle")
+  public PolicyStore.StoredPolicy transition(
+      @PathParam("id") UUID id, Map<String, String> body, @Context SecurityContext security) {
+
+    AuthenticatedUser caller = caller(security);
+    PolicyStore.StoredPolicy existing =
+        policies.find(id).orElseThrow(() -> new NotFoundException("No policy " + id));
+    authorise(caller, existing.document());
+
+    String to = body == null ? null : body.get("state");
+    if (to == null || to.isBlank()) {
+      throw new BadRequestException("Give the state to move to");
+    }
+    separationOfDuty(caller, existing, to);
+
+    PolicyStore.StoredPolicy moved =
+        guard(() -> policies.transition(id, to, caller.username(), body.get("reason")));
+    if ("ACTIVE".equals(to)) {
+      // Re-resolved at the moment it starts being enforced, so the bindings a
+      // draft was simulated against cannot be older than the estate.
+      materializer.materialize(id);
+    }
+    return moved;
+  }
+
+  /** Re-resolves the bindings by hand — the button behind FR-3.1.6's automatic path. */
+  @POST
+  @Path("/{id}/bindings/resolve")
+  public PolicyBindingMaterializer.Result resolve(
+      @PathParam("id") UUID id, @Context SecurityContext security) {
+    AuthenticatedUser caller = caller(security);
+    PolicyStore.StoredPolicy existing =
+        policies.find(id).orElseThrow(() -> new NotFoundException("No policy " + id));
+    authorise(caller, existing.document());
+    return materializer.materialize(id);
+  }
+
+  // ------------------------------------------------------------------ authority
+
+  private static AuthenticatedUser caller(SecurityContext security) {
+    if (security == null || !(security.getUserPrincipal() instanceof AuthenticatedUser user)) {
+      throw new ForbiddenException("No caller on this request");
+    }
+    return user;
+  }
+
+  /**
+   * Who may write a policy at this scope (FR-3.1.2).
+   *
+   * <p>A data owner's authority is their scope and everything under it, which
+   * is compared segment by segment: owning {@code prod.Sales} is not authority
+   * over {@code prod.SalesArchive}. An owner with no scopes recorded owns
+   * nothing, rather than everything.
+   */
+  private static void authorise(AuthenticatedUser caller, Policy document) {
+    if (caller.isPlatformAdmin() || caller.hasAnyRole("POLICY_AUTHOR")) {
+      return;
+    }
+    if (!caller.hasAnyRole("DATA_OWNER")) {
+      throw new ForbiddenException("Writing policies needs POLICY_AUTHOR or DATA_OWNER");
+    }
+    String scopeFqn = document.getScopeFqn();
+    if (scopeFqn == null || scopeFqn.isBlank()) {
+      throw new ForbiddenException("A data owner cannot write an organisation-wide policy");
+    }
+    for (String owned : caller.scopes()) {
+      if (owned != null && !owned.isBlank() && Fqns.isDescendantOrSelf(scopeFqn, owned)) {
+        return;
+      }
+    }
+    throw new ForbiddenException("You do not own " + scopeFqn);
+  }
+
+  /**
+   * The approval step needs a second person (FR-2.6).
+   *
+   * <p>Only on the approval path. {@code DRAFT → ACTIVE} stays open, because an
+   * organisation that has not chosen to require approval should not be forced
+   * into it by the API — but once a policy has been sent for approval, the
+   * author is not the one who grants it.
+   */
+  private static void separationOfDuty(
+      AuthenticatedUser caller, PolicyStore.StoredPolicy existing, String to) {
+    if (!"ACTIVE".equals(to) || !"PENDING_APPROVAL".equals(existing.lifecycleState())) {
+      return;
+    }
+    if (caller.username().equals(existing.updatedBy())
+        || caller.username().equals(existing.createdBy())) {
+      throw new ForbiddenException(
+          "A policy is approved by someone other than the person who wrote it");
+    }
+    if (!caller.isPlatformAdmin() && !caller.hasAnyRole("POLICY_AUTHOR", "DATA_OWNER")) {
+      throw new ForbiddenException("Approving a policy needs POLICY_AUTHOR or DATA_OWNER");
+    }
+  }
+
+  /**
+   * Turns the store's refusals into the status codes they mean.
+   *
+   * <p>A stale version is 409 rather than 400 — the request was well formed and
+   * will succeed once the editor reloads, and that is the difference the UI
+   * needs to decide between "fix this" and "somebody else changed it".
+   */
+  private static <T> T guard(java.util.function.Supplier<T> action) {
+    try {
+      return action.get();
+    } catch (PolicyStore.StaleVersionException e) {
+      throw new WebApplicationException(
+          Response.status(Response.Status.CONFLICT)
+              .entity(Map.of("code", 409, "message", e.getMessage()))
+              .type(MediaType.APPLICATION_JSON)
+              .build());
+    } catch (PolicyStore.IllegalTransitionException e) {
+      throw new WebApplicationException(
+          Response.status(Response.Status.CONFLICT)
+              .entity(Map.of("code", 409, "message", e.getMessage()))
+              .type(MediaType.APPLICATION_JSON)
+              .build());
+    } catch (IllegalArgumentException e) {
+      throw new BadRequestException(e.getMessage());
+    }
+  }
+}

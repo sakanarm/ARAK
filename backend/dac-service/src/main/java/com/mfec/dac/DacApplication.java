@@ -7,6 +7,7 @@ import com.mfec.dac.auth.PasswordHasher;
 import com.mfec.dac.catalog.CatalogChangeApplier;
 import com.mfec.dac.catalog.CatalogQuery;
 import com.mfec.dac.catalog.CatalogSyncService;
+import com.mfec.dac.catalog.GovernanceQuery;
 import com.mfec.dac.catalog.ChangeEventPoller;
 import com.mfec.dac.catalog.NightlyReconcile;
 import com.mfec.dac.catalog.SyncStateDao;
@@ -14,9 +15,16 @@ import com.mfec.dac.config.DacConfiguration;
 import com.mfec.dac.config.IdentityConfiguration;
 import com.mfec.dac.config.OpenMetadataConfiguration;
 import com.mfec.dac.health.AppDatabaseHealthCheck;
+import com.mfec.dac.identity.PrincipalQuery;
 import com.mfec.dac.om.OpenMetadataClient;
 import com.mfec.dac.resources.AuthResource;
+import com.mfec.dac.policy.AssetContextLoader;
+import com.mfec.dac.policy.PolicyBindingMaterializer;
+import com.mfec.dac.policy.PolicyStore;
 import com.mfec.dac.resources.CatalogResource;
+import com.mfec.dac.resources.GovernanceResource;
+import com.mfec.dac.resources.PolicyResource;
+import com.mfec.dac.resources.PrincipalResource;
 import com.mfec.dac.resources.SyncResource;
 import com.mfec.dac.resources.SystemResource;
 import com.mfec.dac.resources.WebhookResource;
@@ -110,6 +118,22 @@ public class DacApplication extends Application<DacConfiguration> {
     environment.jersey().register(new SyncResource(sync));
     environment.jersey().register(
         new CatalogResource(new CatalogQuery(jdbi, environment.getObjectMapper())));
+
+    // Policy authoring. The materialiser takes the loader rather than building
+    // one so that the webhook path and the authoring path resolve bindings
+    // through the same read model, and cannot drift apart in how they read a
+    // facet (FR-3.1.6).
+    AssetContextLoader contexts = new AssetContextLoader(environment.getObjectMapper());
+    PolicyStore policyStore = new PolicyStore(jdbi, environment.getObjectMapper());
+    PolicyBindingMaterializer materializer =
+        new PolicyBindingMaterializer(jdbi, environment.getObjectMapper(), contexts);
+    environment.jersey().register(new PolicyResource(policyStore, materializer));
+
+    // The vocabulary a selector is written against, and the people a subject
+    // rule is written about. Both are read-only: OpenMetadata and Entra own
+    // this content, and an edit here would be reverted by the next sync.
+    environment.jersey().register(new GovernanceResource(new GovernanceQuery(jdbi)));
+    environment.jersey().register(new PrincipalResource(new PrincipalQuery(jdbi)));
     // Registered before the auth filter for no reason other than reading order;
     // the filter is a @Secured name binding and this resource carries no
     // annotation, so it is never in its path. Its authentication is the HMAC.

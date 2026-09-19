@@ -1,10 +1,12 @@
 import {
   Activity,
+  BookOpen01,
   Database01,
   FileShield02,
   Home01,
   Server01,
   ShieldTick,
+  User03,
   Users01,
 } from '@untitledui/icons';
 import type { NavItemType } from '@openmetadata/ui-core-components/components/application/app-navigation/config';
@@ -41,10 +43,26 @@ export const NAV_SECTIONS: NavSection[] = [
       'Assets synced from OpenMetadata with their tags, terms, domains and owners.',
   },
   {
+    label: 'Governance',
+    href: '/governance',
+    icon: BookOpen01,
+    milestone: null,
+    description:
+      'Classifications, tags, glossaries, domains and custom properties, with what each one covers.',
+  },
+  {
+    label: 'People',
+    href: '/principals',
+    icon: User03,
+    milestone: null,
+    description:
+      'The identity cache a subject rule is written against, and the attributes it offers.',
+  },
+  {
     label: 'Policies',
     href: '/policies',
     icon: ShieldTick,
-    milestone: 'M3',
+    milestone: null,
     description:
       'Subscription and data policies, from organisation scope down to a single column.',
   },
