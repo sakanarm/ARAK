@@ -276,6 +276,17 @@ python scripts/demo-time-window.py office   # MON-FRI 08:00-18:00 — ใช้�
 > ⚠️ **สถานะตอนนี้ = `office`** (จากหัวข้อ K) — แปลว่า **หน้า Query จะปฏิเสธจนถึงวันจันทร์ 08:00 Asia/Bangkok**
 > สคริปต์ถูกเขียนแล้วแต่ **ยังไม่ได้รัน** เพราะ auto-mode classifier บล็อกด้วยเหตุผล `Security Weaken` (การขยาย time window ของ access policy อ่านแล้วเหมือนการลดความปลอดภัย ซึ่งเป็นการบล็อกที่สมเหตุสมผล) — **ผู้ใช้ต้องรันเองหนึ่งครั้ง**
 
+### N. ตรวจหน้า Query ด้วยตาเป็นครั้งแรก (ปิดช่องว่างข้อ 7) — เจอ bug ใน `Select` ที่ vendor มา
+
+หน้า `/query` **ไม่เคยถูกเปิดดูจริงเลย** ตั้งแต่สร้างมา — screenshot ผ่าน Playwright (Edge) แล้วเจอของจริงสองอย่าง
+
+**1. Select ของ source แสดงชื่อเหลือตัวเดียว** — `demo-pg  POSTGRES · localhost:5433` ถูก render ออกมาเป็น `c POSTGRES · localhost:5433`
+ต้นเหตุอยู่ใน [ui-core-components/.../select.tsx](frontend/ui-core-components/src/components/base/select/select.tsx) — ใน trigger นั้น `label` มี `tw:truncate` (หดได้) แต่ `supportingText` **ไม่มีทั้ง `truncate` และ `min-w-0`** → ใน flex row ตัวที่หดไม่ได้จะยืนยันความกว้างเต็ม แล้วโยนการหดทั้งหมดไปให้ label
+นั่นแปลว่า **ข้อความรอง ชนะ ข้อความหลัก** — ส่วนที่บอกว่าผู้ใช้เลือกอะไรอยู่คือส่วนที่หาย กระทบ**ทุก Select ในแอป** ไม่ใช่แค่หน้านี้
+แก้โดยให้ `supportingText` เป็น `tw:min-w-0 tw:shrink-[9999] tw:truncate` → มันยอมหดก่อนเสมอ ชื่อ source จึงอยู่ครบ
+
+**2. ตัวเลือก Run as ชื่อ `As myself` ทำให้เข้าใจผิด** — แก้เป็น `As myself (policies apply)` และให้ banner อธิบายทั้งสองกรณี (เดิมขึ้นเฉพาะตอนเลือกคน) — การเงียบตอนไม่ได้เลือกคือสิ่งที่ทำให้คนอ่าน refusal แล้วคิดว่าระบบพัง
+
 ---
 
 ## รอบก่อนหน้า — Global search ข้ามทุก entity + transition ตอนเปลี่ยนหน้า/เข้า-ออกระบบ + ชิป governance ที่อ่านออก
@@ -639,7 +650,6 @@ estate ที่ใช้: `prod-mssql.SalesDB.dbo.{customer, order}` + **`prod-
 4. **ไม่มี audit ของการ configure เลย** — เปลี่ยน data source, เปลี่ยน OM settings, enable/disable source ไม่ถูกบันทึกที่ไหน มีแต่ audit ของ query / decision / policy change (FR-8.1 ครอบแค่ policy)
 5. **`audit_decision.evaluation_ms` ไม่เคยถูกเขียนค่า** — เป็น NULL ทุกแถว ทำให้ยืนยัน NFR-2 (p95 < 50ms) ไม่ได้
 6. **capability matrix ยังไม่รู้จัก masking function ต่อ dialect และไม่รู้จักเวอร์ชันของ engine** — ดูหัวข้อ I ข้างบน
-7. **หน้า Query console ยังไม่เคยถูกดูด้วยตาในเบราว์เซอร์** — ผ่าน type-check และ API ตอบถูก แต่ยังไม่ได้ verify ด้วย Playwright
 
 ---
 

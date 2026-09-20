@@ -133,8 +133,15 @@ const SelectValue = ({
                   </p>
                   {state.selectedItem?.supportingText && (
                     <p
+                      // Shrinks away long before the label does, and truncates
+                      // rather than refusing to shrink. Without this the
+                      // supporting text holds its full width while the label
+                      // beside it -- the only part that identifies the choice
+                      // -- absorbs the entire shortfall and truncates to a
+                      // character or two, which is how `demo-pg` rendered as
+                      // `c` next to `POSTGRES · localhost:5433`.
                       className={cx(
-                        'tw:text-tertiary',
+                        'tw:min-w-0 tw:shrink-[9999] tw:truncate tw:text-tertiary',
                         fontSizeClass[fontSize]
                       )}>
                       {state.selectedItem?.supportingText}
