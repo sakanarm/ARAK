@@ -6,6 +6,8 @@ import {
   AlertTriangle,
   Copy01,
   Eye,
+  EyeOff,
+  FilterLines,
   Play,
   Shield01,
 } from '@untitledui/icons';
@@ -16,6 +18,7 @@ import {
   DEFAULT_ROWS,
   MAX_ROWS,
   runQuery,
+  type Explanation,
   type QueryResult,
 } from '../../api/query';
 import { Select, TextField } from '../policies/controls';
@@ -342,6 +345,8 @@ function ResultPanel({
         </div>
       )}
 
+      {tab === 'results' && <AppliedPolicies result={result} />}
+
       <div className="tw:min-h-0 tw:flex-1 tw:overflow-auto">
         {tab === 'results' && <ResultTable result={result} />}
         {tab === 'sql' && <RewrittenSql sql={result.rewrittenSql} />}
@@ -352,11 +357,26 @@ function ResultPanel({
 }
 
 function ResultTable({ result }: { result: QueryResult }) {
+  // Lower-cased on both sides: the source decides the case of the column names
+  // it hands back, and the policy was written against the catalog's spelling.
+  const masked = useMemo(() => {
+    const out = new Map<string, string>();
+    for (const explanation of result.explanations ?? []) {
+      for (const [column, detail] of Object.entries(
+        explanation.maskedColumns ?? {}
+      )) {
+        out.set(column.toLowerCase(), detail);
+      }
+    }
+    return out;
+  }, [result.explanations]);
+
   if (result.rows.length === 0) {
     return (
       <p className="tw:p-6 tw:text-center tw:text-sm tw:text-tertiary">
         No rows. That is a result, not a failure — a row filter that excludes
-        everything looks exactly like this.
+        everything looks exactly like this, and the filters that were applied
+        are listed above.
       </p>
     );
   }
@@ -368,16 +388,30 @@ function ResultTable({ result }: { result: QueryResult }) {
           <th className="tw:w-12 tw:px-3 tw:py-2 tw:text-right tw:text-xs tw:font-medium tw:text-quaternary">
             #
           </th>
-          {result.columns.map((column, index) => (
-            <th
-              className="tw:whitespace-nowrap tw:px-3 tw:py-2 tw:text-left tw:text-xs tw:font-semibold tw:text-secondary"
-              key={column}>
-              {column}
-              <span className="tw:ml-2 tw:font-normal tw:text-quaternary">
-                {result.columnTypes[index]}
-              </span>
-            </th>
-          ))}
+          {result.columns.map((column, index) => {
+            const masking = masked.get(column.toLowerCase());
+            return (
+              <th
+                className="tw:whitespace-nowrap tw:px-3 tw:py-2 tw:text-left tw:text-xs tw:font-semibold tw:text-secondary"
+                key={column}>
+                {column}
+                <span className="tw:ml-2 tw:font-normal tw:text-quaternary">
+                  {result.columnTypes[index]}
+                </span>
+                {masking && (
+                  // Marked in the header and not only in the strip above,
+                  // because a masked column whose values still look plausible
+                  // is the one most likely to be read as the real thing.
+                  <span
+                    className="tw:ml-2 tw:inline-flex tw:items-center tw:gap-1 tw:rounded tw:bg-warning-primary tw:px-1.5 tw:py-0.5 tw:font-normal tw:text-warning-primary"
+                    title={masking}>
+                    <EyeOff className="tw:size-3" />
+                    masked
+                  </span>
+                )}
+              </th>
+            );
+          })}
         </tr>
       </thead>
       <tbody>
@@ -401,6 +435,89 @@ function ResultTable({ result }: { result: QueryResult }) {
         ))}
       </tbody>
     </table>
+  );
+}
+
+/**
+ * What the policy did to this result, in words.
+ *
+ * Sits above the grid rather than inside Job details on purpose: somebody
+ * comparing one principal against another is looking at the rows, and a
+ * difference they cannot account for is the reason they opened this screen at
+ * all. The rewritten statement says exactly the same thing, but only to a
+ * reader willing to parse generated SQL.
+ */
+function AppliedPolicies({ result }: { result: QueryResult }) {
+  const explanations = (result.explanations ?? []).filter(
+    (item) =>
+      item.rowFilters.length > 0 ||
+      Object.keys(item.maskedColumns ?? {}).length > 0 ||
+      item.hiddenColumns.length > 0
+  );
+
+  if (explanations.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="tw:shrink-0 tw:space-y-2 tw:border-b tw:border-secondary tw:bg-secondary tw:px-3 tw:py-2">
+      {explanations.map((explanation) => (
+        <ExplanationRow explanation={explanation} key={explanation.asset} />
+      ))}
+    </div>
+  );
+}
+
+function ExplanationRow({ explanation }: { explanation: Explanation }) {
+  const masked = Object.entries(explanation.maskedColumns ?? {});
+
+  return (
+    <div className="tw:flex tw:flex-col tw:gap-1 tw:text-xs">
+      <p className="tw:flex tw:flex-wrap tw:items-center tw:gap-1.5 tw:text-tertiary">
+        <Shield01 className="tw:size-3.5 tw:shrink-0" />
+        <span className="tw:font-medium tw:text-secondary">
+          {explanation.asset}
+        </span>
+        {explanation.policies.map((policy) => (
+          <Badge color="gray" key={policy} size="sm" type="pill-color">
+            {policy}
+          </Badge>
+        ))}
+      </p>
+
+      {explanation.rowFilters.map((filter, index) => (
+        <p
+          className="tw:flex tw:items-start tw:gap-1.5 tw:pl-5 tw:text-secondary"
+          key={index}>
+          <FilterLines className="tw:mt-0.5 tw:size-3.5 tw:shrink-0 tw:text-tertiary" />
+          <span>
+            Rows kept where <strong>{filter}</strong>
+          </span>
+        </p>
+      ))}
+
+      {masked.map(([column, detail]) => (
+        <p
+          className="tw:flex tw:items-start tw:gap-1.5 tw:pl-5 tw:text-secondary"
+          key={column}>
+          <EyeOff className="tw:mt-0.5 tw:size-3.5 tw:shrink-0 tw:text-tertiary" />
+          <span>
+            <code className="tw:font-mono">{column}</code> {detail}
+          </span>
+        </p>
+      ))}
+
+      {explanation.hiddenColumns.length > 0 && (
+        <p className="tw:flex tw:items-start tw:gap-1.5 tw:pl-5 tw:text-secondary">
+          <EyeOff className="tw:mt-0.5 tw:size-3.5 tw:shrink-0 tw:text-tertiary" />
+          <span>
+            Dropped from the projection entirely, so they are absent from the
+            schema rather than merely blanked:{' '}
+            <strong>{explanation.hiddenColumns.join(', ')}</strong>
+          </span>
+        </p>
+      )}
+    </div>
   );
 }
 

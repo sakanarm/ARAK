@@ -74,9 +74,20 @@ public final class QueryRewriter {
     Governed resolve(String schema, String table);
   }
 
-  /** The statement to send, and what it turned out to be governed by. */
+  /**
+   * The statement to send, and what it turned out to be governed by.
+   *
+   * @param governed the decision behind each asset, kept rather than discarded
+   *     so the caller can be told which columns were masked and which filter
+   *     removed the rows they cannot see. Knowing a statement was governed is
+   *     not the same as being able to say how (FR-5.4).
+   */
   public record Rewritten(
-      String sql, List<String> assets, List<Unenforceable> unenforceable, boolean anyRestriction) {}
+      String sql,
+      List<String> assets,
+      List<Governed> governed,
+      List<Unenforceable> unenforceable,
+      boolean anyRestriction) {}
 
   /** The statement will not be sent, and why — the message reaches the caller. */
   public static class RefusedException extends RuntimeException {
@@ -137,7 +148,11 @@ public final class QueryRewriter {
     verify(rewritten, referenced, cteNames, replaced);
 
     return new Rewritten(
-        rewritten, List.copyOf(governed.keySet()), List.copyOf(unenforceable), restricted[0]);
+        rewritten,
+        List.copyOf(governed.keySet()),
+        List.copyOf(governed.values()),
+        List.copyOf(unenforceable),
+        restricted[0]);
   }
 
   // ------------------------------------------------------------------ walk

@@ -287,6 +287,75 @@ python scripts/demo-time-window.py office   # MON-FRI 08:00-18:00 — ใช้�
 
 **2. ตัวเลือก Run as ชื่อ `As myself` ทำให้เข้าใจผิด** — แก้เป็น `As myself (policies apply)` และให้ banner อธิบายทั้งสองกรณี (เดิมขึ้นเฉพาะตอนเลือกคน) — การเงียบตอนไม่ได้เลือกคือสิ่งที่ทำให้คนอ่าน refusal แล้วคิดว่าระบบพัง
 
+### O. หน้า Query บอกได้แล้วว่า "โดน policy อะไรไปบ้าง" ไม่ใช่แค่ส่ง SQL ที่ rewrite แล้วมาให้อ่านเอง (FR-5.4)
+
+**ที่มา:** ผู้ใช้ขอ "ให้ผมลอง RLS, masking ให้เห็นภาพใน UI"
+ปัญหาคือก่อนหน้านี้ผลลัพธ์**ไม่ได้บอกอะไรเลย**ว่าเกิดอะไรขึ้น:
+
+- แถวที่ถูก RLS ตัดออก → **หายไปเฉยๆ** ไม่มีอะไรบอกว่าหายเพราะอะไร
+- column ที่ถูก mask → ขึ้นเป็น `***@example.co.th` ซึ่ง**อ่านแล้วเหมือนข้อมูลจริงที่หน้าตาแปลก** มากกว่าเหมือนถูก mask
+- คนที่จะรู้ความจริงได้ต้องไปเปิดแท็บ `Statement that ran` แล้วอ่าน SQL ที่ generate มา ซึ่งเป็นการขอมากเกินไปจากคนที่แค่อยากดูว่า policy ทำงานไหม
+
+> นี่คือช่องว่าง FR-5.4 ในหน้าจอนี้ — "decision ที่อธิบายไม่ได้ คือ decision ที่ไม่มีใครกล้า enforce"
+
+#### สิ่งที่ทำ — ลาก `PolicyDecision` ออกมาจนถึงหน้าจอ
+
+เดิม `QueryRewriter` เก็บ `Map<String, Governed>` (มี `PolicyDecision` เต็มๆ อยู่ในมือ) แล้ว **โยนทิ้ง** เหลือแต่ชื่อ asset
+
+| ชั้น | เปลี่ยนอะไร |
+|---|---|
+| [QueryRewriter.java](backend/dac-proxy/src/main/java/com/mfec/dac/proxy/QueryRewriter.java) | `Rewritten` เพิ่ม field `List<Governed> governed` — เก็บ decision ไว้แทนที่จะทิ้ง (ยังคง `assets` ไว้เหมือนเดิม ไม่ทำให้ของเดิมพัง) |
+| [QueryService.java](backend/dac-service/src/main/java/com/mfec/dac/policy/QueryService.java) | เพิ่ม record `Explanation(asset, maskedColumns, hiddenColumns, rowFilters, policies)` + เมธอด `explain()` ที่แปลง decision เป็นภาษาคน |
+| [QueryResource.java](backend/dac-service/src/main/java/com/mfec/dac/resources/QueryResource.java) | ใส่ `explanations` ลงใน response body |
+| [api/query.ts](frontend/app/src/api/query.ts) | type `Explanation` |
+| [QueryPage.tsx](frontend/app/src/pages/query/QueryPage.tsx) | `AppliedPolicies` แถบเหนือตาราง + badge `masked` บนหัว column |
+
+**สิ่งที่เห็นบนจอตอนนี้** (แถบเหนือตารางผลลัพธ์):
+
+```
+🛡 demo-pg.salesdb.sales.customer   [sales-branch-rls (SCHEMA)] [pii-masking-below-l2 (ORG)]
+   ▽ Rows kept where branch_code is one of BKK-01
+   ◎ citizen_id  hidden except the last 4 characters
+   ◎ email       rewritten by pattern ^[^@]+
+```
+
+และบนหัว column ของ `email` / `citizen_id` มีป้าย `masked` (hover เห็นรายละเอียด)
+
+#### การตัดสินใจเชิงออกแบบสามข้อ
+
+1. **สร้างคำอธิบายจาก `PolicyDecision` ไม่ใช่จาก SQL** — SQL เป็นแค่ *หนึ่งใน* สาม rendering ของ decision เดียวกัน (FR-6.0c) ถ้าไปอ่านจาก SQL คำอธิบายจะจริงเฉพาะโหมด proxy แล้วต้องเขียนใหม่อีกสองรอบตอนทำ 5.1.1 / 5.1.2
+2. **วางไว้เหนือตาราง ไม่ใช่ในแท็บ Job details** — คนที่เปิดหน้านี้กำลังเทียบ principal สองคนอยู่ สายตาอยู่ที่แถว ไม่ได้อยู่ที่แท็บอื่น
+3. **ติดป้ายที่หัว column ด้วย ไม่ใช่แค่ในแถบ** — column ที่ mask แล้วค่ายัง**ดูสมเหตุสมผล**คือ column ที่มีโอกาสถูกอ่านว่าเป็นของจริงมากที่สุด
+
+#### เคสที่จงใจเขียนไว้ — `IN_LIST` ที่ values ว่าง
+
+```
+branch_code must match one of the principal's values, and they have none
+```
+
+ตารางว่างเพราะ principal ไม่มี attribute ที่ filter นั้นใช้เทียบ = **คำตอบที่ถูก ไม่ใช่หน้าจอพัง** ก่อนหน้านี้สองอย่างนี้หน้าตาเหมือนกันเป๊ะ
+
+#### Test — [QueryExplanationTest.java](backend/dac-service/src/test/java/com/mfec/dac/policy/QueryExplanationTest.java) (6 tests)
+
+เขียน test ให้ทุกประโยคที่จะขึ้นจอ เพราะ**คำอธิบายที่เลิกตรงกับ enforcement ที่มันอธิบาย แย่กว่าไม่มีคำอธิบาย — เพราะคนเชื่อมัน**
+
+#### 🐛 บั๊กที่เจอระหว่างทาง — `scripts/demo-time-window.py` เขียน key ผิด
+
+```python
+'tz': 'Asia/Bangkok'        # ❌ ผิด — schema ใช้ `timezone`
+'timezone': 'Asia/Bangkok'  # ✅ แก้แล้ว
+```
+
+key ที่ไม่รู้จัก**ไม่ error** แต่ถูกทิ้งเงียบๆ → window จะเสีย timezone ไปแล้ว fallback ไปใช้นาฬิกาของ server ซึ่งเป็นบั๊กที่ FR-3.2 พูดถึงตรงๆ ("timezone เป็นส่วนหนึ่งของกฎ ไม่ใช่เอามาจากที่ engine บังเอิญรันอยู่") **สคริปต์ยังไม่เคยรันสำเร็จ จึงยังไม่เคยสร้างความเสียหาย**
+
+#### 🔴 ยังค้าง — ผู้ใช้ต้องเปิด time window เอง
+
+ผู้ใช้สั่ง "แก้ให้หน่อย" ผมพยายามรัน `demo-time-window.py open` **สองครั้ง ถูก classifier บล็อกทั้งสองครั้ง** ด้วยเหตุผล `[Security Weaken]` ไม่ได้พยายามเลี่ยง
+
+**ทางที่สั้นที่สุดสำหรับผู้ใช้ — ไม่ต้องใช้สคริปต์เลย:**
+`/policies/b594579f-a825-42bc-9dac-64de9b279d03` → Time windows → dropdown วัน `weekdays` → **`every day`** → Save
+ไม่ต้องแตะช่วงเวลา เพราะ [TimeMatcher.java:95-100](backend/dac-engine/src/main/java/com/mfec/dac/engine/TimeMatcher.java#L95-L100) ตีความ day list ว่างว่า "ทุกวัน" อยู่แล้ว และได้ทดสอบหน้า Policy Builder + versioning ไปในตัว
+
 ---
 
 ## รอบก่อนหน้า — Global search ข้ามทุก entity + transition ตอนเปลี่ยนหน้า/เข้า-ออกระบบ + ชิป governance ที่อ่านออก

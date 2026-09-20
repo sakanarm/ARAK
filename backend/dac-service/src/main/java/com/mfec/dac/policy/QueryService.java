@@ -5,7 +5,11 @@ import com.mfec.dac.compiler.sql.PostgresDialect;
 import com.mfec.dac.compiler.sql.SqlDialect;
 import com.mfec.dac.compiler.sql.SqlServerDialect;
 import com.mfec.dac.proxy.QueryRewriter;
+import com.mfec.dac.schema.api.DecisionReason;
+import com.mfec.dac.schema.api.MaskingSpec;
 import com.mfec.dac.schema.api.PolicyDecision;
+import com.mfec.dac.schema.api.ResolvedColumnMask;
+import com.mfec.dac.schema.api.ResolvedRowPredicate;
 import com.mfec.dac.schema.api.Unenforceable;
 import com.mfec.dac.source.DataSourceStore;
 import com.mfec.dac.source.jdbc.QueryExecutor;
@@ -14,8 +18,12 @@ import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.regex.Pattern;
 import org.jdbi.v3.core.Jdbi;
@@ -51,6 +59,7 @@ public class QueryService {
 
   /**
    * @param assets the governed assets the statement turned out to touch
+   * @param explanations what each of those assets was restricted by, in words
    * @param unenforceable restrictions this dialect could not express; they were
    *     tightened rather than dropped, and the caller is told (FR-6.0b)
    */
@@ -62,7 +71,28 @@ public class QueryService {
       long millis,
       String rewrittenSql,
       List<String> assets,
+      List<Explanation> explanations,
       List<Unenforceable> unenforceable) {}
+
+  /**
+   * Why this result looks the way it does, for one asset.
+   *
+   * <p>The rewritten statement already tells the whole truth, but only to
+   * somebody willing to read generated SQL. Rows that quietly went missing and
+   * a column that quietly reads {@code ***} are indistinguishable from a broken
+   * pipeline until something names the policy responsible, so the same decision
+   * is also rendered in words (FR-5.4).
+   *
+   * @param maskedColumns column name to a description of what was done to it
+   * @param rowFilters one line per row restriction, ANDed together
+   * @param policies the policies that matched, named as the author named them
+   */
+  public record Explanation(
+      String asset,
+      Map<String, String> maskedColumns,
+      List<String> hiddenColumns,
+      List<String> rowFilters,
+      List<String> policies) {}
 
   /** The statement was not run, and the message says why in the caller's terms. */
   public static class RejectedException extends RuntimeException {
@@ -165,7 +195,131 @@ public class QueryService {
         page.millis(),
         rewritten.sql(),
         rewritten.assets(),
+        explain(rewritten.governed()),
         rewritten.unenforceable());
+  }
+
+  // -------------------------------------------------------- explainability
+
+  /**
+   * Renders each decision in the words a data owner would use.
+   *
+   * <p>Deliberately derived from the decision rather than from the SQL: the SQL
+   * is one of three renderings of the same decision (FR-6.0c), so an
+   * explanation read out of it would only be true in proxy mode and would have
+   * to be written twice more.
+   */
+  static List<Explanation> explain(List<QueryRewriter.Governed> governed) {
+    List<Explanation> out = new ArrayList<>();
+    for (QueryRewriter.Governed asset : governed) {
+      PolicyDecision decision = asset.decision();
+      if (decision == null) {
+        continue;
+      }
+
+      Map<String, String> masked = new LinkedHashMap<>();
+      if (decision.getColumnMasks() != null) {
+        for (ResolvedColumnMask mask : decision.getColumnMasks()) {
+          if (mask.getColumn() != null) {
+            masked.put(mask.getColumn(), describe(mask));
+          }
+        }
+      }
+
+      List<String> filters = new ArrayList<>();
+      if (decision.getRowPredicates() != null) {
+        for (ResolvedRowPredicate predicate : decision.getRowPredicates()) {
+          filters.add(describe(predicate));
+        }
+      }
+
+      // A set, because the same policy commonly supplies both a row filter and
+      // a mask and naming it twice reads like two policies.
+      Set<String> policies = new LinkedHashSet<>();
+      if (decision.getReasons() != null) {
+        for (DecisionReason reason : decision.getReasons()) {
+          if (Boolean.TRUE.equals(reason.getMatched()) && reason.getPolicyName() != null) {
+            policies.add(
+                reason.getScopeLevel() == null
+                    ? reason.getPolicyName()
+                    : reason.getPolicyName() + " (" + reason.getScopeLevel() + ")");
+          }
+        }
+      }
+
+      out.add(
+          new Explanation(
+              asset.fqn(),
+              masked,
+              decision.getHiddenColumns() == null ? List.of() : decision.getHiddenColumns(),
+              filters,
+              List.copyOf(policies)));
+    }
+    return out;
+  }
+
+  private static String describe(ResolvedColumnMask mask) {
+    MaskingSpec spec = mask.getMasking();
+    if (spec == null || spec.getFunction() == null) {
+      return "masked";
+    }
+    String what =
+        switch (spec.getFunction()) {
+          case NULLIFY -> "replaced with null";
+          case CONSTANT -> "replaced with "
+              + (spec.getConstant() == null ? "a constant" : spec.getConstant());
+          case HASH -> "hashed, so it still joins but no longer reads";
+          case PARTIAL -> spec.getShowLast() == null
+              ? "partly hidden"
+              : "hidden except the last " + spec.getShowLast() + " characters";
+          case REGEX_REPLACE -> "rewritten by pattern"
+              + (spec.getRegex() == null ? "" : " " + spec.getRegex());
+          case ROUNDING -> "rounded"
+              + (spec.getRoundTo() == null ? "" : " to " + spec.getRoundTo());
+          case CONDITIONAL -> "masked on some rows and not others";
+        };
+    // The condition is what makes it a cell mask rather than a column mask, and
+    // it changes the reading of the value entirely, so it is never dropped.
+    return mask.getCondition() == null ? what : what + ", where " + mask.getCondition();
+  }
+
+  private static String describe(ResolvedRowPredicate predicate) {
+    ResolvedRowPredicate.Kind kind =
+        predicate.getKind() == null ? ResolvedRowPredicate.Kind.ALWAYS_FALSE : predicate.getKind();
+    String column = predicate.getColumn() == null ? "the row" : predicate.getColumn();
+    List<Object> values =
+        predicate.getValues() == null ? List.of() : List.copyOf(predicate.getValues());
+    return switch (kind) {
+      case ALWAYS_FALSE -> "no rows at all; the columns are visible but the contents are not";
+      case IN_LIST -> values.isEmpty()
+          // An empty list is the interesting case: it means the attribute this
+          // filter reads is not set on the principal, so nothing can match, and
+          // an empty grid is the correct answer rather than a missing one.
+          ? column + " must match one of the principal's values, and they have none"
+          : column + " is one of " + join(values);
+      case ATTRIBUTE_COMPARE -> column
+          + " "
+          + (predicate.getOperator() == null ? "matches" : predicate.getOperator().value())
+          + " "
+          + (values.isEmpty() ? "the principal's value" : join(values));
+      case ENTITLEMENT_JOIN -> "the row is listed against this principal in "
+          + (predicate.getEntitlementKey() == null ? "the entitlement table"
+              : predicate.getEntitlementKey());
+      case RAW_PREDICATE -> predicate.getRawPredicate() == null
+          ? "a policy-supplied condition"
+          : predicate.getRawPredicate();
+    };
+  }
+
+  private static String join(List<Object> values) {
+    StringBuilder out = new StringBuilder();
+    for (Object value : values) {
+      if (out.length() > 0) {
+        out.append(", ");
+      }
+      out.append(value);
+    }
+    return out.toString();
   }
 
   // ------------------------------------------------------------ governance

@@ -107,6 +107,9 @@ public class QueryResource {
       // to read the SQL that actually ran is what turns "trust us" into
       // something a data owner can check for themselves (FR-5.4).
       body.put("rewrittenSql", result.rewrittenSql());
+      // The same decision in words, because a reader who can follow generated
+      // SQL is not the only reader this screen has (FR-5.4).
+      body.put("explanations", result.explanations());
       body.put("unenforceable", result.unenforceable());
       return body;
     } catch (QueryService.RejectedException e) {

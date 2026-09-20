@@ -26,6 +26,22 @@ export interface Unenforceable {
   suggestedMode: string | null;
 }
 
+/**
+ * The same decision the rewritten statement carries, in words (FR-5.4).
+ *
+ * Rows that quietly went missing and a column that quietly reads `***` look
+ * exactly like a broken pipeline until something names the policy responsible.
+ */
+export interface Explanation {
+  asset: string;
+  /** Column name to what was done to it. */
+  maskedColumns: Record<string, string>;
+  hiddenColumns: string[];
+  /** ANDed together. */
+  rowFilters: string[];
+  policies: string[];
+}
+
 export interface QueryResult {
   columns: string[];
   columnTypes: string[];
@@ -35,6 +51,7 @@ export interface QueryResult {
   principal: string;
   assets: string[];
   rewrittenSql: string;
+  explanations: Explanation[];
   unenforceable: Unenforceable[];
 }
 

@@ -24,11 +24,16 @@ import urllib.request
 BASE = 'http://localhost:8080/api/v1'
 POLICY = 'b594579f-a825-42bc-9dac-64de9b279d03'
 
+# The schema field is `timezone`, not `tz`. Spelling it `tz` does not error --
+# the unknown key is dropped and the window silently loses its zone, which then
+# falls back to the server clock. That is exactly the bug FR-3.2 calls out: the
+# timezone is part of the rule, never taken from wherever the engine happens to
+# be running.
 WINDOWS = {
     'open': {'days': ['MON-FRI', 'SAT', 'SUN'], 'from': '00:00', 'to': '23:59',
-             'tz': 'Asia/Bangkok'},
+             'timezone': 'Asia/Bangkok'},
     'office': {'days': ['MON-FRI'], 'from': '08:00', 'to': '18:00',
-               'tz': 'Asia/Bangkok'},
+               'timezone': 'Asia/Bangkok'},
 }
 
 REASONS = {
