@@ -428,6 +428,61 @@ RLS + masking ทำงานครบ → **ปัญหาอยู่ที�
 
 **พิสูจน์ด้วย Playwright:** ลากขึ้น 130px → พื้นที่ตาราง `234px → 362px`, `localStorage` เก็บ `72` (ชน min พอดี = clamp ทำงาน) · `tsc` ผ่าน · `jest` 7 suites / 25 tests ผ่าน
 
+### O5. ทำไม "Run แล้วไม่เห็น Row" — สาเหตุจริง บวกโหมดเต็มจอแบบ BigQuery
+
+**คำอธิบายสองรอบก่อนของผมผิดทั้งคู่** — ไม่ใช่ "แถบอธิบายแย่งที่กับ grid" (แก้ด้วย ratio) และไม่ใช่ "ลาก splitter เอา" — **แถวถูก render ออกมาถูกต้องตลอด แต่มันอยู่นอกจอ และหน้า scroll ลงไปดูไม่ได้**
+
+#### หลักฐาน — วัดด้วย Playwright 4 ขนาดจอ (ก่อนแก้)
+
+| จอ | แถวแรกสิ้นสุดที่ | จอสูง | หลุดจอ? | scroll ได้? |
+|---|---|---|---|---|
+| 1920×1080 | 805 | 1080 | ✅ | — |
+| 1536×864 | 823 | 864 | ✅ | — |
+| **1366×768** | **841** | 768 | ❌ | **ไม่ได้** |
+| **1280×720** | **862** | 720 | ❌ | **ไม่ได้** |
+
+`document.scrollHeight === document.clientHeight` ทุกขนาด → แถวถูก render จริง (`rows: 2` ทุกขนาด) แต่**เข้าถึงไม่ได้เลย**
+
+#### สาเหตุจริงมี 4 ชั้นซ้อนกัน ไม่ใช่ชั้นเดียว
+
+1. **`tw:h-[calc(100vh-8rem)]` ที่ root ของหน้า** — กัน chrome ไว้ 8rem (128px) แต่ header + ชื่อหน้า + คำอธิบายกินจริง ~230px และ**คำอธิบาย wrap เพิ่มบรรทัดเมื่อจอแคบลง** → จอยิ่งเล็ก เนื้อหายิ่งล้นล่าง
+   → แก้ด้วย `useFillViewport()` — **วัด `getBoundingClientRect().top` จริง แล้วเอา `window.innerHeight` ลบ** (`innerHeight` ไม่ใช่ `100vh` — บนมือถือสองค่านี้ต่างกัน) + `ResizeObserver`
+2. **console column ไม่มี `tw:min-h-0`** — flex child ที่ขาด `min-h-0` **หดตัวต่ำกว่า content ไม่ได้** → root สูงตามที่วัดมา แต่ของข้างในทะลุออกมา
+3. **แถบอธิบาย policy เป็น `tw:max-h-32` + `tw:shrink-0`** — นี่คือตัวร้ายตัวจริง: panel สูง 140px แต่ tab bar 36 + strip 128 = 164 → **กล่องตารางเหลือสูง `0px` และถูกดันไปวางใต้ panel ที่ top=735 ขณะที่ panel จบที่ 728**
+   → `tw:max-h-[30%]` (สัดส่วนของ panel ไม่ใช่ค่าคงที่) + `MIN_RESULT_HEIGHT` 140 → **240**
+4. **`useRef` + `ResizeObserver` กับ portal** — เข้า/ออกโหมดเต็มจอย้าย DOM ทั้งก้อน → node ใหม่ แต่ ref object ตัวเดิม → effect ไม่ rerun → **observer เกาะ node ที่หลุดออกจาก document ไปแล้ว** → ออกจากเต็มจอที 1280×720 แถวหลุดอีก
+   → เปลี่ยนเป็น **callback ref** (`useState<HTMLDivElement | null>`) ให้ effect rerun ตอน node เปลี่ยน
+
+#### โหมดเต็มจอ (ผู้ใช้ขอ: "เต็มหน้า ไม่ต้องเห็น menu ข้างๆ หรือข้างบน")
+
+ปุ่ม **Full screen** ใน toolbar + **Esc** ออก → ซ่อน top bar, side nav และหัวข้อ "Query" + คำอธิบายทั้งย่อหน้า
+
+> **กับดักที่เสียเวลานานที่สุด:** `tw:fixed tw:inset-0 tw:z-50` **ไม่พอ** — `.arak-page-enter` มี `animation: ... both` ที่ keyframes มี `transform` → มันกลายเป็น **containing block ของ `position: fixed`** และเป็น **stacking context ของตัวเอง** → `inset-0` กลายเป็นขอบเขตของ *หน้า* ไม่ใช่ viewport และ top bar (`sticky z-50`) ยังทับทับขึ้นมาถึงแม้ z-index จะสูงกว่า
+> **ทางแก้:** `createPortal(consoleTree, document.body)` — ออกจาก subtree ที่ transform ไปเลย ไม่ใช่ไล่ z-index เอา
+
+#### หลักฐานหลังแก้ — 4 ขนาดจอ × 3 สถานะ (normal / fullscreen / กด Esc กลับ)
+
+```
+1920x1080 normal   belowFold:false     fullscr belowFold:false gridH:602   after-Esc belowFold:false
+1536x864  normal   belowFold:false     fullscr belowFold:false gridH:386   after-Esc belowFold:false
+1366x768  normal   belowFold:false     fullscr belowFold:false gridH:246   after-Esc belowFold:false
+1280x720  normal   belowFold:false     fullscr belowFold:false gridH:202   after-Esc belowFold:false
+fs-chrome (ทุกขนาด): overlayInBody:true topbarCovered:true sidebarCovered:true titleVisible:false
+```
+
+`npx tsc --noEmit` ผ่าน · `npx jest` → 7 suites / 25 tests ผ่าน
+
+#### ไฟล์ที่แก้ — [QueryPage.tsx](frontend/app/src/pages/query/QueryPage.tsx) ไฟล์เดียว
+
+| สิ่งที่เพิ่ม | หน้าที่ |
+|---|---|
+| `useFillViewport(node, disabled)` | วัดที่ว่างจริงใต้ chrome แทนที่จะเดา |
+| `useElementHeight(node)` | ความสูง pane สำหรับ clamp ค่า splitter ที่ save ไว้ |
+| `fullscreen` state + `createPortal` | โหมดเต็มจอ |
+| `shownEditorHeight` | ค่า split ที่ save จากจอใหญ่ **ไม่ไปกินที่ grid บนจอเล็ก** (clamp ตอนอ่าน ไม่ตอนเขียน → preference ไม่หาย) |
+
+> **บทเรียน:** ผมอธิบายสองรอบแรกจากการเดา ไม่ใช่การวัด รอบนี้เดิน DOM จาก `tbody` ขึ้นไปทีละชั้นจนเจอชั้นที่ `top` มากกว่า `bottom` ของ parent — สามบรรทัดของตารางเดียวชี้ชัดกว่าการเดาสามรอบรวมกัน
+
 ---
 
 ## รอบก่อนหน้า — Global search ข้ามทุก entity + transition ตอนเปลี่ยนหน้า/เข้า-ออกระบบ + ชิป governance ที่อ่านออก

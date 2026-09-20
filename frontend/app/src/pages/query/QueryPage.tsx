@@ -1,13 +1,16 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { Button } from '@openmetadata/ui-core-components/components/base/buttons/button';
 import { Badge } from '@openmetadata/ui-core-components/components/base/badges/badges';
 import {
   AlertTriangle,
   Copy01,
+  Expand01,
   Eye,
   EyeOff,
   FilterLines,
+  Minimize01,
   Play,
   Shield01,
 } from '@untitledui/icons';
@@ -49,6 +52,26 @@ export default function QueryPage() {
   const [purpose, setPurpose] = useState('');
   const [maxRows, setMaxRows] = useState(String(DEFAULT_ROWS));
   const [tab, setTab] = useState<'results' | 'sql' | 'details'>('results');
+  const [fullscreen, setFullscreen] = useState(false);
+
+  // The console fills whatever is left below the page chrome, measured rather
+  // than assumed. The height used to be `calc(100vh - 8rem)`, which guessed at
+  // the chrome above it; the guess was ~100px short, so on a 1366x768 screen
+  // the bottom of the console -- the grid -- sat past the edge of a page that
+  // does not scroll, and the rows were rendered but unreachable.
+  const [shellNode, setShellNode] = useState<HTMLDivElement | null>(null);
+  const available = useFillViewport(shellNode, fullscreen);
+
+  // Esc leaves full screen. The button says so too, but a screen with no
+  // visible chrome has to have the key that everything else uses to get out.
+  useEffect(() => {
+    if (!fullscreen) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setFullscreen(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [fullscreen]);
 
   // Read at submit time rather than through state, so Ctrl+Enter runs the text
   // on screen and not the render before it.
@@ -64,6 +87,18 @@ export default function QueryPage() {
   // on the query and the screen, and is therefore the reader's decision rather
   // than a ratio we can pick for them.
   const [editorHeight, setEditorHeight] = useState(readEditorHeight);
+
+  // A split remembered on a 27-inch monitor is taller than the whole pane on a
+  // laptop. Clamped on the way out rather than on the way in, so the preference
+  // survives and is merely not honoured where it would not fit.
+  const [paneNode, setPaneNode] = useState<HTMLDivElement | null>(null);
+  const paneHeight = useElementHeight(paneNode);
+  const shownEditorHeight = paneHeight
+    ? Math.min(
+        editorHeight,
+        Math.max(MIN_EDITOR_HEIGHT, paneHeight - MIN_RESULT_HEIGHT)
+      )
+    : editorHeight;
 
   const { data: sources } = useQuery({
     queryKey: ['sources'],
@@ -112,27 +147,43 @@ export default function QueryPage() {
     );
   }
 
-  return (
-    <div className="tw:flex tw:h-[calc(100vh-8rem)] tw:flex-col">
-      <header className="tw:shrink-0">
-        <h1 className="tw:text-display-sm tw:font-semibold tw:text-primary">
-          Query
-        </h1>
-        <p className="tw:mt-2 tw:max-w-3xl tw:text-md tw:text-tertiary">
-          SQL runs through the platform, not beside it. Every table is resolved
-          to an asset, the policy is compiled into the statement, and what you
-          get back is what the policy allows. A statement the proxy cannot place
-          a policy in front of is refused rather than sent.
-        </p>
-      </header>
+  const consoleTree = (
+    <div
+      className={
+        fullscreen
+          // Above the sticky top bar (z-50) and the mobile nav drawer
+            // (z-60), because "full screen" that the chrome still
+            // paints over is not full screen.
+            ? 'tw:fixed tw:inset-0 tw:z-70 tw:flex tw:flex-col tw:bg-primary tw:p-4'
+          : 'tw:flex tw:flex-col'
+      }
+      ref={setShellNode}
+      style={fullscreen ? undefined : { height: available }}>
+      {!fullscreen && (
+        <header className="tw:shrink-0">
+          <h1 className="tw:text-display-sm tw:font-semibold tw:text-primary">
+            Query
+          </h1>
+          <p className="tw:mt-2 tw:max-w-3xl tw:text-md tw:text-tertiary">
+            SQL runs through the platform, not beside it. Every table is
+            resolved to an asset, the policy is compiled into the statement,
+            and what you get back is what the policy allows. A statement the
+            proxy cannot place a policy in front of is refused rather than
+            sent.
+          </p>
+        </header>
+      )}
 
-      <div className="tw:mt-6 tw:flex tw:min-h-0 tw:flex-1 tw:gap-4">
+      <div
+        className={`tw:flex tw:min-h-0 tw:flex-1 tw:gap-4 ${
+          fullscreen ? '' : 'tw:mt-6'
+        }`}>
         <SchemaExplorer
           onInsert={insert}
           serviceFqn={selected?.omServiceFqn ?? null}
         />
 
-        <div className="tw:flex tw:min-w-0 tw:flex-1 tw:flex-col tw:gap-3">
+        <div className="tw:flex tw:min-h-0 tw:min-w-0 tw:flex-1 tw:flex-col tw:gap-3">
           <div className="tw:flex tw:flex-wrap tw:items-center tw:gap-2">
             <Button
               color="primary"
@@ -205,9 +256,25 @@ export default function QueryPage() {
               value={purpose}
             />
 
-            <span className="tw:ml-auto tw:text-xs tw:text-quaternary">
-              Ctrl/⌘ + Enter to run
-            </span>
+            {/* One group, so the hint never wraps away from the button it
+                sits beside and the pair stays inside the right edge. */}
+            <div className="tw:ml-auto tw:flex tw:shrink-0 tw:items-center tw:gap-3">
+              <span className="tw:hidden tw:text-xs tw:text-quaternary tw:xl:inline">
+                Ctrl/⌘ + Enter to run
+              </span>
+
+              {/* The grid is the reason this screen exists, and on a laptop
+                  the page chrome costs it about a third of its height. Giving
+                  the console the whole viewport is cheaper than asking
+                  somebody to drag the splitter every time they open it. */}
+              <Button
+                color="secondary"
+                iconLeading={fullscreen ? Minimize01 : Expand01}
+                onClick={() => setFullscreen((on) => !on)}
+                size="sm">
+                {fullscreen ? 'Exit full screen' : 'Full screen'}
+              </Button>
+            </div>
           </div>
 
           {/* Shown either way. Saying nothing when no role is picked is what
@@ -232,34 +299,50 @@ export default function QueryPage() {
             )}
           </p>
 
-          <div className="tw:flex tw:shrink-0" style={{ height: editorHeight }}>
-            <SqlEditor
-              disabled={run.isPending}
-              onChange={setSql}
-              onRun={() => run.mutate()}
-              value={sql}
+          <div className="tw:flex tw:min-h-0 tw:flex-1 tw:flex-col" ref={setPaneNode}>
+            <div
+              className="tw:flex tw:shrink-0"
+              style={{ height: shownEditorHeight }}>
+              <SqlEditor
+                disabled={run.isPending}
+                onChange={setSql}
+                onRun={() => run.mutate()}
+                value={sql}
+              />
+            </div>
+
+            <Splitter height={shownEditorHeight} onChange={setEditorHeight} />
+
+            <ResultPanel
+              error={run.error}
+              isPending={run.isPending}
+              result={result}
+              setTab={setTab}
+              tab={tab}
             />
           </div>
-
-          <Splitter height={editorHeight} onChange={setEditorHeight} />
-
-          <ResultPanel
-            error={run.error}
-            isPending={run.isPending}
-            result={result}
-            setTab={setTab}
-            tab={tab}
-          />
         </div>
       </div>
     </div>
   );
+
+  // Portalled to the body rather than merely given a high z-index. The page
+  // wrapper carries a filling `transform` animation, which makes it a
+  // containing block for `position: fixed` and a stacking context of its own --
+  // so `inset-0` resolved to the page area, not the viewport, and the sticky
+  // top bar kept painting over an overlay nominally twenty layers above it.
+  return fullscreen ? createPortal(consoleTree, document.body) : consoleTree;
 }
 
 const EDITOR_HEIGHT_KEY = 'arak.query.editorHeight';
 const MIN_EDITOR_HEIGHT = 72;
-const MIN_RESULT_HEIGHT = 140;
+// Tab bar, explanation strip and enough grid left over to read: a floor
+// that only fits the chrome is a floor that guarantees an empty-looking grid.
+const MIN_RESULT_HEIGHT = 240;
 const DEFAULT_EDITOR_HEIGHT = 200;
+// Below this the console is useless anyway, so a very short window gets a
+// scrollbar rather than a console squeezed to nothing.
+const MIN_CONSOLE_HEIGHT = 420;
 
 /**
  * Remembered per browser, because the right split is a property of the screen
@@ -574,7 +657,7 @@ function AppliedPolicies({ result }: { result: QueryResult }) {
     // Capped and scrollable: an asset with a dozen masked columns must not be
     // able to push the rows it is describing off the screen. The explanation
     // exists to make the grid readable, so it never outranks the grid.
-    <div className="tw:max-h-32 tw:shrink-0 tw:space-y-2 tw:overflow-auto tw:border-b tw:border-secondary tw:bg-secondary tw:px-3 tw:py-2">
+    <div className="tw:max-h-[30%] tw:shrink-0 tw:space-y-2 tw:overflow-auto tw:border-b tw:border-secondary tw:bg-secondary tw:px-3 tw:py-2">
       {explanations.map((explanation) => (
         <ExplanationRow explanation={explanation} key={explanation.asset} />
       ))}
@@ -703,4 +786,61 @@ function Detail({
       <dd className="tw:text-primary">{children}</dd>
     </>
   );
+}
+
+/**
+ * The height left between the top of an element and the bottom of the window.
+ *
+ * Measured, not computed from a constant: the chrome above this console is a
+ * global header plus a page title whose description wraps to a different
+ * number of lines at different widths, so any `calc(100vh - <constant>)` is
+ * right at exactly one viewport size and too tall at every smaller one. Too
+ * tall is the dangerous direction here, because the page does not scroll --
+ * the overflow is simply off the screen.
+ */
+function useFillViewport(node: HTMLElement | null, disabled: boolean) {
+  const [height, setHeight] = useState<number | undefined>(undefined);
+
+  useLayoutEffect(() => {
+    if (disabled) {
+      setHeight(undefined);
+      return;
+    }
+    if (!node) return;
+
+    const measure = () => {
+      // innerHeight and not 100vh: on a phone the two differ by the browser
+      // chrome, in the direction that pushes content off the bottom.
+      const top = node.getBoundingClientRect().top;
+      setHeight(Math.max(MIN_CONSOLE_HEIGHT, window.innerHeight - top - 32));
+    };
+
+    measure();
+    // The element's own top moves when the header above it rewraps, which a
+    // window resize does not always accompany -- a collapsing sidebar, for one.
+    const observer = new ResizeObserver(measure);
+    observer.observe(document.body);
+    window.addEventListener('resize', measure);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('resize', measure);
+    };
+  }, [node, disabled]);
+
+  return height;
+}
+
+/** The live height of an element, for layout that has to add up. */
+function useElementHeight(node: HTMLElement | null) {
+  const [height, setHeight] = useState(0);
+
+  useLayoutEffect(() => {
+    if (!node) return;
+    const observer = new ResizeObserver(() => setHeight(node.clientHeight));
+    observer.observe(node);
+    setHeight(node.clientHeight);
+    return () => observer.disconnect();
+  }, [node]);
+
+  return height;
 }
