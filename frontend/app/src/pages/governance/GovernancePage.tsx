@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router-dom';
-import { ChevronDown, ChevronRight } from '@untitledui/icons';
+import { ChevronDown, ChevronRight, Minimize01, Maximize01 } from '@untitledui/icons';
 import { Badge } from '@openmetadata/ui-core-components/components/base/badges/badges';
 import { apiErrorMessage } from '../../api/client';
 import {
@@ -10,6 +10,7 @@ import {
   type GovernanceValue,
 } from '../../api/governance';
 import { TextField } from '../policies/controls';
+import { plainText } from '../../lib/text';
 
 /**
  * The governance vocabulary: every tag, term, domain and data product a policy
@@ -56,6 +57,11 @@ export default function GovernancePage() {
   const [params, setParams] = useSearchParams();
   const tab = (params.get('tab') as TabKey) ?? 'classifications';
   const [search, setSearch] = useState('');
+  // Expand/collapse all is a one-shot instruction, not a mode: a new object
+  // identity tells every row to jump to that state once, after which each row
+  // is free to disagree again. Holding it as a boolean mode instead would mean
+  // "expand all" keeps forcing a row open that the reader just closed.
+  const [bulk, setBulk] = useState<Bulk | null>(null);
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['governance-vocabulary'],
@@ -95,13 +101,29 @@ export default function GovernancePage() {
 
       <p className="tw:mt-3 tw:text-sm tw:text-tertiary">{active.blurb}</p>
 
-      <div className="tw:mt-4 tw:max-w-sm">
-        <TextField
-          ariaLabel="Filter"
-          onChange={setSearch}
-          placeholder="Filter by name"
-          value={search}
-        />
+      <div className="tw:mt-4 tw:flex tw:flex-wrap tw:items-center tw:gap-2">
+        <div className="tw:max-w-sm tw:flex-1">
+          <TextField
+            ariaLabel="Filter"
+            onChange={setSearch}
+            placeholder="Filter by name"
+            value={search}
+          />
+        </div>
+        {tab !== 'properties' && (
+          <div className="tw:flex tw:gap-2">
+            <BulkButton
+              icon={<Maximize01 className="tw:size-4" />}
+              label="Expand all"
+              onPress={() => setBulk({ nonce: Date.now(), open: true })}
+            />
+            <BulkButton
+              icon={<Minimize01 className="tw:size-4" />}
+              label="Collapse all"
+              onPress={() => setBulk({ nonce: Date.now(), open: false })}
+            />
+          </div>
+        )}
       </div>
 
       {error && (
@@ -126,6 +148,7 @@ export default function GovernancePage() {
               .filter((value): value is GovernanceValue => value !== null)
               .map((value) => (
                 <ValueRow
+                  bulk={bulk}
                   forceOpen={search.trim().length > 0}
                   key={value.fqn}
                   tab={tab}
@@ -141,12 +164,43 @@ export default function GovernancePage() {
             {(data?.dataProducts ?? [])
               .filter((value) => matches(value, search.trim().toLowerCase()))
               .map((value) => (
-                <ValueRow key={value.fqn} tab="dataProducts" value={value} />
+                <ValueRow
+                  bulk={bulk}
+                  key={value.fqn}
+                  tab="dataProducts"
+                  value={value}
+                />
               ))}
           </>
         )}
       </section>
     </>
+  );
+}
+
+/** A single "open/close everything" instruction, identified by when it was given. */
+interface Bulk {
+  nonce: number;
+  open: boolean;
+}
+
+function BulkButton({
+  label,
+  icon,
+  onPress,
+}: {
+  label: string;
+  icon: ReactNode;
+  onPress: () => void;
+}) {
+  return (
+    <button
+      className="tw:flex tw:items-center tw:gap-1.5 tw:rounded-lg tw:border tw:border-secondary tw:bg-primary tw:px-3 tw:py-2 tw:text-sm tw:font-medium tw:text-secondary tw:hover:bg-secondary"
+      onClick={onPress}
+      type="button">
+      {icon}
+      {label}
+    </button>
   );
 }
 
@@ -201,14 +255,22 @@ function ValueRow({
   tab,
   depth = 0,
   forceOpen = false,
+  bulk = null,
 }: {
   value: GovernanceValue;
   tab: string;
   depth?: number;
   forceOpen?: boolean;
+  bulk?: Bulk | null;
 }) {
   const facet = facetOf(tab, value);
   const [open, setOpen] = useState(depth === 0);
+  // Only on a new instruction, hence the nonce in the dependency list rather
+  // than the flag: clicking "expand all" twice should still reopen a row the
+  // reader closed in between.
+  useEffect(() => {
+    if (bulk) setOpen(bulk.open);
+  }, [bulk?.nonce]); // eslint-disable-line react-hooks/exhaustive-deps
   const expanded = forceOpen || open;
   const hasChildren = value.children.length > 0;
 
@@ -255,9 +317,9 @@ function ValueRow({
               </Badge>
             )}
           </div>
-          {value.description && (
+          {plainText(value.description) && (
             <p className="tw:mt-0.5 tw:truncate tw:text-xs tw:text-tertiary">
-              {value.description}
+              {plainText(value.description)}
             </p>
           )}
         </div>
@@ -282,6 +344,7 @@ function ValueRow({
       {expanded &&
         value.children.map((child) => (
           <ValueRow
+            bulk={bulk}
             depth={depth + 1}
             forceOpen={forceOpen}
             key={child.fqn}
@@ -316,8 +379,10 @@ function PropertyRow({ property }: { property: CustomPropertyDef }) {
       {property.enumValues && (
         <span className="tw:text-xs tw:text-tertiary">{property.enumValues}</span>
       )}
-      {property.description && (
-        <span className="tw:text-xs tw:text-tertiary">{property.description}</span>
+      {plainText(property.description) && (
+        <span className="tw:text-xs tw:text-tertiary">
+          {plainText(property.description)}
+        </span>
       )}
     </div>
   );

@@ -9,6 +9,7 @@ import {
   type FacetRow,
 } from '../../api/client';
 import { FacetChip, OwnerChip, facetLabel, groupFacets } from './facets';
+import { plainText } from '../../lib/text';
 
 /**
  * One asset, with everything a policy can select it by.
@@ -93,9 +94,9 @@ export default function AssetDetailPage() {
         <p className="tw:mt-2 tw:font-mono tw:text-xs tw:break-all tw:text-quaternary">
           {asset.fqn}
         </p>
-        {asset.description && (
+        {plainText(asset.description) && (
           <p className="tw:mt-3 tw:max-w-3xl tw:text-sm tw:text-tertiary">
-            {asset.description}
+            {plainText(asset.description)}
           </p>
         )}
       </header>
@@ -212,9 +213,9 @@ function ColumnRow({ column }: { column: ColumnDetail }) {
     <tr className="tw:border-b tw:border-secondary tw:last:border-0">
       <td className="tw:py-2 tw:pr-3 tw:align-top">
         <span className="tw:font-medium tw:text-primary">{column.name}</span>
-        {column.description && (
+        {plainText(column.description) && (
           <p className="tw:mt-0.5 tw:max-w-md tw:text-xs tw:text-tertiary">
-            {column.description}
+            {plainText(column.description)}
           </p>
         )}
       </td>

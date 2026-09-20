@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { AlertTriangle, CheckCircle, XCircle } from '@untitledui/icons';
 import { Badge } from '@openmetadata/ui-core-components/components/base/badges/badges';
 import { Button } from '@openmetadata/ui-core-components/components/base/buttons/button';
@@ -49,11 +49,20 @@ const EMPTY: Policy = {
 
 export default function PolicyBuilderPage() {
   const { id } = useParams();
+  const [params] = useSearchParams();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const isNew = !id;
 
-  const [draft, setDraft] = useState<Policy>(EMPTY);
+  // `?kind=` lets the header's Create menu ask for the kind before the form
+  // opens. Subscription and data policies are different jobs; choosing between
+  // them inside step one of a form is where that distinction goes to be missed.
+  const kind = params.get('kind');
+  const [draft, setDraft] = useState<Policy>(() =>
+    kind === 'DATA' || kind === 'SUBSCRIPTION'
+      ? { ...EMPTY, policyType: kind }
+      : EMPTY
+  );
   const [loaded, setLoaded] = useState<StoredPolicy | null>(null);
   const [engine, setEngine] = useState<Engine>('POSTGRES');
   const [saveError, setSaveError] = useState<string | null>(null);

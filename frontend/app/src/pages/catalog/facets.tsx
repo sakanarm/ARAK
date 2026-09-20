@@ -1,6 +1,7 @@
 import { Badge } from '@openmetadata/ui-core-components/components/base/badges/badges';
 import type { BadgeColors } from '@openmetadata/ui-core-components/components/base/badges/badge-types';
 import type { AssetOwner, FacetRow } from '../../api/client';
+import { isAncestor, shortFqn } from '../../lib/fqn';
 
 /**
  * How governance facets are drawn wherever they appear.
@@ -65,10 +66,11 @@ export function FacetChip({ facet }: { facet: FacetRow }) {
   const label =
     facet.facetType === 'customProperty' && facet.property
       ? `${facet.property} = ${facet.facetFqn}`
-      : facet.facetFqn;
+      : shortFqn(facet.facetFqn);
 
   const why = [
     facetLabel(facet.facetType),
+    facet.facetFqn,
     facet.direct ? 'applied here' : `inherited${facet.inheritedFrom ? ` from ${facet.inheritedFrom}` : ''}`,
     facet.omLabelType ? `label ${facet.omLabelType}` : null,
     facet.omState ? `state ${facet.omState}` : null,
@@ -79,8 +81,14 @@ export function FacetChip({ facet }: { facet: FacetRow }) {
 
   return (
     <span className={facet.direct ? undefined : 'tw:opacity-70'} title={why}>
-      <Badge color={suggested ? 'gray' : colour} size="sm" type="pill-color">
-        {label}
+      <Badge
+        className="tw:max-w-72"
+        color={suggested ? 'gray' : colour}
+        size="sm"
+        type="pill-color">
+        {/* Truncated rather than wrapped: a chip that grows to fit a
+            hundred-character sub-domain takes the whole row with it. */}
+        <span className="tw:truncate">{label}</span>
         {!facet.direct && <span className="tw:ml-1 tw:opacity-70">↑</span>}
         {suggested && <span className="tw:ml-1">?</span>}
       </Badge>
@@ -123,16 +131,38 @@ export function groupFacets(facets: FacetRow[]): [string, FacetRow[]][] {
 }
 
 /**
+ * Facet types that say nothing new on a list row.
+ *
+ * <p>`classifications` is the head of the tag FQN that is already on the row —
+ * an asset tagged `PII.Sensitive` drew a second chip reading `PII`. `tier` is
+ * drawn as its own badge in the row header, so keeping the facet drew `Tier2`
+ * twice. Both are still shown in full on the asset page, where completeness is
+ * the point.
+ */
+const OFF_THE_LIST = ['classifications', 'tier'];
+
+/**
  * The facets shown on a list row.
  *
  * <p>Physical facets (service, database, schema, column name, data type) are
  * dropped: they repeat what the FQN already says, and on a list they crowd out
  * the governance that the row exists to show. The asset page shows everything.
+ *
+ * <p>Ancestors are dropped too. `asset_facet` deliberately materialises the
+ * whole chain (FR-2A.2) so that a selector is an index lookup, but a row that
+ * prints every link of it is a row of eleven chips where four carry the
+ * meaning: a three-deep sub-domain arrived as three chips, each repeating the
+ * one before it. The deepest one implies its ancestors, and the tooltip on it
+ * spells them out.
  */
 export function listFacets(facets: FacetRow[]): FacetRow[] {
-  const shown = facets.filter((facet) => facet.facetType in FACET_LABELS);
+  const shown = facets.filter(
+    (facet) =>
+      facet.facetType in FACET_LABELS && !OFF_THE_LIST.includes(facet.facetType)
+  );
+
   const seen = new Set<string>();
-  return shown.filter((facet) => {
+  const unique = shown.filter((facet) => {
     const key = `${facet.facetType}:${facet.facetFqn}:${facet.property ?? ''}`;
     if (seen.has(key)) {
       return false;
@@ -140,4 +170,13 @@ export function listFacets(facets: FacetRow[]): FacetRow[] {
     seen.add(key);
     return true;
   });
+
+  return unique.filter(
+    (facet) =>
+      !unique.some(
+        (other) =>
+          other.facetType === facet.facetType &&
+          isAncestor(facet.facetFqn, other.facetFqn)
+      )
+  );
 }

@@ -335,7 +335,10 @@ public class PolicyBindingMaterializer {
                     rs.getString("name"),
                     rs.getString("scope_fqn"),
                     rs.getString("scope_level"),
-                    json.readValue(rs.getString("document"), Policy.class));
+                    // Same reason as PolicyStore.deserialise: the id lives in the
+                    // column, and a policy without one cannot be cited later.
+                    json.readValue(rs.getString("document"), Policy.class)
+                        .withId(UUID.fromString(rs.getString("id"))));
               } catch (Exception e) {
                 throw new IllegalStateException("Cannot read policy " + policyId, e);
               }

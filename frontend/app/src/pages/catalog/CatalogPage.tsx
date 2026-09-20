@@ -1,9 +1,16 @@
 import { useMemo, useState } from 'react';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router-dom';
-import { Database01, SearchLg, XClose } from '@untitledui/icons';
+import {
+  ChevronDown,
+  Database01,
+  FilterLines,
+  SearchLg,
+  XClose,
+} from '@untitledui/icons';
 import { Badge } from '@openmetadata/ui-core-components/components/base/badges/badges';
 import { Button } from '@openmetadata/ui-core-components/components/base/buttons/button';
+import { Checkbox } from '@openmetadata/ui-core-components/components/base/checkbox/checkbox';
 import { Input } from '@openmetadata/ui-core-components/components/base/input/input';
 import {
   apiErrorMessage,
@@ -19,6 +26,9 @@ import {
   facetLabel,
   listFacets,
 } from './facets';
+import { Select } from '../policies/controls';
+import { leaf, segments, shortFqn } from '../../lib/fqn';
+import { plainText } from '../../lib/text';
 
 const PAGE_SIZE = 25;
 const ASSET_TYPES = ['TABLE', 'VIEW', 'SCHEMA', 'DATABASE', 'SERVICE'];
@@ -133,26 +143,27 @@ export default function CatalogPage() {
               value={searchDraft}
             />
           </div>
-          <select
-            aria-label="Asset type"
-            className="tw:rounded-lg tw:border tw:border-primary tw:bg-primary tw:px-3 tw:py-2 tw:text-sm tw:text-primary"
-            onChange={(event) =>
+          <Select
+            ariaLabel="Asset type"
+            className="tw:min-w-44"
+            onChange={(next) =>
               update((draft) => {
-                if (event.target.value) {
-                  draft.set('type', event.target.value);
+                if (next) {
+                  draft.set('type', next);
                 } else {
                   draft.delete('type');
                 }
               })
             }
-            value={assetType}>
-            <option value="">All types</option>
-            {ASSET_TYPES.map((type) => (
-              <option key={type} value={type}>
-                {type.charAt(0) + type.slice(1).toLowerCase()}
-              </option>
-            ))}
-          </select>
+            options={[
+              { value: '', label: 'All types' },
+              ...ASSET_TYPES.map((type) => ({
+                value: type,
+                label: type.charAt(0) + type.slice(1).toLowerCase(),
+              })),
+            ]}
+            value={assetType}
+          />
           <Button size="md" type="submit">
             Search
           </Button>
@@ -172,16 +183,25 @@ export default function CatalogPage() {
         {facets.length > 0 && (
           <div className="tw:mt-3 tw:flex tw:flex-wrap tw:items-center tw:gap-2">
             <span className="tw:text-xs tw:text-tertiary">Filtering on</span>
-            {facets.map((facet) => (
-              <button
-                className="tw:inline-flex tw:items-center tw:gap-1 tw:rounded-full tw:bg-brand-primary tw:px-2 tw:py-0.5 tw:text-xs tw:text-brand-secondary"
-                key={facet}
-                onClick={() => toggleFacet(facet)}
-                type="button">
-                {facet}
-                <XClose className="tw:size-3" />
-              </button>
-            ))}
+            {facets.map((facet) => {
+              // `type:fqn`, and only the first colon separates them — an FQN
+              // may contain one.
+              const cut = facet.indexOf(':');
+              const type = facet.slice(0, cut);
+              const value = facet.slice(cut + 1);
+              return (
+                <button
+                  className="tw:inline-flex tw:max-w-80 tw:items-center tw:gap-1 tw:rounded-full tw:bg-brand-primary tw:px-2 tw:py-0.5 tw:text-xs tw:text-brand-secondary"
+                  key={facet}
+                  onClick={() => toggleFacet(facet)}
+                  title={`${facetLabel(type)} · ${value}`}
+                  type="button">
+                  <span className="tw:opacity-70">{facetLabel(type)}</span>
+                  <span className="tw:truncate">{shortFqn(value)}</span>
+                  <XClose className="tw:size-3 tw:shrink-0" />
+                </button>
+              );
+            })}
             {/* Said plainly because the opposite — OR — is what most search
                 boxes do, and an author who assumes OR reads a narrow list as
                 proof that nothing else is tagged. */}
@@ -191,7 +211,6 @@ export default function CatalogPage() {
           </div>
         )}
 
-        <FacetPicker active={facets} onToggle={toggleFacet} />
       </section>
 
       {error && (
@@ -200,7 +219,10 @@ export default function CatalogPage() {
         </p>
       )}
 
-      <section className="tw:mt-6">
+      <div className="tw:mt-6 tw:flex tw:flex-col tw:gap-6 tw:lg:flex-row tw:lg:items-start">
+        <FacetRail active={facets} onToggle={toggleFacet} />
+
+        <section className="tw:min-w-0 tw:flex-1">
         <div className="tw:flex tw:items-center tw:justify-between">
           <p className="tw:text-sm tw:text-tertiary">
             {isLoading
@@ -248,7 +270,8 @@ export default function CatalogPage() {
             <AssetRow asset={asset} key={asset.id} />
           ))}
         </ul>
-      </section>
+        </section>
+      </div>
     </>
   );
 }
@@ -292,9 +315,9 @@ function AssetRow({ asset }: { asset: AssetSummary }) {
           <p className="tw:mt-0.5 tw:truncate tw:font-mono tw:text-xs tw:text-quaternary">
             {asset.fqn}
           </p>
-          {asset.description && (
+          {plainText(asset.description) && (
             <p className="tw:mt-2 tw:line-clamp-2 tw:text-sm tw:text-tertiary">
-              {asset.description}
+              {plainText(asset.description)}
             </p>
           )}
         </div>
@@ -341,13 +364,28 @@ function AssetRow({ asset }: { asset: AssetSummary }) {
   );
 }
 
+/** Values shown per group before "Show all" is offered. */
+const FACET_PREVIEW = 6;
+
+/** The point at which a group gets its own search box. */
+const FACET_SEARCHABLE = 10;
+
 /**
- * The facet values in use, as filters.
+ * The facet values in use, as filters — OpenMetadata's Explore rail.
  *
  * <p>Read from what assets actually carry rather than from every tag defined in
  * OpenMetadata, so no option here returns nothing.
+ *
+ * <p>Vertical, one value per line, rather than the wrapped row of chips this
+ * replaced. The chips were the wrong shape for the data: a sub-domain named
+ * `Premium Service Delivery - IOS Data/DTP - Sub Domain` has to be cut to fit a
+ * chip, and once several of them are cut they all read
+ * `… / Premium Service Delivery - IOS …` and become impossible to tell apart —
+ * which is fatal for a control whose entire job is picking the right one of
+ * them. A line gives the name the full width of the rail, and the count sits in
+ * a column where the eye can compare the numbers instead of hunting for them.
  */
-function FacetPicker({
+function FacetRail({
   active,
   onToggle,
 }: {
@@ -370,6 +408,13 @@ function FacetPicker({
       bucket.push(value);
       groups.set(value.facetType, bucket);
     }
+    // By name, not by count. These facets are hierarchies, and sorting by
+    // count scatters `PII.Sensitive` away from `PII` — which matters here
+    // because the rail draws a child indented under its parent, and an indent
+    // under an unrelated row is a lie about where the value sits.
+    for (const bucket of groups.values()) {
+      bucket.sort((a, b) => a.facetFqn.localeCompare(b.facetFqn));
+    }
     return FILTERABLE_FACETS.filter((type) => groups.has(type)).map(
       (type) => [type, groups.get(type)!] as const
     );
@@ -379,33 +424,186 @@ function FacetPicker({
     return null;
   }
 
+  // Stacked above the results when there is no room beside them, rather than
+  // hidden: this is the only way to filter on a tag, and a narrow window is not
+  // a reason to take that away.
   return (
-    <div className="tw:mt-4 tw:space-y-3 tw:border-t tw:border-secondary tw:pt-4">
-      {byType.map(([type, values]) => (
-        <div className="tw:flex tw:flex-wrap tw:items-baseline tw:gap-2" key={type}>
-          <span className="tw:w-32 tw:shrink-0 tw:text-xs tw:text-tertiary">
-            {facetLabel(type)}
+    <aside className="tw:w-full tw:shrink-0 tw:overflow-hidden tw:rounded-xl tw:border tw:border-secondary tw:bg-primary tw:lg:sticky tw:lg:top-4 tw:lg:w-64 tw:lg:self-start">
+      <div className="tw:flex tw:items-center tw:gap-2 tw:border-b tw:border-secondary tw:px-4 tw:py-3">
+        <FilterLines className="tw:size-4 tw:text-tertiary" />
+        <h2 className="tw:text-sm tw:font-semibold tw:text-primary">Filters</h2>
+        {active.length > 0 && (
+          <span className="tw:ml-auto tw:rounded-full tw:bg-brand-primary tw:px-2 tw:py-0.5 tw:text-xs tw:font-medium tw:text-brand-secondary">
+            {active.length}
           </span>
-          {values.slice(0, 12).map((value) => {
+        )}
+      </div>
+
+      {byType.map(([type, values]) => (
+        <FacetGroup
+          active={active}
+          key={type}
+          onToggle={onToggle}
+          type={type}
+          values={values}
+        />
+      ))}
+    </aside>
+  );
+}
+
+/**
+ * How far to indent a facet value, by how deep its FQN is.
+ *
+ * <p>The rail prints the last segment only. That is what makes these readable
+ * at 200 pixels — three sub-domains under `Premium Service Delivery` all begin
+ * with the same twenty-four characters, so any rendering that keeps the prefix
+ * truncates to three identical rows, and a filter whose options cannot be told
+ * apart is worse than no filter. The indent puts the dropped prefix back as
+ * position rather than as text, the values are sorted so the parent is the row
+ * directly above, and the full name is on the row's tooltip.
+ *
+ * <p>Capped at three levels: past that the indent costs more width than the
+ * nesting is worth, and the name is what the reader came for.
+ */
+function indent(fqn: string): number {
+  return Math.min(segments(fqn).length - 1, 3) * 12;
+}
+
+/** One collapsible facet type in the rail. */
+function FacetGroup({
+  type,
+  values,
+  active,
+  onToggle,
+}: {
+  type: string;
+  values: { facetFqn: string; assets: number }[];
+  active: string[];
+  onToggle: (value: string) => void;
+}) {
+  const selected = values.filter((value) =>
+    active.includes(`${type}:${value.facetFqn}`)
+  ).length;
+
+  // Open by default. A rail of closed headings makes the reader click four
+  // times to find out what they can even filter by, and the counts — which are
+  // the reason to look at all — are the part that stays hidden.
+  const [open, setOpen] = useState(true);
+  const [all, setAll] = useState(false);
+  const [needle, setNeedle] = useState('');
+
+  const matching = useMemo(() => {
+    const term = needle.trim().toLowerCase();
+    if (!term) {
+      return values;
+    }
+    return values.filter((value) => value.facetFqn.toLowerCase().includes(term));
+  }, [values, needle]);
+
+  // Anything already ticked is always drawn, even when it falls outside the
+  // preview or the search: a filter you cannot see is a filter you cannot undo.
+  const shown = useMemo(() => {
+    const head = all ? matching : matching.slice(0, FACET_PREVIEW);
+    const missing = values.filter(
+      (value) =>
+        active.includes(`${type}:${value.facetFqn}`) && !head.includes(value)
+    );
+    return [...head, ...missing];
+  }, [matching, all, values, active, type]);
+
+  return (
+    <div className="tw:border-b tw:border-secondary tw:last:border-b-0">
+      <button
+        aria-expanded={open}
+        className="tw:flex tw:w-full tw:items-center tw:gap-2 tw:px-4 tw:py-2.5 tw:text-left tw:hover:bg-secondary"
+        onClick={() => setOpen((it) => !it)}
+        type="button">
+        <span className="tw:flex-1 tw:truncate tw:text-sm tw:font-medium tw:text-secondary">
+          {facetLabel(type)}
+        </span>
+        {selected > 0 && (
+          <span className="tw:rounded-full tw:bg-brand-primary tw:px-1.5 tw:text-xs tw:font-medium tw:text-brand-secondary">
+            {selected}
+          </span>
+        )}
+        <ChevronDown
+          className={`tw:size-4 tw:shrink-0 tw:text-quaternary tw:transition-transform tw:duration-150 ${
+            open ? '' : 'tw:-rotate-90'
+          }`}
+        />
+      </button>
+
+      {open && (
+        <div className="tw:px-2 tw:pb-3">
+          {values.length >= FACET_SEARCHABLE && (
+            <div className="tw:px-2 tw:pb-2">
+              <Input
+                aria-label={`Search ${facetLabel(type)}`}
+                icon={SearchLg}
+                onChange={setNeedle}
+                placeholder="Search"
+                size="sm"
+                value={needle}
+              />
+            </div>
+          )}
+
+          {shown.length === 0 && (
+            <p className="tw:px-2 tw:py-1 tw:text-xs tw:text-tertiary">
+              Nothing matches.
+            </p>
+          )}
+
+          {shown.map((value) => {
             const key = `${type}:${value.facetFqn}`;
-            const on = active.includes(key);
             return (
-              <button
-                className={
-                  on
-                    ? 'tw:rounded-full tw:bg-brand-solid tw:px-2 tw:py-0.5 tw:text-xs tw:text-white'
-                    : 'tw:rounded-full tw:border tw:border-secondary tw:px-2 tw:py-0.5 tw:text-xs tw:text-tertiary tw:hover:border-brand tw:hover:text-primary'
-                }
+              // Not a <label> wrapping the checkbox: react-aria's Checkbox
+              // renders its own <label>, and a label inside a label leaves the
+              // input with no accessible name at all. So the name is given
+              // explicitly — as the full FQN, since "Sensitive" on its own does
+              // not say which classification it belongs to — and the visible
+              // row stays free to put the count in an aligned column.
+              <div
+                className="tw:flex tw:items-center tw:gap-2 tw:rounded-md tw:px-2 tw:py-1.5 tw:hover:bg-secondary"
                 key={key}
-                onClick={() => onToggle(key)}
-                type="button">
-                {value.facetFqn}
-                <span className="tw:ml-1 tw:opacity-60">{value.assets}</span>
-              </button>
+                // The whole name, for anyone checking that this is the exact
+                // sub-domain they meant rather than its sibling.
+                title={value.facetFqn}>
+                <Checkbox
+                  aria-label={`${value.facetFqn} · ${value.assets} assets`}
+                  isSelected={active.includes(key)}
+                  onChange={() => onToggle(key)}
+                  size="sm"
+                />
+                <button
+                  className="tw:min-w-0 tw:flex-1 tw:cursor-pointer tw:truncate tw:text-left tw:text-sm tw:text-secondary"
+                  onClick={() => onToggle(key)}
+                  style={{ paddingLeft: `${indent(value.facetFqn)}px` }}
+                  // The checkbox beside it already carries the name; announcing
+                  // it twice makes the rail read as two controls per value.
+                  tabIndex={-1}
+                  type="button">
+                  {leaf(value.facetFqn)}
+                </button>
+                {/* Tabular figures so the counts line up as a column. */}
+                <span className="tw:shrink-0 tw:text-xs tw:tabular-nums tw:text-quaternary">
+                  {value.assets}
+                </span>
+              </div>
             );
           })}
+
+          {matching.length > FACET_PREVIEW && (
+            <button
+              className="tw:px-2 tw:pt-1 tw:text-xs tw:font-medium tw:text-fg-brand-primary tw:hover:underline"
+              onClick={() => setAll((it) => !it)}
+              type="button">
+              {all ? 'Show less' : `Show all ${matching.length}`}
+            </button>
+          )}
         </div>
-      ))}
+      )}
     </div>
   );
 }

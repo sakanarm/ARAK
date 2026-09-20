@@ -8,23 +8,42 @@ import com.mfec.dac.catalog.CatalogChangeApplier;
 import com.mfec.dac.catalog.CatalogQuery;
 import com.mfec.dac.catalog.CatalogSyncService;
 import com.mfec.dac.catalog.GovernanceQuery;
+import com.mfec.dac.catalog.SearchQuery;
 import com.mfec.dac.catalog.ChangeEventPoller;
 import com.mfec.dac.catalog.NightlyReconcile;
 import com.mfec.dac.catalog.SyncStateDao;
+import com.fasterxml.jackson.databind.SerializationFeature;
 import com.mfec.dac.config.DacConfiguration;
 import com.mfec.dac.config.IdentityConfiguration;
+import com.mfec.dac.json.JsonMapperProvider;
 import com.mfec.dac.config.OpenMetadataConfiguration;
 import com.mfec.dac.health.AppDatabaseHealthCheck;
 import com.mfec.dac.identity.PrincipalQuery;
 import com.mfec.dac.om.OpenMetadataClient;
 import com.mfec.dac.resources.AuthResource;
+import com.mfec.dac.catalog.SourceCatalogImporter;
+import com.mfec.dac.engine.EngineConfig;
+import com.mfec.dac.engine.PolicyEngine;
+import com.mfec.dac.engine.PolicyExpressionEvaluator;
+import com.mfec.dac.policy.DecisionService;
+import com.mfec.dac.policy.PrincipalLoader;
+import com.mfec.dac.policy.QueryService;
+import com.mfec.dac.resources.DecisionResource;
+import com.mfec.dac.resources.QueryResource;
+import com.mfec.dac.source.jdbc.JdbcIntrospector;
+import com.mfec.dac.source.jdbc.QueryExecutor;
 import com.mfec.dac.policy.AssetContextLoader;
 import com.mfec.dac.policy.PolicyBindingMaterializer;
 import com.mfec.dac.policy.PolicyStore;
 import com.mfec.dac.resources.CatalogResource;
 import com.mfec.dac.resources.GovernanceResource;
+import com.mfec.dac.resources.SearchResource;
+import com.mfec.dac.resources.OpenMetadataSettingsResource;
 import com.mfec.dac.resources.PolicyResource;
 import com.mfec.dac.resources.PrincipalResource;
+import com.mfec.dac.resources.SourceResource;
+import com.mfec.dac.source.DataSourceStore;
+import com.mfec.dac.source.jdbc.SourceProbe;
 import com.mfec.dac.resources.SyncResource;
 import com.mfec.dac.resources.SystemResource;
 import com.mfec.dac.resources.WebhookResource;
@@ -65,6 +84,10 @@ public class DacApplication extends Application<DacConfiguration> {
 
   @Override
   public void initialize(Bootstrap<DacConfiguration> bootstrap) {
+    // Instants as ISO-8601 everywhere, set on the bootstrap mapper so that the
+    // environment's copy and Jersey's message body writer both inherit it.
+    bootstrap.getObjectMapper().disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
+
     // Secrets live in the environment, never in the committed yaml.
     bootstrap.setConfigurationSourceProvider(
         new SubstitutingSourceProvider(
@@ -74,6 +97,15 @@ public class DacApplication extends Application<DacConfiguration> {
 
   @Override
   public void run(DacConfiguration config, Environment environment) {
+    // Instants as ISO-8601, not as an epoch float. Jackson's default writes
+    // 1789832026.308722, which every consumer then has to guess the unit of --
+    // and the header chip that read it as milliseconds reported a crawl from
+    // 1970. A timestamp that crosses an HTTP boundary should say what it means.
+    environment.getObjectMapper().disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
+    // And handed to Jersey explicitly: its writer resolves a mapper through a
+    // ContextResolver before it considers the one the environment holds.
+    environment.jersey().register(new JsonMapperProvider(environment.getObjectMapper()));
+
     DataSource appDataSource =
         config.getDatabase().build(environment.metrics(), "app-db");
 
@@ -116,6 +148,10 @@ public class DacApplication extends Application<DacConfiguration> {
     environment.jersey().register(new SystemResource(config));
     environment.jersey().register(new AuthResource(identities, tokens, identity));
     environment.jersey().register(new SyncResource(sync));
+    // The connection itself, read-only: the page it feeds exists to say what
+    // this deployment is pointed at and whether it answers, not to let a
+    // browser rewrite the credential it is pointed at with.
+    environment.jersey().register(new OpenMetadataSettingsResource(om, omClient, sync));
     environment.jersey().register(
         new CatalogResource(new CatalogQuery(jdbi, environment.getObjectMapper())));
 
@@ -133,7 +169,46 @@ public class DacApplication extends Application<DacConfiguration> {
     // rule is written about. Both are read-only: OpenMetadata and Entra own
     // this content, and an edit here would be reverted by the next sync.
     environment.jersey().register(new GovernanceResource(new GovernanceQuery(jdbi)));
+    environment.jersey().register(new SearchResource(new SearchQuery(jdbi)));
     environment.jersey().register(new PrincipalResource(new PrincipalQuery(jdbi)));
+
+    // The source registry (FR-6.0a). The probe is constructed here, with the
+    // process environment behind it, so that the only component able to turn a
+    // credential reference into a credential is one the application wired
+    // itself — a resource that built its own resolver could be handed a
+    // different environment by a test and nobody would notice.
+    DataSourceStore sources = new DataSourceStore(jdbi);
+    SourceCatalogImporter importer =
+        new SourceCatalogImporter(jdbi, sources, new JdbcIntrospector());
+    environment.jersey().register(new SourceResource(sources, new SourceProbe(), importer));
+
+    // Runtime enforcement, mode 5.2. This is the first place the engine is
+    // asked anything at request time rather than at authoring time, and the
+    // three components below are deliberately one chain: a decision is made
+    // once, rendered once, and the rendered form is what runs. Giving the
+    // simulator its own path would mean the thing people check and the thing
+    // that enforces could disagree.
+    // The expression evaluator is wired here and nowhere else. An engine built
+    // without one treats every `expr` as undecidable and fails closed, which
+    // looks exactly like a policy that simply does not grant — so the moment a
+    // policy uses a cross-side comparison, forgetting this line becomes an
+    // outage that reads as correct behaviour (FR-3.2, FR-2A.4).
+    PolicyEngine engine =
+        new PolicyEngine(
+            EngineConfig.defaults()
+                .withZone(ZoneId.of("Asia/Bangkok"))
+                .withExpressions(new PolicyExpressionEvaluator()));
+    DecisionService decisionService =
+        new DecisionService(jdbi, contexts, new PrincipalLoader(), policyStore, engine);
+    environment.jersey().register(new DecisionResource(decisionService));
+    environment.jersey().register(
+        new QueryResource(
+            new QueryService(
+                jdbi,
+                environment.getObjectMapper(),
+                sources,
+                decisionService,
+                new QueryExecutor())));
     // Registered before the auth filter for no reason other than reading order;
     // the filter is a @Secured name binding and this resource carries no
     // annotation, so it is never in its path. Its authentication is the HMAC.

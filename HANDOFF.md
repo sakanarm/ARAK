@@ -1,6 +1,6 @@
 # HANDOFF — ARAK (Data Access Control Platform)
 
-> อัปเดต: 2026-09-19 · commit ล่าสุดที่ push สำเร็จ `e3aaa52` · **local นำหน้าอยู่ — `5267516` (policy persistence + binding + UI) กับ commit ของ `PolicyBindingMaterializerIT` ยังรอ push, `git push` ค้าง ดู What Didn't Work** · repo https://github.com/sakanarm/ARAK (**public**)
+> อัปเดต: 2026-09-20 · commit ล่าสุดที่ push สำเร็จ `e3aaa52` · **local นำหน้าอยู่หลาย commit — `git push` ยังค้าง ดู What Didn't Work** · repo https://github.com/sakanarm/ARAK (**public**)
 >
 > อ่านคู่กับ **[docs/DESIGN.md](docs/DESIGN.md)** — ไฟล์นั้นคือ requirement + feature catalogue + สถานะครบทุกข้อ
 > ไฟล์นี้บอกเฉพาะ "ทำถึงไหน จะไปต่อยังไง อะไรที่ลองแล้วไม่เวิร์ค"
@@ -24,12 +24,16 @@ Phase 1 รองรับ SQL Server + PostgreSQL · identity หลักค�
 
 | Milestone | สถานะ |
 |---|---|
-| **M0 Foundation** | ✅ เสร็จ — Maven multi-module, Dropwizard 5, Vite+React+Tailwind shell, vendor `ui-core-components`, JSON Schema → Java/TS codegen, OM client จาก swagger ที่ pin ไว้, Flyway V1–V8, docker-compose, CI 4 jobs |
-| **M1 OM Connector** | 🚧 ~95% — full crawl + governance + effective facet + FR-1.5 webhook/poller/reconcile + catalog read API + Catalog UI + **governance read API + Governance UI** · **sync กับ OM จริงสำเร็จแล้ว** · เหลือ FR-1.6 (reconcile กับ JDBC จริง — **รอ connection จริง**), FR-1.7 (local tag + push-back — **ผู้ใช้สั่ง read-only ตอนนี้**) |
-| **M2 Identity** | 🚧 ~35% — local sign-in ใช้ได้ · schema `principal`/`principal_attribute`/`group_member`/`app_role_assignment` มีตั้งแต่ V2 · **read API + หน้า People & attributes เสร็จ** · ยังไม่มี Entra OIDC / Graph sync |
-| **M3 Policy Engine** | 🚧 ~88% — engine 78 tests ผ่าน · persistence (`PolicyStore`) + `policy_binding` materializer + REST · **`PolicyBindingMaterializerIT` 10 tests เขียวรอบนี้ → binding path มี integration coverage ครบแล้ว** · เหลือ decision cache (FR-5.5), ANTLR grammar ของ `expr` (FR-3.2) |
-| **M4 Policy Authoring UI** | 🚧 ~70% — **Policy list + Policy builder (selector / subject / RLS / masking) + readback + capability matrix เสร็จรอบนี้** · เหลือ "policy ที่มีผลกับ asset นี้" ในหน้า asset (FR-3.1.5), View-as-user (FR-5.2), impact analysis (FR-5.3) |
-| **M5–M8** | ⬜ |
+| **M0 Foundation** | ✅ เสร็จ — Maven multi-module, Dropwizard 5, Vite+React+Tailwind shell, vendor `ui-core-components`, JSON Schema → Java/TS codegen, OM client จาก swagger ที่ pin ไว้, Flyway V1–V9, docker-compose, CI 4 jobs |
+| **M1 OM Connector** | 🚧 ~95% — full crawl + governance + effective facet + FR-1.5 webhook/poller/reconcile + catalog read API + Catalog UI + governance read API + Governance UI · **sync กับ OM จริงสำเร็จแล้ว** · เหลือ FR-1.6 (reconcile กับ JDBC จริง), FR-1.7 (local tag + push-back — **ผู้ใช้สั่ง read-only ตอนนี้**) |
+| **M2 Identity** | 🚧 ~35% — local sign-in ใช้ได้ · schema `principal`/`principal_attribute`/`group_member`/`app_role_assignment` มีตั้งแต่ V2 · read API + หน้า People & attributes เสร็จ · **ยังไม่มี write API สำหรับ principal/attribute — ต้อง seed ด้วย SQL** · ยังไม่มี Entra OIDC / Graph sync |
+| **M3 Policy Engine** | 🚧 ~92% — engine **85 tests** · persistence (`PolicyStore`) + `policy_binding` materializer + REST · `PolicyBindingMaterializerIT` 10 tests บน Postgres จริง · เหลือ decision cache (FR-5.5), ANTLR grammar ของ `expr` (FR-3.2) |
+| **M4 Policy Authoring UI** | 🚧 ~70% — Policy list + Policy builder (selector / subject / RLS / masking) + readback + capability matrix · เหลือ "policy ที่มีผลกับ asset นี้" ในหน้า asset (FR-3.1.5), View-as-user (FR-5.2), impact analysis (FR-5.3) |
+| **M5 Secure View (5.1.2)** | ⬜ — `DecisionSql` + dialect ทั้งสองตัวพร้อมแล้ว (ใช้ร่วมกับ 5.2) เหลือ ViewCompiler + `row_entitlement` maintainer + DDL apply/rollback |
+| **M6 Source Config (5.1.1)** | ⬜ |
+| **M7 Query API (5.2a)** | 🚧 ~80% — **`POST /v1/query` + Query console ใช้งานได้จริงรอบนี้** · rewrite → RLS + mask + hidden column → execute → audit ครบ · พิสูจน์กับ Postgres จริงแล้วทั้ง allow / RLS / mask / refuse · เหลือ direct-access detector (FR-6.3.1) และ result cache |
+| **M7b Cross-mode consistency** | ⬜ — ต้องมี M5/M6 ก่อน |
+| **M8 Audit + Ops** | 🚧 ~20% — `audit_query` / `audit_decision` / `audit_policy_change` เขียนจริงแล้วและอ่านได้ · **ยังไม่มี audit ของการ configure** (เปลี่ยน data source / OM settings ไม่ถูกบันทึกที่ไหนเลย) · ยังไม่มี compliance report / drift detector / auto-revoke / SIEM export |
 
 **ที่รันอยู่ตอนนี้**
 | | |
@@ -39,19 +43,417 @@ Phase 1 รองรับ SQL Server + PostgreSQL · identity หลักค�
 | App DB (docker `dac-appdb`, postgres:16-alpine) | `:5432` db/user `dac` |
 | OpenMetadata ของทีม | `2.0.1` — sync ผ่าน **ingestion-bot JWT** (ดู What Didn't Work) |
 
-เทสต์ทั้งหมดเขียว (รันครบเมื่อ 2026-09-19)
+เทสต์ทั้งหมดเขียว (รันครบเมื่อ 2026-09-20)
 
 | ชุด | จำนวน | คำสั่ง |
 |---|---|---|
-| Backend unit | dac-common 6 · **dac-engine 78** · dac-connector-openmetadata 88 · dac-service 25 | `./mvnw -am -pl backend/dac-service test` |
-| **Backend integration** (Testcontainers `postgres:16-alpine`) | **50 tests** — `AssetStoreIT` 6 · `CatalogQueryIT` 15 · `GovernanceStoreIT` 9 · `PolicyStoreIT` 10 · **`PolicyBindingMaterializerIT` 10** | `./mvnw -am -pl backend/dac-service verify -Pintegration` |
-| Frontend | **5 suites / 20 tests** — LoginPage · SystemStatusPage · CatalogPage 5 · AssetDetailPage 5 · **policyLanguage 6** | `yarn test` ใน `frontend/app` |
+| Backend unit | dac-common 6 · dac-engine **85** · **dac-compiler-sql 7** · dac-connector-openmetadata 88 · **dac-proxy 16** · dac-service **31** = **233** | `./mvnw -am -pl backend/dac-service test` |
+| Backend integration (Testcontainers `postgres:16-alpine`) | **50 tests** — `AssetStoreIT` 6 · `CatalogQueryIT` 15 · `GovernanceStoreIT` 9 · `PolicyStoreIT` 10 · `PolicyBindingMaterializerIT` 10 | `./mvnw -am -pl backend/dac-service verify -Pintegration` |
+| Frontend | 5 suites / 20 tests — LoginPage · SystemStatusPage · CatalogPage 5 · AssetDetailPage 5 · policyLanguage 6 | `yarn test` ใน `frontend/app` |
 
 `yarn type-check` · `yarn lint` · `yarn build` ผ่านหมด → **BUILD SUCCESS** ทั้งสองฝั่ง
 
 ---
 
-## รอบล่าสุดทำอะไรไป
+## รอบล่าสุดทำอะไรไป — Query console (5.2a ใช้งานได้จริง) + บั๊กร้ายแรงสามตัว
+
+รอบนี้คือรอบที่ **โหมด 5.2 เดินจากต้นจนจบได้จริงเป็นครั้งแรก** — พิมพ์ SQL ในเบราว์เซอร์ -> rewrite ตาม policy -> ยิงลง Postgres จริง -> ได้แถวที่ถูก filter และ column ที่ถูก mask กลับมา พร้อม audit ครบ
+
+### A. หน้า Query console (M7 / FR-6.3, 5.2a)
+
+ผู้ใช้ถามว่า *"เวลา Query ข้อมูลใน Database นี่ต้องกดตรงไหน"* — คำตอบคือยังไม่มี จึงสร้างขึ้นรอบนี้ แบบเดียวกับ BigQuery / Denodo
+
+| ไฟล์ | หน้าที่ |
+|---|---|
+| `frontend/app/src/api/query.ts` (ใหม่) | `runQuery()` + type `QueryResult` · `MAX_ROWS = 5000` · `DEFAULT_ROWS = 200` |
+| `frontend/app/src/pages/query/SqlEditor.tsx` (ใหม่) | editor สามชั้น: gutter + `<pre>` ที่ไฮไลต์ + `<textarea>` ตัวอักษรใสทับอยู่บนสุด · tokenizer เขียนเอง · Ctrl/Cmd+Enter = run · Tab = indent · **ไม่ใช้ Monaco** (ไม่กี่ร้อยบรรทัด เทียบกับ bundle หลาย MB และไม่มีอะไรบนจอนี้ต้องใช้ language server) |
+| `frontend/app/src/pages/query/SchemaExplorer.tsx` (ใหม่) | tree ฝั่งซ้าย สร้างจาก **asset cache ไม่ใช่ `information_schema`** — table ที่ crawl ยังไม่เห็น = table ที่ engine ยังไม่มี decision ให้ กดไปก็ได้แค่คำปฏิเสธ · column lazy-load · column ที่มี tag ติดป้าย `tagged` |
+| `frontend/app/src/pages/query/QueryPage.tsx` (ใหม่) | เลือก source · **Run as** (ดูแบบคนอื่น FR-5.2) · purpose · row limit · ตาราง result · **แท็บ "Rewritten SQL" โชว์ SQL จริงที่ถูกส่งไป** (FR-5.4) · แถบ unenforceable |
+| `navigation.ts` · `App.tsx` | เพิ่มเมนู Query + route |
+
+### B. QueryRewriter — บั๊กสองตัวที่ทำให้ gate สองชั้นปฏิเสธทุก query
+
+1. **gate ชั้นสองดู output แทน input** — หลัง rewrite แล้ว derived table **ต้อง** มีชื่อ table จริงอยู่ข้างในเสมอ gate ที่ไล่หาชื่อ table ใน SQL ผลลัพธ์จึงปฏิเสธทุกอย่าง รวมถึงของที่ rewrite สำเร็จ -> เปลี่ยนไปเทียบ "table ที่ walk เจอ" กับ "table ที่ parser เห็นทั้งหมด" แทน
+2. **เหตุผลที่ตอบกลับตอนถูกปฏิเสธเป็นคนละเรื่อง** — ขึ้นว่า `access is denied: subject rule satisfied` เพราะหยิบ `reasons[0]` มาโดยไม่ดู `matched`/`effect` -> เขียนใหม่ให้เลือก **DENY ที่ matched ก่อน แล้วค่อย ALLOW ที่ไม่ matched**
+
+เขียน `QueryRewriterTest` **16 tests** คุมทั้ง happy path, gate ทั้งสองชั้น, CTE, UNION, alias, hidden column, และ subquery ใน `WHERE EXISTS` ที่ต้อง **fail-closed**
+
+### C. รูปร่างของ SQL ที่ proxy ใส่เข้าไป (ตัวอย่างจริงที่ capture มา)
+
+ผู้ใช้ถามว่า *"ตอน proxy ใส่ Syntax อะไรเข้าไป"* — pattern คือ **ห่อ table ที่ถูกคุมไว้เป็น derived table**: mask อยู่ใน projection · row filter อยู่ใน `WHERE` ของ derived table · column ที่ซ่อนคือไม่ถูก list ออกมาเลย · `WHERE`/alias/`ORDER BY` ของผู้ใช้อยู่ **ข้างนอก**
+
+ผู้ใช้เขียน:
+
+```sql
+SELECT full_name, email, salary FROM sales.customer
+```
+
+สิ่งที่ถูกส่งไปที่ Postgres จริง (`analyst_a`):
+
+```sql
+SELECT full_name, email, salary
+FROM (SELECT "t"."id", "t"."full_name",
+             regexp_replace(CAST("t"."email" AS text), '^[^@]+', '***', 'g') AS "email",
+             CASE WHEN "t"."citizen_id" IS NULL THEN NULL
+                  ELSE repeat('*', GREATEST(length(CAST("t"."citizen_id" AS text)) - 4, 0))
+                       || right(CAST("t"."citizen_id" AS text), 4) END AS "citizen_id",
+             "t"."phone", "t"."salary", "t"."branch_code", "t"."country", "t"."created_at"
+      FROM "sales"."customer" "t"
+      WHERE ("t"."branch_code" IN ('BKK-01'))) "customer"
+```
+
+### D. พิสูจน์โหมด 5.2 กับข้อมูลจริง
+
+Source `demo-pg` (`dac-srcpg`, db `salesdb`) · `sales.customer` 4 แถว · policy 3 ตัว (`finance-subscription` ORG · `pii-masking-below-l2` ORG · `sales-branch-rls` SCHEMA)
+
+| Run as | attribute | ผลลัพธ์ | โดนอะไร |
+|---|---|---|---|
+| `analyst_a` | clearance=L1 · country=TH · branch=BKK-01 | 2 แถว · `email` = `***@example.co.th` · `citizen_id` = `*********3456` | **RLS + Mask** |
+| `steward_c` | clearance=L2 · country=TH · branch=BKK-01 **และ** CNX-01 | **3 แถว** · email/citizen_id เห็นเต็ม | RLS อย่างเดียว |
+| `analyst_b` | country=SG | ถูกปฏิเสธ พร้อมชื่อ policy + เงื่อนไขที่ไม่ผ่าน | Subscription ตัด |
+| admin (ไม่เลือก Run as) | – | ถูกปฏิเสธ — ไม่มี principal จึงไม่มี decision | fail-closed |
+| ใครก็ได้ + `WHERE EXISTS (SELECT 1 FROM sales.customer)` | – | ถูกปฏิเสธ `does not rewrite` | gate ชั้นสอง |
+
+### E. BUG — audit row หายหมดทุกแถว เพราะ `inet` ไม่รับสิ่งที่ Jetty ส่งมา
+
+`ERROR: invalid input syntax for type inet: "[0:0:0:0:0:0:0:1]"` — Jetty คืน IPv6 loopback **พร้อมวงเล็บเหลี่ยม** แต่ `inet` ของ Postgres ไม่รับ -> insert throw -> `QueryService` catch แล้ว log ต่อ (ตั้งใจ ไม่ให้ audit ที่ล้มไปฆ่า query ที่ถูกอนุญาต) **ผลคือทุก query รันโดยไม่ถูกบันทึกเลย** ซึ่งคือการเสียหลักฐาน compliance ทั้งชุด (FR-8.2, FR-8.3)
+
+แก้ด้วย `QueryService.inet()`: ตัดวงเล็บ · ตัด zone index (`fe80::1%eth0`) · **กรองด้วย regex ให้เหลือเฉพาะ IP literal ก่อน** แล้วค่อยเรียก `InetAddress.getByName` (ถ้าไม่กรองก่อน มันจะไป resolve DNS ซึ่งเป็นที่สุดท้ายที่ตอนเขียน audit ควรแตะ network) · **เสียที่อยู่ยอมได้ เสียทั้งแถวไม่ได้** · `QueryServiceInetTest` **6 tests**
+
+หลังแก้: `grep -c "Could not write" backend-run.log` -> **0** · `client_ip` = `::1`
+
+### F. BUG — `audit_decision.matched_policy_ids` ว่างทุกแถว
+
+engine ใส่ `.withPolicyId(policy.getId())` ถูกแล้ว แต่ **`id` เป็น column ไม่ได้อยู่ใน JSON document** -> policy ที่ deserialize ออกมาจาก `document` มี `id == null` ทุกตัว -> audit บอกชื่อ policy ได้แต่ชี้กลับไปหาไม่ได้ (FR-5.4, FR-8.2)
+
+แก้ที่ `PolicyStore.deserialise(id, document)` ให้ประทับ id ของ row กลับลงบน POJO และแก้จุดเดียวกันใน `PolicyBindingMaterializer` · **verify แล้ว** — แถวใหม่มี `matched_policy_ids` 2–3 ตัว
+
+### G. BUG — multi-value attribute ไม่กลายเป็น `IN (...)` (FR-4.1 พัง)
+
+`steward_c` มี `branch` สองค่า (BKK-01 **และ** CNX-01) แต่ SQL ที่ออกมาคือ `branch_code = 'BKK-01'` เฉยๆ -> เห็น 2 แถวแทนที่จะเป็น 3
+
+ไล่แล้วไม่ใช่ `PrincipalLoader` (select ครบ) ไม่ใช่ `Principal.attributeValues` (เก็บครบ) ไม่ใช่ `PolicyEngine` (ส่ง `values` ครบ) — **อยู่ที่ `DecisionSql.compare`**: มัน switch ตาม `operator` ไม่ใช่ `kind` และ policy document เขียนว่า `{"kind":"IN_LIST","column":"branch_code","userAttribute":"branch"}` **ไม่มี `operator`** -> default เป็น `EQ` -> `EQ` อ่าน `values.get(0)` ตัวเดียว **ค่าที่เหลือหายเงียบ**
+
+นี่คือบั๊กชนิดที่แย่ที่สุดในงานนี้: **SQL ที่ generate ออกมาหน้าตาถูกต้องทุกอย่าง ผิดแค่จำนวนแถว** และผิดในทางที่เข้มเกินไป เลยไม่มีใครร้อง
+
+แก้ด้วย `DecisionSql.membership(kind, operator, count)`:
+
+- `operator == null` + `kind == IN_LIST` -> `IN`
+- `operator == null` อื่นๆ -> `EQ` (เหมือนเดิม)
+- `EQ` แต่ได้ค่ามามากกว่าหนึ่ง -> **ขยายเป็น `IN`** (คนเขียนหมายถึง "ตรงกับค่าของผู้อ่าน" และผู้อ่านมีหลายค่า — กว้างขึ้นดีกว่าทิ้งทั้งหมดยกเว้นตัวแรก)
+- `NE` ได้หลายค่า -> `NOT_IN`
+
+`DecisionSqlRowFilterTest` **7 tests** (module `dac-compiler-sql` เพิ่งมี test เป็นครั้งแรก) · verify สด: `steward_c` ได้ `IN ('BKK-01', 'CNX-01')` -> **3 แถว**
+
+### H. สามเรื่อง UI ที่ผู้ใช้ชี้
+
+1. *"อันนี้ไม่ต้องมีสิ ให้เขาใส่ได้เองไหม"* — dropdown row limit 4 ตัวเลือก ไม่มีวันเป็นตัวเลขที่คนต้องการ -> เปลี่ยนเป็น `TextField` กรองเฉพาะตัวเลข + ข้อความ `(capped at 5000)` ข้างๆ เพราะ server clamp อยู่แล้ว field อิสระจึงพังอะไรไม่ได้
+2. *"เวลา highlight แล้วมันหาย"* — selection ถูกวาดโดย `<textarea>` ที่อยู่ **บน** ชั้นที่มีตัวอักษรจริง สี selection ทึบจึงบังสิ่งที่กำลังเลือกอยู่ -> `tw:selection:bg-[rgba(41,112,255,0.28)]`
+   > **บทเรียนทั่วไป: editor ที่ซ้อนชั้น ต้องใช้สี selection ที่มี alpha เสมอ**
+3. *"อยากให้มี Expand, Collapse all"* — หน้า Governance เพิ่มปุ่ม Expand all / Collapse all ข้างช่อง filter · implement เป็น **คำสั่งครั้งเดียว (`{nonce, open}`) ไม่ใช่โหมด** — ถ้าเก็บเป็น boolean mode แล้ว "expand all" จะคอยง้างแถวที่ผู้อ่านเพิ่งปิดให้เปิดใหม่ตลอด
+
+### I. คำถามที่ตอบไประหว่างรอบนี้ (เก็บไว้เพราะจะถูกถามอีก)
+
+- **"เปลี่ยน database type แล้ว logic proxy ต้องเปลี่ยนไหม"** — ไม่ต้อง `QueryRewriter` + `PolicyEngine` ใช้ร่วมกันหมด ที่เปลี่ยนอยู่หลัง `SqlDialect` 4 method (`quote` / `literal` / `toText` / `mask`) · `QueryService.dialectFor(source)` เลือกจาก `source.engine()` · row limit ใช้ JDBC `setMaxRows` ไม่ได้เขียน `LIMIT`/`TOP` ลง SQL · **ความเสี่ยงจริงอยู่ที่ parser** — JSqlParser เข้าใจ ANSI เป็นหลัก T-SQL เฉพาะทาง (`OUTER APPLY`, query hint) อาจ parse ไม่ผ่านแล้วถูก reject ทิ้ง (ปลอดภัยแต่ผู้ใช้จะงง) ต้องทดสอบจริงตอนต่อ MSSQL · source ที่ไม่ใช่ SQL ต้องเขียน compiler คนละตัวที่กิน `PolicyDecision` เดียวกัน
+- **"ต้องมี list ของ type ที่รองรับใช่ไหม"** — ใช่ มีแล้ว 3 ชั้น: (1) `DataSourceStore.Engine` + `Engine` ใน `enforcement.ts` = `POSTGRES | SQLSERVER` (2) capability matrix ต่อโหมด ใน `enforcement.ts` คำนวณสดตอนพิมพ์ policy (3) masking function ที่แต่ละ dialect สะกดได้ — **`REGEX_REPLACE` บน SQL Server โยน `UnsupportedMaskingException` ทิ้ง ไม่ degrade** · **ช่องว่าง:** ชั้น (3) ยังไม่ถูกดึงขึ้นมาใน matrix ของ UI และ matrix ยังไม่รู้จัก *เวอร์ชัน* (MSSQL 2019/2022/2025, PG มี extension `anon` ไหม)
+- **"Access เป็น local policy ใช่ไหม"** — ไม่ใช่ เมนู Access คือ **Grant** (FR-7) ให้สิทธิ์ตรงๆ พร้อมวันหมดอายุ คนละเรื่องกับ policy ที่เขียนเป็นเงื่อนไข
+- **"มีเก็บ log การรัน การ configure ไว้ไหม"** — query กับ decision กับ policy change มีครบ · **การ configure ไม่มีเลย** (เปลี่ยน data source / OM settings ไม่ถูกบันทึกที่ไหน) ดู Next Steps
+
+### J. 🔴 Secret scan ก่อน commit — เจอของจริงสองรายการ
+
+repo เป็น **public** ทุก commit อ่านได้ทั้งโลก ก่อน commit รอบนี้จึง scan สองชั้น:
+ชั้นแรกเทียบกับ **ค่าจริงใน `.env`** (`IDENTITY_BOOTSTRAP_ADMIN_PASSWORD`, `OM_WEBHOOK_SECRET`, `FERNET_KEY`, `OM_JWT_TOKEN`, `SRC_PG_ARAK_CREDENTIAL`, `DAC_DB_PASSWORD`) → ผ่าน
+ชั้นสองเป็น **pattern ทั่วไป** (password ที่พบบ่อย, JWT, private key, IP ภายใน) → **เจอสองรายการ และทั้งคู่เป็นของจริง**
+
+| ไฟล์ | ของที่หลุด | แก้เป็น |
+|---|---|---|
+| `dac-service/.../policy/QueryServiceInetTest.java:23` | **IP ภายในของ OpenMetadata instance ของทีม** (`10.6.x.x` — ไม่เขียนเต็มซ้ำที่นี่) ถูกใช้เป็น fixture ของ IPv4 | `192.0.2.10` (TEST-NET-1, RFC 5737) + คอมเมนต์บอกเหตุผล |
+| `dac-service/.../source/DataSourceStoreIT.java:95` | **รหัสผ่าน OpenMetadata จริงที่ผู้ใช้เคยพิมพ์ในแชท** ถูกใช้เป็น fixture ของ "รหัสผ่านที่ต้องถูกปฏิเสธ" | `not-a-real-secret` / `sa/not-a-real-secret` |
+
+**บทเรียน:** fixture ทั้งสองตัว *ทำงานถูกต้อง* ทุกประการ — test เขียวมาตลอด สิ่งที่ผิดคือ**ค่าที่หยิบมาใช้** คนเขียน test มักหยิบค่าที่อยู่ตรงหน้า (IP ที่เพิ่ง curl, รหัสผ่านที่เพิ่งอ่าน) โดยไม่คิดว่ามันจะถูก push ขึ้น public repo
+ข้อที่เจ็บกว่าคือ `DataSourceStoreIT` เป็น test ที่ตั้งใจพิสูจน์ว่า **`credential_ref` ต้องไม่รับรหัสผ่านดิบ** — แล้วดันเอารหัสผ่านจริงมาเป็นตัวอย่าง
+
+⚠️ **รอบถัดมาเกิดซ้ำในที่เดิม** — หัวข้อ J ฉบับแรก **เขียน IP กับรหัสผ่านตัวจริงลงในตาราง** เพื่ออธิบายว่าลบอะไรออก — คือเอาค่าที่เพิ่งลบกลับมา commit ใหม่ในเอกสารที่ห้ามทำสิ่งนั้น secret scan รอบถัดไปจับได้และ redact แล้ว
+> **ข้อสรุป:** เวลาบันทึกว่า “ลบค่า X ออก” **ห้ามเขียน X ลงไป** — ให้บรรยายว่ามันคืออะไร อย่าเขียนว่ามันคืออะไร
+
+> **กติกาถาวร:** ค่าใน fixture ต้องเป็นค่าที่ **ใช้กับอะไรไม่ได้เลย** — IP ใช้ `192.0.2.x` / `198.51.100.x` / `203.0.113.x` (RFC 5737), host ใช้ `example.com`, secret ใช้สตริงที่อ่านแล้วรู้ทันทีว่าปลอม ห้ามหยิบค่าจาก environment จริงมาวาง
+
+### K. คืนค่า time window ของ `finance-subscription` (ปิดช่องว่างข้อ 8)
+
+ระหว่างรอบพิสูจน์ 5.2 มีการแก้ window เป็น `["MON-FRI","SAT","SUN"]` เพื่อไม่ให้ test ที่รันวันเสาร์ถูกปฏิเสธด้วยเหตุผลผิดเรื่อง — แต่ปล่อยไว้แปลว่า demo **ไม่ได้ demo time predicate อีกต่อไป**
+คืนกลับเป็น `["MON-FRI"]` แล้ว (policy `b594579f-a825-42bc-9dac-64de9b279d03` → **version 4**) ผ่าน `PUT /api/v1/policies/{id}?version=&reason=`
+
+> ⚠️ **API shape ที่หลงทางง่าย** — `PUT /policies/{id}` รับ **`Policy` document ตรงๆ เป็น body** ส่วน `version` กับ `reason` เป็น **query parameter** ไม่ใช่ `{document, expectedVersion, reason}` ใน body (ลองแบบหลังแล้วได้ 400)
+
+ยืนยันผลสด (วันที่รัน = เสาร์ 2026-09-20):
+
+```
+POST /api/v1/query {"sourceId":"…","sql":"select * from sales.customer","asPrincipal":"analyst_a"}
+→ 403 "Access to demo-pg.salesdb.sales.customer is denied.
+        finance-subscription did not apply: outside the policy's permitted time window"
+```
+
+เท่ากับพิสูจน์ **E2E ข้อ 15** (นอกเวลาทำการต้อง deny) และ **FR-5.4 explainability** (บอกชื่อ policy + เหตุผลที่ไม่ผ่าน) ไปพร้อมกัน
+**ผลข้างเคียงที่ต้องรู้:** ถ้าเปิดหน้า Query ในวันเสาร์-อาทิตย์ หรือนอก 08:00–18:00 Asia/Bangkok จะถูกปฏิเสธ — **นั่นคือพฤติกรรมที่ถูกต้อง ไม่ใช่บั๊ก**
+
+> ⚠️ **`QueryResource.Ask` ใช้ชื่อ field `sourceId` ไม่ใช่ `dataSourceId`** — ส่งผิดชื่อได้ 400 `"Say which source to run against"` ซึ่งอ่านแล้วเหมือน id หายไป ทั้งที่ส่งไปแล้ว
+
+### L. Catalog — เปลี่ยนแถวชิป facet เป็น filter rail แบบ OpenMetadata Explore
+
+เดิม facet filter เป็น**แถวชิปที่ wrap ไปเรื่อยๆ** (Tags / Domains / Classifications / Tier) — ผู้ใช้บอกว่า "ไม่สวย ทำให้เหมือน openmetadata สิ"
+ปัญหาจริงไม่ใช่แค่ความสวย แต่คือ **ชิปเป็นรูปทรงที่ผิดสำหรับข้อมูลที่เป็นลำดับชั้น**: sub-domain สามตัวใต้ `Premium Service Delivery` ขึ้นต้นด้วยอักษรชุดเดียวกัน 24 ตัว พอถูก CSS ตัดให้พอดีชิป มันเหลือเป็นข้อความ**เหมือนกันเป๊ะทั้งสามอัน** — filter ที่แยกตัวเลือกไม่ออกแย่กว่าไม่มี filter
+
+แทนที่ `FacetPicker` ด้วย `FacetRail` + `FacetGroup` ใน [CatalogPage.tsx](frontend/app/src/pages/catalog/CatalogPage.tsx):
+
+| ของเดิม | ของใหม่ |
+|---|---|
+| ชิป wrap แนวนอนเหนือผลลัพธ์ | rail ซ้าย `w-64` sticky · หนึ่งค่า = หนึ่งบรรทัด |
+| `shortFqn()` (ตัดหัว เหลือ `… / tail`) | `leaf()` + **indent ตามความลึกของ FQN** (12px/ชั้น, cap 3 ชั้น) + `title` เป็น FQN เต็ม |
+| เรียงตามจำนวน asset | **เรียงตาม FQN** เพื่อให้ parent อยู่บรรทัดเหนือลูกเสมอ — ไม่งั้น indent จะโกหกว่าใครอยู่ใต้ใคร |
+| ไม่มี | กลุ่มพับได้ · badge นับ filter ที่เลือก · search ในกลุ่มเมื่อมี ≥10 ค่า · `Show all N` เมื่อเกิน 6 ค่า |
+| ไม่มี | ค่าที่**ติ๊กไว้แล้วถูกวาดเสมอ** แม้หลุดจาก preview หรือ search — filter ที่มองไม่เห็นคือ filter ที่ปลดไม่ได้ |
+
+ตรวจแล้ว: `tsc --noEmit` ผ่าน · `npx jest` **7 suites / 25 tests เขียวหมด** · screenshot ผ่าน Playwright (Edge) ยืนยันหน้าตา
+
+**กับดักสี่อันที่เจอระหว่างทาง — จดไว้ให้ไม่ต้องเสียเวลาซ้ำ:**
+
+1. **Tailwind 4 prefix ต้องมาก่อน breakpoint** — `tw:lg:block` ✅ / `lg:tw:block` ❌ (เขียนผิดแล้ว class เงียบหาย Playwright ฟ้อง "locator resolved to hidden")
+2. **JSX comment `{/* */}` วางระหว่าง `return (` กับ element ไม่ได้** — กลายเป็นสอง expression → Babel ฟ้อง `Unexpected token, expected ","` ต้องใช้ `//` เหนือ `return (` แทน
+3. **test runner ของโปรเจกต์นี้คือ Jest ไม่ใช่ vitest** — `npx vitest run` จะไปกวาด `e2e/smoke.spec.ts` แล้วพังทั้ง 8 suites ใช้ `npx jest`
+4. **`Checkbox` ที่ vendor มาจาก OM render `<label>` ของตัวเองอยู่แล้ว** — เอาไปซ้อนใน `<label>` อีกชั้น input จะ**ไม่มี accessible name เลย** ต้องใช้ `<div>` + `aria-label` ชัดๆ (ใส่เป็น FQN เต็ม เพราะ "Sensitive" เฉยๆ ไม่บอกว่าเป็นของ classification ไหน) แล้วให้ข้อความที่มองเห็นเป็น `<button tabIndex={-1}>`
+
+> icon `Collapse01` **ไม่มี** ใน `@untitledui/icons` — ที่มีคือ `ChevronDown`, `ChevronRight`, `FilterLines`, `Minimize01`, `Maximize01`, `Expand01`
+
+### M. 🔴 คำแนะนำ "ลองใน UI ยังไงให้เห็น RLS + Mask" ที่เคยให้ไว้ — **ผิด** แก้แล้ว
+
+ผู้ใช้ลองทำตามแล้วได้ `Refused` ทันที สาเหตุมีสองข้อ **และเป็นความผิดของคำแนะนำทั้งคู่**
+
+**ข้อ 1 — ตารางเดิมบอกว่า "ไม่เลือก Run as → query ในฐานะ `admin` → ไม่โดนอะไรเลย" ซึ่งกลับหัวกลับหางกับความจริง**
+`admin` **ไม่ได้อยู่ใน subject ของ `finance-subscription`** เลย → โดน **default-deny** ตาม FR-3.3 ไม่ใช่ "เห็นครบทุกแถว"
+พิสูจน์สด:
+
+```
+run as (nobody -> admin)
+→ "finance-subscription did not apply:
+   principal is none of the roles, teams, groups or users the policy names"
+```
+
+> นี่เป็นพฤติกรรมที่**ถูกต้อง** — platform admin คุม *ระบบ* ไม่ได้แปลว่าเห็น *ข้อมูล* (separation of duty ตาม FR-2.6) แต่คำแนะนำเดิมเขียนตรงข้าม
+
+**ข้อ 2 — วันที่ลองคือเสาร์ ส่วน window เพิ่งถูกคืนเป็น `MON-FRI` ในรอบเดียวกัน (ดูหัวข้อ K)** → ต่อให้เลือก `analyst_a` ถูกก็ยังโดนปฏิเสธอยู่ดี ด้วยเหตุผลคนละอัน
+
+ผลจริงทั้งสี่เคส วันเสาร์ 2026-09-20:
+
+| Run as | ผลลัพธ์ |
+|---|---|
+| `admin` (ค่า default) | ❌ `principal is none of the roles, teams, groups or users the policy names` |
+| `analyst_a` | ❌ `outside the policy's permitted time window` |
+| `steward_c` | ❌ `outside the policy's permitted time window` |
+| `analyst_b` | ❌ `expression is false for this principal: user.country == asset.prop('dataResidency')` ← **อันนี้ถูกต้องตามดีไซน์** |
+
+**ตารางที่ถูกต้อง** (ใช้ได้เมื่อ window เปิดอยู่ — ดูสวิตช์ด้านล่าง):
+
+| Run as | attribute | เห็นอะไร | โดนอะไร |
+|---|---|---|---|
+| `analyst_a` | clearance=L1 · country=TH · branch=BKK-01 | 2 แถว · `email` = `***@example.co.th` · `citizen_id` = `*****3456` | **โดนทั้ง RLS และ Mask ← อันนี้คืออันที่ต้องลอง** |
+| `steward_c` | clearance=L2 · country=TH · branch=BKK-01 + CNX-01 | 2 แถว · email/citizen_id เห็นเต็ม | โดน RLS อย่างเดียว — L2 ผ่าน mask |
+| `analyst_b` | country=SG | ไม่เห็นอะไรเลย | โดน Subscription policy ตัด |
+| `admin` / ไม่เลือก | – | **ไม่เห็นอะไรเลย** | **โดน default-deny — ไม่ใช่ "เห็นหมด"** |
+
+#### สวิตช์ time window — [scripts/demo-time-window.py](scripts/demo-time-window.py)
+
+ปัญหาเชิงออกแบบที่โผล่มาจากเรื่องนี้: **ไม่มีค่า default ของ window ที่ถูกทั้งสองทาง**
+ตั้งเป็นเวลาทำการ → demo ปฏิเสธทุกเย็นและทุกเสาร์อาทิตย์ ซึ่งเป็นเวลาที่คนมานั่งดูจริงๆ และสิ่งที่เห็นคือ refusal ที่ไม่ได้พูดถึง RLS หรือ mask เลย
+ตั้งเป็นเปิดตลอด → ไม่เคยได้ demo time predicate
+
+จึงทำเป็น**สวิตช์** แทนที่จะเถียงกันว่า default ควรเป็นอะไร:
+
+```bash
+python scripts/demo-time-window.py open     # ทุกวัน ทุกเวลา — ใช้ตอน demo RLS/mask
+python scripts/demo-time-window.py office   # MON-FRI 08:00-18:00 — ใช้ตอน demo time predicate
+```
+
+> ⚠️ **สถานะตอนนี้ = `office`** (จากหัวข้อ K) — แปลว่า **หน้า Query จะปฏิเสธจนถึงวันจันทร์ 08:00 Asia/Bangkok**
+> สคริปต์ถูกเขียนแล้วแต่ **ยังไม่ได้รัน** เพราะ auto-mode classifier บล็อกด้วยเหตุผล `Security Weaken` (การขยาย time window ของ access policy อ่านแล้วเหมือนการลดความปลอดภัย ซึ่งเป็นการบล็อกที่สมเหตุสมผล) — **ผู้ใช้ต้องรันเองหนึ่งครั้ง**
+
+---
+
+## รอบก่อนหน้า — Global search ข้ามทุก entity + transition ตอนเปลี่ยนหน้า/เข้า-ออกระบบ + ชิป governance ที่อ่านออก
+
+> รอบนี้เพิ่ม **endpoint ใหม่หนึ่งตัว** (`GET /api/v1/search`) และงาน UX ล้วนๆ อีกสามเรื่องที่ผู้ใช้สั่งระหว่างทาง
+> milestone ไม่ขยับ แต่ search เป็นของที่ M1 ค้างไว้ (ก่อนหน้านี้ช่องค้นหาบน header แค่พาไปหน้า Catalog พร้อม query string)
+
+### A. Global search — ค้นได้ทุกชนิด ไม่ใช่แค่ asset
+
+**โจทย์จากผู้ใช้:** *"search ข้างบน ให้ Search ได้ทั้งหมดอะ Term, tag, domain ,..."*
+
+**Backend — `backend/dac-service/src/main/java/com/mfec/dac/catalog/SearchQuery.java` (ใหม่)**
+
+`UNION ALL` เก้า branch ในคิวรีเดียว แล้ว rank รวมกันทั้งก้อน:
+
+| branch | ตาราง | `kind` | `facet_type` ที่คืน |
+|---|---|---|---|
+| asset | `asset` (`is_current`) | `asset` | – |
+| column | `asset_column` ⨝ `asset` | `column` | – |
+| tag | `tag` | `tag` | `tags` |
+| classification | `classification` | `classification` | `classifications` |
+| glossary term | `glossary_term` | `term` | `terms` |
+| glossary | `glossary` | `glossary` | `glossaries` |
+| domain (รวม sub-domain) | `domain` | `domain` | `domains` |
+| data product | `data_product` | `dataProduct` | `dataProducts` |
+| policy (ไม่เอา `ARCHIVED`) | `policy` | `policy` | – |
+
+- **rank ต้องเป็น global** ถึงจะเรียงถูก: exact name = 0 · name prefix = 1 · fqn prefix = 2 · ที่เหลือ = 3 · เท่ากันแล้วตัดด้วย `length(name)` (match ใน `customer` ตรงกว่า match ใน `customer_address_history_archive`) → นี่คือเหตุผลที่ใช้ `UNION ALL` ก้อนเดียว ไม่ใช่ยิงเก้าคิวรีแล้วเอามาต่อกันฝั่ง Java
+- branch ของ **vocabulary ทั้งหกสร้างจาก template เดียว** (`vocabulary(kind, table, facetType, parentColumn)`) พร้อม `LEFT JOIN` นับ `asset_facet` → ไม่ต้องเขียนซ้ำหกรอบแล้วปล่อยให้ค่อยๆ ต่างกัน
+- **column match เฉพาะ `name` ไม่ match `fqn`** — เพราะ fqn ของ column ลงท้ายด้วย fqn ของ table คำว่า `cus` จึงจะลาก column ทั้ง 40 ตัวของ `customers` ขึ้นมากลบตัว table เอง (เจอตอนเทสจริง แล้วแก้)
+- ตั้งใจ **ไม่ใช้ full-text (`tsvector`)** — ของพวกนี้เป็น identifier ไม่ใช่ prose คนพิมพ์ `cust` แล้วคาดหวัง prefix ไม่ใช่ lexeme · ถ้าโตเกิน `ILIKE` คำตอบคือ OpenSearch ตามแผน Phase 1.5 ไม่ใช่ index ที่แย่กว่าเดิมในนี้
+- `q` สั้นกว่า 2 ตัวอักษร → คืน list ว่างทันที ไม่แตะ DB · `limit` cap ที่ 50
+
+**`resources/SearchResource.java` (ใหม่)** — `GET /api/v1/search?q=&limit=` `@Secured` · แยกจาก `/v1/catalog/assets?search=` ตั้งใจ: อันนั้น filter ตารางและ paginate อันนี้ตอบ "ของชื่อนี้อยู่ไหน" แล้ว cap สั้น · รวมกันแปลว่าหน้า Catalog ต้องจ่ายค่า UNION อีกแปด branch ทุกครั้งที่เปลี่ยนหน้า
+
+ลงทะเบียนใน `DacApplication.run()` ต่อจาก `GovernanceResource`
+
+**Frontend**
+- `frontend/app/src/api/search.ts` (ใหม่) — type `SearchHit` / `SearchKind` · `hitHref(hit)` ตัดสินปลายทาง: asset → `/catalog/<fqn>` · column → หน้า table ที่มันอยู่ (`parentFqn`) · policy → `/policies/<id>` · vocabulary → `/catalog?facet=<facetType>:<fqn>` (**ไปที่ข้อมูลที่ติด value นั้น ไม่ใช่หน้าอธิบาย value**) · `KIND_GROUPS` คุมลำดับหัวข้อ
+- `layout/TopNav.tsx` → `GlobalSearch` เขียนใหม่เป็น **type-ahead** : debounce 200ms, ขั้นต่ำ 2 ตัวอักษร, TanStack Query `staleTime` 30s, `placeholderData` ไว้กัน list กระพริบตอนพิมพ์ต่อ
+  - ผลลัพธ์จัดกลุ่มตาม kind แต่เก็บ flat list คู่กันไว้ให้ **ลูกศรขึ้น/ลงเดินตามที่ตาเห็น** (วนรอบ) · Enter เปิดตัวที่เลือก · ถ้ายังไม่ได้เลือกอะไร Enter ยังพาไป `/catalog?q=` เหมือนเดิม · Esc ปิด
+  - **ทิ้ง dropdown `SCOPES` (All/Tables/Views/…) ไปแล้ว** — ตอนนี้ผลลัพธ์ข้ามชนิดอยู่แล้ว การให้เลือก asset type ก่อนค้นขัดกับโจทย์ และหน้า Catalog ก็ยังมี filter นั้นของตัวเอง
+  - spinner **แทนที่** ปุ่มแว่นขยาย ไม่ใช่โผล่ข้างๆ ไม่งั้นความกว้างช่องกระตุกทุกคีย์
+  - แถวผลลัพธ์ผูก `onMouseDown` + `preventDefault()` ไม่ใช่ `onClick` — ไม่งั้น blur ของ input ปิด panel ทิ้งก่อนคลิกจะลง
+
+### B. Transition ตอนเปลี่ยนหน้า
+
+**โจทย์:** *"เวลาเปลี่ยน Tab ให้มี transition load ด้วย"* แล้วตามด้วย *"ตอนนี้มันแวบเร็วไป"*
+
+**โจทย์เพิ่มรอบที่สาม:** *"ทำไมเวลาเปลี่ยนหน้า มันเปลี่ยนเลย แล้วค่อยมีแวบๆ Transition"* — เวอร์ชันแรกหน่วงไม่จริง เนื้อหาสลับทันทีแล้ว transition ค่อยเล่นตามหลัง (ดู What Didn't Work) · **เขียนใหม่ทั้งกลไก**
+
+**กลไกที่ถูก — หน่วง "location" ไม่ใช่หน่วง "children"**
+
+`frontend/app/src/layout/RouteTransition.tsx` (เขียนใหม่) แยกเป็นสามชิ้น:
+
+| export | อยู่ที่ไหน | ทำอะไร |
+|---|---|---|
+| `useRouteLag()` | เรียกใน `App.tsx` **เหนือ `<Routes>`** | คืน `{ display, loading }` — `display` คือ location ที่ตามหลัง address bar อยู่ `HOLD_MS` |
+| `RouteProgress` | `App.tsx` เหนือ `<Routes>` | บาร์บนสุด ขับด้วย location **จริง** → ขึ้นตั้งแต่วินาทีที่คลิก |
+| `RouteTransition` (default) | ครอบ `<Outlet />` ใน `AppShell` | เหลือแค่ `<div className="arak-page-enter" key={pathname+search}>` เฉยๆ ไม่มี timer แล้ว |
+
+`App.tsx` เปลี่ยนเป็น **`<Routes location={display}>`**
+
+- **หัวใจ:** `<Outlet />` resolve จาก router context ตอน render → **เก็บ element เก่าไว้ก็ไม่ช่วย** element เดิมมันก็ render หน้าใหม่อยู่ดี · ทางเดียวที่จะค้างหน้าเก่าได้จริงคือ **ค้าง location ที่ใช้ render**
+- `useRouteLag()` **ต้องเรียกเหนือ `<Routes location=...>`** เพราะ react-router จะห่อ `LocationContext.Provider` ใหม่ให้ทุกอย่างที่อยู่ข้างใน (ยืนยันจาก `useRoutesImpl` ใน `react-router@6.30.6`) ถ้าเรียกข้างในมันจะอ่านค่าที่ตัวเองผลิต แล้วค้างตายอยู่กับที่
+- **ผลพลอยได้:** `useLocation()` ใน `AppShell` ก็เป็นตัวหน่วงด้วย → **highlight ของ nav ขยับพร้อมหน้าที่มาถึงจริง** ไม่ใช่ขยับก่อนเนื้อหา (แบบเดียวกับตอนโหลดหน้าเว็บจริง)
+- **`HOLD_MS = 420`** — หน้าที่คลิกออกมาค้างไว้ 420ms ระหว่างบาร์วิ่ง แล้วหน้าใหม่ค่อย mount + `arak-page-enter` (320ms) · คลิกซ้ำระหว่างหน่วง → อ่าน `latest` ref ตอนครบเวลา จึงไปหน้าที่กด**ล่าสุด** ไม่ใช่หน้าที่เริ่มหน่วง
+- บาร์อยู่ต่อหลังสลับ จนกว่า **`useIsFetching() === 0`** → เข้าหน้าที่ query ช้า 2 วิ บาร์ก็อยู่ 2 วิ ไม่ใช่ประกาศชัยชนะแล้วโชว์ตารางเปล่า · เพดาน `CEILING_MS = 4000` วัดจาก `startedAt` ref (ไม่ใช่ `setTimeout` ที่จะถูกรีทุกครั้งที่ `fetching` ขยับ)
+- render แรกของแอปไม่มี transition — `display` ตั้งต้นเท่ากับ location จริงอยู่แล้ว ไม่ต้องมี `first` ref อีก
+- progress bar บางๆ ติดขอบบน (`z-100`) วิ่งไปหยุดที่ **88%** ด้วย easing ที่โหลดหนักช่วงต้น (ตอบสนองทันทีว่า "กดติดแล้ว") แล้วคลานต่อ → พอเสร็จจึงวิ่งไป 100% แล้วค่อย fade · บาร์ที่ถึงปลายแล้วค้างคือบาร์ที่โกหก
+
+### C. Loading ตอน Sign in / Sign out
+
+**โจทย์:** *"เวลา Sign in Sign out ให้มี Loading ออกแบบให้หน่อย"* แล้วตามด้วย *"ตอน Sign in หน้ามันแวบๆ ก่อนไปเจอ loading screen อะ"*
+
+`frontend/app/src/auth/AuthSplash.tsx` (ใหม่) — ม่านเต็มจอ: โลโก้เต้นเบาๆ + หัวข้อ + บรรทัดบอกว่ากำลังทำอะไร + แถบ sweep แบบ indeterminate (ไม่มีใครรู้เปอร์เซ็นต์ บาร์ที่เดาตัวเลขคือบาร์ที่โกหก) · ค้าง `AUTH_SPLASH_MS = 900`
+
+- ขับด้วย zustand store เล็กๆ (`useAuthSplash`) เพราะสองปลายอยู่คนละที่: ฟอร์ม login ยกม่าน, เมนู account บน header ก็ยกม่าน, ส่วนตัวที่วาดต้องอยู่ **เหนือ `<Routes>`** ใน `App.tsx` ไม่งั้นมันจะถูก unmount โดย navigation ที่มันกำลังคลุมอยู่
+- **Sign out** — ยกม่านก่อน แล้วค่อย `signOut()` หลัง 900ms · ถ้าล้าง session ก่อน เมนู/shell/หน้าทั้งหมด unmount พร้อมกันแล้วหน้า login มาถึงก่อนใครจะทันเห็นว่าเกิดอะไร
+- **Sign in — บั๊กที่ผู้ใช้ชี้** รอบแรกยกม่าน *หลัง* `await signIn()` สำเร็จ (เหตุผลตอนนั้น: รหัสผิดจะได้ไม่เห็น "Signing you in" แล้วโดนดึงกลับ) · **ผลคือมีเฟรมหนึ่งที่ token มีแล้วแต่ม่านยังไม่ขึ้น** → `<Navigate>` ใน `LoginPage` ยิงทันที หน้า guarded layout วาดแลบผ่านช่องนั้น = อาการ "แวบๆ ก่อนเจอ loading screen"
+  **แก้:** ยกม่าน **ตั้งแต่กด submit** · รหัสผิด → `splash.hide()` ทันทีแล้วโชว์ error บนฟอร์ม
+- keyframes ทั้งหมดอยู่ใน `theme/overrides.css` (`arak-page-enter`, `arak-progress-creep`, `arak-progress-finish`, `arak-splash-*`) พร้อม `@media (prefers-reduced-motion: reduce)` ที่ **หยุดการเคลื่อนไหวแต่ยังคงตัวบ่งชี้ไว้**
+
+### D. Copyright ในราง — ชิดซ้าย
+
+**โจทย์:** *"© 2026 MFEC / All rights reserved จัดวางไปสวย ชิดซ้านได้ไหม"* → `AppShell.tsx` เปลี่ยนจาก `text-center` เป็นชิดซ้ายบน gutter `px-3.5` เดียวกับ label ของ nav ด้านบน เส้นคั่นเยื้องเข้า `mx-3.5` ให้ตรงกัน → รางอ่านเป็นคอลัมน์เดียว
+
+### E. ชิป governance บนแถว Catalog — อ่านไม่ออก
+
+**โจทย์:** *"ตรงนี้ไม่สวยเลย ดูลำบาก"* (แนบสองรูป) — แถว filter พิมพ์ FQN ของ domain ยาว 110 ตัวอักษรจนตัดบรรทัด และการ์ด asset หนึ่งใบมี **11 ชิป** ที่พูดเรื่องเดียวกันซ้ำๆ (`PII ↑`, `Tier ↑`, domain สามชั้น, `PII.Sensitive`, `Tier.Tier2`, `Tier2`, …)
+
+อาการเดียวแต่มาจาก **สามสาเหตุ** จึงแก้แยกกันสามที่:
+
+| สาเหตุ | แก้ที่ไหน |
+|---|---|
+| พิมพ์ FQN เต็ม | `frontend/app/src/lib/fqn.ts` (ใหม่) — `shortFqn()` |
+| `asset_facet` กาง ancestor ทั้งสายไว้ (ตั้งใจตาม FR-2A.2) | `facets.tsx` → `listFacets()` ตัด facet ที่เป็น **ancestor แท้** ของอีกตัวในชนิดเดียวกัน |
+| facet บางชนิดพูดซ้ำกับส่วนอื่นของแถว | `OFF_THE_LIST = ['classifications', 'tier']` |
+
+- **`src/lib/fqn.ts`** — มิเรอร์ `Fqns.java` ฝั่ง backend: `segments()` แยก segment แบบรู้จัก `"quoted.segment"`, `leaf()`, `isAncestor()` (เทียบ **ทีละ segment** ไม่ใช่ prefix ของ string — `Finance` ไม่ใช่ ancestor ของ `Finance Ops` และไม่ใช่ ancestor ของตัวเอง)
+- **`shortFqn()` — กติกาคือ "งบของ parent" (`PARENT_BUDGET = 18`)** ไม่ใช่ "เอาสอง segment ท้าย" · `PII.Sensitive` → `PII / Sensitive` · `Finance.Risk.Credit` → `… / Risk / Credit` · sub-domain ของจริงที่ parent ยาว 45 ตัวอักษร → `… / Premium Service Delivery - IOS Data/DTP - Sub Domain` · **ตัด parent ทิ้งเสมอไม่ได้** เพราะ `PII.Sensitive` กับ `MFEC-PDPA.Sentitive` จะเหลือหน้าตาเหมือนกันเป๊ะ
+- **ตัด ancestor ออกจากแถว** — `asset_facet` ตั้งใจกางทั้งสายเพื่อให้ selector เป็น index lookup (FR-2A.2) แต่แถวที่พิมพ์ออกมาทุกข้อต่อคือ 11 ชิปที่มีความหมายจริง 4 ชิป · ตัวที่ลึกสุด implies ตัวบน และ tooltip บอก FQN เต็มอยู่แล้ว · **หน้า asset detail ยังโชว์ครบทุกตัวเหมือนเดิม** — ที่นั่นความครบคือประเด็น
+- **ชิปถูก truncate ไม่ใช่ wrap** — `Badge` ของ design system เป็น `size-max whitespace-nowrap` → ใส่ `tw:max-w-72` (ชิปบนการ์ด) / `tw:max-w-80` (ชิป filter) แล้วครอบข้อความด้วย `<span className="tw:truncate">` · ชิปที่ยืดตาม FQN ร้อยตัวอักษรจะลากทั้งแถวไปด้วย
+- ทุกชิปมี `title` เป็น FQN เต็ม + ที่มา (direct/inherited from …, labelType, state) → ข้อมูลไม่ได้หายไปไหน แค่ไม่ต้องอ่านทั้งหมดพร้อมกัน
+
+**เทสต์ใหม่:** `src/lib/fqn.test.ts` (3) + `src/pages/catalog/facets.test.ts` (2) · รวมฝั่ง FE เป็น **7 suites / 25 tests ผ่านหมด** · ยืนยันด้วยภาพจาก Playwright แล้ว: การ์ด `dtp-iprm` เหลือ 4 ชิป และไม่มีชิปไหนตัดบรรทัดอีก
+
+---
+
+
+## รอบก่อนหน้านั้น — App shell แบบ OpenMetadata, หน้า Settings, และบั๊กสองตัวที่ผู้ใช้ชี้
+
+> รอบนี้เป็นงาน **UI shell + integration hardening** เกือบทั้งหมด milestone ไม่ขยับเป็นเปอร์เซ็นต์ใหญ่
+> แต่ปิดบั๊กที่กระทบ **ทุก endpoint** ไปหนึ่งตัว (Jackson เขียนวันที่เป็น epoch) และเพิ่มหน้า Settings ของ FR-1.1
+
+### A. Top navigation bar (`frontend/app/src/layout/TopNav.tsx` — เขียนใหม่ทั้งไฟล์)
+
+เลียน header ของ OM 2.0.1 ตามภาพที่ผู้ใช้ส่งมา เรียงจากซ้าย:
+
+| ส่วน | รายละเอียด |
+|---|---|
+| **`Brand`** | โลโก้ + `ARAK` / `Data access control` — **ย้ายจากรางซ้ายมาอยู่บนซ้ายสุดของ header** ตามที่ผู้ใช้สั่ง · กว้าง `tw:lg:w-66` = **เท่ากับความกว้างของรางพอดี** เพื่อให้ปุ่มพับตกอยู่ถัดจากขอบรางเป๊ะ · **ตอนพับหดเหลือ `tw:lg:w-14` (= ราง `w-18` ลบ padding ของ header) และซ่อนตัวหนังสือ เหลือแต่ mark** ด้วย transition 400ms ชุดเดียวกับราง -> โลโก้กับปุ่มพับขยับไปทางซ้ายพร้อมกัน แบบ OM · mark `size-10`, ชื่อ `text-lg` |
+| ปุ่มพับราง | `LayoutLeft` ใน **`Tooltip` ของ design system** ("Collapse" / "Expand", `placement="right"`, มีลูกศร) |
+| **`GlobalSearch`** | pill `h-10` + scope dropdown ในตัว (All / Tables / Views / Schemas / Databases / Services) + ปุ่ม `SearchLg` · submit → `/catalog?q=&type=` · โฟกัสด้วย `/` หรือ Cmd/Ctrl-K |
+| **`DomainPicker`** | `Globe01` + รายชื่อ domain กาง sub-domain (indent ตาม depth, addon = จำนวน asset) → `/catalog?facet=domains:<fqn>` · **ไม่ render เลยถ้าไม่มี domain** |
+| **`CreateMenu`** | Subscription / Data policy (`?kind=`) · Register a source |
+| **`Notifications`** | `Bell01` — **แทน chip "Synced ..." ที่ผู้ใช้สั่งให้เอาออก** · จุดแดงขึ้นเฉพาะตอนมี alert จริง (crawl ล่าสุด `FAILED` หรือยัง `NEVER_RUN`) · admin เท่านั้น เพราะ endpoint เป็น admin |
+| **`HelpMenu`** | `HelpCircle` — ทางลัด + ประโยคอธิบาย "strictest wins" |
+| **`AccountMenu`** | avatar + ชื่อ + role · System status / Sources / Sign out |
+
+### B. รางซ้าย (`frontend/app/src/layout/AppShell.tsx` — เขียนใหม่ทั้งไฟล์)
+
+- **เลิกใช้ `NavList` ของ design system** แล้วเขียน `NavItem` เอง เพราะ `NavItemBase` **ประกาศ prop `iconOnly` ไว้แต่ไม่ได้ใช้จริงสักบรรทัด** ทำ icon-only rail ไม่ได้
+- ใช้ **`NavLink` ของ react-router** (ไม่ใช่ `AriaLink`) — ได้ `aria-current="page"` มาฟรีและไม่ reload หน้า
+- **พับแล้วย่อเป็นรางไอคอน `w-18` ไม่ใช่หายไป** ตามภาพ OM ที่ผู้ใช้ส่ง · ความกว้าง transition **400ms ease-in-out** (ผู้ใช้ขอให้ช้ากว่าเดิม) · จำสถานะไว้ใน `localStorage['arak.sidebar.collapsed']`
+- ตอนพับ: ซ่อน label + badge, ใส่ `title` และ `aria-label` แทน
+- `isCurrent()` match แบบ prefix ของ segment แรก (`/catalog/asset/x` -> Catalog ยังติด) แต่ `/` ต้องตรงเป๊ะ
+- **แท็บที่เลือกอยู่เป็น pill สีแบรนด์ทึบ ตัวอักษรกับไอคอนขาว** (`tw:bg-brand-solid` / `tw:hover:bg-brand-solid_hover`) แบบเดียวกับ OM
+- แถวเมนู `h-11` ไอคอน `size-6` (ผู้ใช้ขอให้ใหญ่ขึ้น) · ปุ่มพับสลับไอคอน **`LayoutLeft` ตอนกาง / `LayoutRight` ตอนพับ** ให้รู้ว่ากดแล้วจะเกิดอะไร
+- ท้ายราง: เส้นคั่น + **`© 2026 MFEC — All rights reserved`** (แทนคำอธิบาย badge เดิม) · ซ่อนตอนพับ
+
+> ⚠️ เคยลองทำ highlight นี้เป็น rule ใน `theme/overrides.css` ที่ผูกกับ `a[aria-current="page"]` **แล้วถอดออก** — ผู้ใช้ยังมองไม่เห็นความต่าง การประกาศสีไว้บน element ตรงๆ ตรวจสอบได้จาก DOM และไม่ต้องเดาว่า layer ไหนชนะ
+
+### C. 🐛 Jackson เขียน `Instant` เป็น epoch — บั๊กที่กระทบทุก endpoint
+
+อาการที่ผู้ใช้เห็น: **"Synced 20695d ago"** · ของจริงที่ API คืนคือ `"lastFullCrawlAt": 1789832026.308722`
+
+- `environment.getObjectMapper().disable(WRITE_DATES_AS_TIMESTAMPS)` **ไม่มีผล**
+- ใส่ที่ `bootstrap.getObjectMapper()` ด้วย **ก็ยังไม่มีผล**
+- log ออกมาว่า flag เป็น `false` แล้ว แต่ response ยังเป็น epoch -> **Jersey ใช้ mapper คนละตัว**
+- **สาเหตุ: message body writer ของ Jersey resolve ObjectMapper ผ่าน `ContextResolver<ObjectMapper>` ก่อนเสมอ** ถ้าไม่มี มันสร้าง default instance ของมันเอง
+- แก้ด้วย `backend/dac-service/src/main/java/com/mfec/dac/json/JsonMapperProvider.java` (`@Provider implements ContextResolver<ObjectMapper>`) แล้ว register เข้า Jersey ใน `DacApplication.run()`
+- ยืนยันแล้ว: `{"lastFullCrawlAt":"2026-09-19T15:33:46.308722Z", ...}` — **ทุก resource ได้ ISO-8601 ตามไปหมด ไม่ต้องไล่ format ทีละที่**
+
+### D. 🐛 description ของ OM โผล่มาเป็น HTML ดิบ
+
+ผู้ใช้เห็น `<p>Premium Service Delivery Domain</p>` บนหน้าจอ — OM 2.0 เก็บ description เป็น HTML และ React escape ให้
+
+- เพิ่ม `frontend/app/src/lib/text.ts` -> `plainText()` แปลง block tag กับ `<br>` เป็นช่องว่าง, ตัด tag ที่เหลือ, decode entity (`&amp;`, `&#39;`, `&#x2F;`, ...), ยุบ whitespace
+- ใช้ทุกจุดที่ render description: `AssetDetailPage` (asset + column), `CatalogPage` (การ์ด), `GovernancePage` (value + property)
+- **จงใจไม่ใช้ `dangerouslySetInnerHTML` และไม่ลง sanitizer** — description ใครก็แก้ได้จาก catalog ถ้า render เป็น HTML ทุก description จะกลายเป็นที่วาง script · แถม `line-clamp` ตัดข้อความธรรมดาได้ตรงกว่า
+
+### E. หน้า Settings — OpenMetadata connection (FR-1.1)
+
+| ชิ้น | ไฟล์ |
+|---|---|
+| Endpoint | `backend/dac-service/src/main/java/com/mfec/dac/resources/OpenMetadataSettingsResource.java` — `GET /v1/settings/openmetadata`, `POST /v1/settings/openmetadata/test` · `@Secured("PLATFORM_ADMIN")` |
+| API client | `frontend/app/src/api/system.ts` — `fetchOpenMetadataSettings()`, `testOpenMetadata()` |
+| หน้าจอ | `frontend/app/src/pages/settings/OpenMetadataSettingsPage.tsx` |
+| Route / nav | `/settings/openmetadata` (+ `/settings` redirect) ใน `App.tsx` · เมนู **Settings** ใน `navigation.ts` |
+
+**อ่านอย่างเดียวโดยตั้งใจ และบอกไว้ใน payload เลยว่า `editable: false`** ไม่ใช่โชว์ปุ่มที่กดไม่ได้
+`OM_JWT_TOKEN` / `OM_WEBHOOK_SECRET` มาจาก environment เท่านั้น · endpoint คืนแค่ **boolean ว่ามีไหม** ไม่คืนค่า ไม่คืน prefix ไม่คืนความยาว (บอกรูปร่าง token คือบอก token)
+probe แยกเป็น `POST` ต่างหาก เปิดหน้าจะได้ไม่ค้างรอ host ที่ต่อไม่ติด · ทดสอบกับ instance จริงแล้ว: `{"reachable":true,"version":"2.0.1","versionMatches":true,"tookMs":25,"message":"Connected."}`
+
+---
+
+## รอบเก่ากว่านั้น — M3/M4
 
 ### 1. Backend — policy persistence + binding (ปิดช่องว่างใหญ่ที่สุดของ M3)
 
@@ -192,6 +594,8 @@ estate ที่ใช้: `prod-mssql.SalesDB.dbo.{customer, order}` + **`prod-
 - ❌ **`git push origin main` ค้าง — หาเจอสาเหตุแล้ว** `credential.helper = manager` (Git Credential Manager) ถูกตั้งไว้ระดับ repo · GCM จะเปิดหน้าต่าง GUI ขอ login ซึ่ง session แบบ non-interactive กดไม่ได้ → push แขวนไปจน timeout (`GIT_TERMINAL_PROMPT=0` ไม่ช่วย เพราะมันกันแค่ prompt บน terminal) · `git ls-remote origin` ตอบปกติเพราะ repo เป็น public อ่านได้โดยไม่ต้อง auth · `gh` **ไม่ได้ติดตั้งบนเครื่องนี้** → **ผู้ใช้ต้อง `git push origin main` เองใน terminal ของตัวเองหนึ่งครั้ง** (หรือตั้ง PAT ไว้) · หลัง push ยืนยันด้วย `git ls-remote --heads origin` เสมอ อย่าเชื่อว่าสำเร็จเพราะคำสั่งไม่ error
 
 ### API / integration
+- ❌ **ตั้งค่า `environment.getObjectMapper()` แล้วคิดว่า response จะเปลี่ยนตาม** — **ไม่เปลี่ยน** · Jersey resolve ObjectMapper ผ่าน **`ContextResolver<ObjectMapper>`** ก่อน ถ้าไม่มีก็ใช้ default ของมันเอง -> ต้อง register `@Provider` เอง (`json/JsonMapperProvider.java`) · วิธีพิสูจน์ที่เร็วที่สุดคือ log ค่า flag เทียบกับ response จริง ถ้า flag ถูกแต่ response ผิด แปลว่าคนละ instance
+- ❌ **คิดว่า description จาก OM เป็น plain text** — มันเป็น **HTML** (`<p>...</p>`) ตั้งแต่ 2.0 -> ต้องผ่าน `lib/text.ts::plainText()` ก่อน render เสมอ
 - ❌ **login แล้วอ่าน `token`** — field ที่ backend คืนคือ **`accessToken`** ไม่ใช่ `token`
 - ❌ **ใช้ account คนจริงของ OpenMetadata เป็น connector credential** — เปลี่ยนไปใช้ **ingestion-bot JWT** แล้ว (mint ครั้งเดียว เก็บใน `.env`) · password ของ account คนจริงที่เคยวางในแชต **ผู้ใช้ควร rotate**
 - ✅ **full sync กับ OM จริงสำเร็จ**: ~9 วินาที · **33 tables · 352 columns · 4,302 แถวใน `asset_facet`**
@@ -204,24 +608,56 @@ estate ที่ใช้: `prod-mssql.SalesDB.dbo.{customer, order}` + **`prod-
 - ❌ **`<Button href="/policies/new">`** — design-system `Button` จะ render เป็น `AriaLink` = **full page reload กลางๆ SPA** → ใช้ `useNavigate()` + `onPress` แทน
 - ❌ **`onClick` บน `Button` ของ design system** — ต้อง **`onPress`** และ **`isDisabled`** ไม่ใช่ `disabled` (`<button>` ธรรมดายังใช้ `onClick` ตามปกติ)
 - ❌ **ใช้ชื่อแท็บเป็น facet type ตอนลิงก์ไป catalog** — `facet_type` จริงคือ `tags | classifications | terms | glossaries | domains | dataProducts` · root ใต้ Classifications เป็น `classifications` แต่ลูกของมันเป็น `tags` → ถ้าส่งชื่อแท็บไปทั้งก้อน แถว tag จะลิงก์ไปที่ filter ที่ match ศูนย์แถว · แก้ด้วย `facetOf(tab, value)`
+- ❌ **`NavItemBase.iconOnly` ใช้ไม่ได้** — prop ประกาศไว้ใน interface แต่ **ไม่ถูก destructure หรือใช้ใน body เลย** ทั้งสาม branch -> จะทำ icon rail ต้องเขียน nav item เอง อย่าส่ง prop นี้แล้วรอให้มันทำงาน
+- ❌ **สไตล์ active state โดยแก้ vendored component** — `scripts/sync-om-design-system.sh` จะทับกลับ · และการเขียนเป็น rule ใน `theme/overrides.css` ก็พิสูจน์แล้วว่าตามยาก -> **ประกาศ class สีไว้บน element ใน component ของเราเอง**
+- ❌ **`Tooltip` ครอบ `<button>` ธรรมดา** — ไม่ขึ้น · `TooltipTrigger` ของ react-aria ส่ง hover/focus handler ให้เฉพาะ trigger ที่รับมันเป็น (`AriaButton`, `Focusable`) · `<a>` ของ `NavLink` ก็เหมือนกัน ตอนพับรางจึงใช้ `title` ธรรมดาแทน
+- ❌ **JDBI + `ESCAPE '\'` ในคิวรี** — JDBI สแกน SQL เองเพื่อหา named parameter · backslash ใน string literal ทำให้มันคิดว่า string ยังไม่ปิด แล้ว `:name` ทุกตัวหลังจุดนั้น **ไม่ถูก bind** → Postgres ตอบ `syntax error at or near ":"` (เสีย 1 รอบ build กับเรื่องนี้) · **ใช้ `ESCAPE '!'` แทน** แล้ว escape เป็น `!!` / `!%` / `!_`
+- ❌ **ให้ search ของ column match `fqn` ด้วย** — fqn ของ column ลงท้ายด้วย fqn ของ table ผลคือพิมพ์ชื่อ table แล้วได้ column ทุกตัวในตารางนั้นขึ้นมากลบตัว table เอง → column ต้อง match **เฉพาะ `name`**
+- ❌ **ยกม่าน loading หลัง `await signIn()` สำเร็จ** — มีเฟรมที่ token มีแล้วแต่ม่านยังไม่ขึ้น หน้า guarded วาดแลบผ่าน (ผู้ใช้เห็นและชี้) → **ยกม่านตั้งแต่ submit** แล้วปิดทิ้งตอน error
+- ❌ **fade หน้าใหม่โดยไม่ใส่ `key`** — element เดิมอยู่ยาว animation เล่นครั้งเดียวตอนเปิดหน้าแรกแล้วเงียบตลอดกาล → `key={pathname+search}` บังคับ remount
+- ❌ **หน่วง transition ด้วยการเลื่อน `key` ของ wrapper** (เวอร์ชันแรกของ `RouteTransition`) — `key` คุมแค่ "remount เมื่อไหร่" **ไม่ได้คุมว่า render อะไร** · `children` เป็น `<Outlet />` ซึ่งอ่าน router context ตอน render อยู่แล้ว หน้าใหม่จึงขึ้นทันทีที่คลิก พอครบ 520ms `key` เปลี่ยน มันก็ remount หน้าเดิมที่เห็นอยู่แล้วพร้อม fade → อาการที่ผู้ใช้เจอคือ **"เปลี่ยนเลย แล้วค่อยแวบ"** เป๊ะตามที่ code ทำ (คอมเมนต์ในไฟล์เขียนว่า "หน้าเก่าค้างไว้" ทั้งที่ไม่เคยเก็บ element เก่าไว้เลย — comment ที่โกหกตัวเอง)
+- ❌ **snapshot `children` ใส่ state เพื่อค้างหน้าเก่า** — คิดไว้เป็นทางแก้แล้วตัดทิ้ง เพราะ **ใช้ไม่ได้**: `<Outlet />` เป็น element ที่ผูกกับ context ไม่ใช่ snapshot ของ DOM · เก็บ element เดิมไว้ มันก็ render route ใหม่อยู่ดี → ต้องหน่วงที่ **location** (`<Routes location={display}>`) เท่านั้น
+- ❌ **`onClick` บนแถวผลลัพธ์ที่อยู่ใน dropdown ของ input** — blur ของ input ปิด panel ทิ้งก่อนคลิกจะลง → `onMouseDown` + `preventDefault()`
 - ❌ **`type="badge-modern"`** — ค่าที่ถูกคือ `type="modern"` · และ `Badge` ควรส่ง `type` ชัดเจนเสมอเพื่อให้ generic `BadgeColor<T>` inference ทำงาน
 - ❌ **Jest พังทั้ง suite เพราะ `import logo from '…png'`** — แก้ด้วย `moduleNameMapper` → `src/__mocks__/fileMock.cjs` · **บทเรียน: รัน `yarn test` เต็มชุดทุกครั้ง**
 - ❌ **`@testing-library/user-event` ไม่ได้ติดตั้ง** — ใช้ `fireEvent`
 - ❌ Playwright browsers ไม่ได้ติดตั้ง — ใช้ `chromium.launch({ channel: 'msedge' })` และ script ต้องอยู่ใน `frontend/app/`
+- ❌ **`shortFqn` ฉบับแรกคืน "สอง segment ท้าย"** — ใช้ไม่ได้กับข้อมูลจริง เพราะ domain สองชั้นท้ายยาวชั้นละ ~45 ตัวอักษร ผลคือชิปยาวเท่าเดิม → ต้องคิดเป็น **งบของ parent** (`PARENT_BUDGET = 18`) แล้วยุบ parent ที่ยาวเกินงบเป็น `…`
+- ❌ **คิดจะตัด parent ทิ้งเสมอให้เหลือแค่ leaf** — `PII.Sensitive` กับ `MFEC-PDPA.Sentitive` จะเหลือ `Sensitive`/`Sentitive` ที่แยกไม่ออกว่ามาจากหมวดไหน = ชิปที่อ่านง่ายแต่ผิด
+- ❌ **ปล่อยให้ `Badge` wrap เอง** — `Badge` ของ design system เป็น `size-max whitespace-nowrap` มันจะไม่ wrap แต่จะ**ยืด**จนดันทั้งแถว → ต้อง `max-w-*` ที่ `Badge` + `truncate` ที่ span ข้างใน
 - ⚠️ MCP connector หลายตัวของ claude.ai ยังไม่ได้ authorize — session แบบ non-interactive ทำ OAuth ไม่ได้ ต้องไปกดใน claude.ai connector settings
+
+---
+
+## ช่องว่างที่รู้ตัวแล้วแต่ยังไม่ได้แก้
+
+เขียนไว้ตรงนี้เพราะทุกข้อ **ดูเหมือนทำงานปกติจากข้างนอก** — เป็นชนิดที่จะถูกค้นพบตอนผิดแล้ว ถ้าไม่จด
+
+1. **`scopeFqn` ของ policy ระดับ DOMAIN / SERVICE / DATABASE ถูกใช้เป็น prefix ของ FQN ทางกายภาพ** — ผูก policy ไว้ที่ชื่อ domain (`Finance.Risk`) มันจะ bind ไม่ติดอะไรเลย ทั้งที่หน้าจอดูเหมือนสร้างสำเร็จ ต้องแยก scope เชิง governance ออกจาก scope เชิงกายภาพ
+2. **ไม่มี write API สำหรับ local principal / attribute (FR-2.2) และการติด facet แบบ local (FR-1.7)** — `analyst_a` / `steward_c` และ tag ของ demo ถูก seed ด้วย SQL ตรงๆ ไม่มีทางทำผ่าน UI
+3. **`PolicyResource.affecting` default `environment` เป็น `"dev"` แต่ `DecisionService.DEFAULT_ENVIRONMENT` เป็น `"prod"`** — หน้าจอ "policy ที่มีผลกับ asset นี้" กับสิ่งที่ engine ตัดสินจริง จะตอบคนละชุดโดยไม่มีใครรู้
+4. **ไม่มี audit ของการ configure เลย** — เปลี่ยน data source, เปลี่ยน OM settings, enable/disable source ไม่ถูกบันทึกที่ไหน มีแต่ audit ของ query / decision / policy change (FR-8.1 ครอบแค่ policy)
+5. **`audit_decision.evaluation_ms` ไม่เคยถูกเขียนค่า** — เป็น NULL ทุกแถว ทำให้ยืนยัน NFR-2 (p95 < 50ms) ไม่ได้
+6. **capability matrix ยังไม่รู้จัก masking function ต่อ dialect และไม่รู้จักเวอร์ชันของ engine** — ดูหัวข้อ I ข้างบน
+7. **หน้า Query console ยังไม่เคยถูกดูด้วยตาในเบราว์เซอร์** — ผ่าน type-check และ API ตอบถูก แต่ยังไม่ได้ verify ด้วย Playwright
 
 ---
 
 ## Next Steps
 
-1. **push ให้ขึ้น** — local นำหน้า remote อยู่ (remote main ยังอยู่ที่ `e3aaa52`) · secret scan ผ่านแล้วทั้งสอง commit · แก้เรื่อง `git push` ค้างก่อน (ดู What Didn't Work) แล้วยืนยันด้วย `git ls-remote --heads origin`
+1. **push ให้ขึ้น** — local นำหน้า remote อยู่ (remote main ยังอยู่ที่ `e3aaa52`) · แก้เรื่อง `git push` ค้างก่อน (ดู What Didn't Work) แล้วยืนยันด้วย `git ls-remote --heads origin` · **scan secret ก่อน push ทุกครั้ง**
 2. **ปิด M3** — decision cache (FR-5.5) + ANTLR grammar ของ `expr` (FR-3.2)
-3. **ปิด M4** — หน้า asset ต้องโชว์ "policy ที่มีผลกับ asset นี้" (มี endpoint `/policies/affecting/{fqn}` รออยู่แล้ว), View-as-user (FR-5.2), impact analysis (FR-5.3)
-4. **FR-1.6** — reconcile cache กับ JDBC introspection จริง (**รอ connection database จริงจากผู้ใช้**)
-5. **หน้าเปลี่ยนรหัสผ่าน** — `mustChangePassword` ไหลถึง `auth/authStore.ts` แล้วแต่ไม่มีใครอ่าน
-6. **ก่อน M6** ต้องได้คำตอบ: SQL Server production เป็น **2022+** ไหม (ต้องการสำหรับ `GRANT UNMASK` ระดับ column) และลง extension `anon` บน PostgreSQL ได้ไหม
+3. **ปิด M4** — หน้า asset ต้องโชว์ "policy ที่มีผลกับ asset นี้" (มี endpoint `/policies/affecting/{fqn}` รออยู่แล้ว — แก้ข้อ 3 ของช่องว่างด้วย), View-as-user (FR-5.2), impact analysis (FR-5.3)
+4. **ปิดช่องว่างข้อ 1–5 ข้างบน** โดยเฉพาะ **ข้อ 4 (audit ของการ configure)** ซึ่งเป็นของที่ auditor จะถามหาแน่นอน
+5. **M2** — write API ของ principal/attribute แล้วต่อ filter ตาม attribute ในหน้า People (ผู้ใช้ขอไว้: *"อยากให้สามารถ Filter ตาม attribute ได้"*)
+6. **M5 (secure view)** — `DecisionSql` + dialect ทั้งสองตัวพร้อมแล้ว เหลือ ViewCompiler + `row_entitlement` maintainer + dry-run/apply/rollback + golden-file test
+7. **FR-1.6** — reconcile cache กับ JDBC introspection จริง (**รอ connection database จริงจากผู้ใช้**)
+8. **หน้าเปลี่ยนรหัสผ่าน** — `mustChangePassword` ไหลถึง `auth/authStore.ts` แล้วแต่ไม่มีใครอ่าน
+9. **ก่อน M6** ต้องได้คำตอบ: SQL Server production เป็น **2022+** ไหม (ต้องการสำหรับ `GRANT UNMASK` ระดับ column) และลง extension `anon` บน PostgreSQL ได้ไหม
+10. งานเล็กที่ค้าง: refactor `jdbcUrl` ที่ยังเป็น private ใน `SourceProbe` ให้ไปอยู่บน `JdbcTargets` · golden-file test ของ dialect ทั้งสองตัว
 
-**กติกาที่ต้องถือไว้ทุกครั้งที่ commit:** repo เป็น public → scan หา password / JWT / hostname และ IP ภายใน ก่อน push เสมอ · ค่าจริง (`IDENTITY_BOOTSTRAP_ADMIN_PASSWORD`, `OM_WEBHOOK_SECRET`, bot JWT) อยู่ใน `.env` ที่ gitignore เท่านั้น · `.env.example` มีแต่ placeholder
+**กติกาที่ต้องถือไว้ทุกครั้งที่ commit:** repo เป็น public -> scan หา password / JWT / hostname และ IP ภายใน ก่อน push เสมอ · ค่าจริง (`IDENTITY_BOOTSTRAP_ADMIN_PASSWORD`, `OM_WEBHOOK_SECRET`, `FERNET_KEY`, `SRC_PG_ARAK_CREDENTIAL`, bot JWT) อยู่ใน `.env` ที่ gitignore เท่านั้น · `.env.example` มีแต่ placeholder
+**ผู้ใช้สั่งไว้:** *"อัพเดตไฟล์ handoff ทุกครั้งที่เอาขึ้น git"* — commit ที่ไม่มี HANDOFF.md ติดไปด้วย ถือว่ายังไม่เสร็จ
 **ข้อจำกัดที่ผู้ใช้สั่งไว้:** ต่อ OpenMetadata **read อย่างเดียว** ตอนนี้ — ห้าม PATCH กลับ (FR-1.7 จึงยังไม่ทำ)
 
 **คำสั่งที่ใช้บ่อย** — ดูหัวข้อ 7 ของ [docs/DESIGN.md](docs/DESIGN.md)

@@ -78,6 +78,7 @@ public record GovernanceSnapshot(
       UUID omId,
       String fqn,
       String name,
+      String displayName,
       String description,
       boolean mutuallyExclusive,
       String provider,
@@ -90,10 +91,12 @@ public record GovernanceSnapshot(
       String fqn,
       String parentFqn,
       String name,
+      String displayName,
       String description,
       boolean disabled) {}
 
-  public record GlossaryRow(UUID omId, String fqn, String name, String description) {}
+  public record GlossaryRow(
+      UUID omId, String fqn, String name, String displayName, String description) {}
 
   /**
    * A glossary term.
@@ -109,6 +112,7 @@ public record GovernanceSnapshot(
       String fqn,
       String parentFqn,
       String name,
+      String displayName,
       String description,
       List<String> synonyms,
       List<String> relatedTerms) {
@@ -130,12 +134,18 @@ public record GovernanceSnapshot(
       String parentFqn,
       int depth,
       String name,
+      String displayName,
       String description,
       String domainType) {}
 
   /** A data product, which is flat but belongs to a domain (FR-2A.2a). */
   public record DataProductRow(
-      UUID omId, String fqn, String name, String description, String domainFqn) {}
+      UUID omId,
+      String fqn,
+      String name,
+      String displayName,
+      String description,
+      String domainFqn) {}
 
   /**
    * The definition of a custom property — not its value.

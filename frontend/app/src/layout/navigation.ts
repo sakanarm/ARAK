@@ -4,7 +4,10 @@ import {
   Database01,
   FileShield02,
   Home01,
+  SearchRefraction,
   Server01,
+  Server02,
+  Settings01,
   ShieldTick,
   User03,
   Users01,
@@ -67,6 +70,14 @@ export const NAV_SECTIONS: NavSection[] = [
       'Subscription and data policies, from organisation scope down to a single column.',
   },
   {
+    label: 'Query',
+    href: '/query',
+    icon: SearchRefraction,
+    milestone: null,
+    description:
+      'Run SQL through the platform: the policy is compiled into the statement before it reaches the source.',
+  },
+  {
     label: 'Simulator',
     href: '/simulator',
     icon: Activity,
@@ -88,6 +99,22 @@ export const NAV_SECTIONS: NavSection[] = [
     icon: Users01,
     milestone: 'M8',
     description: 'Grants, expiry and who can reach what.',
+  },
+  {
+    label: 'Sources',
+    href: '/sources',
+    icon: Server02,
+    milestone: null,
+    description:
+      'The databases policy is enforced in, and which of the three modes each one carries.',
+  },
+  {
+    label: 'Settings',
+    href: '/settings/openmetadata',
+    icon: Settings01,
+    milestone: null,
+    description:
+      'The OpenMetadata instance this platform reads its metadata from, and how fresh that copy is.',
   },
   {
     label: 'System',

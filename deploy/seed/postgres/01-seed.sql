@@ -21,6 +21,6 @@ CREATE TABLE IF NOT EXISTS sales.customer (
 INSERT INTO sales.customer (id, full_name, email, citizen_id, phone, salary, branch_code, country) VALUES
     (1, 'Somchai Wong',    'somchai@example.co.th', '1103700123456', '0812345678', 45000.00,  'BKK-01', 'TH'),
     (2, 'Nattaporn Sri',   'nattaporn@example.co.th','1209800234567', '0823456789', 62000.00,  'BKK-01', 'TH'),
-    (3, 'Chaiwat Phan',    'chaiwat@example.co.th',  '3101900345678', '0834567890', 38000.00,  'CNX-02', 'TH'),
+    (3, 'Chaiwat Phan',    'chaiwat@example.co.th',  '3101900345678', '0834567890', 38000.00,  'CNX-01', 'TH'),
     (4, 'Lim Wei Ling',    'weiling@example.com.sg', 'S1234567D',     '+6591234567', 88000.00, 'SIN-01', 'SG')
 ON CONFLICT (id) DO NOTHING;

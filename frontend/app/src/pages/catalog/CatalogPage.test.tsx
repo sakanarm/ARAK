@@ -96,8 +96,12 @@ test('lists what the crawl cached, with its governance', async () => {
 
   expect(await screen.findByText('customer')).toBeInTheDocument();
   expect(screen.getByText('prod-pg.SalesDB.dbo.customer')).toBeInTheDocument();
-  // Twice over: once as the row's chip, once as a filter in the picker.
-  expect(screen.getAllByText('PII.Sensitive')).toHaveLength(2);
+  // Once as the row's chip, which keeps the parent so that `PII.Sensitive`
+  // cannot be mistaken for `MFEC-PDPA.Sentitive`...
+  expect(screen.getAllByText('PII / Sensitive')).toHaveLength(1);
+  // ...and once in the filter rail, which drops the parent because the rail
+  // puts it back as an indent under the `PII` row above.
+  expect(screen.getByRole('checkbox', { name: /^PII\.Sensitive/ })).toBeInTheDocument();
   // The count that decides whether this table needs a data policy at all.
   expect(screen.getByText(/2 carrying a tag or term/)).toBeInTheDocument();
 });
@@ -118,8 +122,8 @@ test('reads its filters from the URL so a filtered list can be shared', async ()
 test('offers only the governance facets as filters, and AND-s them', async () => {
   renderPage();
 
-  const tag = await screen.findByRole('button', { name: /PII.Sensitive/ });
-  expect(screen.queryByRole('button', { name: /dbo/ })).not.toBeInTheDocument();
+  const tag = await screen.findByRole('checkbox', { name: /^PII\.Sensitive/ });
+  expect(screen.queryByRole('checkbox', { name: /dbo/ })).not.toBeInTheDocument();
 
   fireEvent.click(tag);
 

@@ -79,6 +79,25 @@ class GovernanceStoreIT {
   }
 
   @Test
+  @DisplayName("the display name OpenMetadata shows is stored beside the name policies use")
+  void keepsTheDisplayName() {
+    store.store(snapshot());
+
+    // The vocabulary screens read this column, and it went missing for a while:
+    // every one of them answered 500 because the query selected a display_name
+    // no table had. A policy is still written against `PII`, so the two names
+    // are kept apart rather than one overwriting the other.
+    assertThat(displayName("classification", "PII"))
+        .isEqualTo("Personally Identifiable Information");
+    assertThat(displayName("glossary_term", "Finance.CustomerIdentity"))
+        .isEqualTo("Customer Identity");
+
+    // Absent is absent, not the name copied over: the UI falls back to the name
+    // itself, and it can only do that if it can tell the two cases apart.
+    assertThat(displayName("classification", "Tier")).isNull();
+  }
+
+  @Test
   @DisplayName("a sub-domain keeps its parent and its depth")
   void subDomainDepth() {
     store.store(snapshot());
@@ -235,11 +254,20 @@ class GovernanceStoreIT {
     return new GovernanceSnapshot(
         List.of(
             new GovernanceSnapshot.ClassificationRow(
-                UUID.randomUUID(), "PII", "PII", "Personal data", false, "system", false),
+                UUID.randomUUID(),
+                "PII",
+                "PII",
+                "Personally Identifiable Information",
+                "Personal data",
+                false,
+                "system",
+                false),
             new GovernanceSnapshot.ClassificationRow(
-                UUID.randomUUID(), "Tier", "Tier", "Criticality", true, "system", false)),
+                UUID.randomUUID(), "Tier", "Tier", null, "Criticality", true, "system", false)),
         List.of(tag("PII", "PII.Sensitive"), tag("Tier", "Tier.Tier1")),
-        List.of(new GovernanceSnapshot.GlossaryRow(UUID.randomUUID(), "Finance", "Finance", null)),
+        List.of(
+            new GovernanceSnapshot.GlossaryRow(
+                UUID.randomUUID(), "Finance", "Finance", null, null)),
         List.of(
             new GovernanceSnapshot.GlossaryTermRow(
                 UUID.randomUUID(),
@@ -247,6 +275,7 @@ class GovernanceStoreIT {
                 "Finance.CustomerIdentity",
                 null,
                 "CustomerIdentity",
+                "Customer Identity",
                 null,
                 List.of("KYC"),
                 List.of())),
@@ -256,7 +285,7 @@ class GovernanceStoreIT {
             domain("Finance.Risk.Credit", "Finance.Risk", 2)),
         List.of(
             new GovernanceSnapshot.DataProductRow(
-                UUID.randomUUID(), "Customer 360", "Customer 360", null, "Finance.Risk")),
+                UUID.randomUUID(), "Customer 360", "Customer 360", null, null, "Finance.Risk")),
         List.of(
             new GovernanceSnapshot.CustomPropertyRow(
                 "table",
@@ -289,6 +318,7 @@ class GovernanceStoreIT {
         null,
         fqn.substring(fqn.indexOf('.') + 1),
         null,
+        null,
         false);
   }
 
@@ -300,6 +330,7 @@ class GovernanceStoreIT {
         depth,
         fqn.substring(fqn.lastIndexOf('.') + 1),
         null,
+        null,
         "Aggregate");
   }
 
@@ -309,6 +340,17 @@ class GovernanceStoreIT {
     return jdbi.withHandle(
         handle ->
             handle.createQuery("SELECT fqn FROM " + table).mapTo(String.class).list());
+  }
+
+  private String displayName(String table, String fqn) {
+    return jdbi.withHandle(
+        handle ->
+            handle
+                .createQuery("SELECT display_name FROM " + table + " WHERE fqn = :fqn")
+                .bind("fqn", fqn)
+                .mapTo(String.class)
+                .findOne()
+                .orElse(null));
   }
 
   private int count(String table) {

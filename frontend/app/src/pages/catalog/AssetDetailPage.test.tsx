@@ -111,7 +111,8 @@ test('shows each column with the facets that reach it', async () => {
 
   expect(await screen.findByText('email')).toBeInTheDocument();
   expect(screen.getByText('id')).toBeInTheDocument();
-  expect(screen.getByText('PII.Sensitive')).toBeInTheDocument();
+  // Chips print the leaf with its parent, not the whole dotted path.
+  expect(screen.getByText('PII / Sensitive')).toBeInTheDocument();
   expect(screen.getByText('2 columns · 1 carrying a facet')).toBeInTheDocument();
 });
 

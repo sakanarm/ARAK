@@ -312,7 +312,7 @@ public class PolicyStore {
                     (rs, ctx) ->
                         new StoredPolicy(
                             UUID.fromString(rs.getString("policy_id")),
-                            deserialise(rs.getString("document")),
+                            deserialise(rs.getString("policy_id"), rs.getString("document")),
                             rs.getString("lifecycle_state"),
                             null,
                             rs.getInt("version"),
@@ -341,7 +341,7 @@ public class PolicyStore {
       throws java.sql.SQLException {
     return new StoredPolicy(
         UUID.fromString(rs.getString("id")),
-        deserialise(rs.getString("document")),
+        deserialise(rs.getString("id"), rs.getString("document")),
         rs.getString("lifecycle_state"),
         rs.getString("environment"),
         rs.getInt("version"),
@@ -449,9 +449,19 @@ public class PolicyStore {
     }
   }
 
-  private Policy deserialise(String document) {
+  /**
+   * The stored document with its row's id stamped back onto it.
+   *
+   * <p>The id is a column, not part of the JSON — so a policy read straight out
+   * of the document has {@code id == null}, and every {@link
+   * com.mfec.dac.schema.api.DecisionReason} the engine builds from it carries a
+   * null policy id. That is what left {@code audit_decision.matched_policy_ids}
+   * empty on every row: the audit could name the policy but not point at it
+   * (FR-8.2, FR-5.4).
+   */
+  private Policy deserialise(String id, String document) {
     try {
-      return json.readValue(document, Policy.class);
+      return json.readValue(document, Policy.class).withId(UUID.fromString(id));
     } catch (Exception e) {
       throw new IllegalStateException("Cannot read stored policy document", e);
     }

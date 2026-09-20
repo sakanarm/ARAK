@@ -46,6 +46,7 @@ public final class GovernanceMapper {
         source.getId(),
         source.getFullyQualifiedName(),
         source.getName(),
+        source.getDisplayName(),
         source.getDescription(),
         Boolean.TRUE.equals(source.getMutuallyExclusive()),
         source.getProvider() == null ? "user" : source.getProvider().getValue(),
@@ -69,6 +70,7 @@ public final class GovernanceMapper {
         fqn,
         parent,
         source.getName(),
+        source.getDisplayName(),
         source.getDescription(),
         Boolean.TRUE.equals(source.getDisabled()));
   }
@@ -81,6 +83,7 @@ public final class GovernanceMapper {
         source.getId(),
         source.getFullyQualifiedName(),
         source.getName(),
+        source.getDisplayName(),
         source.getDescription());
   }
 
@@ -97,6 +100,7 @@ public final class GovernanceMapper {
         fqn,
         parentWithinRoot(fqn),
         source.getName(),
+        source.getDisplayName(),
         source.getDescription(),
         source.getSynonyms(),
         relatedTermNames(source.getRelatedTerms()));
@@ -113,6 +117,7 @@ public final class GovernanceMapper {
         parentOf(fqn),
         Math.max(0, Fqns.depth(fqn) - 1),
         source.getName(),
+        source.getDisplayName(),
         source.getDescription(),
         source.getDomainType() == null ? null : source.getDomainType().getValue());
   }
@@ -138,6 +143,7 @@ public final class GovernanceMapper {
         source.getId(),
         source.getFullyQualifiedName(),
         source.getName(),
+        source.getDisplayName(),
         source.getDescription(),
         domainFqn);
   }

@@ -643,12 +643,21 @@ public final class PolicyEngine {
   }
 
   /**
+   * The name the composer signs its own reasons with.
+   *
+   * <p>Public because a caller reading a refusal has to be able to tell a
+   * policy's verdict from the composer's summary of all of them, and comparing
+   * against a copy of this string in another module is how the two drift.
+   */
+  public static final String COMPOSITION = "(composition)";
+
+  /**
    * A reason that belongs to the composition itself rather than to one policy.
    * {@code policyName} is required by the schema, so the composer names itself.
    */
   private static DecisionReason bareReason(boolean matched, String explanation) {
     return new DecisionReason()
-        .withPolicyName("(composition)")
+        .withPolicyName(COMPOSITION)
         .withMatched(matched)
         .withExplanation(explanation);
   }

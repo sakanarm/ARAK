@@ -205,7 +205,11 @@ public class GovernanceQuery {
   private static String optionalColumns(String table) {
     return switch (table) {
       case "classification" -> "v.provenance, v.disabled, v.mutually_exclusive, 0 AS depth,";
-      case "tag" -> "v.provenance, v.disabled, v.mutually_exclusive, 0 AS depth,";
+        // Mutual exclusivity is a property of the classification, not of the
+        // tags inside it: it says "an asset may carry only one of these", which
+        // is a statement about the set. Reading it off a tag would be asking
+        // whether one choice is exclusive of itself.
+      case "tag" -> "v.provenance, v.disabled, false AS mutually_exclusive, 0 AS depth,";
       case "domain" -> "v.provenance, false AS disabled, false AS mutually_exclusive, v.depth,";
       default -> "v.provenance, false AS disabled, false AS mutually_exclusive, 0 AS depth,";
     };

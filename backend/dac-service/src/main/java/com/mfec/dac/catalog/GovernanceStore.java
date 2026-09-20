@@ -83,12 +83,14 @@ public class GovernanceStore {
         "classification",
         rows,
         """
-        INSERT INTO classification (om_id, fqn, name, description, mutually_exclusive,
-                                    provider, disabled, provenance, updated_at)
-        VALUES (CAST(:omId AS uuid), :fqn, :name, CAST(:description AS text), :mutuallyExclusive,
+        INSERT INTO classification (om_id, fqn, name, display_name, description,
+                                    mutually_exclusive, provider, disabled, provenance, updated_at)
+        VALUES (CAST(:omId AS uuid), :fqn, :name, CAST(:displayName AS text),
+                CAST(:description AS text), :mutuallyExclusive,
                 :provider, :disabled, 'openmetadata', now())
         ON CONFLICT (fqn) DO UPDATE SET
-            om_id = EXCLUDED.om_id, name = EXCLUDED.name, description = EXCLUDED.description,
+            om_id = EXCLUDED.om_id, name = EXCLUDED.name,
+            display_name = EXCLUDED.display_name, description = EXCLUDED.description,
             mutually_exclusive = EXCLUDED.mutually_exclusive, provider = EXCLUDED.provider,
             disabled = EXCLUDED.disabled, updated_at = now()
         WHERE classification.provenance = 'openmetadata'
@@ -98,6 +100,7 @@ public class GovernanceStore {
                 .bind("omId", row.omId())
                 .bind("fqn", row.fqn())
                 .bind("name", row.name())
+                .bind("displayName", row.displayName())
                 .bind("description", row.description())
                 .bind("mutuallyExclusive", row.mutuallyExclusive())
                 .bind("provider", row.provider())
@@ -111,13 +114,15 @@ public class GovernanceStore {
         "tag",
         rows,
         """
-        INSERT INTO tag (om_id, classification_fqn, fqn, parent_fqn, name, description,
-                         disabled, provenance, updated_at)
+        INSERT INTO tag (om_id, classification_fqn, fqn, parent_fqn, name, display_name,
+                         description, disabled, provenance, updated_at)
         VALUES (CAST(:omId AS uuid), :classificationFqn, :fqn, CAST(:parentFqn AS text), :name,
-                CAST(:description AS text), :disabled, 'openmetadata', now())
+                CAST(:displayName AS text), CAST(:description AS text), :disabled,
+                'openmetadata', now())
         ON CONFLICT (fqn) DO UPDATE SET
             om_id = EXCLUDED.om_id, classification_fqn = EXCLUDED.classification_fqn,
             parent_fqn = EXCLUDED.parent_fqn, name = EXCLUDED.name,
+            display_name = EXCLUDED.display_name,
             description = EXCLUDED.description, disabled = EXCLUDED.disabled, updated_at = now()
         WHERE tag.provenance = 'openmetadata'
         """,
@@ -128,6 +133,7 @@ public class GovernanceStore {
                 .bind("fqn", row.fqn())
                 .bind("parentFqn", row.parentFqn())
                 .bind("name", row.name())
+                .bind("displayName", row.displayName())
                 .bind("description", row.description())
                 .bind("disabled", row.disabled()),
         GovernanceSnapshot.TagRow::fqn);
@@ -139,11 +145,13 @@ public class GovernanceStore {
         "glossary",
         rows,
         """
-        INSERT INTO glossary (om_id, fqn, name, description, provenance, updated_at)
-        VALUES (CAST(:omId AS uuid), :fqn, :name, CAST(:description AS text),
-                'openmetadata', now())
+        INSERT INTO glossary (om_id, fqn, name, display_name, description,
+                              provenance, updated_at)
+        VALUES (CAST(:omId AS uuid), :fqn, :name, CAST(:displayName AS text),
+                CAST(:description AS text), 'openmetadata', now())
         ON CONFLICT (fqn) DO UPDATE SET
-            om_id = EXCLUDED.om_id, name = EXCLUDED.name, description = EXCLUDED.description,
+            om_id = EXCLUDED.om_id, name = EXCLUDED.name,
+            display_name = EXCLUDED.display_name, description = EXCLUDED.description,
             updated_at = now()
         WHERE glossary.provenance = 'openmetadata'
         """,
@@ -152,6 +160,7 @@ public class GovernanceStore {
                 .bind("omId", row.omId())
                 .bind("fqn", row.fqn())
                 .bind("name", row.name())
+                .bind("displayName", row.displayName())
                 .bind("description", row.description()),
         GovernanceSnapshot.GlossaryRow::fqn);
   }
@@ -162,14 +171,15 @@ public class GovernanceStore {
         "glossary_term",
         rows,
         """
-        INSERT INTO glossary_term (om_id, glossary_fqn, fqn, parent_fqn, name, description,
-                                   synonyms, related_terms, provenance, updated_at)
+        INSERT INTO glossary_term (om_id, glossary_fqn, fqn, parent_fqn, name, display_name,
+                                   description, synonyms, related_terms, provenance, updated_at)
         VALUES (CAST(:omId AS uuid), :glossaryFqn, :fqn, CAST(:parentFqn AS text), :name,
-                CAST(:description AS text), CAST(:synonyms AS jsonb),
+                CAST(:displayName AS text), CAST(:description AS text), CAST(:synonyms AS jsonb),
                 CAST(:relatedTerms AS jsonb), 'openmetadata', now())
         ON CONFLICT (fqn) DO UPDATE SET
             om_id = EXCLUDED.om_id, glossary_fqn = EXCLUDED.glossary_fqn,
             parent_fqn = EXCLUDED.parent_fqn, name = EXCLUDED.name,
+            display_name = EXCLUDED.display_name,
             description = EXCLUDED.description, synonyms = EXCLUDED.synonyms,
             related_terms = EXCLUDED.related_terms, updated_at = now()
         WHERE glossary_term.provenance = 'openmetadata'
@@ -181,6 +191,7 @@ public class GovernanceStore {
                 .bind("fqn", row.fqn())
                 .bind("parentFqn", row.parentFqn())
                 .bind("name", row.name())
+                .bind("displayName", row.displayName())
                 .bind("description", row.description())
                 .bind("synonyms", jsonOf(row.synonyms()))
                 .bind("relatedTerms", jsonOf(row.relatedTerms())),
@@ -193,13 +204,15 @@ public class GovernanceStore {
         "domain",
         rows,
         """
-        INSERT INTO domain (om_id, fqn, parent_fqn, depth, name, description, domain_type,
-                            provenance, updated_at)
+        INSERT INTO domain (om_id, fqn, parent_fqn, depth, name, display_name, description,
+                            domain_type, provenance, updated_at)
         VALUES (CAST(:omId AS uuid), :fqn, CAST(:parentFqn AS text), :depth, :name,
-                CAST(:description AS text), CAST(:domainType AS text), 'openmetadata', now())
+                CAST(:displayName AS text), CAST(:description AS text),
+                CAST(:domainType AS text), 'openmetadata', now())
         ON CONFLICT (fqn) DO UPDATE SET
             om_id = EXCLUDED.om_id, parent_fqn = EXCLUDED.parent_fqn, depth = EXCLUDED.depth,
-            name = EXCLUDED.name, description = EXCLUDED.description,
+            name = EXCLUDED.name, display_name = EXCLUDED.display_name,
+            description = EXCLUDED.description,
             domain_type = EXCLUDED.domain_type, updated_at = now()
         WHERE domain.provenance = 'openmetadata'
         """,
@@ -210,6 +223,7 @@ public class GovernanceStore {
                 .bind("parentFqn", row.parentFqn())
                 .bind("depth", row.depth())
                 .bind("name", row.name())
+                .bind("displayName", row.displayName())
                 .bind("description", row.description())
                 .bind("domainType", row.domainType()),
         GovernanceSnapshot.DomainRow::fqn);
@@ -221,12 +235,13 @@ public class GovernanceStore {
         "data_product",
         rows,
         """
-        INSERT INTO data_product (om_id, fqn, name, description, domain_fqn,
+        INSERT INTO data_product (om_id, fqn, name, display_name, description, domain_fqn,
                                   provenance, updated_at)
-        VALUES (CAST(:omId AS uuid), :fqn, :name, CAST(:description AS text),
-                CAST(:domainFqn AS text), 'openmetadata', now())
+        VALUES (CAST(:omId AS uuid), :fqn, :name, CAST(:displayName AS text),
+                CAST(:description AS text), CAST(:domainFqn AS text), 'openmetadata', now())
         ON CONFLICT (fqn) DO UPDATE SET
-            om_id = EXCLUDED.om_id, name = EXCLUDED.name, description = EXCLUDED.description,
+            om_id = EXCLUDED.om_id, name = EXCLUDED.name,
+            display_name = EXCLUDED.display_name, description = EXCLUDED.description,
             domain_fqn = EXCLUDED.domain_fqn, updated_at = now()
         WHERE data_product.provenance = 'openmetadata'
         """,
@@ -235,6 +250,7 @@ public class GovernanceStore {
                 .bind("omId", row.omId())
                 .bind("fqn", row.fqn())
                 .bind("name", row.name())
+                .bind("displayName", row.displayName())
                 .bind("description", row.description())
                 .bind("domainFqn", row.domainFqn()),
         GovernanceSnapshot.DataProductRow::fqn);

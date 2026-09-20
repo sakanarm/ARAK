@@ -33,3 +33,8 @@ Thumbs.db
 
 # --- local toolchain (portable JDK etc; see scripts/use-jdk21.*) ---
 .tools/
+
+# --- local run artefacts ---
+backend-run.log
+frontend/app/shot-*.mjs
+frontend/app/*.png

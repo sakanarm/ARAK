@@ -6,6 +6,7 @@ import { Button } from '@openmetadata/ui-core-components/components/base/buttons
 import { Input } from '@openmetadata/ui-core-components/components/base/input/input';
 import { PasswordInput } from '@openmetadata/ui-core-components/components/base/input/password-input';
 import { apiErrorMessage, fetchAuthConfig } from '../api/client';
+import { AUTH_SPLASH_MS, useAuthSplash } from '../auth/AuthSplash';
 import { useAuthStore } from '../auth/authStore';
 import logo from '../assets/arak-logo.png';
 
@@ -27,6 +28,7 @@ export default function LoginPage() {
   const location = useLocation();
   const token = useAuthStore((state) => state.token);
   const signIn = useAuthStore((state) => state.signIn);
+  const splash = useAuthSplash();
 
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -54,15 +56,28 @@ export default function LoginPage() {
     }
     setSubmitting(true);
     setError(null);
+
+    // Up before the request, not after it. Raising it on success left a frame
+    // in which the token existed but the curtain did not, and the guarded
+    // layout painted through the gap — the flash of a half-built home page
+    // between clicking and the loading screen.
+    splash.show('signing-in');
+
     try {
       await signIn(username.trim(), password);
-      navigate(target, { replace: true });
+      window.setTimeout(() => {
+        splash.hide();
+        navigate(target, { replace: true });
+      }, AUTH_SPLASH_MS);
     } catch (caught) {
+      // A rejected password drops the curtain at once: the wait is over, and
+      // the answer belongs on the form that asked the question.
+      splash.hide();
       setError(apiErrorMessage(caught, 'Sign-in failed.'));
+      setSubmitting(false);
     } finally {
       // The password never stays in state longer than the attempt that used it.
       setPassword('');
-      setSubmitting(false);
     }
   };
 

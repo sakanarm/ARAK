@@ -1,17 +1,34 @@
-import type { ReactNode } from 'react';
+import { createContext, useContext, type ReactNode } from 'react';
+import { Select as DesignSelect } from '@openmetadata/ui-core-components/components/base/select/select';
 
 /**
  * The small form controls the policy builder is made of.
  *
- * A rule builder is dozens of narrow dropdowns on one line, and the design
- * system's Select is built for a labelled field in a column layout. Native
- * elements with the same tokens read identically, keep the row dense, and stay
- * keyboard- and screen-reader-navigable without any wiring — the same choice
- * the catalog filters already made.
+ * Text inputs are native elements with the design tokens applied: they read
+ * identically, keep a dense row dense, and stay keyboard- and
+ * screen-reader-navigable without any wiring.
+ *
+ * Dropdowns are not. A native `<select>` hands its list to the operating
+ * system, which draws it in the OS's own colours with square corners and no
+ * relation to anything else on the page — the one control in the console that
+ * ignores the theme. So the select here is the design system's, built on
+ * react-aria: same popover, radius, hover and check mark as every other menu in
+ * the product, and it can carry a line of supporting text under each option,
+ * which a native `<option>` cannot.
  */
 
 export const FIELD =
   'tw:rounded-lg tw:border tw:border-primary tw:bg-primary tw:px-3 tw:py-2 tw:text-sm tw:text-primary tw:outline-none tw:focus-visible:border-brand';
+
+/**
+ * The label a Field has already drawn.
+ *
+ * A custom select is a button, not a labelable element, so the wrapping
+ * `<label>` does not name it the way it names an input. Rather than making
+ * every caller repeat the label as an `ariaLabel`, the Field passes it down and
+ * the select uses it when nothing more specific was given.
+ */
+const FieldLabel = createContext<string | undefined>(undefined);
 
 export function Field({
   label,
@@ -27,10 +44,18 @@ export function Field({
   return (
     <label className={`tw:flex tw:flex-col tw:gap-1.5 ${className ?? ''}`}>
       <span className="tw:text-sm tw:font-medium tw:text-secondary">{label}</span>
-      {children}
+      <FieldLabel.Provider value={label}>{children}</FieldLabel.Provider>
       {hint && <span className="tw:text-xs tw:text-tertiary">{hint}</span>}
     </label>
   );
+}
+
+export interface SelectOption {
+  value: string;
+  label: string;
+  /** A second line under the option — what choosing it will mean. */
+  hint?: string;
+  isDisabled?: boolean;
 }
 
 export function Select({
@@ -39,25 +64,39 @@ export function Select({
   options,
   className,
   ariaLabel,
+  placeholder,
 }: {
   value: string;
   onChange: (value: string) => void;
-  options: { value: string; label: string }[];
+  options: SelectOption[];
   className?: string;
   ariaLabel?: string;
+  placeholder?: string;
 }) {
+  const inherited = useContext(FieldLabel);
+
   return (
-    <select
-      aria-label={ariaLabel}
-      className={`${FIELD} ${className ?? ''}`}
-      onChange={(event) => onChange(event.target.value)}
-      value={value}>
-      {options.map((option) => (
-        <option key={option.value} value={option.value}>
-          {option.label}
-        </option>
-      ))}
-    </select>
+    <DesignSelect
+      aria-label={ariaLabel ?? inherited ?? 'Select'}
+      className={className}
+      items={options.map((option) => ({
+        id: option.value,
+        label: option.label,
+        supportingText: option.hint,
+        isDisabled: option.isDisabled,
+      }))}
+      onSelectionChange={(key) => {
+        // Null only arrives if the list is cleared, which this select never
+        // offers; guarding keeps the caller's handler total.
+        if (key !== null) {
+          onChange(String(key));
+        }
+      }}
+      placeholder={placeholder ?? 'Select'}
+      selectedKey={value}
+      size="sm">
+      {(item) => <DesignSelect.Item {...item} />}
+    </DesignSelect>
   );
 }
 

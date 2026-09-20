@@ -236,11 +236,11 @@ class GovernanceMapperTest {
         new GovernanceSnapshot(
             List.of(
                 new GovernanceSnapshot.ClassificationRow(
-                    null, "Tier", "Tier", null, true, "system", false),
+                    null, "Tier", "Tier", null, null, true, "system", false),
                 new GovernanceSnapshot.ClassificationRow(
-                    null, "PII", "PII", null, false, "system", false),
+                    null, "PII", "PII", null, null, false, "system", false),
                 new GovernanceSnapshot.ClassificationRow(
-                    null, "Retired", "Retired", null, true, "user", true)),
+                    null, "Retired", "Retired", null, null, true, "user", true)),
             List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
 
     // A disabled classification must not keep overriding inherited tags after

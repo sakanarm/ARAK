@@ -1,6 +1,8 @@
 import { Navigate, Outlet, Route, Routes } from 'react-router-dom';
+import AuthSplash from './auth/AuthSplash';
 import RequireAuth from './auth/RequireAuth';
 import AppShell from './layout/AppShell';
+import RouteTransition, { RouteProgress, useRouteLag } from './layout/RouteTransition';
 import { NAV_SECTIONS } from './layout/navigation';
 import AssetDetailPage from './pages/catalog/AssetDetailPage';
 import CatalogPage from './pages/catalog/CatalogPage';
@@ -11,6 +13,9 @@ import NotBuiltYetPage from './pages/NotBuiltYetPage';
 import PrincipalsPage from './pages/governance/PrincipalsPage';
 import PolicyBuilderPage from './pages/policies/PolicyBuilderPage';
 import PolicyListPage from './pages/policies/PolicyListPage';
+import QueryPage from './pages/query/QueryPage';
+import OpenMetadataSettingsPage from './pages/settings/OpenMetadataSettingsPage';
+import SourcesPage from './pages/SourcesPage';
 import SystemStatusPage from './pages/SystemStatusPage';
 
 /**
@@ -23,9 +28,23 @@ import SystemStatusPage from './pages/SystemStatusPage';
 export default function App() {
   const placeholders = NAV_SECTIONS.filter((section) => section.milestone);
 
+  // The router renders a location that lags the address bar by the length of
+  // the transition. Read here, above <Routes>, because overriding a location
+  // installs a new context for everything below it.
+  const { display, loading } = useRouteLag();
+
   return (
     <div className="tw:min-h-screen tw:bg-primary tw:text-primary tw:font-body">
-      <Routes>
+      {/*
+        Above the routes, so the curtain that covers signing in or out is not
+        unmounted by the very navigation it is covering.
+      */}
+      <AuthSplash />
+
+      {/* Driven by the real location, so the bar starts on the click. */}
+      <RouteProgress active={loading} />
+
+      <Routes location={display}>
         <Route element={<LoginPage />} path="/login" />
 
         <Route element={<GuardedLayout />}>
@@ -41,6 +60,13 @@ export default function App() {
           <Route element={<PolicyListPage />} path="/policies" />
           <Route element={<PolicyBuilderPage />} path="/policies/new" />
           <Route element={<PolicyBuilderPage />} path="/policies/:id" />
+          <Route element={<QueryPage />} path="/query" />
+          <Route element={<SourcesPage />} path="/sources" />
+          <Route
+            element={<OpenMetadataSettingsPage />}
+            path="/settings/openmetadata"
+          />
+          <Route element={<Navigate replace to="/settings/openmetadata" />} path="/settings" />
           <Route element={<SystemStatusPage />} path="/system" />
           {placeholders.map((section) => (
             <Route
@@ -60,7 +86,9 @@ function GuardedLayout() {
   return (
     <RequireAuth>
       <AppShell>
-        <Outlet />
+        <RouteTransition>
+          <Outlet />
+        </RouteTransition>
       </AppShell>
     </RequireAuth>
   );
