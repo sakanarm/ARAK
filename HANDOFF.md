@@ -539,6 +539,37 @@ jsdom ไม่ resolve Tailwind จึง assert ที่ class name ตรง
 
 `npx tsc --noEmit` ผ่าน · `npx jest` → **8 suites / 29 tests** (เดิม 7/25)
 
+### O7. หัวหน้าหน้า Query — ตัดคำอธิบายทิ้ง ย้ายปุ่ม Full screen ไปขวาบน
+
+**ที่มา:** ผู้ใช้สั่ง "เอาคำนี้ออกได้ไหม มันเกะกะ" (ย่อหน้าห้าบรรทัดใต้หัวข้อ Query) และ "เอา Full screen ไปไว้ขวาบน"
+
+| เดิม | ใหม่ |
+|---|---|
+| `<h1>Query</h1>` + ย่อหน้า 5 บรรทัด | `<header>` เป็น flex row — `Query` ซ้าย / ปุ่ม **Full screen** ขวา |
+| ปุ่ม Full screen อยู่ใน toolbar ข้างๆ Run | อยู่ขวาบนสุดของหน้า |
+| `tw:mt-6` ใต้ header | `tw:mt-4` (header เหลือบรรทัดเดียวแล้ว) |
+
+#### จุดที่ต้องระวัง — โหมดเต็มจอ**ซ่อน header ทั้งอัน**
+
+ถ้าย้ายปุ่มไป header เฉยๆ พอเข้าโหมดเต็มจอแล้ว **ปุ่มออกจะหายไปด้วย** จึงประกาศ element ไว้ครั้งเดียว (`fullscreenToggle`) แล้ววางสองที่:
+
+```
+โหมดปกติ   → อยู่ใน <header> ขวาสุด คู่กับชื่อหน้า
+โหมดเต็มจอ → <header> หาย → ย้ายไปอยู่ขวาสุดของ toolbar (chrome เดียวที่เหลือ)
+```
+
+Esc ยังใช้ได้เหมือนเดิม (ตั้งแต่ O5)
+
+#### วัดแล้ว 3 viewport
+
+```
+1920x1080  blurbGone:true sameRowAsTitle:true docBelowFold:false  fs→exitInToolbar:true titleVisible:false  Esc→กลับปกติ docBelowFold:false
+1366x768   เหมือนกัน  (gapToRightEdge 32px = ชิดขอบขวาของ content column)
+1280x720   เหมือนกัน
+```
+
+> ที่ 1920 ระยะห่างขอบขวา 212px เพราะหน้าถูกครอบด้วย `max-w-7xl` ตาม AppShell — ปุ่มชิดขอบขวาของ **คอลัมน์เนื้อหา** ตรงกับทุกหน้าในแอป ไม่ใช่ขอบจอ
+
 ---
 
 ## รอบก่อนหน้า — Global search ข้ามทุก entity + transition ตอนเปลี่ยนหน้า/เข้า-ออกระบบ + ชิป governance ที่อ่านออก

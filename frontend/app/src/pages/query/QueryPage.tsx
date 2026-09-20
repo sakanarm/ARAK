@@ -147,6 +147,19 @@ export default function QueryPage() {
     );
   }
 
+  // Declared once and placed twice: it belongs at the top right, but full
+  // screen removes the header it would sit in, so in that state it travels
+  // with the toolbar -- which is the only chrome left to leave from.
+  const fullscreenToggle = (
+    <Button
+      color="secondary"
+      iconLeading={fullscreen ? Minimize01 : Expand01}
+      onClick={() => setFullscreen((on) => !on)}
+      size="sm">
+      {fullscreen ? 'Exit full screen' : 'Full screen'}
+    </Button>
+  );
+
   const consoleTree = (
     <div
       className={
@@ -160,23 +173,17 @@ export default function QueryPage() {
       ref={setShellNode}
       style={fullscreen ? undefined : { height: available }}>
       {!fullscreen && (
-        <header className="tw:shrink-0">
+        <header className="tw:flex tw:shrink-0 tw:items-center tw:justify-between tw:gap-4">
           <h1 className="tw:text-display-sm tw:font-semibold tw:text-primary">
             Query
           </h1>
-          <p className="tw:mt-2 tw:max-w-3xl tw:text-md tw:text-tertiary">
-            SQL runs through the platform, not beside it. Every table is
-            resolved to an asset, the policy is compiled into the statement,
-            and what you get back is what the policy allows. A statement the
-            proxy cannot place a policy in front of is refused rather than
-            sent.
-          </p>
+          {fullscreenToggle}
         </header>
       )}
 
       <div
         className={`tw:flex tw:min-h-0 tw:flex-1 tw:gap-4 ${
-          fullscreen ? '' : 'tw:mt-6'
+          fullscreen ? '' : 'tw:mt-4'
         }`}>
         <SchemaExplorer
           onInsert={insert}
@@ -263,17 +270,7 @@ export default function QueryPage() {
                 Ctrl/⌘ + Enter to run
               </span>
 
-              {/* The grid is the reason this screen exists, and on a laptop
-                  the page chrome costs it about a third of its height. Giving
-                  the console the whole viewport is cheaper than asking
-                  somebody to drag the splitter every time they open it. */}
-              <Button
-                color="secondary"
-                iconLeading={fullscreen ? Minimize01 : Expand01}
-                onClick={() => setFullscreen((on) => !on)}
-                size="sm">
-                {fullscreen ? 'Exit full screen' : 'Full screen'}
-              </Button>
+              {fullscreen && fullscreenToggle}
             </div>
           </div>
 
