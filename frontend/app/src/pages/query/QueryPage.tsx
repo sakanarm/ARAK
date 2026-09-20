@@ -59,6 +59,12 @@ export default function QueryPage() {
   const latest = useRef({ sourceId, sql, asPrincipal, purpose, maxRows });
   latest.current = { sourceId, sql, asPrincipal, purpose, maxRows };
 
+  // How much of the column the editor keeps. Everything below it is the grid,
+  // so this is really "how many rows do I want to see at once" -- which depends
+  // on the query and the screen, and is therefore the reader's decision rather
+  // than a ratio we can pick for them.
+  const [editorHeight, setEditorHeight] = useState(readEditorHeight);
+
   const { data: sources } = useQuery({
     queryKey: ['sources'],
     queryFn: fetchSources,
@@ -226,12 +232,16 @@ export default function QueryPage() {
             )}
           </p>
 
-          <SqlEditor
-            disabled={run.isPending}
-            onChange={setSql}
-            onRun={() => run.mutate()}
-            value={sql}
-          />
+          <div className="tw:flex tw:shrink-0" style={{ height: editorHeight }}>
+            <SqlEditor
+              disabled={run.isPending}
+              onChange={setSql}
+              onRun={() => run.mutate()}
+              value={sql}
+            />
+          </div>
+
+          <Splitter height={editorHeight} onChange={setEditorHeight} />
 
           <ResultPanel
             error={run.error}
@@ -242,6 +252,107 @@ export default function QueryPage() {
           />
         </div>
       </div>
+    </div>
+  );
+}
+
+const EDITOR_HEIGHT_KEY = 'arak.query.editorHeight';
+const MIN_EDITOR_HEIGHT = 72;
+const MIN_RESULT_HEIGHT = 140;
+const DEFAULT_EDITOR_HEIGHT = 200;
+
+/**
+ * Remembered per browser, because the right split is a property of the screen
+ * and of the work, not of the session. Wrapped because storage throws in a
+ * private window and a thrown preference must not cost somebody the page.
+ */
+function readEditorHeight() {
+  try {
+    const saved = Number(window.localStorage.getItem(EDITOR_HEIGHT_KEY));
+    if (Number.isFinite(saved) && saved >= MIN_EDITOR_HEIGHT) {
+      return saved;
+    }
+  } catch {
+    // No stored preference is not an error; it is the first visit.
+  }
+  return DEFAULT_EDITOR_HEIGHT;
+}
+
+/**
+ * Drag to decide how much of the screen the rows get.
+ *
+ * <p>A fixed ratio cannot be right: a one-line statement against a thousand
+ * rows and a forty-line statement against three want opposite splits, and both
+ * are ordinary. Keyboard-operable as well as draggable -- a separator that only
+ * answers to a mouse takes the grid away from anybody who cannot use one.
+ */
+function Splitter({
+  height,
+  onChange,
+}: {
+  height: number;
+  onChange: (next: number) => void;
+}) {
+  function clamp(next: number, handle: HTMLElement | null) {
+    // Measured against the column the handle actually sits in, so the grid
+    // keeps a floor no matter how short the window is.
+    const column = handle?.parentElement;
+    const ceiling = column
+      ? column.clientHeight - MIN_RESULT_HEIGHT
+      : Number.MAX_SAFE_INTEGER;
+    return Math.round(
+      Math.min(Math.max(next, MIN_EDITOR_HEIGHT), Math.max(ceiling, MIN_EDITOR_HEIGHT))
+    );
+  }
+
+  function remember(value: number) {
+    try {
+      window.localStorage.setItem(EDITOR_HEIGHT_KEY, String(value));
+    } catch {
+      // The split still applies for this visit; only the memory of it is lost.
+    }
+  }
+
+  return (
+    <div
+      aria-label="Resize the editor"
+      aria-orientation="horizontal"
+      aria-valuenow={Math.round(height)}
+      className="tw:group tw:-my-1.5 tw:flex tw:h-3 tw:shrink-0 tw:cursor-row-resize tw:items-center tw:justify-center"
+      onKeyDown={(event) => {
+        const step = event.shiftKey ? 64 : 16;
+        const delta =
+          event.key === 'ArrowUp' ? -step : event.key === 'ArrowDown' ? step : 0;
+        if (delta === 0) {
+          return;
+        }
+        event.preventDefault();
+        const next = clamp(height + delta, event.currentTarget);
+        onChange(next);
+        remember(next);
+      }}
+      onPointerDown={(event) => {
+        event.preventDefault();
+        const handle = event.currentTarget;
+        const startY = event.clientY;
+        const startHeight = height;
+        let settled = startHeight;
+
+        const move = (moved: PointerEvent) => {
+          settled = clamp(startHeight + moved.clientY - startY, handle);
+          onChange(settled);
+        };
+        const stop = () => {
+          window.removeEventListener('pointermove', move);
+          window.removeEventListener('pointerup', stop);
+          remember(settled);
+        };
+        window.addEventListener('pointermove', move);
+        window.addEventListener('pointerup', stop);
+      }}
+      role="separator"
+      tabIndex={0}>
+      <span className="tw:h-0.5 tw:w-10 tw:rounded-full tw:bg-border-secondary tw:transition tw:group-hover:bg-brand-solid tw:group-focus:bg-brand-solid" />
     </div>
   );
 }
@@ -294,7 +405,7 @@ function ResultPanel({
   }
 
   return (
-    <section className="tw:flex tw:min-h-0 tw:flex-[1.1] tw:flex-col tw:overflow-hidden tw:rounded-lg tw:border tw:border-secondary tw:bg-primary">
+    <section className="tw:flex tw:min-h-0 tw:flex-1 tw:flex-col tw:overflow-hidden tw:rounded-lg tw:border tw:border-secondary tw:bg-primary">
       <div className="tw:flex tw:shrink-0 tw:items-center tw:gap-1 tw:border-b tw:border-secondary tw:px-2">
         {(
           [
@@ -460,7 +571,10 @@ function AppliedPolicies({ result }: { result: QueryResult }) {
   }
 
   return (
-    <div className="tw:shrink-0 tw:space-y-2 tw:border-b tw:border-secondary tw:bg-secondary tw:px-3 tw:py-2">
+    // Capped and scrollable: an asset with a dozen masked columns must not be
+    // able to push the rows it is describing off the screen. The explanation
+    // exists to make the grid readable, so it never outranks the grid.
+    <div className="tw:max-h-32 tw:shrink-0 tw:space-y-2 tw:overflow-auto tw:border-b tw:border-secondary tw:bg-secondary tw:px-3 tw:py-2">
       {explanations.map((explanation) => (
         <ExplanationRow explanation={explanation} key={explanation.asset} />
       ))}
