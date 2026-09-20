@@ -7,7 +7,19 @@ interface AuthSplashState {
   phase: AuthPhase;
   show: (phase: Exclude<AuthPhase, 'idle'>) => void;
   hide: () => void;
+  hideAfter: (ms: number) => void;
 }
+
+/**
+ * The pending lowering, held here rather than in a component.
+ *
+ * Module scope is the point. The curtain outlives whoever raised it -- the
+ * login form is unmounted by its own redirect the moment the token lands --
+ * so a timer owned by that component either gets cancelled on unmount, which
+ * leaves an opaque full-screen layer up for good, or survives it and fires
+ * against a tree that has moved on. Neither is a thing to keep in a component.
+ */
+let pending: number | undefined;
 
 /**
  * Whether the sign-in or sign-out curtain is up.
@@ -19,8 +31,24 @@ interface AuthSplashState {
  */
 export const useAuthSplash = create<AuthSplashState>((set) => ({
   phase: 'idle',
-  show: (phase) => set({ phase }),
-  hide: () => set({ phase: 'idle' }),
+
+  // Every entry point clears the pending lowering first, so a curtain raised
+  // for a new reason is never taken down by the timer of the old one.
+  show: (phase) => {
+    window.clearTimeout(pending);
+    set({ phase });
+  },
+
+  hide: () => {
+    window.clearTimeout(pending);
+    set({ phase: 'idle' });
+  },
+
+  /** Lower it after `ms`, whether or not the caller is still on screen. */
+  hideAfter: (ms) => {
+    window.clearTimeout(pending);
+    pending = window.setTimeout(() => set({ phase: 'idle' }), ms);
+  },
 }));
 
 /** How long the curtain stays up. Long enough to read, short enough to forgive. */

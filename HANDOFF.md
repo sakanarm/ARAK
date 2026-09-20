@@ -389,7 +389,7 @@ key ที่ไม่รู้จัก**ไม่ error** แต่ถูก�
 
 → **สรุป: ทั้ง form, serialization และ mutation ทำงานถูกหมด** ที่ยังไม่เปลี่ยนคือ save ไม่เคยถูกกดจนสำเร็จ วิธีเช็กว่าสำเร็จ: ป้าย version บนหัวหน้าต้องเปลี่ยนจาก **v4** เป็น **v5**
 
-> หมายเหตุสำหรับรอบหน้า: console มี warning `Maximum update depth exceeded ... at Navigate (react-router-dom)` บนหน้านี้ — ยังไม่ได้ไล่ ยังไม่เห็นว่ากระทบการทำงาน แต่เป็น render loop ที่ควรตามต่อ
+> ~~หมายเหตุสำหรับรอบหน้า: console มี warning `Maximum update depth exceeded ... at Navigate (react-router-dom)` บนหน้านี้ — ยังไม่ได้ไล่ ยังไม่เห็นว่ากระทบการทำงาน แต่เป็น render loop ที่ควรตามต่อ~~ → **ปิดแล้วใน O8** และ "ยังไม่เห็นว่ากระทบการทำงาน" คือการอ่านที่ผิด มันคือต้นเหตุของหน้าขาวตอน login
 
 ### O4. 🐛 แถบ explanation ไปเบียดตารางจนแถวหาย — แก้ด้วย splitter ลากได้
 
@@ -569,6 +569,115 @@ Esc ยังใช้ได้เหมือนเดิม (ตั้งแ�
 ```
 
 > ที่ 1920 ระยะห่างขอบขวา 212px เพราะหน้าถูกครอบด้วย `max-w-7xl` ตาม AppShell — ปุ่มชิดขอบขวาของ **คอลัมน์เนื้อหา** ตรงกับทุกหน้าในแอป ไม่ใช่ขอบจอ
+
+### O8. 🐛 หน้าขาวเปล่าที่ `/login` ตอน login เสร็จ — `<Navigate>` วน redirect ตัวเองจนเกิน 25 รอบ
+
+**อาการที่ผู้ใช้เจอ:** "เป็นหน้าขาวเปล่า http://localhost:5274/login ตอน login เสร็จ"
+
+**สิ่งที่ตัดออกไปก่อน:** `POST /api/v1/auth/login` ตอบ 200 ใน ~77ms ทั้งยิงตรงและผ่าน Vite proxy → พังฝั่ง client ล้วนๆ และ **profile ใหม่สะอาดๆ reproduce ไม่ได้** (login แล้วถึง `/` ใน 300ms, console เงียบสนิท) → เป็นบั๊กที่ขึ้นกับ *เส้นทางที่เดินมา* ไม่ใช่ขึ้นกับ state ที่ค้างใน localStorage
+
+#### วิธีที่จับได้ — เลิกทดสอบทางที่ถูก แล้วไล่ทดสอบทางที่คนใช้จริงเดิน
+
+เขียนสคริปต์ยิง 6 สถานการณ์รวดเดียว แล้วนับ console error:
+
+| สถานการณ์ | ผล |
+|---|---|
+| **เปิด deep link `/query` ทั้งที่ยังไม่ login แล้วค่อย login** | 🔴 **`Maximum update depth exceeded` × 7** |
+| กด Sign in รัวสองที | สะอาด |
+| กด Enter สองที | สะอาด |
+| login → กลับมา `/login` → login ใหม่ | สะอาด |
+| กด Back หลัง login | `about:blank` — เป็นธรรมชาติของ `replace` (เหลือ history แค่ entry เดียว) ไม่ใช่บั๊ก |
+| navigate ออกกลางม่าน | สะอาด (ตอนนั้น) |
+
+**component stack ชี้ตรงไปที่ `RequireAuth` ไม่ใช่ `LoginPage`** และ **error เกิดตั้งแต่ก่อนกด login** — คนละที่กับที่ตั้งสมมติฐานไว้ทั้งสองข้อ
+
+#### สาเหตุ
+
+```tsx
+// RequireAuth.tsx — ของเดิม
+return <Navigate replace state={{ from: location }} to="/login" />;
+```
+
+`{ from: location }` เป็น **object ใหม่ทุก render** และ react-router 6.30 ใส่ `state` ไว้ใน dependency array ของ effect ที่เรียก `navigate()`:
+
+```js
+// node_modules/.vite/deps/react-router-dom.js:4509-4513
+React.useEffect(() => navigate(JSON.parse(jsonPath), { replace, state, relative }),
+                [navigate, jsonPath, relative, replace2, state]);
+//                                                       ^^^^^ เปลี่ยน identity ทุก render
+```
+
+→ effect รันใหม่ → `navigate()` → render ใหม่ → object ใหม่ → effect รันใหม่ → **วน**
+
+วงจรนี้หยุดเองเมื่อ route match เปลี่ยนแล้ว `RequireAuth` unmount ซึ่งเป็นการ **แข่งกัน ไม่ใช่การรับประกัน** — เครื่องผมแพ้ 7 รอบแล้วหลุด **แต่ถ้าแพ้ครบ 25 รอบ React เลิก warn แล้ว throw** → tree ทั้งก้อนถูก unmount → **หน้าขาวเปล่า โดย URL ค้างที่ `/login` เป๊ะตามที่ผู้ใช้รายงาน** เครื่องช้ากว่า / render เยอะกว่า = แพ้ง่ายกว่า ซึ่งอธิบายว่าทำไมผู้ใช้เจอแต่ผมไม่เจอ
+
+> ⚠️ ตัวอย่างใน doc ของ react-router เองก็เขียน `state={{ from: location }}` แบบนี้ — มันรอดเพราะปกติ redirect unmount component ทันก่อน render รอบสอง **ไม่ใช่เพราะมันถูก**
+
+#### สิ่งที่แก้
+
+**1. [RequireAuth.tsx](frontend/app/src/auth/RequireAuth.tsx) — ทำให้ state มี identity คงที่**
+
+```tsx
+const from = useMemo(
+  () => ({ from: { pathname: location.pathname, search: location.search, hash: location.hash } }),
+  [location.pathname, location.search, location.hash]
+);
+...
+return <Navigate replace state={from} to="/login" />;
+```
+
+memo จาก **primitive** ไม่ใช่จากตัว `location` (ซึ่งเปลี่ยน identity เอง) และเก็บ `search`/`hash` มาด้วย — คนที่ถูกเด้งมาจาก `/query?sql=...` กำลังดูของชิ้นหนึ่งอยู่ ทิ้ง query string = ส่งเขากลับไปหน้าเปล่าที่ถูกหน้าจอ
+
+**2. [AuthSplash.tsx](frontend/app/src/auth/AuthSplash.tsx) — ย้าย timer ของม่านเข้ามาไว้ใน store**
+
+ของเดิม `LoginPage` ตั้ง `setTimeout` แล้วให้ callback เรียก `splash.hide()` + `navigate()` — **แต่ `<Navigate>` unmount `LoginPage` ทิ้งตั้งแต่ token ลงทันที คือก่อน callback ราว 900ms**
+
+นี่คือกับดักที่เกือบพลาด: ตอนแรกแก้ด้วยการ `clearTimeout` ตอน unmount ซึ่ง **จะยิ่งพังหนักกว่าเดิม** เพราะ callback ตัวนั้นคือสิ่งเดียวที่ลดม่านลง และม่านคือ `tw:fixed tw:inset-0 tw:z-200 tw:bg-primary` = **แผ่นทึบเต็มจอ → ม่านที่ไม่ลง ก็คือหน้าขาวเปล่า**
+
+ทางที่ถูกคือ **ม่านต้องลดตัวเอง** ไม่ใช่ฝากคนที่ไม่อยู่แล้ว:
+
+```ts
+let pending: number | undefined;          // module scope — ม่านอายุยืนกว่าคนที่ยกมัน
+show:      (phase) => { clearTimeout(pending); set({ phase }); },
+hide:      ()      => { clearTimeout(pending); set({ phase: 'idle' }); },
+hideAfter: (ms)    => { clearTimeout(pending); pending = setTimeout(() => set({ phase: 'idle' }), ms); },
+```
+
+`clearTimeout` ที่หัวทุกตัวทำหน้าที่เป็น generation guard ฟรีๆ — ม่าน sign-out ที่เพิ่งยกขึ้น จะไม่ถูก timer ของ sign-in รอบก่อนดึงลง
+
+**3. [LoginPage.tsx](frontend/app/src/pages/LoginPage.tsx)**
+
+```tsx
+await signIn(username.trim(), password);
+splash.hideAfter(AUTH_SPLASH_MS);     // แทน setTimeout ที่มี navigate ซ้ำอยู่ข้างใน
+```
+
+- `navigate()` ใน timer ถูกลบทิ้ง — มันคือ redirect ตัวเดิมยิงซ้ำรอบสอง 900ms ให้หลัง ใส่ tree ที่เดินไปไกลแล้ว (ผลข้างเคียงจริง: เดิมถ้า user กดไปหน้าอื่นระหว่างม่านขึ้น จะโดนลากกลับ — เทสต์ `nav-mid-curtain` เดิมจบที่ `/` ตอนนี้จบที่ `/policies` ตามที่ควรเป็น)
+- `target` ไม่รับ `/login` เป็นปลายทาง (กันไว้ — ถ้าเกิดขึ้นจริงจะ redirect หาตัวเองจนหน้าขาว) และต่อ `search`/`hash` กลับเข้าไป
+- `useNavigate` ไม่ถูกใช้แล้ว ลบ import ออก
+
+#### ผลหลังแก้ (วัดด้วยสคริปต์เดิม)
+
+```
+at login, state.from = {"from":{"pathname":"/query","search":"","hash":""}}
+t~500ms   loops=0    t~1000ms  loops=0    ...    t~7000ms  loops=0
+total loop errors: 0
+```
+
+ทั้ง 6 สถานการณ์สะอาดหมด
+
+#### Test — 6 ตัวใหม่ (รวมเป็น 10 suites / 35 tests)
+
+| ไฟล์ | ทดสอบอะไร |
+|---|---|
+| [RequireAuth.test.tsx](frontend/app/src/auth/RequireAuth.test.tsx) | mock `<Navigate>` เก็บ prop ไว้ → render สองรอบ แล้ว assert `state` เป็น **object เดียวกัน** (`toBe`) — ทดสอบที่ *สาเหตุ* ไม่ใช่ที่อาการ เพราะอาการต้องแพ้ race ครบ 25 รอบถึงจะโผล่ ซึ่ง reproduce ใน jsdom ไม่ได้; + เก็บ `search`/`hash` ครบ; + มี token แล้วต้อง render ของที่มันเฝ้า |
+| [AuthSplash.test.tsx](frontend/app/src/auth/AuthSplash.test.tsx) | ม่านลดเองได้โดยไม่ต้องพึ่งคนเรียก; `show` ใหม่ไม่ถูก timer เก่าดึงลง; `hide()` ตรงๆ ลงทันที (เคส password ผิด) |
+
+#### บทเรียนที่ควรจำ
+
+1. **"warning ใน console ที่ยังไม่เห็นว่ากระทบอะไร" ไม่ใช่เรื่องรอได้** — O3 บันทึกไว้ว่า "ยังไม่เห็นว่ากระทบการทำงาน" ทั้งที่มันคือหน้าขาวที่ผู้ใช้เจอ render loop ที่หยุดเองได้เพราะ**ชนะการแข่ง** จะแพ้เมื่อไหร่ก็ได้บนเครื่องที่ช้ากว่า
+2. **reproduce ไม่ได้ใน profile สะอาด ≠ ขึ้นกับ state ที่ค้าง** — คราวนี้มันขึ้นกับ *เส้นทางที่เดินเข้ามา* (deep link) สมมติฐานสองข้อแรก (`target` เป็น `/login`, timer ค้าง) ผิดทั้งคู่ สิ่งที่ได้คำตอบคือการยิง 6 เส้นทางจริงรวดเดียวแล้วนับ error
+3. **`clearTimeout` ตอน unmount ไม่ใช่คำตอบเสมอไป** — ถ้า callback นั้นคือสิ่งเดียวที่ปลดสถานะ global การยกเลิกมันคือการล็อกสถานะนั้นไว้ถาวร ของที่อายุยืนกว่า component ต้องไม่ถูกถือไว้ใน component
 
 ---
 

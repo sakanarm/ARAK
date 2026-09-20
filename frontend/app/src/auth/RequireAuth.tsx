@@ -1,4 +1,4 @@
-import { useEffect, type ReactNode } from 'react';
+import { useEffect, useMemo, type ReactNode } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import { useAuthStore } from './authStore';
 
@@ -22,10 +22,32 @@ export default function RequireAuth({ children }: { children: ReactNode }) {
     }
   }, [initialising, refresh]);
 
+  // Remember where they were headed so the login screen can put them back
+  // there rather than dropping everyone on the home page.
+  //
+  // Memoised, and built from the parts of the location rather than from the
+  // location itself, because <Navigate> lists `state` in the dependency array
+  // of the effect that calls navigate(). An object literal written inline is a
+  // new dependency on every render, so the effect fires again, navigates
+  // again, and renders again. React Router's own example writes
+  // `state={{ from: location }}` and gets away with it only because the
+  // redirect normally unmounts this component before the second render
+  // arrives -- a race, not a guarantee. Lose it twenty-five times over and
+  // React stops warning and throws, which unmounts the whole tree and leaves a
+  // blank page at /login with no error anywhere the user can see.
+  const from = useMemo(
+    () => ({
+      from: {
+        pathname: location.pathname,
+        search: location.search,
+        hash: location.hash,
+      },
+    }),
+    [location.pathname, location.search, location.hash]
+  );
+
   if (!token) {
-    // Remember where they were headed so the login screen can put them back
-    // there rather than dropping everyone on the home page.
-    return <Navigate replace state={{ from: location }} to="/login" />;
+    return <Navigate replace state={from} to="/login" />;
   }
 
   if (initialising) {

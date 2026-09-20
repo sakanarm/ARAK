@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Navigate, useLocation, useNavigate } from 'react-router-dom';
+import { Navigate, useLocation } from 'react-router-dom';
 import { AlertCircle, Columns01, Rows01, ShieldTick } from '@untitledui/icons';
 import { Button } from '@openmetadata/ui-core-components/components/base/buttons/button';
 import { Input } from '@openmetadata/ui-core-components/components/base/input/input';
@@ -11,7 +11,7 @@ import { useAuthStore } from '../auth/authStore';
 import logo from '../assets/arak-logo.png';
 
 interface FromState {
-  from?: { pathname?: string };
+  from?: { pathname?: string; search?: string; hash?: string };
 }
 
 /**
@@ -24,7 +24,6 @@ interface FromState {
  * not a rewrite of this screen.
  */
 export default function LoginPage() {
-  const navigate = useNavigate();
   const location = useLocation();
   const token = useAuthStore((state) => state.token);
   const signIn = useAuthStore((state) => state.signIn);
@@ -42,7 +41,18 @@ export default function LoginPage() {
     staleTime: Infinity,
   });
 
-  const target = (location.state as FromState | null)?.from?.pathname ?? '/';
+  // The query string and fragment travel with the path: somebody sent here
+  // from /query?sql=... was reading a particular thing, and dropping the part
+  // that says which one returns them to a blank version of the right screen.
+  //
+  // /login is refused as a destination even though nothing should ever offer
+  // it. If it ever were, this component would redirect to itself for as long
+  // as React allowed, and the page it left behind would be blank.
+  const from = (location.state as FromState | null)?.from;
+  const target =
+    from?.pathname && from.pathname !== '/login'
+      ? `${from.pathname}${from.search ?? ''}${from.hash ?? ''}`
+      : '/';
 
   if (token) {
     return <Navigate replace to={target} />;
@@ -65,10 +75,13 @@ export default function LoginPage() {
 
     try {
       await signIn(username.trim(), password);
-      window.setTimeout(() => {
-        splash.hide();
-        navigate(target, { replace: true });
-      }, AUTH_SPLASH_MS);
+
+      // The redirect above fires as soon as the token lands and unmounts this
+      // component, so the curtain cannot be lowered from here -- it lowers
+      // itself. The navigate that used to sit in a timer alongside was that
+      // same redirect a second time, 900ms later, against a tree that had
+      // already moved on.
+      splash.hideAfter(AUTH_SPLASH_MS);
     } catch (caught) {
       // A rejected password drops the curtain at once: the wait is over, and
       // the answer belongs on the form that asked the question.
