@@ -195,8 +195,13 @@ export default function SubjectBuilder({
                 value={window.days?.join(',') ?? ''}
               />
               <TextField
+                // Wide enough for the AM/PM segment the browser adds in a
+                // 12-hour locale. At w-24 that segment is clipped, so a window
+                // ending at 18:00 renders as `06:00` and reads as six in the
+                // morning -- a policy misread by twelve hours, in the one
+                // screen whose job is to say exactly when access holds.
                 ariaLabel="From"
-                className="tw:w-24"
+                className="tw:w-36"
                 onChange={(next) => {
                   const copy = [...windows];
                   copy[index] = { ...window, from: next };
@@ -208,7 +213,7 @@ export default function SubjectBuilder({
               <span className="tw:text-sm tw:text-tertiary">to</span>
               <TextField
                 ariaLabel="To"
-                className="tw:w-24"
+                className="tw:w-36"
                 onChange={(next) => {
                   const copy = [...windows];
                   copy[index] = { ...window, to: next };

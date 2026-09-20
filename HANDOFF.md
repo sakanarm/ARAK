@@ -356,6 +356,41 @@ key ที่ไม่รู้จัก**ไม่ error** แต่ถูก�
 `/policies/b594579f-a825-42bc-9dac-64de9b279d03` → Time windows → dropdown วัน `weekdays` → **`every day`** → Save
 ไม่ต้องแตะช่วงเวลา เพราะ [TimeMatcher.java:95-100](backend/dac-engine/src/main/java/com/mfec/dac/engine/TimeMatcher.java#L95-L100) ตีความ day list ว่างว่า "ทุกวัน" อยู่แล้ว และได้ทดสอบหน้า Policy Builder + versioning ไปในตัว
 
+### O2. 🐛 Time window แสดงผิดไป 12 ชั่วโมง — `18:00` ขึ้นจอว่า `06:00`
+
+**เจอตอน:** ผู้ใช้ถามว่า "ทำไมมันยังขึ้น Refused" แล้วผมเปิดหน้า policy ด้วย Playwright ไปดู
+
+ช่อง from/to ใน [SubjectBuilder.tsx](frontend/app/src/pages/policies/SubjectBuilder.tsx) เป็น `<input type="time">` กว้าง `tw:w-24` (96px)
+บน Edge locale en-US เบราว์เซอร์เรนเดอร์เป็น **12 ชั่วโมง** คือ `06:00 PM` + ไอคอนนาฬิกา ซึ่ง**ไม่พอ** → ส่วน `PM` ถูกตัดทิ้ง เหลือบนจอว่า `06:00`
+
+| | ค่าจริงใน DB | ที่ขึ้นบนจอ |
+|---|---|---|
+| `to` | `18:00` | **`06:00`** |
+
+> ข้อมูลไม่ได้เสีย (`input.value` ยังเป็น `"18:00"`) แต่**คนอ่านผิดไป 12 ชั่วโมง** บนหน้าจอเดียวที่มีหน้าที่บอกว่า "สิทธิ์นี้ใช้ได้ถึงกี่โมง" — ในแอป access control อันนี้คือบั๊กที่ยอมไม่ได้
+
+**แก้:** `tw:w-24` → `tw:w-36` ทั้งสองช่อง
+**พิสูจน์:** วัดจาก DOM — เดิม `scrollWidth > clientWidth` (ล้น) ตอนนี้ `clientWidth === scrollWidth === 142` ทั้งคู่ → `clipped: false`
+
+### O3. ยืนยันแล้วว่าปุ่ม Save ของ Policy Builder **ไม่ได้พัง**
+
+ผู้ใช้รายงานว่าแก้ time window แล้วยัง Refused อยู่ → ไล่ดูพบว่า `updatedAt` ฝั่ง server ยังเป็น `2026-09-20T04:04:14Z` (11:04 น.) **แปลว่าไม่มี save เข้ามาเลย**
+
+ทดสอบ client path ด้วย Playwright โดย **route intercept + abort** (ดูว่าจะส่งอะไร โดยไม่ให้ถึง server จริง):
+
+```
+>>> PUT /api/v1/policies/b594579f-…?version=4
+>>> subject.time = {"windows":[{"from":"08:00","to":"18:00","timezone":"Asia/Bangkok"}]}
+```
+
+- dropdown มีครบ 3 ตัวเลือก: `every day` / `weekdays` / `weekends`
+- เลือก `every day` แล้ว `days` **หายออกจาก payload** ถูกต้องตาม [TimeMatcher.java:95-100](backend/dac-engine/src/main/java/com/mfec/dac/engine/TimeMatcher.java#L95-L100) (list ว่าง = ทุกวัน)
+- ปุ่ม Save ไม่ disabled, ไม่มี error บนจอ, ยิง request 1 ครั้ง
+
+→ **สรุป: ทั้ง form, serialization และ mutation ทำงานถูกหมด** ที่ยังไม่เปลี่ยนคือ save ไม่เคยถูกกดจนสำเร็จ วิธีเช็กว่าสำเร็จ: ป้าย version บนหัวหน้าต้องเปลี่ยนจาก **v4** เป็น **v5**
+
+> หมายเหตุสำหรับรอบหน้า: console มี warning `Maximum update depth exceeded ... at Navigate (react-router-dom)` บนหน้านี้ — ยังไม่ได้ไล่ ยังไม่เห็นว่ากระทบการทำงาน แต่เป็น render loop ที่ควรตามต่อ
+
 ---
 
 ## รอบก่อนหน้า — Global search ข้ามทุก entity + transition ตอนเปลี่ยนหน้า/เข้า-ออกระบบ + ชิป governance ที่อ่านออก
