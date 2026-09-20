@@ -210,10 +210,20 @@ export default function SqlEditor({
         {/* The selection is drawn by the textarea, on top of the layer that
             holds the visible text. An opaque selection colour therefore hides
             the very thing being selected — it has to let the layer below
-            through. */}
+            through.
+
+            The caret is named explicitly and not left as `currentColor`: the
+            text here is transparent so that the highlighted layer shows
+            through, and a caret that follows the text colour is therefore
+            transparent too. It was drawn, in the right place, in nothing.
+
+            Named through the utility and not as `caret-[var(--color-...)]`:
+            the `tw:` prefix renames every theme variable to `--tw-color-*`,
+            so the raw name compiles to a rule that resolves to nothing and
+            fails exactly as silently as the bug it was meant to fix. */}
         <textarea
           aria-label="SQL"
-          className={`${SURFACE} tw:absolute tw:inset-0 tw:w-full tw:resize-none tw:overflow-auto tw:bg-transparent tw:px-3 tw:py-3 tw:text-transparent tw:caret-current tw:outline-none tw:selection:bg-[rgba(41,112,255,0.28)]`}
+          className={`${SURFACE} tw:absolute tw:inset-0 tw:w-full tw:resize-none tw:overflow-auto tw:bg-transparent tw:px-3 tw:py-3 tw:text-transparent tw:caret-text-primary tw:outline-none tw:selection:bg-[rgba(41,112,255,0.28)]`}
           disabled={disabled}
           onChange={(event) => onChange(event.target.value)}
           onKeyDown={onKeyDown}

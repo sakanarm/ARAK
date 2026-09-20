@@ -483,6 +483,62 @@ fs-chrome (ทุกขนาด): overlayInBody:true topbarCovered:true sidebar
 
 > **บทเรียน:** ผมอธิบายสองรอบแรกจากการเดา ไม่ใช่การวัด รอบนี้เดิน DOM จาก `tbody` ขึ้นไปทีละชั้นจนเจอชั้นที่ `top` มากกว่า `bottom` ของ parent — สามบรรทัดของตารางเดียวชี้ชัดกว่าการเดาสามรอบรวมกัน
 
+### O6. 🐛 Cursor ใน SQL editor หาย—วาดอยู่ แต่วาดด้วยสีโปร่งใส
+
+**ที่มา:** ผู้ใช้ถาม "Cursor ในนี้หายไปไหน" พร้อมภาพ SQL editor
+
+**สาเหตุ:** [SqlEditor.tsx](frontend/app/src/pages/query/SqlEditor.tsx) เป็น `<textarea>` ที่วางทับบน `<pre>` ที่ทำ syntax highlight — ตัว textarea จึงต้องเป็น `tw:text-transparent` เพื่อให้ชั้นสีข้างล่างทะลุขึ้นมา แต่ class เดิมเขียนไว้ว่า:
+
+```
+tw:text-transparent tw:caret-current
+```
+
+`caret-current` = `caret-color: currentColor` → **currentColor ก็คือ transparent นั่นเอง** cursor จึงถูกวาด ถูกตำแหน่ง และกะพริบอยู่ตลอด—ด้วยสีโปร่งใส คนใช้เลยอ่านว่า editor หลุด focus
+
+**แก้เป็น:** `tw:caret-text-primary` (ตาม theme → dark mode ตามไปเอง)
+
+#### ⚠️ กับดักของ prefix `tw:` — ห้ามเขียน `tw:xxx-[var(--color-...)]`
+
+ความพยายามแรกของผมคือ `tw:caret-[var(--color-text-primary)]` — **compile ผ่าน ไม่ error แต่ไม่ทำงาน** วัดใน browser ได้:
+
+```
+caret-color: rgba(0, 0, 0, 0)        ❌ ยังโปร่งใสเหมือนเดิม
+getComputedStyle(root)['--color-text-primary'] === ''    ← ต้นเหตุ
+```
+
+**เพราะ Tailwind 4 ที่ตั้ง prefix `tw` เปลี่ยนชื่อ CSS variable ของ theme ทุกตัวเป็น `--tw-<name>` ด้วย** ไม่ใช่แค่ชื่อ class:
+
+| เขียน | ได้ CSS | runtime |
+|---|---|---|
+| `tw:caret-[var(--color-text-primary)]` | `caret-color: var(--color-text-primary)` | ❌ ตัวแปรไม่มีจริง → transparent |
+| `tw:caret-text-primary` | `caret-color: var(--tw-color-text-primary)` | ✅ `rgb(24, 29, 39)` |
+
+> **กฎ:** ในโปรเจกต์นี้ **ให้เรียก utility ตามชื่อ token (`tw:caret-text-primary`) เสมอ** อย่าเขียน `var(--color-*)` ดิบใน arbitrary value — ถ้าจำเป็นจริงต้องเขียน `var(--tw-color-*)`
+> grep ทั้ง `app/src` และ `ui-core-components/src` แล้ว **ไม่มีที่อื่นที่พลาดแบบเดียวกัน**
+
+#### วิธียืนยัน — วัด ไม่ใช่ดู
+
+screenshot พิสูจน์ cursor ไม่ได้ (มันกะพริบ) จึงใช้ Playwright อ่าน computed style แทน:
+
+```
+{ caretColor: "rgb(24, 29, 39)", color: "rgba(0, 0, 0, 0)", focused: true }
+```
+
+ตัวอักษรยังโปร่งใสตามที่ตั้งใจ (ชั้น highlight ต้องทะลุขึ้นมา) แต่ cursor ทึบแล้ว
+
+#### Test ใหม่ — [SqlEditor.test.tsx](frontend/app/src/pages/query/SqlEditor.test.tsx) (4 tests)
+
+jsdom ไม่ resolve Tailwind จึง assert ที่ class name ตรงๆ — ซึ่งเป็นที่ที่บั๊กนี้อยู่พอดี:
+
+| test | กันอะไร |
+|---|---|
+| caret มีสีของตัวเอง | กันการกลับไปใช้ `caret-current` คู่กับ `text-transparent` อีก |
+| gutter มีเลขครบทุกบรรทัด + `aria-hidden` | screen reader ไม่ต้องอ่าน "1 2 3" นำ |
+| Tab = เว้นวรรค ไม่ใช่ออกจากช่อง | |
+| Ctrl+Enter = run และไม่ขึ้นบรรทัดใหม่ | |
+
+`npx tsc --noEmit` ผ่าน · `npx jest` → **8 suites / 29 tests** (เดิม 7/25)
+
 ---
 
 ## รอบก่อนหน้า — Global search ข้ามทุก entity + transition ตอนเปลี่ยนหน้า/เข้า-ออกระบบ + ชิป governance ที่อ่านออก
