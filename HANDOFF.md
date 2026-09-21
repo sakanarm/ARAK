@@ -26,7 +26,7 @@ Phase 1 รองรับ SQL Server + PostgreSQL · identity หลักค�
 |---|---|
 | **M0 Foundation** | ✅ เสร็จ — Maven multi-module, Dropwizard 5, Vite+React+Tailwind shell, vendor `ui-core-components`, JSON Schema → Java/TS codegen, OM client จาก swagger ที่ pin ไว้, Flyway V1–V9, docker-compose, CI 4 jobs |
 | **M1 OM Connector** | 🚧 ~95% — full crawl + governance + effective facet + FR-1.5 webhook/poller/reconcile + catalog read API + Catalog UI + governance read API + Governance UI · **sync กับ OM จริงสำเร็จแล้ว** · เหลือ FR-1.6 (reconcile กับ JDBC จริง), FR-1.7 (local tag + push-back — **ผู้ใช้สั่ง read-only ตอนนี้**) |
-| **M2 Identity** | 🚧 ~35% — local sign-in ใช้ได้ · schema `principal`/`principal_attribute`/`group_member`/`app_role_assignment` มีตั้งแต่ V2 · read API + หน้า People & attributes (**filter ตาม attribute ได้แล้ว**) + **หน้า Application roles (`/settings/roles`) อ่านอย่างเดียว** เสร็จ · **ยังไม่มี write API สำหรับ principal/attribute — ต้อง seed ด้วย SQL** · ยังไม่มี Entra OIDC / Graph sync |
+| **M2 Identity** | 🚧 ~35% — local sign-in ใช้ได้ · schema `principal`/`principal_attribute`/`group_member`/`app_role_assignment` มีตั้งแต่ V2 · read API + หน้า People & attributes (**filter ตาม attribute + กดเข้าไปดูสมาชิกใน group ได้ที่ `/principals/:id`**) + **หน้า Application roles (`/settings/roles`) อ่านอย่างเดียว** เสร็จ · **ยังไม่มี write API สำหรับ principal/attribute — ต้อง seed ด้วย SQL** · ยังไม่มี Entra OIDC / Graph sync |
 | **M3 Policy Engine** | 🚧 ~93% — engine **162 tests** (data policy 26 + subscription 45 เพิ่มรอบนี้ · เจอบั๊กจริง 2 ตัว ดูข้อ P) · persistence (`PolicyStore`) + `policy_binding` materializer + REST · `PolicyBindingMaterializerIT` 10 tests บน Postgres จริง · เหลือ decision cache (FR-5.5), ANTLR grammar ของ `expr` (FR-3.2) |
 | **M4 Policy Authoring UI** | 🚧 ~70% — Policy list + Policy builder (selector / subject / RLS / masking) + readback + capability matrix · เหลือ "policy ที่มีผลกับ asset นี้" ในหน้า asset (FR-3.1.5), View-as-user (FR-5.2), impact analysis (FR-5.3) |
 | **M5 Secure View (5.1.2)** | ⬜ — `DecisionSql` + dialect ทั้งสองตัวพร้อมแล้ว (ใช้ร่วมกับ 5.2) เหลือ ViewCompiler + `row_entitlement` maintainer + DDL apply/rollback |
@@ -49,7 +49,7 @@ Phase 1 รองรับ SQL Server + PostgreSQL · identity หลักค�
 |---|---|---|
 | Backend unit | dac-common 6 · dac-engine **162** · dac-compiler-sql 7 · dac-connector-openmetadata 88 · dac-proxy 16 · dac-service **62** = **341** | `./mvnw -am -pl backend/dac-service test` |
 | Backend integration (Testcontainers `postgres:16-alpine`) | **50 tests** — `AssetStoreIT` 6 · `CatalogQueryIT` 15 · `GovernanceStoreIT` 9 · `PolicyStoreIT` 10 · `PolicyBindingMaterializerIT` 10 | `./mvnw -am -pl backend/dac-service verify -Pintegration` |
-| Frontend | **11 suites / 40 tests** | `yarn test` ใน `frontend/app` |
+| Frontend | **12 suites / 47 tests** | `yarn test` ใน `frontend/app` |
 
 `yarn type-check` · `yarn lint` · `yarn build` ผ่านหมด → **BUILD SUCCESS** ทั้งสองฝั่ง
 
@@ -903,6 +903,88 @@ data policy ไม่ได้พูดถึงฐานข้อมูล ม�
 - `AttributeFilterTest` — **12 เทสต์ / 2 nested class** (`One` 6 · `Many` 6) เจาะที่การ parse เพราะนั่นคือจุดที่ filter เพี้ยนแบบไม่มีใครจับได้
 - `PrincipalsPage.test.tsx` — **5 เทสต์** (กด key = ทั้ง key · กดค่า = ปักค่า · กดซ้ำไม่เพิ่มซ้ำ · ถอดออกได้ · ข้อความตอน match ไม่มีใคร)
 - dac-service **62 เทสต์** · backend รวม **341** · frontend **11 suites / 40 tests**
+
+---
+
+### V. หน้า People & attributes — รื้อใหม่ + กดเข้าไปดูสมาชิกใน group ได้
+
+> ผู้ใช้สั่ง — *"ปรับหน้านี้หน่อยไม่สวย ใช้งานยาก / แล้วจะกดเข้าไปดูว่าใน group มีใครบ้างยังไงอะ / หรือ group/user ควรอยู่ในหน้า people เหมือนกัน หรือยังไงดี แบบให้สิทธิ ระดับ app / ควรจะแบ่ง Role ยังไงดี"*
+
+#### V.1 🐛 บั๊กที่อยู่บนจอมาตลอด — ทุกคนขึ้นว่า "0 groups"
+
+`PRINCIPAL_COLUMNS` มี subquery เดียวชื่อ `member_count` ที่นับ **คนที่อยู่ข้างใน principal นี้** แล้วแถวของ user เอาเลขนั้นไปเขียนว่า "X groups"
+→ user ทุกคน `member_count = 0` เสมอ (คนไม่มีสมาชิก) **จอเลยบอกว่าไม่มีใครอยู่ group ไหนเลย** ทั้งที่ `group_member` มีข้อมูลครบ
+
+แก้ที่ SQL ไม่ใช่ที่ UI — เพิ่มคอลัมน์ที่สอง เพราะมันคือ **คนละคำถาม** และมีแค่ทางเดียวที่ไม่เป็นศูนย์ต่อหนึ่งแถว:
+
+```sql
+(SELECT count(*) FROM group_member gm WHERE gm.group_id  = p.id) AS member_count,  -- ใน group นี้มีใคร
+(SELECT count(*) FROM group_member gg WHERE gg.member_id = p.id) AS group_count,   -- คนนี้อยู่ group ไหน
+```
+(เปลี่ยนชื่อ alias เป็น `gm`/`gg` ไปด้วย ของเดิม `g` ชนกับ `related()` ที่ join `group_member g`)
+
+#### V.2 🐛 `detail()` มีโอกาส 500 — `findOne()` บน key ที่ไม่ unique
+
+`principal` unique ที่ **`(source, username)`** ไม่ใช่ `username` → Entra มี group ชื่อ `Finance` และ OM team ชื่อ `Finance` พร้อมกันได้ แล้ว `.findOne()` จะโยน
+แก้: `GET /v1/principals/{key}` รับได้ทั้ง **UUID และ username** (เทียบด้วย `UUID_FORM` regex ไม่ต้องยิง DB สองรอบ) — directory ลิงก์ด้วย **id** เสมอ ส่วน username เหลือไว้ให้พิมพ์ URL เองได้ และเติม `ORDER BY p.source` + `findFirst()`
+
+#### V.3 หน้าใหม่ `/principals/:id` — `PrincipalDetailPage.tsx`
+
+API `{principal, attributes, groups, members}` **มีข้อมูลครบมาตั้งแต่ต้น ขาดแค่หน้าจอ**
+
+| ส่วน | เนื้อหา |
+|---|---|
+| Members (เฉพาะ group) | ตารางคนใน group กดต่อเข้าไปได้อีก · group ว่าง = บอกตรงๆ ว่า rule ที่อ้าง group นี้ = deny ทุกคน |
+| Attributes | key / value / synced from — **หนึ่งแถวต่อหนึ่งค่า** (multi-value) |
+| ⚠️ กล่องเตือนบน group ที่มี attribute | *attribute ของ group สมาชิก**ไม่**ได้รับสืบทอด* — engine (`PrincipalLoader`) อ่าน `principal_attribute` ของตัวคนเอง ส่วน group มาจาก `memberships()` คนละทาง → ถ้าจะให้ถึงสมาชิกต้องอ้าง **ชื่อ group** ใน subject rule ไม่ใช่ attribute ของ group |
+| Member of | group ที่คนนี้สังกัด + จำนวนสมาชิกของแต่ละ group |
+| Platform role | badge + ลิงก์ไป `/settings/roles` พร้อมประโยคกำกับว่า **นี่คือสิทธิ์ทำอะไรกับ ARAK ไม่ใช่สิทธิ์เห็นข้อมูล** |
+
+#### V.4 หน้า directory รื้อใหม่ตามแบบ Catalog
+
+| เดิม | ใหม่ |
+|---|---|
+| การ์ด "Attributes in use" อ้วนเต็มความกว้าง กินทั้งหน้าจอแรก | **รางซ้าย sticky `lg:w-64`** แบบเดียวกับ Catalog — หนึ่งกลุ่มต่อหนึ่ง key พับได้ |
+| แถวเป็น flex ไม่ตรงคอลัมน์ | **`<table>` จริง** — Name · Kind · Source · Attributes · Membership · Platform role |
+| ตัวเลือก key/value + ปุ่ม Add filter | ติ๊กในรางได้เลย · **มีจำนวนคนต่อ "ค่า"** (`FINANCE · 3`) ไม่ใช่ต่อ key อย่างเดียว |
+| filter อยู่ใน state | **อยู่ใน URL** (`?q=&type=&attr=department=FINANCE`) → ส่งลิงก์ให้คนอื่นเปิดเห็นชุดเดียวกัน |
+| ไม่มีทางกดเข้าไปดู group | ชื่อ = ลิงก์ · **จำนวนสมาชิกของ group = ลิงก์** (คนกดตรงนั้นก่อนเสมอ) |
+
+`attributeKeys()` ฝั่ง backend เขียนใหม่ให้คืน `AttributeValue(value, principals)` — query แรกใช้ `row_number() OVER (PARTITION BY attr_key, source)` ตัดจำนวนค่าต่อ key, query ที่สอง aggregate ระดับ key แล้วเอามา merge กัน
+เหตุผลที่ต้องมีเลขต่อค่า: *key ที่มีคนถือ 40 คน ไม่ได้บอกอะไรเลยเกี่ยวกับ rule ที่กำลังจะเขียน แต่ `clearance=L3 · 1` บอกทันที*
+
+> รางนับ "คน" แบบ **max ข้าม source ไม่ใช่ sum** — คนเดียวถือ key เดียวกันจากสอง sync ได้ ถ้าบวกกันจะรายงานคนมากกว่าที่มีอยู่จริง
+
+#### V.5 คำตอบเรื่อง IA: People vs Settings → Roles — **แยกกันสองหน้า ไม่รวม**
+
+คำถามคือ *"group/user ควรอยู่ในหน้า people เหมือนกันไหม"* — คำตอบคือ **อยู่หน้าเดียวกันอยู่แล้วและถูกแล้ว** แต่ที่ต้องแยกคือ *สิทธิ์*:
+
+| | **People & attributes** (`/principals`) | **Settings → Roles** (`/settings/roles`) |
+|---|---|---|
+| ตอบคำถาม | "ใครมีอยู่บ้าง ถือ attribute อะไร อยู่ group ไหน" | "ใครกดปุ่มอะไรใน ARAK ได้" |
+| เจ้าของข้อมูล | **Entra / OpenMetadata** → read-only ตลอดไป (sync ทับ) | **ARAK เอง** (`app_role_assignment`) → เขียนได้ |
+| ใช้ตอน | เขียน subject rule | onboard คนเข้ามาดูแลระบบ |
+| ระดับ | ข้อมูลใน database | ตัวแอป |
+
+**เหตุผลที่ห้ามรวม:** สองหน้านี้เขียนได้ไม่เท่ากัน หน้าหนึ่ง sync ทับทุกคืน อีกหน้าคือของเรา ถ้ารวมปุ่ม "Assign role" ลงในแถว directory คนจะเข้าใจว่า attribute ก็แก้ได้ด้วย — แล้วพรุ่งนี้ sync ก็ลบทิ้ง
+**เชื่อมกันด้วยลิงก์แทน** — มุมขวาบนของ People เขียนว่า *Platform roles are assigned in Settings → Roles* และการ์ด Platform role ในหน้า detail ลิงก์กลับไปหน้าเดียวกัน
+
+**ส่วน Role 5 ตัวที่มีอยู่ ไม่ต้องแบ่งใหม่** — `AppRolesPage.tsx` ประกาศไว้ครบและทุก capability มี citation ชี้ไปบรรทัดใน `PolicyResource.java` ที่บังคับจริง:
+
+| Role | สรุปสั้น |
+|---|---|
+| `PLATFORM_ADMIN` | ตั้งค่า connection / sync / role — **ไม่ได้แปลว่าเห็นข้อมูล** |
+| `POLICY_AUTHOR` | เขียน/แก้ policy ทุกชั้น แต่ **อนุมัติ grant เองไม่ได้** (separation of duty FR-2.6) |
+| `DATA_OWNER` | เขียน local policy + ให้ grant **เฉพาะใน scope ที่ตัวเองเป็น owner ใน OM** |
+| `AUDITOR` | อ่าน audit / decision log ได้หมด เขียนอะไรไม่ได้เลย |
+| `REQUESTER` | default ของทุกคน — เห็น catalog + สิทธิ์ของตัวเอง |
+
+⚠️ **ยังไม่มีหน้าจอ assign จริง** — `app_role_assignment` (พร้อม `scope_fqn`, `granted_by`, `granted_at`) มีตั้งแต่ Flyway V2 แต่ยังไม่มี write API งานนี้ **ต้องลงที่ `/settings/roles` ไม่ใช่ที่ People** ตามเส้นแบ่งข้างบน
+
+#### เทสต์
+
+- dac-service **62 เทสต์** (failures 0 / errors 0) · backend รวม **341**
+- frontend **12 suites / 47 tests** — `PrincipalsPage.test.tsx` **8 เทสต์** (เพิ่ม: รางโชว์จำนวนคนต่อค่า · group ลิงก์ด้วยจำนวนสมาชิก · **แถว user ต้องนับ group ไม่ใช่ member** = กันบั๊ก V.1 กลับมา) · `PrincipalDetailPage.test.tsx` **4 เทสต์ (ใหม่)**
 
 ---
 

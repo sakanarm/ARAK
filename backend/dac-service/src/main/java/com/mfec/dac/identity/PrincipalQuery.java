@@ -18,6 +18,14 @@ import org.jdbi.v3.core.statement.Query;
  */
 public class PrincipalQuery {
 
+  /**
+   * What a principal id looks like, so a lookup can tell one from a username
+   * without asking the database twice.
+   */
+  private static final java.util.regex.Pattern UUID_FORM =
+      java.util.regex.Pattern.compile(
+          "[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}");
+
   private final Jdbi jdbi;
 
   public PrincipalQuery(Jdbi jdbi) {
@@ -33,11 +41,18 @@ public class PrincipalQuery {
       String source,
       boolean enabled,
       int attributeCount,
+      /** People in this group. Zero for a user, which is not the same question. */
       int memberCount,
+      /** Groups this principal belongs to. The one a user's row is read for. */
+      int groupCount,
       List<String> appRoles) {}
 
+  /** One value an attribute takes, and how many people carry it. */
+  public record AttributeValue(String value, int principals) {}
+
   /** One attribute key with the values in use, for the builder's value picker. */
-  public record AttributeKey(String key, String source, int principals, List<String> values) {}
+  public record AttributeKey(
+      String key, String source, int principals, List<AttributeValue> values) {}
 
   /**
    * One attribute condition on the directory listing, written {@code key} or
@@ -104,8 +119,16 @@ public class PrincipalQuery {
              p.source, p.enabled,
              (SELECT count(*) FROM principal_attribute a
                WHERE a.principal_id = p.id AND a.valid_to IS NULL) AS attribute_count,
-             (SELECT count(*) FROM group_member g
-               WHERE g.group_id = p.id) AS member_count,
+             -- Both directions of group_member, because they answer different
+             -- questions and only one of them is ever non-zero for a given row:
+             -- a group is opened for who is in it, a person for what they are
+             -- in. Reporting one of them as the other -- which this column did
+             -- until the directory started showing members -- tells every user
+             -- they belong to nothing.
+             (SELECT count(*) FROM group_member gm
+               WHERE gm.group_id = p.id) AS member_count,
+             (SELECT count(*) FROM group_member gg
+               WHERE gg.member_id = p.id) AS group_count,
              COALESCE((SELECT string_agg(DISTINCT r.app_role, ',')
                        FROM app_role_assignment r
                        WHERE r.principal_id = p.id), '') AS app_roles
@@ -192,59 +215,103 @@ public class PrincipalQuery {
   }
 
   /**
-   * Attribute keys with their distinct values.
+   * Attribute keys with their distinct values, each with the number of people
+   * carrying it.
+   *
+   * <p>The count per value is the whole point of the list. A key that 40 people
+   * carry says nothing about the rule somebody is about to write; {@code
+   * clearance=L3 · 1} says it immediately, and says it before the policy is
+   * active rather than after somebody reports they cannot see their own data.
    *
    * <p>Values are capped per key. Something like an employee number is unique
    * per person, and listing every one would turn a picker into a directory
    * dump; the cap keeps the cases that matter — department, clearance, country
    * — complete, and leaves the rest recognisably truncated.
+   *
+   * <p>Two queries rather than one aggregate: counting distinct principals per
+   * value and per key at the same time needs either a lateral join or an array
+   * of composites, and both read worse than a merge in Java over a list this
+   * size.
    */
   public List<AttributeKey> attributeKeys(int valuesPerKey) {
     return jdbi.withHandle(
-        handle ->
-            handle
-                .createQuery(
-                    """
-                    SELECT a.attr_key, a.source,
-                           count(DISTINCT a.principal_id) AS principals,
-                           (SELECT array_agg(top.v)
-                              FROM (SELECT DISTINCT a2.attr_value AS v
-                                      FROM principal_attribute a2
-                                     WHERE a2.attr_key = a.attr_key
-                                       AND a2.source = a.source
-                                       AND a2.valid_to IS NULL
-                                     ORDER BY 1
-                                     LIMIT :valuesPerKey) top) AS attr_values
-                    FROM principal_attribute a
-                    WHERE a.valid_to IS NULL
-                    GROUP BY a.attr_key, a.source
-                    ORDER BY a.attr_key, a.source
-                    """)
-                .bind("valuesPerKey", valuesPerKey)
-                .map(
-                    (rs, ctx) -> {
-                      java.sql.Array array = rs.getArray("attr_values");
-                      List<String> values =
-                          array == null ? List.of() : List.of((String[]) array.getArray());
-                      return new AttributeKey(
-                          rs.getString("attr_key"),
-                          rs.getString("source"),
-                          rs.getInt("principals"),
-                          values);
-                    })
-                .list());
+        handle -> {
+          record Slot(String key, String source) {}
+          java.util.Map<Slot, List<AttributeValue>> values = new java.util.LinkedHashMap<>();
+          handle
+              .createQuery(
+                  """
+                  SELECT attr_key, source, attr_value, people FROM (
+                    SELECT a.attr_key, a.source, a.attr_value,
+                           count(DISTINCT a.principal_id) AS people,
+                           row_number() OVER (PARTITION BY a.attr_key, a.source
+                                              ORDER BY a.attr_value) AS rn
+                      FROM principal_attribute a
+                     WHERE a.valid_to IS NULL
+                     GROUP BY a.attr_key, a.source, a.attr_value) ranked
+                  WHERE rn <= :valuesPerKey
+                  ORDER BY attr_key, source, attr_value
+                  """)
+              .bind("valuesPerKey", valuesPerKey)
+              .map(
+                  (rs, ctx) ->
+                      java.util.Map.entry(
+                          new Slot(rs.getString("attr_key"), rs.getString("source")),
+                          new AttributeValue(rs.getString("attr_value"), rs.getInt("people"))))
+              .forEach(
+                  entry ->
+                      values
+                          .computeIfAbsent(entry.getKey(), slot -> new ArrayList<>())
+                          .add(entry.getValue()));
+
+          return handle
+              .createQuery(
+                  """
+                  SELECT a.attr_key, a.source,
+                         count(DISTINCT a.principal_id) AS principals
+                  FROM principal_attribute a
+                  WHERE a.valid_to IS NULL
+                  GROUP BY a.attr_key, a.source
+                  ORDER BY a.attr_key, a.source
+                  """)
+              .map(
+                  (rs, ctx) -> {
+                    Slot slot = new Slot(rs.getString("attr_key"), rs.getString("source"));
+                    return new AttributeKey(
+                        slot.key(),
+                        slot.source(),
+                        rs.getInt("principals"),
+                        List.copyOf(values.getOrDefault(slot, List.of())));
+                  })
+              .list();
+        });
   }
 
-  /** One principal with everything that decides what a policy makes of them. */
-  public java.util.Optional<PrincipalDetail> detail(String username) {
+  /**
+   * One principal with everything that decides what a policy makes of them,
+   * found by id or by username.
+   *
+   * <p>Both, because a username is only unique within a source: an Entra group
+   * and an OpenMetadata team may both be called {@code Finance}, and answering
+   * that with either an error or a silently chosen one of the two is no way to
+   * show somebody the members of a group. The directory links by id for that
+   * reason; the username path stays for a URL typed by hand, and takes the
+   * first by source rather than failing.
+   */
+  public java.util.Optional<PrincipalDetail> detail(String idOrUsername) {
     return jdbi.withHandle(
         handle -> {
+          boolean byId = UUID_FORM.matcher(idOrUsername).matches();
           java.util.Optional<Principal> found =
               handle
-                  .createQuery(PRINCIPAL_COLUMNS + " WHERE p.username = :username")
-                  .bind("username", username)
+                  .createQuery(
+                      PRINCIPAL_COLUMNS
+                          + (byId
+                              ? " WHERE p.id = CAST(:key AS uuid)"
+                              : " WHERE p.username = :key ORDER BY p.source"))
+                  .bind("key", idOrUsername)
                   .map((rs, ctx) -> principal(rs))
-                  .findOne();
+                  .findFirst();
           if (found.isEmpty()) {
             return java.util.Optional.<PrincipalDetail>empty();
           }
@@ -299,6 +366,7 @@ public class PrincipalQuery {
         rs.getBoolean("enabled"),
         rs.getInt("attribute_count"),
         rs.getInt("member_count"),
+        rs.getInt("group_count"),
         roles == null || roles.isBlank() ? List.of() : List.of(roles.split(",")));
   }
 

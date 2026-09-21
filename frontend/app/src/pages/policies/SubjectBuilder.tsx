@@ -552,7 +552,12 @@ function AttributeRow({
           {known && (
             <datalist id={`attribute-values-${known.key}`}>
               {known.values.map((value) => (
-                <option key={value} value={value} />
+                // The carrier count rides along as the option's label: an
+                // author picking a value should see that it reaches three
+                // people, not learn it after publishing.
+                <option key={value.value} value={value.value}>
+                  {value.principals}
+                </option>
               ))}
             </datalist>
           )}

@@ -10,6 +10,7 @@ import HomePage from './pages/HomePage';
 import LoginPage from './pages/LoginPage';
 import GovernancePage from './pages/governance/GovernancePage';
 import NotBuiltYetPage from './pages/NotBuiltYetPage';
+import PrincipalDetailPage from './pages/governance/PrincipalDetailPage';
 import PrincipalsPage from './pages/governance/PrincipalsPage';
 import PolicyBuilderPage from './pages/policies/PolicyBuilderPage';
 import PolicyListPage from './pages/policies/PolicyListPage';
@@ -59,6 +60,7 @@ export default function App() {
           <Route element={<AssetDetailPage />} path="/catalog/*" />
           <Route element={<GovernancePage />} path="/governance" />
           <Route element={<PrincipalsPage />} path="/principals" />
+          <Route element={<PrincipalDetailPage />} path="/principals/:id" />
           <Route element={<PolicyListPage />} path="/policies" />
           <Route element={<PolicyBuilderPage />} path="/policies/new" />
           <Route element={<PolicyBuilderPage />} path="/policies/:id" />

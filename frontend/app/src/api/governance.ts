@@ -62,15 +62,39 @@ export interface Principal {
   source: 'entra' | 'openmetadata' | 'local';
   enabled: boolean;
   attributeCount: number;
+  /** People in this group. Zero for a user. */
   memberCount: number;
+  /** Groups this principal belongs to. Zero for a group with no parent. */
+  groupCount: number;
   appRoles: string[];
+}
+
+/** One attribute this principal carries, and which sync put it there. */
+export interface PrincipalAttribute {
+  key: string;
+  value: string;
+  source: string;
+}
+
+export interface PrincipalDetail {
+  principal: Principal;
+  attributes: PrincipalAttribute[];
+  /** The groups this principal is in. */
+  groups: Principal[];
+  /** The people in it, when this principal is a group. */
+  members: Principal[];
+}
+
+export interface AttributeValue {
+  value: string;
+  principals: number;
 }
 
 export interface AttributeKey {
   key: string;
   source: string;
   principals: number;
-  values: string[];
+  values: AttributeValue[];
 }
 
 export interface AttributeVocabulary {
@@ -105,6 +129,23 @@ export async function fetchPrincipals(query: {
   }
   params.set('limit', String(query.limit ?? 200));
   const { data } = await apiClient.get<Principal[]>(`/v1/principals?${params}`);
+  return data;
+}
+
+/**
+ * One principal with its attributes, its groups and — for a group — its
+ * members.
+ *
+ * Addressed by id rather than by username: a username is unique only within a
+ * source, so two directories may each hold a `Finance`, and opening a group
+ * has to reach the one that was clicked.
+ */
+export async function fetchPrincipalDetail(
+  idOrUsername: string
+): Promise<PrincipalDetail> {
+  const { data } = await apiClient.get<PrincipalDetail>(
+    `/v1/principals/${encodeURIComponent(idOrUsername)}`
+  );
   return data;
 }
 

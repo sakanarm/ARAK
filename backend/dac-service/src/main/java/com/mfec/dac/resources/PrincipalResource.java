@@ -62,12 +62,20 @@ public class PrincipalResource {
         Math.min(limit, 500));
   }
 
+  /**
+   * One principal, with the attributes, groups and members a policy reads.
+   *
+   * <p>Takes an id or a username. The directory links by id because a username
+   * is only unique within a source — two directories may each hold a
+   * {@code Finance} — and "show me the members of this group" has to reach the
+   * group that was clicked.
+   */
   @GET
-  @Path("/{username}")
-  public PrincipalQuery.PrincipalDetail get(@PathParam("username") String username) {
+  @Path("/{key}")
+  public PrincipalQuery.PrincipalDetail get(@PathParam("key") String key) {
     return principals
-        .detail(username)
-        .orElseThrow(() -> new NotFoundException("No principal named " + username));
+        .detail(key)
+        .orElseThrow(() -> new NotFoundException("No principal named " + key));
   }
 
   /**
