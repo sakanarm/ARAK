@@ -1230,6 +1230,10 @@ estate ที่ใช้: `prod-mssql.SalesDB.dbo.{customer, order}` + **`prod-
 - ⚠️ **glossary facet ว่างเปล่า** — ไม่ใช่บั๊ก: OM instance นี้ยังไม่มีใครติด glossary term ให้ asset เลย (มีแต่ตัว glossary) → อย่าไปไล่หาสาเหตุใน mapper
 - ❌ **`TRUNCATE asset, …` ใน IT** — `cannot truncate a table referenced in a foreign key constraint` เพราะ `policy_binding` (V3) / `enforcement_state` (V4) อ้าง `asset(id)` · แก้โดย **ไล่ชื่อตารางให้ครบ ไม่ใช้ `CASCADE`** — ตารางใหม่จะได้ fail ดังๆ ไม่ใช่ถูกล้างเงียบๆ
 - ❌ **`assertThat(jdbi.withHandle(…))` → ambiguous** — ดึงออกมาเป็น local ที่ type ชัดก่อน
+- ❌ **อ่าน exit code ของ background task แทนที่จะอ่าน log** — คำสั่งที่ต่อท้ายด้วย `; echo ...` หรือ `; tail ...` จะรายงาน exit code **ของตัวสุดท้าย** ไม่ใช่ของ maven → รอบนี้เห็น "exit 0" สองครั้งทั้งที่ compile พังจริง (`unclosed string literal`) · **ยืนยันด้วย surefire report หรือ `grep ERROR` ใน log เสมอ**
+- ❌ **`-Dtest=Xxx` บน multi-module build** — module ที่ไม่มีเทสต์ชื่อนั้น (เช่น `dac-spec`) จะ fail ทั้ง build · property ที่ถูกคือ `-Dsurefire.failIfNoSpecifiedTests=false` ไม่ใช่ `-DfailIfNoSpecifiedTests=false` · วิธีที่สั้นกว่าคือรันทั้ง module ไปเลย
+- ❌ **เขียน `
+` ใน string ของ Java ผ่านสคริปต์ Python heredoc** — backslash ถูกตีความก่อนถึงไฟล์ กลายเป็น newline จริงกลาง string literal → **ใช้ text block (`"""`) เขียน SQL หลายบรรทัดแทน** อ่านง่ายกว่าและไม่มีทางโดน escape กินกลางทาง
 
 ### Frontend
 - ❌ **`apiErrorMessage(error)`** — signature คือ **`apiErrorMessage(error: unknown, fallback: string)` สองอาร์กิวเมนต์** ลืมตัวที่สอง = compile error (เจอ 4 จุดรอบนี้)
