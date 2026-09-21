@@ -26,7 +26,7 @@ Phase 1 รองรับ SQL Server + PostgreSQL · identity หลักค�
 |---|---|
 | **M0 Foundation** | ✅ เสร็จ — Maven multi-module, Dropwizard 5, Vite+React+Tailwind shell, vendor `ui-core-components`, JSON Schema → Java/TS codegen, OM client จาก swagger ที่ pin ไว้, Flyway V1–V9, docker-compose, CI 4 jobs |
 | **M1 OM Connector** | 🚧 ~95% — full crawl + governance + effective facet + FR-1.5 webhook/poller/reconcile + catalog read API + Catalog UI + governance read API + Governance UI · **sync กับ OM จริงสำเร็จแล้ว** · เหลือ FR-1.6 (reconcile กับ JDBC จริง), FR-1.7 (local tag + push-back — **ผู้ใช้สั่ง read-only ตอนนี้**) |
-| **M2 Identity** | 🚧 ~35% — local sign-in ใช้ได้ · schema `principal`/`principal_attribute`/`group_member`/`app_role_assignment` มีตั้งแต่ V2 · read API + หน้า People & attributes + **หน้า Application roles (`/settings/roles`) อ่านอย่างเดียว** เสร็จ · **ยังไม่มี write API สำหรับ principal/attribute — ต้อง seed ด้วย SQL** · ยังไม่มี Entra OIDC / Graph sync |
+| **M2 Identity** | 🚧 ~35% — local sign-in ใช้ได้ · schema `principal`/`principal_attribute`/`group_member`/`app_role_assignment` มีตั้งแต่ V2 · read API + หน้า People & attributes (**filter ตาม attribute ได้แล้ว**) + **หน้า Application roles (`/settings/roles`) อ่านอย่างเดียว** เสร็จ · **ยังไม่มี write API สำหรับ principal/attribute — ต้อง seed ด้วย SQL** · ยังไม่มี Entra OIDC / Graph sync |
 | **M3 Policy Engine** | 🚧 ~93% — engine **162 tests** (data policy 26 + subscription 45 เพิ่มรอบนี้ · เจอบั๊กจริง 2 ตัว ดูข้อ P) · persistence (`PolicyStore`) + `policy_binding` materializer + REST · `PolicyBindingMaterializerIT` 10 tests บน Postgres จริง · เหลือ decision cache (FR-5.5), ANTLR grammar ของ `expr` (FR-3.2) |
 | **M4 Policy Authoring UI** | 🚧 ~70% — Policy list + Policy builder (selector / subject / RLS / masking) + readback + capability matrix · เหลือ "policy ที่มีผลกับ asset นี้" ในหน้า asset (FR-3.1.5), View-as-user (FR-5.2), impact analysis (FR-5.3) |
 | **M5 Secure View (5.1.2)** | ⬜ — `DecisionSql` + dialect ทั้งสองตัวพร้อมแล้ว (ใช้ร่วมกับ 5.2) เหลือ ViewCompiler + `row_entitlement` maintainer + DDL apply/rollback |
@@ -47,9 +47,9 @@ Phase 1 รองรับ SQL Server + PostgreSQL · identity หลักค�
 
 | ชุด | จำนวน | คำสั่ง |
 |---|---|---|
-| Backend unit | dac-common 6 · dac-engine **162** · dac-compiler-sql 7 · dac-connector-openmetadata 88 · dac-proxy 16 · dac-service 50 = **329** | `./mvnw -am -pl backend/dac-service test` |
+| Backend unit | dac-common 6 · dac-engine **162** · dac-compiler-sql 7 · dac-connector-openmetadata 88 · dac-proxy 16 · dac-service **62** = **341** | `./mvnw -am -pl backend/dac-service test` |
 | Backend integration (Testcontainers `postgres:16-alpine`) | **50 tests** — `AssetStoreIT` 6 · `CatalogQueryIT` 15 · `GovernanceStoreIT` 9 · `PolicyStoreIT` 10 · `PolicyBindingMaterializerIT` 10 | `./mvnw -am -pl backend/dac-service verify -Pintegration` |
-| Frontend | **10 suites / 35 tests** | `yarn test` ใน `frontend/app` |
+| Frontend | **11 suites / 40 tests** | `yarn test` ใน `frontend/app` |
 
 `yarn type-check` · `yarn lint` · `yarn build` ผ่านหมด → **BUILD SUCCESS** ทั้งสองฝั่ง
 
@@ -863,6 +863,49 @@ data policy ไม่ได้พูดถึงฐานข้อมูล ม�
 
 ---
 
+### U. Filter ตาม attribute ในหน้า People & attributes
+
+> ผู้ใช้สั่งไว้ตั้งแต่รอบก่อน — *"People & attributes / อยากให้สามารถ Filter ตาม attribute ได้"* — รอบนี้ทำครบทั้งสามชั้น
+
+#### สิ่งที่ได้
+
+| ชั้น | ของใหม่ |
+|---|---|
+| SQL | `PrincipalQuery.AttributeFilter(key, value)` + `attributeClause(i)` — หนึ่งเงื่อนไข = หนึ่ง `EXISTS` ต่อท้าย WHERE |
+| REST | `GET /api/v1/principals?attr=department=FINANCE&attr=clearance` — `attr` ซ้ำได้ เขียนได้ทั้ง `key` และ `key=value` |
+| API client | `fetchPrincipals({ attributes: [{key, value?}] })` |
+| UI | ตัวเลือก key + value + ปุ่ม Add filter · ชิปของเงื่อนไขที่เปิดอยู่ (กด × ถอดได้ / Clear ล้างทั้งหมด) · **กดชื่อ key หรือค่าในการ์ด "Attributes in use" เพื่อกรองได้ทันที** |
+
+#### สามเรื่องที่ตัดสินใจโดยอ่านจาก engine ก่อน ไม่ได้เดา
+
+**1. เงื่อนไขหลายข้อ = AND ไม่ใช่ OR**
+`subjectRule.attributes` ในฝั่ง engine เป็น AND list อยู่แล้ว → directory ที่ OR กันจะตอบคนละคำถามกับที่คนเขียน rule ถามอยู่
+ผลลัพธ์ที่ขึ้นบนจอจึงอ่านได้ตรงๆ ว่า **"subject rule ที่ใส่ attribute ชุดนี้จะ match คนกลุ่มนี้"**
+
+**2. `EXISTS` ไม่ใช่ `JOIN`** — สองเหตุผลที่เปลี่ยนคำตอบจริง
+- attribute เป็น multi-value: คนที่ถือทั้ง `clearance=L1` และ `L2` ต้อง match เงื่อนไข `L2` โดย**ไม่โผล่ซ้ำสองแถว**
+- เงื่อนไขหลายข้อ join กันจะกลายเป็น cross product ที่นับซ้ำ
+
+**3. ⚠️ ไม่ไล่ตาม group membership — เพราะ engine ก็ไม่ไล่**
+อ่าน [PrincipalLoader.java](backend/dac-service/src/main/java/com/mfec/dac/policy/PrincipalLoader.java) ก่อนเขียน filter: attribute ถูกโหลดจาก `principal_attribute WHERE principal_id = <ตัวเอง>` เท่านั้น ส่วน group/team มาจาก `memberships()` คนละทางกัน
+→ ถ้า directory ใจดีเอา attribute ของ group มาแจกให้สมาชิก **จะโชว์คนที่ engine ไม่มีทาง match** ซึ่งคือ bug ที่คนจะเชื่อหน้าจอมากกว่าเชื่อ engine
+
+#### รายละเอียดที่ดูเล็กแต่เลือกไว้แล้ว
+
+- `key=` (ไม่มีค่า) อ่านเป็น "มี key นี้" ไม่ใช่ "ค่าเท่ากับสตริงว่าง" — อีกทางหนึ่งจะ match ศูนย์คนแบบเงียบๆ ซึ่งหน้าตาเหมือนคำตอบ "ไม่มีใครถือ attribute นี้" พอดี
+- `attr` ที่อ่านไม่ออกถูกข้าม ไม่ตอบ 400 — filter คือวิธีมอง ไม่ใช่ form ที่ต้อง validate
+- เงื่อนไขซ้ำถูกยุบเหลือข้อเดียว (`AND` กับตัวเองได้คำตอบเดิม แต่ query ยาวขึ้นเปล่าๆ)
+- เพดาน **10 เงื่อนไขต่อ URL** — กัน URL เดียวประกอบ join ไม่จำกัด
+- เมื่อผลลัพธ์ว่างและมี filter อยู่ ข้อความจะไม่ใช่ "Nobody matches that" เฉยๆ แต่บอกว่า *rule แบบนี้จะ match ไม่มีใคร = deny ทุกคน* ซึ่งเป็นความผิดพลาดที่มองไม่เห็นที่สุดถ้าไปเจอตอน policy active แล้ว
+
+#### เทสต์
+
+- `AttributeFilterTest` — **12 เทสต์ / 2 nested class** (`One` 6 · `Many` 6) เจาะที่การ parse เพราะนั่นคือจุดที่ filter เพี้ยนแบบไม่มีใครจับได้
+- `PrincipalsPage.test.tsx` — **5 เทสต์** (กด key = ทั้ง key · กดค่า = ปักค่า · กดซ้ำไม่เพิ่มซ้ำ · ถอดออกได้ · ข้อความตอน match ไม่มีใคร)
+- dac-service **62 เทสต์** · backend รวม **341** · frontend **11 suites / 40 tests**
+
+---
+
 ## รอบก่อนหน้า — Global search ข้ามทุก entity + transition ตอนเปลี่ยนหน้า/เข้า-ออกระบบ + ชิป governance ที่อ่านออก
 
 > รอบนี้เพิ่ม **endpoint ใหม่หนึ่งตัว** (`GET /api/v1/search`) และงาน UX ล้วนๆ อีกสามเรื่องที่ผู้ใช้สั่งระหว่างทาง
@@ -1233,12 +1276,12 @@ estate ที่ใช้: `prod-mssql.SalesDB.dbo.{customer, order}` + **`prod-
 2. **ปิด M3** — decision cache (FR-5.5) + ANTLR grammar ของ `expr` (FR-3.2)
 3. **ปิด M4** — หน้า asset ต้องโชว์ "policy ที่มีผลกับ asset นี้" (มี endpoint `/policies/affecting/{fqn}` รออยู่แล้ว — แก้ข้อ 3 ของช่องว่างด้วย), View-as-user (FR-5.2), impact analysis (FR-5.3)
 4. **ปิดช่องว่างข้อ 1–5 ข้างบน** โดยเฉพาะ **ข้อ 4 (audit ของการ configure)** ซึ่งเป็นของที่ auditor จะถามหาแน่นอน
-5. **M2** — write API ของ principal/attribute แล้วต่อ (ก) filter ตาม attribute ในหน้า People (ผู้ใช้ขอไว้: *"อยากให้สามารถ Filter ตาม attribute ได้"*) (ข) การ assign application role จริงในหน้า `/settings/roles` (ค) หน้า local group ที่ `/settings/groups` ซึ่ง card ในหน้า Settings ลิงก์ไปรออยู่แล้ว
+5. **M2** — write API ของ principal/attribute แล้วต่อ (ก) การ assign application role จริงในหน้า `/settings/roles` (ข) หน้า local group ที่ `/settings/groups` ซึ่ง card ในหน้า Settings ลิงก์ไปรออยู่แล้ว · *(filter ตาม attribute ในหน้า People เสร็จแล้ว — ดูข้อ U)*
 6. **M5 (secure view)** — `DecisionSql` + dialect ทั้งสองตัวพร้อมแล้ว เหลือ ViewCompiler + `row_entitlement` maintainer + dry-run/apply/rollback + golden-file test
 7. **FR-1.6** — reconcile cache กับ JDBC introspection จริง (**รอ connection database จริงจากผู้ใช้**)
 8. **หน้าเปลี่ยนรหัสผ่าน** — `mustChangePassword` ไหลถึง `auth/authStore.ts` แล้วแต่ไม่มีใครอ่าน
 9. **ก่อน M6** ต้องได้คำตอบ: SQL Server production เป็น **2022+** ไหม (ต้องการสำหรับ `GRANT UNMASK` ระดับ column) และลง extension `anon` บน PostgreSQL ได้ไหม
-10. **rebuild + restart backend** — jar ที่รันค้างอยู่เก่ากว่า `SubjectMatcher` ของรอบนี้ จึงยังไม่รู้จัก `requiredPrincipals` (ข้อ R) · เขียน policy ที่ใช้ลิสต์ที่สองแล้วทดสอบกับ service ที่รันอยู่จะได้ผลผิด
+10. **rebuild + restart backend ทุกครั้งที่แตะ backend** — รอบนี้ทำแล้ว (`requiredPrincipals` ข้อ R และ `attr` ข้อ U อยู่ใน jar ที่รันอยู่) · jar เก่าจะ**ไม่ error แต่เมินพารามิเตอร์ใหม่เงียบๆ** ซึ่งอ่านจากหน้าจอไม่ออก
 11. งานเล็กที่ค้าง: refactor `jdbcUrl` ที่ยังเป็น private ใน `SourceProbe` ให้ไปอยู่บน `JdbcTargets` · golden-file test ของ dialect ทั้งสองตัว
 
 **กติกาที่ต้องถือไว้ทุกครั้งที่ commit:** repo เป็น public -> scan หา password / JWT / hostname และ IP ภายใน ก่อน push เสมอ · ค่าจริง (`IDENTITY_BOOTSTRAP_ADMIN_PASSWORD`, `OM_WEBHOOK_SECRET`, `FERNET_KEY`, `SRC_PG_ARAK_CREDENTIAL`, bot JWT) อยู่ใน `.env` ที่ gitignore เท่านั้น · `.env.example` มีแต่ placeholder

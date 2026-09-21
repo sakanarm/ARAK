@@ -78,16 +78,31 @@ export interface AttributeVocabulary {
   appRoles: string[];
 }
 
+/** One attribute condition: a key alone, or a key pinned to one value. */
+export interface AttributeCondition {
+  key: string;
+  /** Undefined asks who carries the key at all, whatever its value. */
+  value?: string;
+}
+
 export async function fetchPrincipals(query: {
   type?: string;
   source?: string;
   search?: string;
+  /** ANDed, the way a subject rule ANDs its own attribute list. */
+  attributes?: AttributeCondition[];
   limit?: number;
 }): Promise<Principal[]> {
   const params = new URLSearchParams();
   if (query.type) params.set('type', query.type);
   if (query.source) params.set('source', query.source);
   if (query.search) params.set('q', query.search);
+  for (const condition of query.attributes ?? []) {
+    params.append(
+      'attr',
+      condition.value ? `${condition.key}=${condition.value}` : condition.key
+    );
+  }
   params.set('limit', String(query.limit ?? 200));
   const { data } = await apiClient.get<Principal[]>(`/v1/principals?${params}`);
   return data;

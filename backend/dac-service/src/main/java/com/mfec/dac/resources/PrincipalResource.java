@@ -36,13 +36,30 @@ public class PrincipalResource {
     this.principals = principals;
   }
 
+  /**
+   * The directory, narrowed.
+   *
+   * <p>{@code attr} repeats, once per condition, written {@code key} or
+   * {@code key=value}: {@code ?attr=department=FINANCE&attr=clearance}. The
+   * conditions are ANDed, because a subject rule ANDs its own attribute list —
+   * so what comes back is the set of people that rule would match, which is the
+   * question somebody has while writing one. Anything unreadable is ignored
+   * rather than rejected: a filter is a way of looking, and a 400 in the middle
+   * of typing helps nobody.
+   */
   @GET
   public List<PrincipalQuery.Principal> list(
       @QueryParam("type") String principalType,
       @QueryParam("source") String source,
       @QueryParam("q") String search,
+      @QueryParam("attr") List<String> attributes,
       @QueryParam("limit") @DefaultValue("200") int limit) {
-    return principals.list(principalType, source, search, Math.min(limit, 500));
+    return principals.list(
+        principalType,
+        source,
+        search,
+        PrincipalQuery.AttributeFilter.parseAll(attributes),
+        Math.min(limit, 500));
   }
 
   @GET
