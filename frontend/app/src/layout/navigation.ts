@@ -110,11 +110,11 @@ export const NAV_SECTIONS: NavSection[] = [
   },
   {
     label: 'Settings',
-    href: '/settings/openmetadata',
+    href: '/settings',
     icon: Settings01,
     milestone: null,
     description:
-      'The OpenMetadata instance this platform reads its metadata from, and how fresh that copy is.',
+      'Where the metadata comes from, who may operate this platform, and which databases it enforces policy in.',
   },
   {
     label: 'System',

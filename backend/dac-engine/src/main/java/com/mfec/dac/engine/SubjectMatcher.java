@@ -11,11 +11,19 @@ import java.util.List;
  *
  * <p>RBAC, ABAC, rule-based and time-based access are not four engines here.
  * They are four sections of one predicate, ANDed together: the principal list is
- * an OR of identities, the attribute list is an AND of conditions about the
- * user, the expression compares the two sides against each other, and the time
- * and context sections bound when and from where any of it counts. Splitting
- * them into separate engines is how systems like this end up with four different
- * answers to the same question.
+ * an OR of identities, the required-principal list is an AND of them, the
+ * attribute list is an AND of conditions about the user, the expression compares
+ * the two sides against each other, and the time and context sections bound when
+ * and from where any of it counts. Splitting them into separate engines is how
+ * systems like this end up with four different answers to the same question.
+ *
+ * <p>The two identity lists exist because membership questions come in both
+ * shapes and one list can only answer one of them. "Anyone in Finance or Risk"
+ * is an OR; "and they must also be in the group that has done the privacy
+ * training" is an AND, and writing it as a second entry in the OR list would
+ * widen the grant to everyone who has done the training. Together they cover
+ * (A or B) and C and D, which is as far as a legible form goes; past that the
+ * author has {@code expression}.
  *
  * <p>An empty rule matches nobody. The schema says so in as many words, and the
  * reason is that the alternative - reading silence as "everyone" - turns an
@@ -55,6 +63,7 @@ public final class SubjectMatcher {
     }
     boolean hasAnything =
         notEmpty(rule.getPrincipals())
+            || notEmpty(rule.getRequiredPrincipals())
             || notEmpty(rule.getAttributes())
             || (rule.getExpression() != null && !rule.getExpression().isBlank())
             || rule.getTime() != null
@@ -68,6 +77,16 @@ public final class SubjectMatcher {
       PrincipalMatch hit = firstPrincipalMatch(rule.getPrincipals(), principal, asset);
       if (hit == null) {
         return Result.no("principal is none of the roles, teams, groups or users the policy names");
+      }
+    }
+
+    if (notEmpty(rule.getRequiredPrincipals())) {
+      for (PrincipalMatch required : rule.getRequiredPrincipals()) {
+        if (!principalHolds(required, principal, asset)) {
+          return Result.no(
+              "principal does not hold every identity the policy requires; missing "
+                  + describe(required));
+        }
       }
     }
 
@@ -184,6 +203,34 @@ public final class SubjectMatcher {
     List<String> values = principal.attributeValues(condition.getKey(), condition.getSource());
     return Operators.evaluate(
         condition.getOperator(), values, condition.getValue(), condition.getValues());
+  }
+
+  /**
+   * One identity requirement in the words the audit log uses. An entry naming
+   * several fields is reported in full, because it is satisfied only by
+   * somebody who holds all of them and a partial message would send the reader
+   * looking for the wrong thing.
+   */
+  private static String describe(PrincipalMatch match) {
+    StringBuilder sb = new StringBuilder();
+    append(sb, "role", match.getRole());
+    append(sb, "team", match.getTeam());
+    append(sb, "group", match.getGroup());
+    append(sb, "user", match.getUser());
+    if (Boolean.TRUE.equals(match.getAssetOwner())) {
+      append(sb, "owner of", "this asset");
+    }
+    return sb.length() == 0 ? "an entry that names nobody" : sb.toString();
+  }
+
+  private static void append(StringBuilder sb, String label, String value) {
+    if (value == null) {
+      return;
+    }
+    if (sb.length() > 0) {
+      sb.append(" and ");
+    }
+    sb.append(label).append(' ').append(value);
   }
 
   private static String describe(AttributeCondition condition) {

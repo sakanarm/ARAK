@@ -89,10 +89,24 @@ function Sidebar({
   collapsed: boolean;
 }) {
   return (
+    /*
+      The rail itself never scrolls. It used to: the whole column was one
+      scroll box, so the copyright line at the bottom counted towards the
+      height, and on a laptop-height window the twelve links plus that line
+      came to a few pixels more than the space between the header and the
+      bottom of the screen. The result was a full-length scrollbar with a
+      full-length thumb -- a control that moved nothing, on a list that was
+      already entirely visible.
+
+      Now only the list scrolls and the footer is pinned outside it. On any
+      window tall enough for the links there is no scrollbar at all, and on one
+      that is not, the bar appears over the links alone, which is the only part
+      of the rail that has anywhere to go.
+    */
     <nav
       aria-label="Sections"
-      className="tw:flex tw:h-full tw:flex-col tw:overflow-x-hidden tw:overflow-y-auto tw:border-r tw:border-secondary tw:bg-primary tw:pt-3 tw:pb-6">
-      <ul className="tw:flex tw:flex-col tw:gap-0.5 tw:px-3">
+      className="tw:flex tw:h-full tw:flex-col tw:overflow-hidden tw:border-r tw:border-secondary tw:bg-primary tw:pt-3 tw:pb-4">
+      <ul className="tw:flex tw:min-h-0 tw:flex-1 tw:flex-col tw:gap-0.5 tw:overflow-x-hidden tw:overflow-y-auto tw:px-3">
         {NAV_SECTIONS.map((section) => (
           <li key={section.href}>
             <NavItem
@@ -109,7 +123,7 @@ function Sidebar({
         it, and a notice nobody can read is just a narrower rail.
       */}
       {!collapsed && (
-        <div className="tw:mt-auto tw:px-3 tw:pt-8">
+        <div className="tw:shrink-0 tw:px-3 tw:pt-5">
           <div className="tw:mx-3.5 tw:h-px tw:bg-border-secondary" />
           {/*
             Left-aligned on the same 3.5 gutter as the nav labels above it, so

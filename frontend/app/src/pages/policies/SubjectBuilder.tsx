@@ -62,48 +62,49 @@ export default function SubjectBuilder({
   }
 
   const matches = subject.principals ?? [];
+  const required = subject.requiredPrincipals ?? [];
   const attributeRows = subject.attributes ?? [];
   const windows = subject.time?.windows ?? [];
 
   return (
     <div className="tw:flex tw:flex-col tw:gap-6">
       {/* ---------------------------------------------------------- who */}
-      <div>
-        <h3 className="tw:text-sm tw:font-semibold tw:text-primary">
-          Anyone who is
-        </h3>
-        <p className="tw:mt-0.5 tw:text-xs tw:text-tertiary">
-          Any one of these is enough. Leave it empty to mean everyone, and narrow
-          with the attribute conditions below.
-        </p>
-        <div className="tw:mt-3 tw:flex tw:flex-col tw:gap-2">
-          {matches.map((match, index) => (
-            <PrincipalRow
-              key={index}
-              match={match}
-              onChange={(next) => {
-                const copy = [...matches];
-                copy[index] = next;
-                patch({ principals: copy });
-              }}
-              onRemove={() =>
-                patch({ principals: matches.filter((_, i) => i !== index) })
-              }
-              principals={principals}
-              roles={attributes?.appRoles ?? []}
-            />
-          ))}
-          <div>
-            <Button
-              color="secondary"
-              iconLeading={Plus}
-              onPress={() => patch({ principals: [...matches, { role: '' }] })}
-              size="sm">
-              Add who
-            </Button>
-          </div>
-        </div>
-      </div>
+      <PrincipalList
+        addLabel="Add who"
+        hint="Any one of these is enough. Two groups here mean somebody in either of them. Leave it empty to mean everyone, and narrow with the conditions below."
+        matches={matches}
+        onChange={(next) => patch({ principals: next })}
+        principals={principals}
+        roles={attributes?.appRoles ?? []}
+        title="Anyone who is"
+      />
+
+      {/*
+        The second list, and the reason there are two.
+
+        Membership questions arrive in both shapes and one list can only answer
+        one of them. "Anyone in Finance or Risk" is an or; "and they must also
+        be in the group that has completed the privacy training" is an and, and
+        adding the training group as a third entry above would widen the grant
+        to everyone who has completed it — the opposite of what was meant. So
+        the or list says who is in scope and this one says what every one of
+        them must additionally hold.
+
+        Shown only once the first list has something in it, or on its own if an
+        author starts here: an empty form with two identical-looking lists is
+        how the distinction gets missed.
+      */}
+      {(matches.length > 0 || required.length > 0) && (
+        <PrincipalList
+          addLabel="Add requirement"
+          hint="Every one of these must hold as well. Two groups here mean somebody in both of them."
+          matches={required}
+          onChange={(next) => patch({ requiredPrincipals: next })}
+          principals={principals}
+          roles={attributes?.appRoles ?? []}
+          title="And who is also"
+        />
+      )}
 
       {/* --------------------------------------------------- attributes */}
       <div>
@@ -323,7 +324,66 @@ function splitList(value: string): string[] | undefined {
   return parts.length ? parts : undefined;
 }
 
-/** One alternative in the "anyone who is" list. */
+/**
+ * One of the two identity lists.
+ *
+ * Both are the same control because they hold the same kind of entry; what
+ * differs is how the entries are joined, and that is carried by the heading and
+ * the hint rather than by a different-looking widget. An author reads "Anyone
+ * who is / And who is also" as one sentence, which is what the two lists
+ * compose into.
+ */
+function PrincipalList({
+  title,
+  hint,
+  addLabel,
+  matches,
+  onChange,
+  roles,
+  principals,
+}: {
+  title: string;
+  hint: string;
+  addLabel: string;
+  matches: PrincipalMatch[];
+  onChange: (next: PrincipalMatch[]) => void;
+  roles: string[];
+  principals?: Principal[];
+}) {
+  return (
+    <div>
+      <h3 className="tw:text-sm tw:font-semibold tw:text-primary">{title}</h3>
+      <p className="tw:mt-0.5 tw:text-xs tw:text-tertiary">{hint}</p>
+      <div className="tw:mt-3 tw:flex tw:flex-col tw:gap-2">
+        {matches.map((match, index) => (
+          <PrincipalRow
+            key={index}
+            match={match}
+            onChange={(next) => {
+              const copy = [...matches];
+              copy[index] = next;
+              onChange(copy);
+            }}
+            onRemove={() => onChange(matches.filter((_, i) => i !== index))}
+            principals={principals}
+            roles={roles}
+          />
+        ))}
+        <div>
+          <Button
+            color="secondary"
+            iconLeading={Plus}
+            onPress={() => onChange([...matches, { group: '' }])}
+            size="sm">
+            {addLabel}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** One entry in either identity list. */
 function PrincipalRow({
   match,
   onChange,

@@ -26,8 +26,8 @@ Phase 1 รองรับ SQL Server + PostgreSQL · identity หลักค�
 |---|---|
 | **M0 Foundation** | ✅ เสร็จ — Maven multi-module, Dropwizard 5, Vite+React+Tailwind shell, vendor `ui-core-components`, JSON Schema → Java/TS codegen, OM client จาก swagger ที่ pin ไว้, Flyway V1–V9, docker-compose, CI 4 jobs |
 | **M1 OM Connector** | 🚧 ~95% — full crawl + governance + effective facet + FR-1.5 webhook/poller/reconcile + catalog read API + Catalog UI + governance read API + Governance UI · **sync กับ OM จริงสำเร็จแล้ว** · เหลือ FR-1.6 (reconcile กับ JDBC จริง), FR-1.7 (local tag + push-back — **ผู้ใช้สั่ง read-only ตอนนี้**) |
-| **M2 Identity** | 🚧 ~35% — local sign-in ใช้ได้ · schema `principal`/`principal_attribute`/`group_member`/`app_role_assignment` มีตั้งแต่ V2 · read API + หน้า People & attributes เสร็จ · **ยังไม่มี write API สำหรับ principal/attribute — ต้อง seed ด้วย SQL** · ยังไม่มี Entra OIDC / Graph sync |
-| **M3 Policy Engine** | 🚧 ~92% — engine **85 tests** · persistence (`PolicyStore`) + `policy_binding` materializer + REST · `PolicyBindingMaterializerIT` 10 tests บน Postgres จริง · เหลือ decision cache (FR-5.5), ANTLR grammar ของ `expr` (FR-3.2) |
+| **M2 Identity** | 🚧 ~35% — local sign-in ใช้ได้ · schema `principal`/`principal_attribute`/`group_member`/`app_role_assignment` มีตั้งแต่ V2 · read API + หน้า People & attributes + **หน้า Application roles (`/settings/roles`) อ่านอย่างเดียว** เสร็จ · **ยังไม่มี write API สำหรับ principal/attribute — ต้อง seed ด้วย SQL** · ยังไม่มี Entra OIDC / Graph sync |
+| **M3 Policy Engine** | 🚧 ~93% — engine **162 tests** (data policy 26 + subscription 45 เพิ่มรอบนี้ · เจอบั๊กจริง 2 ตัว ดูข้อ P) · persistence (`PolicyStore`) + `policy_binding` materializer + REST · `PolicyBindingMaterializerIT` 10 tests บน Postgres จริง · เหลือ decision cache (FR-5.5), ANTLR grammar ของ `expr` (FR-3.2) |
 | **M4 Policy Authoring UI** | 🚧 ~70% — Policy list + Policy builder (selector / subject / RLS / masking) + readback + capability matrix · เหลือ "policy ที่มีผลกับ asset นี้" ในหน้า asset (FR-3.1.5), View-as-user (FR-5.2), impact analysis (FR-5.3) |
 | **M5 Secure View (5.1.2)** | ⬜ — `DecisionSql` + dialect ทั้งสองตัวพร้อมแล้ว (ใช้ร่วมกับ 5.2) เหลือ ViewCompiler + `row_entitlement` maintainer + DDL apply/rollback |
 | **M6 Source Config (5.1.1)** | ⬜ |
@@ -43,13 +43,13 @@ Phase 1 รองรับ SQL Server + PostgreSQL · identity หลักค�
 | App DB (docker `dac-appdb`, postgres:16-alpine) | `:5432` db/user `dac` |
 | OpenMetadata ของทีม | `2.0.1` — sync ผ่าน **ingestion-bot JWT** (ดู What Didn't Work) |
 
-เทสต์ทั้งหมดเขียว (รันครบเมื่อ 2026-09-20)
+เทสต์ทั้งหมดเขียว — **dac-engine รันใหม่ 2026-09-21** (162 เขียว), module อื่นและ integration รันครบเมื่อ 2026-09-20, frontend `npx jest` + `npx tsc --noEmit` รันใหม่ 2026-09-21
 
 | ชุด | จำนวน | คำสั่ง |
 |---|---|---|
-| Backend unit | dac-common 6 · dac-engine **85** · **dac-compiler-sql 7** · dac-connector-openmetadata 88 · **dac-proxy 16** · dac-service **31** = **233** | `./mvnw -am -pl backend/dac-service test` |
+| Backend unit | dac-common 6 · dac-engine **162** · dac-compiler-sql 7 · dac-connector-openmetadata 88 · dac-proxy 16 · dac-service 50 = **329** | `./mvnw -am -pl backend/dac-service test` |
 | Backend integration (Testcontainers `postgres:16-alpine`) | **50 tests** — `AssetStoreIT` 6 · `CatalogQueryIT` 15 · `GovernanceStoreIT` 9 · `PolicyStoreIT` 10 · `PolicyBindingMaterializerIT` 10 | `./mvnw -am -pl backend/dac-service verify -Pintegration` |
-| Frontend | 5 suites / 20 tests — LoginPage · SystemStatusPage · CatalogPage 5 · AssetDetailPage 5 · policyLanguage 6 | `yarn test` ใน `frontend/app` |
+| Frontend | **10 suites / 35 tests** | `yarn test` ใน `frontend/app` |
 
 `yarn type-check` · `yarn lint` · `yarn build` ผ่านหมด → **BUILD SUCCESS** ทั้งสองฝั่ง
 
@@ -679,6 +679,188 @@ total loop errors: 0
 2. **reproduce ไม่ได้ใน profile สะอาด ≠ ขึ้นกับ state ที่ค้าง** — คราวนี้มันขึ้นกับ *เส้นทางที่เดินเข้ามา* (deep link) สมมติฐานสองข้อแรก (`target` เป็น `/login`, timer ค้าง) ผิดทั้งคู่ สิ่งที่ได้คำตอบคือการยิง 6 เส้นทางจริงรวดเดียวแล้วนับ error
 3. **`clearTimeout` ตอน unmount ไม่ใช่คำตอบเสมอไป** — ถ้า callback นั้นคือสิ่งเดียวที่ปลดสถานะ global การยกเลิกมันคือการล็อกสถานะนั้นไว้ถาวร ของที่อายุยืนกว่า component ต้องไม่ถูกถือไว้ใน component
 
+### P. ทดสอบ Data policy ให้ครบทุกเคส — เจอบั๊กจริงสองตัว
+
+**ที่มา:** ผู้ใช้สั่ง *"ทดสอบเรื่อง Subscription และ Data policy ให้เยอะๆ อย่าให้มี Bug ทดสอบทุกแบบที่เป็นไปได้"*
+
+ไฟล์ใหม่ [DataPolicyCompositionTest.java](backend/dac-engine/src/test/java/com/mfec/dac/engine/DataPolicyCompositionTest.java) — **26 tests / 4 nested class**
+
+| nested class | tests | คุมอะไร |
+|---|---|---|
+| `RowFilters` | 6 | RLS หลายชั้น AND กัน, multi-value → `IN`, attribute ที่ principal ไม่มี, `ALWAYS_FALSE` |
+| `ColumnMasks` | 8 | mask ชนกันบน column เดียว → เข้มสุดชนะ, cell mask (`condition`), mask จาก facet |
+| `Hide` | 4 | ซ่อน column ทั้งคอลัมน์ ต่างจาก mask ยังไง, ซ่อน + mask พร้อมกัน |
+| `Release` | 8 | `allowLocalOverride` + release จากชั้นที่ลึกกว่า, ชั้นที่ไม่ยอม override |
+
+#### 🐛 บั๊ก 1 — `rowPredicates` ไม่ถูก sort → **FR-6.0c พังเงียบๆ**
+
+`masks` กับ `hidden` ถูก sort ไว้แล้ว แต่ `rowPredicates` **ไม่** → ลำดับของ predicate เป็นไปตามลำดับที่ policy ถูกโหลดมา
+predicate ทุกตัวถูก AND กันอยู่แล้ว **ลำดับจึงไม่มีความหมายเชิงตรรกะ** แต่มันมีผลกับ SQL ที่ compiler ทั้งสามตัว generate ออกมา
+→ cross-mode consistency test (DoD ข้อ 6) ที่เทียบ **ทีละ byte** จะ fail/pass สลับกันไปตามลำดับแถวที่ query คืนมา ซึ่งเป็นบั๊กที่จะเสียเวลาไล่ที่สุดตอน M7b
+
+```java
+rowPredicates.sort(Comparator.comparing(PolicyEngine::signature));
+```
+`signature()` เอา**ทุก field** มาต่อกัน รวม `sourcePolicyId` ด้วย เพื่อให้สองตัวที่เท่ากันคือสองตัวที่พูดเรื่องเดียวกันจริงๆ (ตัวไหนอยู่ก่อนจึงไม่สำคัญ)
+
+#### 🐛 บั๊ก 2 — column rule `ALLOW` ที่มี condition ต้องดูแถว → **ปล่อย plaintext ให้คนที่ condition นั้นตั้งใจกัน**
+
+`ColumnRule.Action.ALLOW` = การ**ปลด** mask (release) ส่วน `MASK` = การ**ใส่** mask
+เวลา expression ตีเป็น `ROW_DEPENDENT` (เช่นอ้าง `row.`) ของเดิมทำเหมือนกันทั้งสองทาง คือส่ง condition ต่อลงไปให้ compiler กลายเป็น cell mask
+แต่ **release ไม่มีที่ให้เก็บ condition** — decision บันทึกได้แค่ "ปลด" กับ "ไม่ปลด" ไม่มีช่อง "ปลดเฉพาะบางแถว"
+→ ของเดิมจึง**ปลด mask ทิ้งทั้ง column** ให้ principal ที่ condition เขียนไว้เพื่อกันออกไป
+
+แก้ให้ release ที่ตัดสินไม่ได้ **ไม่ปลดอะไรเลย** พร้อมเหตุผลใน audit:
+> `column rule with action ALLOW carries a condition that cannot be decided without a row (...); it releases nothing, because a release cannot be made conditional`
+
+> นี่คือ invariant กลางของ engine — **input ที่ตัดสินไม่ได้ ต้องนับเป็นโทษของ principal เสมอ** ที่นี่เป็นจุดเดียวที่มันเคยรั่ว
+
+---
+
+### Q. ทดสอบ Subscription policy 45 เคส — **ไม่เจอบั๊กใหม่ เขียวหมดตั้งแต่รันแรก**
+
+ไฟล์ใหม่ [SubscriptionPolicyTest.java](backend/dac-engine/src/test/java/com/mfec/dac/engine/SubscriptionPolicyTest.java) — **45 tests / 7 nested class**
+
+| nested class | tests | คุมอะไร |
+|---|---|---|
+| `Exemptions` | 5 | exemption ที่ระบุ **team** ครอบสมาชิกด้วย · ตัวที่หมดอายุ "พอดีวินาทีนี้" = หมดแล้ว |
+| `Lifecycle` | 8 | `DRAFT`/`DISABLED`/`ARCHIVED` ไม่มีผล · `validFrom` วินาทีนี้ = มีผลแล้ว · `validUntil` วินาทีนี้ = หมดแล้ว |
+| `Environments` | 5 | DENY ที่ผูก env อื่น **ไม่** deny ที่นี่ (environment ขยายสิทธิ์ได้พอๆ กับที่บีบ) |
+| `Gates` | 10 | DENY ที่ไม่ match = ไม่ใช่ประตู · **ALLOW ที่ไม่ match = ปิดทั้งชั้น** · sub-domain ที่ลึกกว่า override ตัวที่ตื้นกว่าได้ ไม่ใช่ทางกลับ |
+| `Groups` | 10 | ฟีเจอร์ใหม่ในข้อ R |
+| `Undecidable` | 3 | expression ที่ตัดสินไม่ได้ → ALLOW ไม่ให้อะไรเลย / DENY deny · คำอธิบายมีคำว่า `failing closed` |
+| `NoBinding` | 4 | มีแต่ data policy → `no subscription policy binds` · policy เป็น null ข้าม · list เป็น null → deny · `effect` null อ่านเป็น ALLOW |
+
+**พฤติกรรมที่อ่านแล้วสะดุด แต่จงใจ pin ไว้:** *exemption ที่ไปตกบน ALLOW จะ**ลบ grant ทิ้ง*** (exemption แปลว่า "ไม่ต้องอยู่ใต้ policy ตัวนี้" ไม่ใช่ "ได้รับการยกเว้นให้ผ่าน") ถ้าจะเปลี่ยนความหมายนี้ในอนาคต test จะพังให้เห็น ไม่ใช่เปลี่ยนเงียบๆ
+
+#### ⚠️ กับดักที่เสียเวลาไปรอบหนึ่ง — Surefire + `@Nested`
+
+`-Dtest=SubscriptionPolicyTest` **exit 0** และ `TEST-...SubscriptionPolicyTest.xml` เขียนว่า `tests="0"`
+เพราะ **nested class เขียน report ของตัวเอง** (`TEST-...SubscriptionPolicyTest$Groups.xml`)
+
+> **exit code 0 ไม่ได้พิสูจน์ว่า test ได้รัน** — ต้องนับจากไฟล์เสมอ:
+> ```bash
+> grep -ho 'tests="[0-9]*"' backend/dac-engine/target/surefire-reports/TEST-*.xml
+> ```
+
+**engine: 91 → 162 tests** (เดิม 91 + data policy 26 + subscription 45) เขียวทั้งหมด
+
+---
+
+### R. Subscription/Data policy กำหนด **by group หลายกลุ่ม AND/OR** ได้แล้ว (ผู้ใช้สั่ง)
+
+เดิม `subjectRule.principals` เป็น **OR list** อย่างเดียว → เขียน "อยู่กลุ่ม A **หรือ** B" ได้ แต่เขียน "และต้องอยู่ C ด้วย" ไม่ได้
+
+เพิ่ม field ที่สอง `requiredPrincipals` = **AND list** ทำงานทับบน `principals`:
+
+| ชั้น | ไฟล์ | เปลี่ยนอะไร |
+|---|---|---|
+| Schema | [subjectRule.json](backend/dac-spec/src/main/resources/json/schema/entity/policy/subjectRule.json) | `requiredPrincipals: principalMatch[]` |
+| Engine | [SubjectMatcher.java](backend/dac-engine/src/main/java/com/mfec/dac/engine/SubjectMatcher.java) | loop AND ก่อนเช็ค attribute + `describe()` เขียนเหตุผลลง audit ว่า**ขาดข้อไหน** |
+| Test | `SubscriptionPolicyTest$Groups` | 10 tests |
+| TS type | `src/generated/entity/policy/subjectRule.ts` | `yarn parse-schema` |
+| Builder UI | [SubjectBuilder.tsx](frontend/app/src/pages/policies/SubjectBuilder.tsx) | แยก `PrincipalList` ออกมาแล้ว render สองครั้ง — *"Anyone who is"* / *"And who is also"* |
+| ประโยคสรุป | [policyLanguage.ts](frontend/app/src/pages/policies/policyLanguage.ts) | `describePrincipal()` + clause `who is also ...` |
+
+ครอบคลุมรูปแบบ **`(A or B) and C and D`** ซึ่งเป็นรูปที่คนเขียนจริง
+
+#### ทำไมสองลิสต์แบน ไม่ใช่ boolean tree (บันทึกไว้จะได้ไม่ต้องเถียงใหม่)
+
+| ทางเลือก | ทำไมไม่เอา |
+|---|---|
+| tree แบบ `assetSelector` (`condition`/`and`/`or`/`not`) | ต้องแก้ POJO ให้ recursive, matcher recursive, UI recursive, migrate policy ที่เก็บไว้แล้ว — จ่ายแพงเพื่อ nesting ที่ไม่มีใครเขียน |
+| toggle ตัวเดียวพลิก `principals` จาก OR เป็น AND | เขียน `(A or B) and C` ไม่ได้ |
+| ใช้ชื่อ `allOf` / `anyOf` | ชนกับ keyword ของ JSON Schema (เหตุผลเดียวกับที่ `assetSelector` เลี่ยงไว้ตั้งแต่แรก) |
+
+เกินรูปนี้ไป ให้ไปใช้ `expression` ที่มีอยู่แล้ว
+
+**UI จงใจซ่อนลิสต์ที่สองไว้จนกว่าลิสต์แรกจะมีอะไร** — ฟอร์มเปล่าที่มีสองลิสต์หน้าตาเหมือนกันคือวิธีที่คนจะพลาดความต่างระหว่างสองอันนี้
+และแถวใหม่ตอนนี้ default เป็น `{ group: '' }` (เดิม `role`) ตามที่ผู้ใช้เน้นเรื่อง group
+
+> 🔴 **jar ที่รันอยู่ตอนนี้เก่ากว่า `SubjectMatcher`** — service ที่รันค้างไว้จะยัง**ไม่**รู้จัก `requiredPrincipals` จนกว่าจะ rebuild + restart
+
+---
+
+### S. หน้า Settings แบ่งเป็นสามหัวข้อแบบ OpenMetadata + หน้า Application roles
+
+ผู้ใช้สั่งหัวข้อมาตรงๆ สามอัน — ทำตามนั้นเป๊ะ เป็น card group แบบหน้า Settings ของ OM
+
+ไฟล์ใหม่ [SettingsPage.tsx](frontend/app/src/pages/settings/SettingsPage.tsx)
+
+| หัวข้อ | card |
+|---|---|
+| **Catalog & metadata** | OpenMetadata connection (admin) · Governance vocabulary · Catalog |
+| **People & platform access** | **Application roles** · People & attributes · Local groups (M2, admin) |
+| **Data source connections** | Registered sources (admin) · Service & build · Sync & reconcile (admin) |
+
+card ที่ `adminOnly` ถูกกรองด้วย `hasRole('PLATFORM_ADMIN')` และหัวข้อที่ไม่เหลือ card เลยจะไม่ render
+
+> เหตุผลที่หัวข้อ 2 กับ 3 **ต้องแยกกัน** ไม่ใช่เรื่องความสวย — *"ใครใช้ ARAK ได้"* กับ *"ใครอ่าน table ได้"* เป็นสิทธิ์คนละเรื่องที่ blast radius ต่างกันมาก console ที่เอามาไว้ด้วยกันคือ console ที่ชวนให้คนกดอันหนึ่งโดยคิดว่ากดอีกอัน
+
+#### หน้าใหม่ — [AppRolesPage.tsx](frontend/app/src/pages/settings/AppRolesPage.tsx) ที่ `/settings/roles`
+
+**ทุกบรรทัดใต้ "May" อ่านมาจาก `@Secured` / โค้ด authorise จริง ไม่ได้อ่านจาก requirement** และโชว์ไฟล์+บรรทัดไว้ข้างๆ ให้คนถัดไปตรวจซ้ำได้
+
+| role | อ่านมาจาก |
+|---|---|
+| `PLATFORM_ADMIN` | `OpenMetadataSettingsResource.java:36` · `SyncResource.java:31` · `SourceResource.java:213` |
+| `POLICY_AUTHOR` | `PolicyResource.java:187` (`authorise()` ผ่านทันที) |
+| `DATA_OWNER` | `PolicyResource.java:197` — ต้องเป็น `isDescendantOrSelf` ของสิ่งที่ตัวเองเป็นเจ้าของ · scope ว่าง = ปฏิเสธ · **update authorise ทั้ง document เก่าและใหม่** จึงย้าย policy เข้ามาใน scope ตัวเองไม่ได้ |
+| `AUDITOR` | `PolicyResource.java:41` (อ่านได้) — เขียนไม่ได้ |
+| `REQUESTER` | `CatalogResource.java:31` — และ `QueryResource.java:83` **ไม่รับ** role นี้ |
+
+**อ่านอย่างเดียว** เพราะ `PrincipalResource` จงใจเป็น read-only ตอน Entra เป็นเจ้าของข้อมูล — ฟอร์ม assign บนหน้านี้จะถูก sync รอบหน้าลบทิ้ง หน้าจึงบอกตรงๆ ว่า assignment จะไปอยู่ตรงไหนแทนที่จะวางปุ่มที่ไม่ทำอะไร
+
+**Route ที่ต่อแล้ว** — `/settings` เดิม `Navigate` ไป `/settings/openmetadata` ตอนนี้เป็นหน้า hub จริง, เพิ่ม `/settings/roles`, และ [navigation.ts](frontend/app/src/layout/navigation.ts) ชี้ Settings ไปที่ `/settings`
+
+#### 💬 ตอบคำถามผู้ใช้ — *"group/user ควรอยู่ในหน้า people เหมือนกันไหม / ควรแบ่ง Role ยังไง"*
+
+**แยกสองหน้า เพราะเป็นคนละคำถาม แม้จะเป็น object เดียวกัน**
+
+| | **People & attributes** (`/principals`) | **Settings → People & platform access** |
+|---|---|---|
+| ตอบคำถามว่า | *"มีใครบ้าง เขาถือ attribute/group อะไร"* | *"ใครควรทำอะไรใน ARAK ได้"* |
+| ใครเปิด | คนเขียน policy — เปิดดู**ระหว่างเขียน** subject rule | admin — เปิดตอน onboard คนใหม่ |
+| เป็นอะไร | **directory อ่านอย่างเดียว** | **การบริหาร** |
+
+เอามารวมกันแล้วจะได้ปุ่ม "ทำให้เป็น platform admin" โผล่ให้คนที่แค่มาเปิดดูว่ามีใครอยู่ในกลุ่ม `credit-analysts` บ้าง
+ทางเชื่อมที่ควรมี: ในแถวของคนใน People → ลิงก์ "Manage app roles" (เห็นเฉพาะ admin)
+
+**การแบ่ง role ยึดแกนเดียว — "คนเขียน" ต้องไม่ใช่ "คนเปิดใช้"** (FR-9.1 `DRAFT → PENDING_APPROVAL → ACTIVE` บังคับด้วย `separationOfDuty()`)
+
+| role | แกนที่มันแบ่ง |
+|---|---|
+| `POLICY_AUTHOR` | เขียนได้ทั้งองค์กร แต่เปิดใช้ของตัวเองไม่ได้ |
+| `DATA_OWNER` | เหมือนกัน แต่ถูกล้อมด้วย ownership จาก OM |
+| `AUDITOR` | อ่านได้หมด เขียนไม่ได้เลย — role ที่ทำให้ audit มีน้ำหนัก |
+| `REQUESTER` | เห็นแค่ของตัวเอง (default ของทุกคน) |
+| `PLATFORM_ADMIN` | คุมแพลตฟอร์ม **แต่ไม่ควรเป็นคนอนุมัติ policy ของตัวเอง** |
+
+> ห้าตัวนี้ถูก fix ไว้ด้วย CHECK constraint ใน Flyway V2 แล้ว — เพิ่ม role ใหม่ต้อง migrate ไม่ใช่แก้ค่าคงที่ใน Java
+
+---
+
+### T. สองเรื่อง UI ที่ผู้ใช้ชี้
+
+#### 1. icon ของ Data policy — cylinder → **`EyeOff`**
+
+cylinder แปลว่า "database" อยู่ทุกที่ในเชลล์นี้ รวมถึงรางซ้ายที่อยู่ติดกันเลย
+data policy ไม่ได้พูดถึงฐานข้อมูล มันพูดถึง**สิ่งที่ถูกปิดไว้จาก table ที่คนเข้าถึงได้อยู่แล้ว** — และ `EyeOff` แบกความหมายนี้อยู่แล้วบนผลลัพธ์หน้า Query
+
+#### 2. 🐛 scrollbar ในรางซ้ายตอน zoom 100% — **วัดก่อน ไม่เดา**
+
+```
+12 ลิงก์ × 44px + 11 ช่อง × 2px + 12px บน + 24px ล่าง ≈ 586px
++ footer copyright ≈ 83px                              ≈ 669px
+พื้นที่จริงบนจอ laptop                                  ≈ 680px
+```
+เกินไปไม่กี่ px → ได้ scrollbar **เต็มความสูงที่ thumb ก็เต็มความสูง** = ตัวควบคุมที่เลื่อนอะไรไม่ได้ บนลิสต์ที่เห็นครบอยู่แล้ว
+
+สาเหตุ: ทั้งคอลัมน์เป็นกล่อง scroll เดียว → บรรทัด copyright **นับรวมเข้าไปในความสูง**ด้วย
+
+แก้ที่ [AppShell.tsx](frontend/app/src/layout/AppShell.tsx): `<nav>` เป็น `flex-col overflow-hidden`, ให้ **`<ul>` เท่านั้นที่ scroll** (`min-h-0 flex-1 overflow-y-auto`), footer เปลี่ยนจาก `mt-auto` เป็น `shrink-0` อยู่นอกกล่อง scroll
+→ จอสูงพอ = ไม่มี scrollbar เลย · จอเตี้ยจริง = bar โผล่เฉพาะตรงลิสต์ ซึ่งเป็นส่วนเดียวที่มีที่ให้ไป
+
 ---
 
 ## รอบก่อนหน้า — Global search ข้ามทุก entity + transition ตอนเปลี่ยนหน้า/เข้า-ออกระบบ + ชิป governance ที่อ่านออก
@@ -1051,12 +1233,13 @@ estate ที่ใช้: `prod-mssql.SalesDB.dbo.{customer, order}` + **`prod-
 2. **ปิด M3** — decision cache (FR-5.5) + ANTLR grammar ของ `expr` (FR-3.2)
 3. **ปิด M4** — หน้า asset ต้องโชว์ "policy ที่มีผลกับ asset นี้" (มี endpoint `/policies/affecting/{fqn}` รออยู่แล้ว — แก้ข้อ 3 ของช่องว่างด้วย), View-as-user (FR-5.2), impact analysis (FR-5.3)
 4. **ปิดช่องว่างข้อ 1–5 ข้างบน** โดยเฉพาะ **ข้อ 4 (audit ของการ configure)** ซึ่งเป็นของที่ auditor จะถามหาแน่นอน
-5. **M2** — write API ของ principal/attribute แล้วต่อ filter ตาม attribute ในหน้า People (ผู้ใช้ขอไว้: *"อยากให้สามารถ Filter ตาม attribute ได้"*)
+5. **M2** — write API ของ principal/attribute แล้วต่อ (ก) filter ตาม attribute ในหน้า People (ผู้ใช้ขอไว้: *"อยากให้สามารถ Filter ตาม attribute ได้"*) (ข) การ assign application role จริงในหน้า `/settings/roles` (ค) หน้า local group ที่ `/settings/groups` ซึ่ง card ในหน้า Settings ลิงก์ไปรออยู่แล้ว
 6. **M5 (secure view)** — `DecisionSql` + dialect ทั้งสองตัวพร้อมแล้ว เหลือ ViewCompiler + `row_entitlement` maintainer + dry-run/apply/rollback + golden-file test
 7. **FR-1.6** — reconcile cache กับ JDBC introspection จริง (**รอ connection database จริงจากผู้ใช้**)
 8. **หน้าเปลี่ยนรหัสผ่าน** — `mustChangePassword` ไหลถึง `auth/authStore.ts` แล้วแต่ไม่มีใครอ่าน
 9. **ก่อน M6** ต้องได้คำตอบ: SQL Server production เป็น **2022+** ไหม (ต้องการสำหรับ `GRANT UNMASK` ระดับ column) และลง extension `anon` บน PostgreSQL ได้ไหม
-10. งานเล็กที่ค้าง: refactor `jdbcUrl` ที่ยังเป็น private ใน `SourceProbe` ให้ไปอยู่บน `JdbcTargets` · golden-file test ของ dialect ทั้งสองตัว
+10. **rebuild + restart backend** — jar ที่รันค้างอยู่เก่ากว่า `SubjectMatcher` ของรอบนี้ จึงยังไม่รู้จัก `requiredPrincipals` (ข้อ R) · เขียน policy ที่ใช้ลิสต์ที่สองแล้วทดสอบกับ service ที่รันอยู่จะได้ผลผิด
+11. งานเล็กที่ค้าง: refactor `jdbcUrl` ที่ยังเป็น private ใน `SourceProbe` ให้ไปอยู่บน `JdbcTargets` · golden-file test ของ dialect ทั้งสองตัว
 
 **กติกาที่ต้องถือไว้ทุกครั้งที่ commit:** repo เป็น public -> scan หา password / JWT / hostname และ IP ภายใน ก่อน push เสมอ · ค่าจริง (`IDENTITY_BOOTSTRAP_ADMIN_PASSWORD`, `OM_WEBHOOK_SECRET`, `FERNET_KEY`, `SRC_PG_ARAK_CREDENTIAL`, bot JWT) อยู่ใน `.env` ที่ gitignore เท่านั้น · `.env.example` มีแต่ placeholder
 **ผู้ใช้สั่งไว้:** *"อัพเดตไฟล์ handoff ทุกครั้งที่เอาขึ้น git"* — commit ที่ไม่มี HANDOFF.md ติดไปด้วย ถือว่ายังไม่เสร็จ

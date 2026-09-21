@@ -76,7 +76,12 @@
   },
   "properties": {
     "principals": {
-      "description": "OR list. Matching any entry satisfies this part of the predicate.",
+      "description": "OR list. Matching any entry satisfies this part of the predicate. Several groups listed here mean 'in any one of them'.",
+      "type": "array",
+      "items": { "$ref": "#/definitions/principalMatch" }
+    },
+    "requiredPrincipals": {
+      "description": "AND list, evaluated on top of `principals`: every entry must hold. Several groups listed here mean 'in all of them'. Two flat lists rather than one nested tree because the shapes that get written in practice are 'any of these' and 'any of these, and also all of those' -- (A or B) and C and D -- and a tree buys arbitrary nesting at the cost of a form nobody can read. Anything past that shape belongs in `expression`.",
       "type": "array",
       "items": { "$ref": "#/definitions/principalMatch" }
     },

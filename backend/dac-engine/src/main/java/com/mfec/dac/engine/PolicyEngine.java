@@ -18,6 +18,7 @@ import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -461,7 +462,12 @@ public final class PolicyEngine {
     }
 
     // Deterministic order, so two runs of the same inputs — and therefore the
-    // three compilers — produce byte-identical output (FR-6.0c).
+    // three compilers — produce byte-identical output (FR-6.0c). The predicates
+    // are sorted for the same reason as the masks: they are ANDed together, so
+    // the order carries no meaning, and leaving it to follow whatever order the
+    // policies were loaded in turns FR-6.0c's byte comparison into a diff that
+    // appears and disappears with the row order of a query nobody is looking at.
+    rowPredicates.sort(Comparator.comparing(PolicyEngine::signature));
     masks.sort((a, b) -> nullSafe(a.getColumn()).compareTo(nullSafe(b.getColumn())));
     List<String> sortedHidden = new ArrayList<>(hidden);
     Collections.sort(sortedHidden);
@@ -516,6 +522,24 @@ public final class PolicyEngine {
       if (result == ExpressionEvaluator.Result.TRUE) {
         // Settled here, so the compiler need not re-test it for every row.
         condition = null;
+      }
+      if (result == ExpressionEvaluator.Result.ROW_DEPENDENT
+          && action == ColumnRule.Action.ALLOW) {
+        // A restriction is kept or dropped; there is no way to record "released
+        // for some rows only". A MASK can carry an undecided condition down to
+        // the compiler and become a cell mask, but a release has nowhere to put
+        // it, and dropping it hands the column in plaintext to exactly the
+        // principals the condition existed to exclude. Every other undecidable
+        // input here counts against the principal and so does this one.
+        reasons.add(
+            reason(
+                source.policy(),
+                false,
+                "column rule with action ALLOW carries a condition that cannot be decided "
+                    + "without a row ("
+                    + condition
+                    + "); it releases nothing, because a release cannot be made conditional"));
+        return;
       }
     }
 
@@ -580,6 +604,27 @@ public final class PolicyEngine {
     }
     // Ties keep the incumbent, so composition is order-independent.
     return incumbent;
+  }
+
+  /**
+   * A total order over predicates. Every field participates, including the
+   * source policy, so that two predicates compare equal only when they say the
+   * same thing — in which case which one survives the sort cannot matter.
+   */
+  private static String signature(ResolvedRowPredicate predicate) {
+    return nullSafe(String.valueOf(predicate.getKind()))
+        + ' '
+        + nullSafe(predicate.getColumn())
+        + ' '
+        + nullSafe(String.valueOf(predicate.getOperator()))
+        + ' '
+        + nullSafe(String.valueOf(predicate.getValues()))
+        + ' '
+        + nullSafe(predicate.getEntitlementKey())
+        + ' '
+        + nullSafe(predicate.getRawPredicate())
+        + ' '
+        + nullSafe(String.valueOf(predicate.getSourcePolicyId()));
   }
 
   private ResolvedRowPredicate resolve(

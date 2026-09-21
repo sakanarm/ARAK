@@ -4,6 +4,7 @@ import type {
   FacetCondition,
   MaskingSpec,
   Policy,
+  PrincipalMatch,
   RowFilter,
   SubjectRule,
 } from '../../generated/entity/policy/policy';
@@ -97,22 +98,32 @@ export function describeSelector(selector?: AssetSelector): string {
   return parts.length ? parts.join(' and ') : 'nothing';
 }
 
+/** One identity entry. Fields within an entry are ANDed, so all of them show. */
+function describePrincipal(match: PrincipalMatch): string {
+  const parts: string[] = [];
+  if (match.role) parts.push(`anyone with the role ${match.role}`);
+  if (match.team) parts.push(`in the team ${match.team}`);
+  if (match.group) parts.push(`in the group ${match.group}`);
+  if (match.user) parts.push(match.user);
+  if (match.assetOwner) parts.push('whoever owns the asset');
+  return parts.length ? parts.join(' and ') : 'nobody';
+}
+
 export function describeSubject(subject?: SubjectRule): string {
   if (!subject) return 'everyone';
   const clauses: string[] = [];
 
   if (subject.principals?.length) {
-    const who = subject.principals
-      .map((p) => {
-        if (p.assetOwner) return 'whoever owns the asset';
-        if (p.role) return `anyone with the role ${p.role}`;
-        if (p.team) return `the team ${p.team}`;
-        if (p.group) return `the group ${p.group}`;
-        if (p.user) return p.user;
-        return 'nobody';
-      })
-      .join(' or ');
-    clauses.push(who);
+    clauses.push(subject.principals.map(describePrincipal).join(' or '));
+  }
+  // Joined with "and", and never folded into the list above. This sentence is
+  // what an author checks the policy against before publishing it, and a rule
+  // that reads as a wider "or" than it enforces is the one mistranslation that
+  // would have somebody publish a grant they meant to restrict.
+  if (subject.requiredPrincipals?.length) {
+    clauses.push(
+      `who is also ${subject.requiredPrincipals.map(describePrincipal).join(' and ')}`
+    );
   }
   for (const attribute of subject.attributes ?? []) {
     const operator = OPERATOR_WORDS[attribute.operator] ?? attribute.operator;

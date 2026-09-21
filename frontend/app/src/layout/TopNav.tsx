@@ -20,6 +20,7 @@ import {
   CornerDownLeft,
   Cube01,
   Database01,
+  EyeOff,
   Globe01,
   HelpCircle,
   LayoutLeft,
@@ -711,8 +712,15 @@ function CreateMenu() {
             label="Subscription policy"
             onAction={() => navigate('/policies/new?kind=SUBSCRIPTION')}
           />
+          {/*
+            Not the cylinder: that one means "a database" everywhere else in
+            this shell, including the Catalog rail directly beside it. A data
+            policy is about what is withheld from a table somebody already
+            reaches, and the crossed-out eye already carries that meaning on the
+            query results.
+          */}
           <Dropdown.Item
-            icon={Database01}
+            icon={EyeOff}
             label="Data policy"
             onAction={() => navigate('/policies/new?kind=DATA')}
           />

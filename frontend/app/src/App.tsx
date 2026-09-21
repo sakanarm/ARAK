@@ -14,7 +14,9 @@ import PrincipalsPage from './pages/governance/PrincipalsPage';
 import PolicyBuilderPage from './pages/policies/PolicyBuilderPage';
 import PolicyListPage from './pages/policies/PolicyListPage';
 import QueryPage from './pages/query/QueryPage';
+import AppRolesPage from './pages/settings/AppRolesPage';
 import OpenMetadataSettingsPage from './pages/settings/OpenMetadataSettingsPage';
+import SettingsPage from './pages/settings/SettingsPage';
 import SourcesPage from './pages/SourcesPage';
 import SystemStatusPage from './pages/SystemStatusPage';
 
@@ -66,7 +68,8 @@ export default function App() {
             element={<OpenMetadataSettingsPage />}
             path="/settings/openmetadata"
           />
-          <Route element={<Navigate replace to="/settings/openmetadata" />} path="/settings" />
+          <Route element={<AppRolesPage />} path="/settings/roles" />
+          <Route element={<SettingsPage />} path="/settings" />
           <Route element={<SystemStatusPage />} path="/system" />
           {placeholders.map((section) => (
             <Route
