@@ -1,6 +1,7 @@
 package com.mfec.dac.catalog;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.mfec.dac.common.ChangeNotifier;
 import com.mfec.dac.om.OpenMetadataClient;
 import com.mfec.dac.om.crawl.AssetCrawler;
 import com.mfec.dac.om.crawl.GovernanceCrawler;
@@ -60,9 +61,23 @@ public class CatalogSyncService {
   private final ObjectMapper json;
   private final OpenMetadataClient client;
   private final SyncStateDao syncState;
+  private final ChangeNotifier changes = new ChangeNotifier();
 
   /** Guards this process; the {@code sync_state} row guards the others. */
   private final AtomicBoolean running = new AtomicBoolean();
+
+  /**
+   * Announces every write that could change an access decision, so that the
+   * decision cache can drop what it is holding (FR-5.5).
+   *
+   * <p>Published from here rather than from the resource that took the request
+   * because writes arrive by more roads than one -- a webhook, a poller, the
+   * nightly reconcile -- and an invalidation wired to only some of them is the
+   * kind of wrong that never throws.
+   */
+  public ChangeNotifier changes() {
+    return changes;
+  }
 
   public CatalogSyncService(Jdbi jdbi, ObjectMapper json, OpenMetadataClient client) {
     this.jdbi = jdbi;
@@ -89,7 +104,11 @@ public class CatalogSyncService {
       if (heldElsewhere()) {
         return Optional.empty();
       }
-      return Optional.of(runCrawl());
+      Result result = runCrawl();
+      // A full crawl rewrites facets across the estate. Which decisions that
+      // moved is not worth working out; that it moved something is certain.
+      changes.fire("catalog crawl finished");
+      return Optional.of(result);
     } finally {
       running.set(false);
     }

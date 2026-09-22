@@ -4,11 +4,16 @@ import { Link, useSearchParams } from 'react-router-dom';
 import {
   ChevronDown,
   Database01,
+  Eye,
   FilterLines,
+  Folder,
   SearchLg,
+  Server01,
+  Table,
   XClose,
 } from '@untitledui/icons';
 import { Badge } from '@openmetadata/ui-core-components/components/base/badges/badges';
+import type { BadgeColors } from '@openmetadata/ui-core-components/components/base/badges/badge-types';
 import { Button } from '@openmetadata/ui-core-components/components/base/buttons/button';
 import { Checkbox } from '@openmetadata/ui-core-components/components/base/checkbox/checkbox';
 import { Input } from '@openmetadata/ui-core-components/components/base/input/input';
@@ -32,6 +37,56 @@ import { plainText } from '../../lib/text';
 
 const PAGE_SIZE = 25;
 const ASSET_TYPES = ['TABLE', 'VIEW', 'SCHEMA', 'DATABASE', 'SERVICE'];
+
+/**
+ * How each kind of asset presents itself in a list.
+ *
+ * <p>A service, a database, a schema and a table are four different things and
+ * a list that renders them identically makes the reader parse the FQN to tell
+ * them apart. The icon carries that distinction before any text is read; the
+ * hue is the same one the badge uses, so the two reinforce rather than compete.
+ *
+ * <p>Ordered here the way the hierarchy nests -- service contains database
+ * contains schema contains table -- with the hues walking the same direction,
+ * so depth reads as a gradient down the page rather than as noise.
+ */
+const ASSET_LOOK: Record<
+  string,
+  { Icon: typeof Database01; badge: BadgeColors; tile: string }
+> = {
+  SERVICE: {
+    Icon: Server01,
+    badge: 'gray-blue',
+    tile: 'tw:bg-utility-gray-blue-50 tw:text-utility-gray-blue-700',
+  },
+  DATABASE: {
+    Icon: Database01,
+    badge: 'blue',
+    tile: 'tw:bg-utility-blue-50 tw:text-utility-blue-700',
+  },
+  SCHEMA: {
+    Icon: Folder,
+    badge: 'indigo',
+    tile: 'tw:bg-utility-indigo-50 tw:text-utility-indigo-700',
+  },
+  TABLE: {
+    Icon: Table,
+    badge: 'brand',
+    tile: 'tw:bg-utility-brand-50 tw:text-utility-brand-700',
+  },
+  VIEW: {
+    Icon: Eye,
+    badge: 'purple',
+    tile: 'tw:bg-utility-purple-50 tw:text-utility-purple-700',
+  },
+};
+
+/** Anything the crawl returns that this list was not told about. */
+const UNKNOWN_LOOK = {
+  Icon: Database01,
+  badge: 'gray' as BadgeColors,
+  tile: 'tw:bg-secondary tw:text-tertiary',
+};
 
 /**
  * The catalog: what the crawl has cached, and how it is governed (FR-1.2).
@@ -265,7 +320,13 @@ export default function CatalogPage() {
 
         {!isLoading && data?.items.length === 0 && <Empty filtered={filtered} />}
 
-        <ul className="tw:mt-4 tw:space-y-3">
+        {/*
+          * One bordered list with dividers rather than a stack of separate
+          * cards. The cards spent a third of the column on the gaps between
+          * them, which is a third fewer rows on screen for a page that is
+          * expected to get long.
+          */}
+        <ul className="tw:mt-4 tw:divide-y tw:divide-secondary tw:overflow-hidden tw:rounded-xl tw:border tw:border-secondary tw:bg-primary">
           {data?.items.map((asset) => (
             <AssetRow asset={asset} key={asset.id} />
           ))}
@@ -302,64 +363,88 @@ function Stat({
 
 function AssetRow({ asset }: { asset: AssetSummary }) {
   const facets = listFacets(asset.facets);
+  const look = ASSET_LOOK[asset.assetType] ?? UNKNOWN_LOOK;
+  const Icon = look.Icon;
 
   return (
-    <li className="tw:rounded-xl tw:border tw:border-secondary tw:bg-primary tw:p-4 tw:hover:border-brand">
-      <div className="tw:flex tw:flex-wrap tw:items-start tw:justify-between tw:gap-3">
-        <div className="tw:min-w-0">
-          <Link
-            className="tw:text-md tw:font-medium tw:text-primary tw:hover:text-brand-secondary"
-            to={`/catalog/${encodeURIComponent(asset.fqn)}`}>
-            {asset.displayName || asset.name}
-          </Link>
+    <li className="tw:group tw:relative tw:bg-primary tw:transition-colors tw:hover:bg-secondary_subtle">
+      {/*
+        * The whole row is the link, not just the name. A list whose rows are
+        * navigable only through eighty pixels of text asks the reader to aim.
+        */}
+      {/* The name is the label, not a second copy of the text: a hidden
+        * duplicate would make the row's own name ambiguous to a screen reader
+        * and to any test that looks the row up by it. */}
+      <Link
+        aria-label={asset.displayName || asset.name}
+        className="tw:absolute tw:inset-0 tw:z-0"
+        to={`/catalog/${encodeURIComponent(asset.fqn)}`}
+      />
+
+      <div className="tw:pointer-events-none tw:relative tw:z-10 tw:flex tw:gap-3.5 tw:px-4 tw:py-3.5">
+        <span
+          className={`tw:mt-0.5 tw:flex tw:size-9 tw:shrink-0 tw:items-center tw:justify-center tw:rounded-lg ${look.tile}`}>
+          <Icon className="tw:size-4.5" />
+        </span>
+
+        <div className="tw:min-w-0 tw:flex-1">
+          <div className="tw:flex tw:flex-wrap tw:items-center tw:gap-x-2 tw:gap-y-1">
+            <span className="tw:truncate tw:text-md tw:font-semibold tw:text-primary tw:group-hover:text-brand-secondary">
+              {asset.displayName || asset.name}
+            </span>
+            {/* "color", not "modern": the modern badge is gray only, and gray
+              * for every kind is the thing this row is trying to stop being. */}
+            <Badge color={look.badge} size="sm" type="color">
+              {asset.assetType}
+            </Badge>
+            {asset.tier && (
+              <Badge color="warning" size="sm" type="pill-color">
+                {asset.tier}
+              </Badge>
+            )}
+          </div>
+
           <p className="tw:mt-0.5 tw:truncate tw:font-mono tw:text-xs tw:text-quaternary">
             {asset.fqn}
           </p>
+
           {plainText(asset.description) && (
-            <p className="tw:mt-2 tw:line-clamp-2 tw:text-sm tw:text-tertiary">
+            <p className="tw:mt-1.5 tw:line-clamp-2 tw:text-sm tw:text-tertiary">
               {plainText(asset.description)}
             </p>
           )}
-        </div>
-        <div className="tw:flex tw:shrink-0 tw:items-center tw:gap-2">
-          <Badge color="gray" size="sm" type="modern">
-            {asset.assetType}
-          </Badge>
-          {asset.tier && (
-            <Badge color="warning" size="sm" type="pill-color">
-              {asset.tier}
-            </Badge>
+
+          {(facets.length > 0 || asset.owners.length > 0) && (
+            // Chips are their own links, so this row gets its clicks back.
+            <div className="tw:pointer-events-auto tw:mt-2 tw:flex tw:flex-wrap tw:items-center tw:gap-1.5">
+              {facets.map((facet) => (
+                <FacetChip
+                  facet={facet}
+                  key={`${facet.facetType}:${facet.facetFqn}:${facet.property ?? ''}`}
+                />
+              ))}
+              {asset.owners.map((owner) => (
+                <OwnerChip key={`${owner.type}:${owner.name}`} owner={owner} />
+              ))}
+            </div>
+          )}
+
+          {asset.columnCount > 0 && (
+            <p className="tw:mt-2 tw:text-xs tw:text-tertiary">
+              {asset.columnCount} columns
+              {asset.taggedColumnCount > 0 && (
+                // The number that decides whether this table needs a data
+                // policy at all, and the one the list would otherwise hide
+                // behind a click.
+                <span className="tw:font-medium tw:text-warning-primary">
+                  {' '}
+                  · {asset.taggedColumnCount} carrying a tag or term
+                </span>
+              )}
+            </p>
           )}
         </div>
       </div>
-
-      {(facets.length > 0 || asset.owners.length > 0) && (
-        <div className="tw:mt-3 tw:flex tw:flex-wrap tw:items-center tw:gap-1.5">
-          {facets.map((facet) => (
-            <FacetChip
-              facet={facet}
-              key={`${facet.facetType}:${facet.facetFqn}:${facet.property ?? ''}`}
-            />
-          ))}
-          {asset.owners.map((owner) => (
-            <OwnerChip key={`${owner.type}:${owner.name}`} owner={owner} />
-          ))}
-        </div>
-      )}
-
-      {asset.columnCount > 0 && (
-        <p className="tw:mt-3 tw:text-xs tw:text-tertiary">
-          {asset.columnCount} columns
-          {asset.taggedColumnCount > 0 && (
-            // The number that decides whether this table needs a data policy at
-            // all, and the one the list would otherwise hide behind a click.
-            <span className="tw:text-warning-primary">
-              {' '}
-              · {asset.taggedColumnCount} carrying a tag or term
-            </span>
-          )}
-        </p>
-      )}
     </li>
   );
 }

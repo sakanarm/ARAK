@@ -15,7 +15,6 @@ import com.mfec.dac.schema.api.Unenforceable;
 import com.mfec.dac.source.DataSourceStore;
 import com.mfec.dac.source.jdbc.QueryExecutor;
 import com.mfec.dac.source.jdbc.SourceProbe;
-import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -381,9 +380,13 @@ public class QueryService {
       return null;
     }
 
+    // A null instant means "whenever this runs", which is both what a live
+    // query means and the only shape of ask the decision cache may reuse
+    // (FR-5.5). Passing Instant.now() here would pin the decision to a
+    // microsecond and make every query on the hottest path a cold one.
     PolicyDecision decision =
         decisions.decide(
-            new DecisionService.Ask(principal, fqn.get(), Instant.now(), clientIp, purpose, null));
+            new DecisionService.Ask(principal, fqn.get(), null, clientIp, purpose, null));
     recordDecision(decision, clientIp, purpose);
     return new QueryRewriter.Governed(fqn.get(), decision, columns);
   }

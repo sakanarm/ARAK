@@ -27,10 +27,10 @@ Phase 1 รองรับ SQL Server + PostgreSQL · identity หลักค�
 | **M0 Foundation** | ✅ เสร็จ — Maven multi-module, Dropwizard 5, Vite+React+Tailwind shell, vendor `ui-core-components`, JSON Schema → Java/TS codegen, OM client จาก swagger ที่ pin ไว้, Flyway V1–V10, docker-compose, CI 4 jobs |
 | **M1 OM Connector** | 🚧 ~95% — full crawl + governance + effective facet + FR-1.5 webhook/poller/reconcile + catalog read API + Catalog UI + governance read API + Governance UI · **sync กับ OM จริงสำเร็จแล้ว** · เหลือ FR-1.6 (reconcile กับ JDBC จริง), FR-1.7 (local tag + push-back — **ผู้ใช้สั่ง read-only ตอนนี้**) |
 | **M2 Identity** | 🚧 ~50% — local sign-in ใช้ได้ · schema `principal`/`principal_attribute`/`group_member`/`app_role_assignment` มีตั้งแต่ V2 · read API + หน้า People & attributes (**filter ตาม attribute + กดเข้าไปดูสมาชิกใน group ได้ที่ `/principals/:id`**) + **หน้า Application roles (`/settings/roles`) อ่านอย่างเดียว** เสร็จ · **เพิ่ม local account + assign/withdraw app role ได้จาก UI แล้ว (V10 + `IdentityAdminStore` + audit)** · **ยังไม่มี write API สำหรับ *attribute* — ต้อง seed ด้วย SQL** · ยังไม่มีหน้าจอเปลี่ยน password (ทุก account ที่สร้างเป็น `must_change`) · ยังไม่มี Entra OIDC / Graph sync |
-| **M3 Policy Engine** | 🚧 ~93% — engine **156 tests** (data policy 26 + subscription 45 เพิ่มรอบนี้ · เจอบั๊กจริง 2 ตัว ดูข้อ P) · persistence (`PolicyStore`) + `policy_binding` materializer + REST · `PolicyBindingMaterializerIT` 10 tests บน Postgres จริง · เหลือ decision cache (FR-5.5), ANTLR grammar ของ `expr` (FR-3.2) |
+| **M3 Policy Engine** | 🚧 ~97% — engine **156 tests** (data policy 26 + subscription 45 เพิ่มรอบนี้ · เจอบั๊กจริง 2 ตัว ดูข้อ P) · persistence (`PolicyStore`) + `policy_binding` materializer + REST · `PolicyBindingMaterializerIT` 10 tests บน Postgres จริง · **decision cache (FR-5.5) ปิดแล้วรอบนี้ — 25 tests ดูข้อ AB** · เหลือ ANTLR grammar ของ `expr` (FR-3.2) ข้อเดียว |
 | **M4 Policy Authoring UI** | ✅ **เสร็จ** — Policy list + Policy builder + readback + capability matrix + `/policies/:id` หน้าสรุปอ่านอย่างเดียว + panel Policies ในหน้า asset (FR-3.1.5) + View-as-user (FR-5.2, ข้อ Z) · **รอบนี้ปิดข้อสุดท้าย: impact analysis (FR-5.3) — `GET /v1/policies/{id}/impact` + panel “Who it changes things for” ดูข้อ AA** |
 | **M5 Secure View (5.1.2)** | ⬜ — `DecisionSql` + dialect ทั้งสองตัวพร้อมแล้ว (ใช้ร่วมกับ 5.2) เหลือ ViewCompiler + `row_entitlement` maintainer + DDL apply/rollback |
-| **M6 Source Config (5.1.1)** | ⬜ |
+| **M6 Push Config (5.1.1)** | ⬜ **re-scope รอบนี้ · เลื่อนหลัง M5/M7 · opt-in ต่อ source** — ยิงเฉพาะ **policy object ที่แยกจาก table** (PG `CREATE POLICY` · MSSQL `CREATE SECURITY POLICY` · column GRANT) · **ตัด MSSQL DDM ออก** เพราะมัน `ALTER COLUMN` ทับนิยาม table — ดูข้อ AC.1 และ DESIGN FR-6.2a |
 | **M7 Query API (5.2a)** | 🚧 ~80% — **`POST /v1/query` + Query console ใช้งานได้จริงรอบนี้** · rewrite → RLS + mask + hidden column → execute → audit ครบ · พิสูจน์กับ Postgres จริงแล้วทั้ง allow / RLS / mask / refuse · เหลือ direct-access detector (FR-6.3.1) และ result cache |
 | **M7b Cross-mode consistency** | ⬜ — ต้องมี M5/M6 ก่อน |
 | **M8 Audit + Ops** | 🚧 ~20% — `audit_query` / `audit_decision` / `audit_policy_change` เขียนจริงแล้วและอ่านได้ · **ยังไม่มี audit ของการ configure** (เปลี่ยน data source / OM settings ไม่ถูกบันทึกที่ไหนเลย) · ยังไม่มี compliance report / drift detector / auto-revoke / SIEM export |
@@ -55,7 +55,209 @@ Phase 1 รองรับ SQL Server + PostgreSQL · identity หลักค�
 
 ---
 
-## รอบล่าสุดทำอะไรไป — Impact analysis (FR-5.3) · **ปิด M4**
+## รอบล่าสุดทำอะไรไป — เส้นแบ่งของ 5.1.1 · หน้า Catalog · และ **ช่องโหว่ที่เจอระหว่างตอบคำถาม**
+
+> รอบนี้ไม่มีโค้ด backend ใหม่เลย — เป็นรอบของ **การตัดสินใจเชิงสถาปัตยกรรมหนึ่งข้อ** (ซึ่งผู้ใช้เป็นคนทัก), **งาน UI หนึ่งหน้า** และ **ช่องโหว่ของ config ที่ไม่มีใครเห็นเพราะระบบไม่ร้อง**
+
+### AC.1 ผู้ใช้ทักว่า 5.1.1 เขียนทับ table เดิม — และทักถูก
+
+คำถามคือ *"ยิง RLS/DDM/GRANT ลง object เดิม — อันนี้คือเขียนทับ table เดิมหรอ ถ้าใช่ ยังไม่ต้องทำดีกว่าไหม"* พร้อมขยายความว่า **"ถ้า Source สามารถ Config ได้ ก็ให้ยิง Config ไป เช่น bigquery"**
+
+ของเดิมใน DESIGN เขียนรวมกันไว้ว่า "native config" ซึ่งซ่อนความจริงว่ามันเป็น**ของสองแบบที่ความเสี่ยงคนละเรื่อง**:
+
+| กลุ่ม | ตัวอย่าง | เกิดอะไรกับ table |
+|---|---|---|
+| **policy object แยก** | PG `CREATE POLICY` · MSSQL `CREATE SECURITY POLICY` · BigQuery row access policy · Snowflake masking policy | table ไม่เปลี่ยนเลย — เราสร้าง object ใหม่แล้วผูกเข้าไป |
+| **เขียนคำนิยามทับ** | **MSSQL DDM** — `ALTER TABLE ... ALTER COLUMN ... ADD MASKED WITH` | **เขียนทับนิยามของ column ที่ลูกค้าเป็นคนสร้าง** |
+
+ตัวที่ผู้ใช้ไม่อยากได้คือกลุ่มล่าง และมีแค่ตัวเดียว → **ตัด DDM ออกจาก Phase 1** ไม่ใช่ตัดทั้ง M6
+
+**บันทึกเป็นกติกาถาวรใน DESIGN ข้อ 8:** ARAK สร้าง/ลบได้เฉพาะ **object ที่ตัวเองเป็นเจ้าของ** (view, policy object, entitlement table) + GRANT/REVOKE เท่านั้น · **ห้าม `ALTER TABLE ... ALTER COLUMN`**
+
+> **เหตุผลที่ชี้ขาดคือ rollback ไม่ใช่ความเสี่ยงตอน apply** — rollback ของ object ที่เราสร้างคือ `DROP` ซึ่งสะอาดเสมอไม่ว่า apply จะพังกลางทางตรงไหน ส่วน rollback ของ `ALTER COLUMN` คือการ**เดาว่าเราจำนิยามเดิมได้ถูก** ถ้าจำผิดคือแก้ schema ของลูกค้าผิดถาวร
+
+**ที่แลกมา (ต้องบอกตรงๆ ไม่ใช่กลบ):** ทิ้ง DDM แล้วจะเสียคุณสมบัติ *"query ตารางชื่อเดิมได้โดยไม่ต้องแก้ report"* เฉพาะส่วน masking — ทางทดแทนคือ **rename swap ใน FR-6.1.1** (`customer` → `customer_raw`, ตั้งชื่อ view ว่า `customer`) ซึ่งให้ผลเท่ากันโดยไม่แตะนิยาม table เลย · และ DDM เองก็ทำ **cell mask ไม่ได้อยู่แล้ว** ของที่เสียไปจึงน้อยกว่าที่คิด
+
+**M6 ถูก re-scope เป็น "push config"** ตามที่ผู้ใช้หมายถึง: ยิงเฉพาะ policy object · **BigQuery row access policy / policy tag กับ Snowflake masking policy คือเคสที่โมเดลนี้เกิดมาเพื่อมัน** (Phase 2) · M6 เลื่อนไปหลัง M5/M7 และเป็น **opt-in ต่อ source** ไม่ใช่ default
+
+ไฟล์ที่แก้: `docs/DESIGN.md` — decision row 6 เขียนใหม่ · **decision row 8 ใหม่** (row secrets เลื่อนเป็น 9) · ตารางเทียบ FR-6 เปลี่ยนหัวข้อเป็น "5.1.1 Push config" และเปลี่ยนแถว "แตะ object เดิม" เป็น "เขียนคำนิยาม table ไหม" · **หัวข้อใหม่ FR-6.2a** ตารางแยกรายคำสั่งว่าอันไหนทำได้/ไม่ได้ · แถว M6 ในตาราง milestone · แถว M3 ที่ status ค้างเก่า
+
+### AC.2 หน้า Catalog — list ที่ให้อ่าน FQN เพื่อเดาว่าของแต่ละแถวคืออะไร
+
+ผู้ใช้บอกว่า *"List ใน Catalog มันจืดๆ ไม่ค่อยสวย"* สาเหตุจริงไม่ใช่เรื่องสี แต่คือ **service / database / schema / table / view ถูก render เหมือนกันหมด** — ผู้อ่านต้องไปไล่อ่าน FQN เองถึงจะรู้ว่าแถวไหนเป็นอะไร
+
+| ของเดิม | ของใหม่ |
+|---|---|
+| card ลอยเรียงกันด้วย `space-y-3` | **list เดียว border รอบ + `divide-y`** — ได้พื้นที่แนวตั้งคืน ~1/3 |
+| badge `type="modern"` สีเทาทุกชนิด | badge `type="color"` สีตามชนิด + **ไอคอนใน tile สีเดียวกัน** |
+| กดได้เฉพาะชื่อ (~80px) | **ทั้งแถวเป็นลิงก์** (`absolute inset-0` + `pointer-events-none` บน content, คืน `auto` ให้ชิป) |
+
+สีเรียงตามลำดับชั้นที่มันซ้อนกันจริง เพื่อให้ความลึกอ่านเป็น gradient ไม่ใช่ noise:
+`SERVICE` gray-blue (Server01) → `DATABASE` blue (Database01) → `SCHEMA` indigo (Folder) → `TABLE` brand (Table) → `VIEW` purple (Eye) · ชนิดที่ไม่รู้จักตกไป `UNKNOWN_LOOK` สีเทา
+
+> **กับดักที่เจอ (จดไว้เพราะจะเจออีก):** badge `type="modern"` **รับได้แค่ `color="gray"`** เพราะมันใช้ `addonOnlyColors` ไม่ใช่ `filledColors` · ถ้าส่งสีอื่นจะพังตอน `tsc` ไม่ใช่ตอน runtime (`TS2322: Type 'BadgeColors' is not assignable to type '"gray" | undefined'`) · ตัวที่รับทั้ง union คือ `type="color"` และ `type="pill-color"`
+
+> **กับดักที่สอง — ทำ test พังโดยที่ UI ถูก:** ตอนแรกให้ลิงก์คลุมแถวมี accessible name ด้วย `<span className="sr-only">{name}</span>` ผลคือ**ชื่อแถวโผล่ใน DOM สองที่** → `findByText('customer')` เจอสองตัวแล้ว fail · แก้ด้วย `aria-label` บน `<Link />` แทน ซึ่งให้ชื่อกับ screen reader โดยไม่เพิ่ม text node · **บทเรียน: ถ้าจะให้ element ที่มองไม่เห็นมีชื่อ ใช้ attribute ไม่ใช่ข้อความซ้ำ**
+
+ตรวจแล้ว: `tsc --noEmit` ผ่าน · `eslint` ผ่าน · `jest src/pages/catalog` **15/15 ผ่าน**
+
+### AC.3 ⚠️ ช่องโหว่ที่เจอตอนตอบคำถามเรื่อง match — asset 36 จาก 40 ยัง enforce ไม่ได้
+
+ผู้ใช้ถามว่า *"เอา metadata มาจาก openmetadata แล้ว และเราก็ต่อ Datasource ที่ ARAK ด้วย จะ match กันยังไง"*
+
+**กลไกคือจุดเชื่อมจุดเดียว: `data_source.om_service_fqn`** — กรอกมือครั้งเดียวต่อ source ว่า connection นี้ชื่ออะไรในฝั่ง OM ที่เหลือ match เองทั้งหมด เพราะ FQN ของ OM เรียงตามลำดับชั้นอยู่แล้ว:
+
+```
+prod-pg    .  SalesDB  .  dbo    .  customer  .  email
+└service─┘    └database┘  └schema┘  └ table ─┘   └column┘
+    ▲
+    └── segment 0 เท่านั้นที่ map มือ
+```
+
+`AssetStore.java:534-547` ตัด segment 0 แล้วยิง `SELECT id FROM data_source WHERE om_service_fqn = :fqn AND enabled` → ได้ `data_source_id` แปะให้ทุก asset ใต้ service นั้น · `asset_fqn_map` เก็บพิกัดจริงต่อ object (`database_name`/`schema_name`/`object_name`) + `verification_status` (`UNVERIFIED | MATCHED | ORPHANED | DRIFTED`) ไว้ให้ FR-1.6 เอา JDBC ไปยืนยันกับ source จริง (**ยังไม่ได้ทำ**)
+
+**แต่พอไปเช็ค DB จริง เจอว่ายังไม่ได้เชื่อมเลย:**
+
+```
+name    | om_service_fqn | enabled      om_service | linked | count
+--------+----------------+---------     -----------+--------+-------
+demo-pg |     (NULL)     |    t         demo-pg    |   ใช่   |     4
+                                        dtp-iprm   |  ไม่    |    36
+```
+
+- `demo-pg` มี `om_service_fqn` เป็น **NULL** → 4 แถวที่ linked มาจาก seed ตอน dev ไม่ได้มาจากการ match
+- **36 จาก 40 asset** (31 TABLE · 2 VIEW · SERVICE/DATABASE/SCHEMA อย่างละ 1) มาจาก service `dtp-iprm` ของ OM จริง และ `data_source_id IS NULL` ทั้งหมด
+- `asset_fqn_map` มี `MATCHED` อยู่แถวเดียว
+
+> **ตัวปัญหาจริงคือ `.orElse(null)` ที่บรรทัดท้ายของ query นั้น** — match ไม่ได้แล้ว**ไม่ error** เก็บ asset ไว้เฉยๆ แบบ *"รู้จัก แต่ไม่รู้ว่าอยู่เครื่องไหน"* เขียน policy ได้ ติด tag ได้ แต่ **enforce ไม่ได้ query ไม่ได้** และ**หน้าจอไม่บอกอะไรเลย** — ผิดหลัก fail-loud ที่เราถือมาตลอด
+
+**รอผู้ใช้ตอบ** ว่า `demo-pg` คือเครื่องเดียวกับ `dtp-iprm` หรือเปล่า (ถ้าใช่ set `om_service_fqn = 'dtp-iprm'` จบ · ถ้าไม่ใช่ต้องเพิ่ม source ใหม่ซึ่งต้องมี host/port/credential จริง) · และควรเพิ่ม **banner ในหน้า Catalog** ว่า asset เหล่านี้ยังไม่ผูก data source
+
+### AC.4 IT สองตัวล้ม — environment ไม่ใช่โค้ด
+
+`AssetStoreIT` (137.0 s) และ `CatalogQueryIT` (100.4 s) ล้มด้วย `ContainerLaunchException: Container startup failed for image postgres:16-alpine` → `Timed out waiting for log output matching '.*database system is ready to accept connections.*'`
+
+Docker แน่นเพราะรัน backend + Vite + `dac-appdb` + `dac-srcpg` พร้อมกัน · **IT ตัวถัดไปในรอบเดียวกันผ่านหมด** (`GovernanceStoreIT` 10 · `IdentityAdminStoreIT` 11 · `ImpactAnalysisIT` 8) และ unit test **71/71 ผ่าน 0 failures 0 errors** → ยืนยันว่าเป็น resource ไม่ใช่ regression · **ยังต้องรันซ้ำสองตัวนี้ตอน Docker ว่าง**
+
+---
+
+## รอบก่อนหน้า — Decision cache (FR-5.5)
+
+> รอบนี้แตะ backend อย่างเดียว (4 ไฟล์ใหม่ + 9 ไฟล์แก้ + 2 test ใหม่) · **ไม่มี migration** — cache อยู่ใน heap ล้วนๆ · มี config ใหม่ 3 ตัวใน `conf/dac.yml`
+
+### AB. Cache ที่ไม่กล้าตอบคำถามที่ไม่ได้ถูกถาม (FR-5.5)
+
+#### AB.1 ทำไมการ cache ผล decision ถึงอันตรายกว่าที่คิด
+
+cache ทั่วไปตอบผิดแล้วหน้าจอกระตุก หรือตัวเลขผิด — **cache ตัวนี้ตอบผิดแล้วคนที่ไม่ควรเห็นข้อมูลเห็นข้อมูล** และจะไม่มี exception ไม่มี alert ไม่มีอะไรเลย
+
+กับดักที่เห็นได้ชัดที่สุด: cache key ที่เป็น `(principal, asset)` เฉยๆ คือช่องโหว่เต็มๆ — policy ที่อนุญาต 08:00–18:00 พอ 18:00 มันหยุดอนุญาต **โดยที่ไม่มีการเขียนที่ไหนเลย** จึงไม่มีอะไรมา invalidate ให้
+
+คำตอบคือ **entry หนึ่งตัวต้องตายได้ 3 ทาง อิสระจากกัน**:
+
+| สิ่งที่ทำให้คำตอบเก่า | กลไก | ครอบอะไร |
+|---|---|---|
+| มีคนเขียน | `ChangeNotifier` → flush ทั้งก้อน + บวก generation | policy, binding, identity, catalog change, catalog crawl |
+| เวลาเดิน | `DecisionValidity.until()` → ใส่ `validUntil` ต่อ entry | time window, `validFrom`/`validUntil`, `exemption.expiresAt` |
+| อะไรก็ไม่รู้ | TTL 60s | write path ที่จะเพิ่มทีหลังแล้วลืม publish · instance ที่สองที่เราไม่ได้ยิน flush ของมัน |
+
+> **สามชั้นนี้ไม่ได้ทำงานซ้ำกัน** — ชั้นแรกคือสิ่งที่ประกาศตัว ชั้นสองคือสิ่งที่ไม่มีใครประกาศ (นาฬิกา) ชั้นที่สามคือสิ่งที่เราคิดไม่ถึง
+
+#### AB.2 ทำไม store เป็นคนประกาศ ไม่ใช่ REST resource
+
+`ChangeNotifier` (ใหม่ ใน `dac-common`) — listener list ธรรมดา ยิง `fire(reason)` **หลัง commit บน thread เดิม**
+
+ถ้าไปต่อ invalidation ไว้ที่ resource มันจะพัง**ครั้งแรกที่ write มาทางอื่น** — webhook จาก OM, poller, nightly reconcile ไม่ได้ผ่าน REST layer เลย และมันจะ**ไม่ error** มันจะแค่เสิร์ฟ decision เก่าต่อไปเงียบๆ
+
+publisher ทั้งหมด 5 ตัว สมัครไว้ที่เดียวใน `DacApplication` เพื่อให้การลืม publisher ตัวที่ 6 เห็นได้จากที่เดียว:
+
+| publisher | ยิงเมื่อ | ทำไม |
+|---|---|---|
+| `PolicyStore` | create / update / transition | ACTIVE↔DISABLED คือนาทีที่ enforcement เริ่มและหยุด |
+| `PolicyBindingMaterializer` | เมื่อ binding **เปลี่ยนจริง** (`result.changed()`) | nightly reconcile re-resolve ทุก policy แต่เกือบไม่มีอะไรเปลี่ยน — ยิงทุกครั้งคือล้าง cache วันละหลายร้อยรอบฟรีๆ |
+| `IdentityAdminStore` | สร้าง account / enable / disable / grant / revoke role | ชื่อที่เมื่อกี้ยัง resolve ไม่ได้ ตอนนี้ resolve ได้ → denial ที่ cache ไว้ต้องหาย · `resetPassword` **ไม่** ยิง (เปลี่ยน decision ไม่ได้) |
+| `CatalogChangeApplier` | webhook/poller ที่ไม่ quiet | **tag ที่ลง column คือ policy change ที่ไม่มีใครในระบบนี้เป็นคนเขียน** — ชนิดที่ cache พลาดง่ายที่สุด |
+| `CatalogSyncService` | crawl จบ | crawl เขียน facet ทั้ง estate |
+
+ที่**จงใจไม่ใส่**: source registry กับ query executor — สองตัวนี้เปลี่ยนว่า "อ่านข้อมูลจากที่ไหน" ไม่ได้เปลี่ยนว่า "ใครเห็นอะไร"
+
+#### AB.3 การเขียน test เจอรูโหว่ในโค้ดที่เพิ่งเขียนไปเอง — flush ที่ดูเหมือนทำงานแต่ไม่ได้ทำ
+
+ฉบับแรก `put()` อ่าน `generation` **ตอนเก็บ** ซึ่งผิด:
+
+```
+thread A  17:59:59  อ่าน policy stack (generation = 7)
+thread B  18:00:00  disable policy → flush, generation = 8
+thread A  18:00:01  put() → อ่าน generation ได้ 8 → เก็บสำเร็จ
+            → คำตอบที่คำนวณจาก policy ที่ถูกปิดไปแล้ว ถูกเสิร์ฟต่ออีก 1 นาที
+```
+
+แก้ด้วยให้ `DecisionService` อ่าน `cache.generation()` **ก่อนแตะ DB** แล้วส่งค่านั้นเข้า `put(..., readAt)` — `put` เช็คสองรอบ (ก่อน serialize และอีกทีใน lock) ถ้าไม่ตรงคือทิ้งและนับเข้า `lapped`
+
+#### AB.4 test เองเจอบั๊กอีกตัว — mapper ที่เขียน `Instant` ไม่ได้
+
+รอบแรกที่รัน `DecisionCacheTest` **แดง 7/14** ด้วยอาการเดียว: ไม่มีอะไรถูกเก็บเลย สาเหตุคือ test ใช้ `new ObjectMapper()` เปล่าๆ ซึ่งเขียน `Instant` ไม่ได้ (ไม่มี JSR-310 module) → `put()` throw → โดน catch → **เงียบ**
+
+แต่สิ่งที่ test ชี้คือโหมดพังที่อันตรายจริงๆ:
+
+> **cache ที่ไม่เก็บอะไรเลย คือ cache ที่ไม่เคยตอบผิด** — ทุก endpoint ยังตอบถูก ทุก test ยังเขียว ไม่มีอะไรบอกว่า NFR-2 ไม่ถูกทำตาม นอกจาก log WARN บรรทัดเดียว
+
+แก้สองทาง:
+1. **test** ใช้ `Jackson.newObjectMapper()` ตัวเดียวกับที่ Dropwizard สร้าง — mapper คือส่วนหนึ่งของสิ่งที่ถูกทดสอบ
+2. **production** เพิ่ม counter `unstorable` ใน `Stats` + log stack trace แค่ครั้งแรก → ดูที่ `/v1/system/decision-cache` แล้วเห็นทันที ไม่ต้องไปงม log
+3. เพิ่ม test ที่ยืนยันว่าโหมดนี้**นับได้** ไม่ใช่แค่ log
+
+อีกตัวหนึ่งที่ test เจอ: `expiresAtIsHonoured` ตั้ง `expiresAt` ไว้ที่ +600s ขณะที่ TTL แค่ 60s → TTL ฆ่า entry ก่อน — **test ผิด ไม่ใช่โค้ดผิด** แก้ด้วยให้ test นั้นใช้ TTL 1 ชม. เพื่อให้ขอบที่ทดสอบคือขอบที่ policy ให้มาจริงๆ
+
+#### AB.5 ที่เก็บเป็น JSON bytes ไม่ใช่ object
+
+POJO ที่ generate มามี `withX(...)` ที่ **mutate in place แล้ว return this** — ถ้าเก็บ object ตรงๆ caller คนแรกที่ติด `fromCache` จะติดค้างไว้ใน cache ถาวร และอะไรก็ตามที่มันแก้ต่อจะติดตามไปด้วย · serialize/deserialize จ่ายหลักสิบไมโครวินาทีเทียบกับงบ 10ms ถือว่าคุ้ม
+
+#### AB.6 วัดจริง ไม่ได้อ้างเอกสารออกแบบ
+
+backend ที่รันอยู่จริง → login admin → `POST /v1/decisions` 1 cold + 6 warm บน `analyst_a` / `dtp-iprm.iprm.public.customers`:
+
+| | ค่า |
+|---|---|
+| cold (รวม JWT verify + Jetty) | **0.116s** |
+| warm | **0.017 / 0.0155 / 0.0249 / 0.0181s** |
+| `GET /v1/system/decision-cache` | `hits=6, misses=1, entries=1, bytes=449, evictions=0, invalidations=0` |
+
+`fromCache=true` ขึ้นจริงใน response · **ผ่านงบ NFR-2 (<10ms cached / <100ms cold) โดยที่ตัวเลขข้างบนนับรวม HTTP overhead ทั้งหมดแล้ว**
+
+#### AB.7 ของที่เพิ่มรอบนี้
+
+**ไฟล์ใหม่**
+- `dac-common/.../ChangeNotifier.java`
+- `dac-engine/.../DecisionValidity.java` + `DecisionValidityTest.java` (10 tests)
+- `dac-service/.../policy/DecisionCache.java` + `DecisionCacheTest.java` (15 tests)
+- `dac-service/.../config/DecisionCacheConfiguration.java`
+
+**แก้**
+- `DecisionService` — `Ask.at` ไม่ default เป็น `Instant.now()` อีกต่อไป · `when()` / `live()` · **null ≠ now** (null = "ตอนไหร่ก็ตามที่รัน" และ**เฉพาะอันนั้นที่ cache ได้** — simulation ที่ pin เวลาถามคนละคำถาม)
+- `QueryService` — ส่ง `null` เป็น `at` เพื่อให้ path ที่ร้อนที่สุด cache ได้
+- `PolicyStore` / `PolicyBindingMaterializer` / `IdentityAdminStore` / `CatalogChangeApplier` / `CatalogSyncService` — เพิ่ม `changes()`
+- `DacApplication` — สร้าง cache ก่อน store ทุกตัว + subscribe 5 publisher
+- `SystemResource` — `GET /v1/system/decision-cache` (**หลัง auth filter** ต่างจาก `/version` เพราะ `lastInvalidationReason` มีชื่อ policy หรือชื่อคน)
+- `DacConfiguration` + `conf/dac.yml` — block `decisionCache`
+
+**env ใหม่ 3 ตัว** (มี default หมด ไม่ต้องตั้ง)
+| | default | เมื่อไหร่ถึงแตะ |
+|---|---|---|
+| `DECISION_CACHE_ENABLED` | `true` | **สิ่งแรกที่ควรลองเมื่อ decision ดูเก่าแล้วหาสาเหตุไม่เจอ** — ปิดแล้ว restart จ่าย 3 DB read ต่อ decision |
+| `DECISION_CACHE_MAX_ENTRIES` | `50000` | heap ไม่พอ (entry ละ ~450 bytes → 50k ≈ 22MB) |
+| `DECISION_CACHE_TTL_SECONDS` | `60` | เพดานของ "นานแค่ไหนที่คำตอบผิดอยู่ได้ถ้าไม่มีใครประกาศ" · **ถ้า deploy หลาย instance ต้องลดตัวนี้** เพราะ generation counter เป็น single-process |
+
+#### AB.8 ข้อจำกัดที่ต้องรู้
+
+- **generation counter เป็น single-process** — สอง instance จะไม่ได้ยิน flush ของกันและกัน สิ่งเดียวที่คุ้มกันคือ TTL → **ก่อน scale out ต้องย้าย invalidation ไปอยู่บน pub/sub หรือลด TTL เหลือหน่วยวินาที**
+- flush เป็นแบบ**ทั้งก้อน** ไม่ได้เลือกลบเฉพาะ key ที่กระทบ — จงใจ เพราะ map จาก "policy นี้เปลี่ยน" → "คนเหล่านี้บน table เหล่านี้ผิดแล้ว" ต้องเดินผ่าน selector + group closure + facet inheritance และ**เวอร์ชันที่ไม่ครบของมันไม่ throw — มันแค่ปล่อยให้บางคนเข้าได้ต่อไปเงียบๆ**
+- `DecisionValidity` จงใจ**ทำซ้ำ minute granularity ของ `PolicyEngine.cacheKey()`** แทนที่จะคำนวณขอบ window เอง — สองที่คิดเรื่องเวลาต่างกันคือสองที่จะค่อยๆ ไม่ตรงกัน · มี test `matchesEngineGranularity` คอยจับถ้าสองตัวเริ่มไม่ตรงกัน
+- `DecisionValidity` ดู **policy ทั้ง stack ไม่ใช่เฉพาะตัวที่ match** — policy ที่จะเริ่มมีผลเที่ยงคืนต้องจบ entry นี้ด้วย ถึงแม้วันนี้มันไม่ได้พูดอะไรเลย
+
+---
+
+## รอบก่อนหน้า — Impact analysis (FR-5.3) · **ปิด M4**
 
 > ข้อสุดท้ายของ M4 · รอบนี้แตะ backend (3 ไฟล์แก้ + 1 ไฟล์ใหม่ + 1 IT ใหม่) และ frontend (2 ไฟล์) · **ไม่มี migration** — คำถามนี้ตอบได้ด้วยของที่มีอยู่แล้วทั้งหมด
 
@@ -1822,6 +2024,7 @@ estate ที่ใช้: `prod-mssql.SalesDB.dbo.{customer, order}` + **`prod-
 5. **`audit_decision.evaluation_ms` ไม่เคยถูกเขียนค่า** — เป็น NULL ทุกแถว ทำให้ยืนยัน NFR-2 (p95 < 50ms) ไม่ได้
 6. **capability matrix ยังไม่รู้จัก masking function ต่อ dialect และไม่รู้จักเวอร์ชันของ engine** — ดูหัวข้อ I ข้างบน
 7. ~~**`CANNOT_LOOSEN` เป็นค่าตาย**~~ — **ปิดแล้ว (ข้อ Y.1)** ลบทิ้งทั้ง Java และ TS เพราะมันเป็นคำตอบของคนละแกนกับ `relation`
+8a. **asset ที่ match data source ไม่ได้ ถูกเก็บเงียบๆ โดยที่ UI ไม่บอก** — `AssetStore` ใช้ `.orElse(null)` เมื่อหา `om_service_fqn` ไม่เจอ → ตอนนี้ **36 จาก 40 asset มี `data_source_id IS NULL`** เขียน policy ได้แต่ enforce ไม่ได้ · ต้องมี banner/badge บอก และควรมีหน้า "source ที่ยังไม่ผูก" (ดูข้อ AC.3)
 8. ~~**builder default `environment: 'dev'` ขณะที่ engine enforce `prod`**~~ — **ปิดแล้ว (ข้อ Y.2)** default เป็น `ENFORCED_ENVIRONMENT` ค่าเดียวที่ทุกฝั่งใช้ร่วมกัน + เตือนเมื่อเลือก environment ที่ไม่ถูก enforce
 
 ---
@@ -1829,7 +2032,10 @@ estate ที่ใช้: `prod-mssql.SalesDB.dbo.{customer, order}` + **`prod-
 ## Next Steps
 
 1. **push ให้ขึ้น** — local นำหน้า remote อยู่ (remote main ยังอยู่ที่ `e3aaa52`) · แก้เรื่อง `git push` ค้างก่อน (ดู What Didn't Work) แล้วยืนยันด้วย `git ls-remote --heads origin` · **scan secret ก่อน push ทุกครั้ง**
-2. **ปิด M3** — decision cache (FR-5.5) + ANTLR grammar ของ `expr` (FR-3.2)
+2. **FR-7 Manual grant** — *ผู้ใช้สั่งเป็นงานถัดไป* · grant ระดับ table ให้ user/group ตรงๆ พร้อม start/end date · หน้า asset รื้อเป็น tab **Overview / Access / Policies / Columns / Audit** (อ้างอิง Immuta แต่ใช้ theme เรา) · tab Access ต้อง**แยกให้ชัดว่าสิทธิมาจาก direct grant หรือมาจาก policy** · group รองรับทุกแหล่ง (local + OM team + Entra ในอนาคต) · **grant ไม่ชนะ global policy** — compose แบบ intersection เหมือนเดิม
+2a. **ผูก `demo-pg` เข้ากับ service ของ OM** — *รอคำตอบผู้ใช้* ว่า `demo-pg` คือ `dtp-iprm` หรือคนละเครื่อง (ดูข้อ AC.3) · ตราบใดที่ยังไม่ผูก asset 36 ตัวจาก OM จริงยัง enforce ไม่ได้เลย
+2b. **รันซ้ำ `AssetStoreIT` + `CatalogQueryIT`** ตอน Docker ว่าง — ล้มเพราะ Testcontainers ตั้ง Postgres ไม่ขึ้น ไม่ใช่ regression (ดูข้อ AC.4)
+3. **ปิด M3** — เหลือ ANTLR grammar ของ `expr` (FR-3.2) ข้อเดียว (**decision cache FR-5.5 ปิดแล้ว ดูข้อ AB**)
 3. ~~**ปิด M4**~~ — **ปิดแล้ว** (FR-3.1.5 ข้อ X · FR-5.2 ข้อ Z · FR-5.3 ข้อ AA) · ของที่ค้างไว้จาก M4 ต่อได้ถ้าต้องการ: impact analysis ยังวัดเฉพาะ **table binding** (COLUMN binding ถูกครอบด้วย TABLE row ที่ materializer เขียนไว้อยู่แล้ว) และ cap 25×200 ยังเป็นค่าตายในโค้ด ไม่ได้ config
 4. **ปิดช่องว่างข้อ 1–5 ข้างบน** โดยเฉพาะ **ข้อ 4 (audit ของการ configure)** ซึ่งเป็นของที่ auditor จะถามหาแน่นอน
 5. **M2** — write API ของ principal/attribute แล้วต่อ (ก) การ assign application role จริงในหน้า `/settings/roles` (ข) หน้า local group ที่ `/settings/groups` ซึ่ง card ในหน้า Settings ลิงก์ไปรออยู่แล้ว · *(filter ตาม attribute ในหน้า People เสร็จแล้ว — ดูข้อ U)*

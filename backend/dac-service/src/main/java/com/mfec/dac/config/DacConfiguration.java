@@ -42,4 +42,9 @@ public class DacConfiguration extends Configuration {
   @NotNull
   @JsonProperty("secrets")
   private SecretsConfiguration secrets = new SecretsConfiguration();
+
+  @Valid
+  @NotNull
+  @JsonProperty("decisionCache")
+  private DecisionCacheConfiguration decisionCache = new DecisionCacheConfiguration();
 }

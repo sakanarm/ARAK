@@ -1,6 +1,7 @@
 package com.mfec.dac.policy;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.mfec.dac.common.ChangeNotifier;
 import com.mfec.dac.common.Fqns;
 import com.mfec.dac.schema.api.ResolvedColumnMask;
 import com.mfec.dac.schema.entity.policy.Policy;
@@ -33,10 +34,24 @@ public class PolicyStore {
 
   private final Jdbi jdbi;
   private final ObjectMapper json;
+  private final ChangeNotifier changes = new ChangeNotifier();
 
   public PolicyStore(Jdbi jdbi, ObjectMapper json) {
     this.jdbi = jdbi;
     this.json = json;
+  }
+
+  /**
+   * Announces every write that could change an access decision, so that the
+   * decision cache can drop what it is holding (FR-5.5).
+   *
+   * <p>Published from here rather than from the resource that took the request
+   * because writes arrive by more roads than one -- a webhook, a poller, the
+   * nightly reconcile -- and an invalidation wired to only some of them is the
+   * kind of wrong that never throws.
+   */
+  public ChangeNotifier changes() {
+    return changes;
   }
 
   /** A stored policy: the document, plus what the database knows about it. */
@@ -73,7 +88,7 @@ public class PolicyStore {
    */
   public StoredPolicy create(Policy document, String author) {
     validate(document);
-    return jdbi.inTransaction(
+    StoredPolicy created = jdbi.inTransaction(
         handle -> {
           UUID id =
               handle
@@ -114,6 +129,11 @@ public class PolicyStore {
           LOG.info("Policy {} created as DRAFT by {}", document.getName(), author);
           return read(handle, id).orElseThrow();
         });
+    // A DRAFT decides nothing, but it is created and activated from the same
+    // screen seconds apart, and announcing both is cheaper than reasoning about
+    // which lifecycle states are safe to stay quiet about.
+    changes.fire("policy " + document.getName() + " created");
+    return created;
   }
 
   /**
@@ -126,7 +146,7 @@ public class PolicyStore {
    */
   public StoredPolicy update(UUID id, Policy document, int expectedVersion, String author, String reason) {
     validate(document);
-    return jdbi.inTransaction(
+    StoredPolicy updated = jdbi.inTransaction(
         handle -> {
           StoredPolicy current =
               read(handle, id).orElseThrow(() -> new IllegalArgumentException("No policy " + id));
@@ -177,6 +197,8 @@ public class PolicyStore {
           recordVersion(handle, id, next, body, current.lifecycleState(), author, reason);
           return read(handle, id).orElseThrow();
         });
+    changes.fire("policy " + id + " edited");
+    return updated;
   }
 
   /**
@@ -188,7 +210,7 @@ public class PolicyStore {
    * versions so the audit can say when enforcement began.
    */
   public StoredPolicy transition(UUID id, String to, String author, String reason) {
-    return jdbi.inTransaction(
+    StoredPolicy moved = jdbi.inTransaction(
         handle -> {
           StoredPolicy current =
               read(handle, id).orElseThrow(() -> new IllegalArgumentException("No policy " + id));
@@ -226,6 +248,11 @@ public class PolicyStore {
           LOG.info("Policy {} moved {} -> {} by {}", id, current.lifecycleState(), to, author);
           return read(handle, id).orElseThrow();
         });
+    // The one that matters most: ACTIVE and DISABLED are the instants
+    // enforcement starts and stops, and a cache that outlived either would keep
+    // enforcing a policy somebody has just switched off.
+    changes.fire("policy " + id + " moved to " + to);
+    return moved;
   }
 
   public Optional<StoredPolicy> find(UUID id) {

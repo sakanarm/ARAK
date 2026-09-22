@@ -1,6 +1,7 @@
 package com.mfec.dac.policy;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.mfec.dac.common.ChangeNotifier;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.mfec.dac.engine.AssetContext;
 import com.mfec.dac.engine.ColumnContext;
@@ -39,6 +40,21 @@ public class PolicyBindingMaterializer {
   private final ObjectMapper json;
   private final AssetContextLoader loader;
 
+  private final ChangeNotifier changes = new ChangeNotifier();
+
+  /**
+   * Announces every write that could change an access decision, so that the
+   * decision cache can drop what it is holding (FR-5.5).
+   *
+   * <p>Published from here rather than from the resource that took the request
+   * because writes arrive by more roads than one -- a webhook, a poller, the
+   * nightly reconcile -- and an invalidation wired to only some of them is the
+   * kind of wrong that never throws.
+   */
+  public ChangeNotifier changes() {
+    return changes;
+  }
+
   public PolicyBindingMaterializer(Jdbi jdbi, ObjectMapper json, AssetContextLoader loader) {
     this.jdbi = jdbi;
     this.json = json;
@@ -60,7 +76,7 @@ public class PolicyBindingMaterializer {
    * is supposed to, with nothing saying which.
    */
   public Result materialize(UUID policyId) {
-    return jdbi.inTransaction(
+    Result result = jdbi.inTransaction(
         handle -> {
           Stored stored = stored(handle, policyId);
           stage(handle);
@@ -76,6 +92,13 @@ public class PolicyBindingMaterializer {
 
           return write(handle, stored, scanned[0]);
         });
+    // Only when the binding set actually moved. A nightly reconcile re-resolves
+    // every policy and changes almost none of them; firing regardless would
+    // empty the cache hundreds of times for nothing.
+    if (result.changed()) {
+      changes.fire("bindings re-resolved for policy " + policyId);
+    }
+    return result;
   }
 
   /** Re-resolves every policy that could be enforced — the nightly reconcile. */
@@ -145,6 +168,12 @@ public class PolicyBindingMaterializer {
                 // left exactly as it was.
                 return write(handle, stored, contexts.size(), inScope);
               }));
+    }
+    for (Result result : results) {
+      if (result.changed()) {
+        changes.fire("bindings re-resolved for " + assetFqns.size() + " assets");
+        break;
+      }
     }
     return results;
   }

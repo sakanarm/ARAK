@@ -1,6 +1,7 @@
 package com.mfec.dac.policy;
 
 import com.mfec.dac.engine.AssetContext;
+import com.mfec.dac.engine.DecisionValidity;
 import com.mfec.dac.engine.PolicyEngine;
 import com.mfec.dac.engine.Principal;
 import com.mfec.dac.engine.RequestContext;
@@ -9,6 +10,7 @@ import com.mfec.dac.schema.entity.policy.Policy;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import org.jdbi.v3.core.Jdbi;
 
 /**
@@ -28,6 +30,19 @@ import org.jdbi.v3.core.Jdbi;
  * default allow. Each carries a reason saying which of the three it was,
  * because "denied" without that distinction sends people looking in the wrong
  * place.
+ *
+ * <h2>The cache sits here, not in the engine</h2>
+ *
+ * <p>What costs time is this method, not the evaluation it ends with: three
+ * database reads and a JSON parse against arithmetic in memory. So the cache
+ * (FR-5.5) wraps the assembly rather than the engine, and the engine stays a
+ * pure function of its inputs — which is what lets the simulator, the impact
+ * report and the three compilers all call it without wondering whose cached
+ * answer they are looking at.
+ *
+ * <p>Only an ask that did not pin a time is cached. A simulation of 20:00
+ * asks a different question from the one a query at 14:00 asks, and neither may
+ * answer the other.
  */
 public class DecisionService {
 
@@ -39,6 +54,7 @@ public class DecisionService {
   private final PrincipalLoader principals;
   private final PolicyStore policies;
   private final PolicyEngine engine;
+  private final DecisionCache cache;
 
   public DecisionService(
       Jdbi jdbi,
@@ -46,11 +62,26 @@ public class DecisionService {
       PrincipalLoader principals,
       PolicyStore policies,
       PolicyEngine engine) {
+    this(jdbi, contexts, principals, policies, engine, DecisionCache.disabled());
+  }
+
+  public DecisionService(
+      Jdbi jdbi,
+      AssetContextLoader contexts,
+      PrincipalLoader principals,
+      PolicyStore policies,
+      PolicyEngine engine,
+      DecisionCache cache) {
     this.jdbi = jdbi;
     this.contexts = contexts;
     this.principals = principals;
     this.policies = policies;
     this.engine = engine;
+    this.cache = cache == null ? DecisionCache.disabled() : cache;
+  }
+
+  public DecisionCache cache() {
+    return cache;
   }
 
   /**
@@ -58,9 +89,11 @@ public class DecisionService {
    *
    * @param principal the username being decided for — not necessarily the
    *     caller, because "view as user" is the whole point of FR-5.2
-   * @param at the moment to evaluate at; a time-windowed policy answers
-   *     differently at 20:00, and being able to pass the time is what makes
-   *     that testable rather than something you wait until evening to see
+   * @param at the moment to evaluate at, or null to mean now. A time-windowed
+   *     policy answers differently at 20:00, and being able to pass the time is
+   *     what makes that testable rather than something you wait until evening
+   *     to see. Leaving it null is not the same as passing {@code Instant.now()}:
+   *     null says "whenever this runs", and only that is cacheable.
    */
   public record Ask(
       String principal,
@@ -71,23 +104,67 @@ public class DecisionService {
       String environment) {
 
     public Ask {
-      at = at == null ? Instant.now() : at;
       environment = environment == null || environment.isBlank() ? DEFAULT_ENVIRONMENT : environment;
     }
 
     public static Ask of(String principal, String assetFqn) {
       return new Ask(principal, assetFqn, null, null, null, null);
     }
+
+    /**
+     * The instant to evaluate against.
+     *
+     * <p>Read once per decision and carried from there. Calling this twice in
+     * one evaluation would be two different instants, and a decision that was
+     * checked against one clock and stamped with another is a decision nobody
+     * can reproduce.
+     */
+    public Instant when() {
+      return at == null ? Instant.now() : at;
+    }
+
+    /** True when this asks about now rather than about a chosen moment. */
+    public boolean live() {
+      return at == null;
+    }
   }
 
   public PolicyDecision decide(Ask ask) {
+    Instant now = ask.when();
+    DecisionCache.Key key =
+        ask.live()
+            ? new DecisionCache.Key(
+                ask.principal(), ask.assetFqn(), ask.environment(), ask.ip(), ask.purpose())
+            : null;
+
+    if (key != null) {
+      Optional<PolicyDecision> held = cache.get(key, now);
+      if (held.isPresent()) {
+        return held.get();
+      }
+    }
+
+    // Read before anything else, and carried through to the put below. A flush
+    // that happens while the three reads underneath are in flight has to beat
+    // this answer, not be beaten by it.
+    long readAt = cache.generation();
+
     return jdbi.withHandle(
         handle -> {
           Principal who = principals.find(handle, ask.principal()).orElse(null);
           if (who == null) {
-            return denied(
-                ask,
-                "No principal named " + ask.principal() + " is known to the platform");
+            // Held like any other answer. An unknown name is what a scan of the
+            // estate produces thousands of, and re-deriving "no such person" by
+            // querying the directory each time is the one case where the cache
+            // earns its keep without any policy being involved at all. The
+            // moment the person is created, the identity store announces it and
+            // this goes.
+            return hold(
+                key,
+                now,
+                denied(ask, now, "No principal named " + ask.principal() + " is known to the platform"),
+                null,
+                readAt);
           }
 
           AssetContext asset = contexts.load(handle, ask.assetFqn()).orElse(null);
@@ -96,9 +173,15 @@ public class DecisionService {
             // policy can be bound to, and letting a query touch it because we
             // have nothing to say about it is precisely the hole FR-1.6 exists
             // to close.
-            return denied(
-                ask,
-                "No asset " + ask.assetFqn() + " is in the metadata cache, so no policy governs it");
+            return hold(
+                key,
+                now,
+                denied(
+                    ask,
+                    now,
+                    "No asset " + ask.assetFqn() + " is in the metadata cache, so no policy governs it"),
+                null,
+                readAt);
           }
 
           List<PolicyStore.StoredPolicy> stored =
@@ -109,10 +192,28 @@ public class DecisionService {
           }
 
           RequestContext context =
-              RequestContext.at(ask.at()).fromIp(ask.ip()).forPurpose(ask.purpose());
+              RequestContext.at(now).fromIp(ask.ip()).forPurpose(ask.purpose());
 
-          return engine.evaluate(who, asset, context, documents);
+          PolicyDecision decision = engine.evaluate(who, asset, context, documents);
+          // The stack the decision was made from, not only the part of it that
+          // matched: a policy that starts applying at midnight has to end this
+          // entry even though it had nothing to say about today.
+          return hold(
+              key, now, decision, DecisionValidity.until(documents, now).orElse(null), readAt);
         });
+  }
+
+  /** Puts a freshly made decision in the cache, when there is a cache to put it in. */
+  private PolicyDecision hold(
+      DecisionCache.Key key,
+      Instant now,
+      PolicyDecision decision,
+      Instant expiresAt,
+      long readAt) {
+    if (key != null) {
+      cache.put(key, decision, now, expiresAt, readAt);
+    }
+    return decision;
   }
 
   /**
@@ -121,12 +222,12 @@ public class DecisionService {
    * <p>Callers must not have to tell "denied by policy" apart from "denied
    * because something was missing" by inspecting which fields are null.
    */
-  private static PolicyDecision denied(Ask ask, String why) {
+  private static PolicyDecision denied(Ask ask, Instant at, String why) {
     return new PolicyDecision()
         .withPrincipal(ask.principal())
         .withAssetFqn(ask.assetFqn())
         .withAllowed(false)
-        .withEvaluatedAt(ask.at())
+        .withEvaluatedAt(at)
         .withFromCache(false)
         .withRowPredicates(List.of())
         .withColumnMasks(List.of())

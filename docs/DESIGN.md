@@ -20,9 +20,10 @@ ARAK คือแพลตฟอร์ม **Data Access Control** แบบเ�
 | 3 | **RBAC / ABAC / Rule / Time = predicate เดียว** | ไม่ใช่ 4 engine — เป็น `SubjectRule` ตัวเดียวที่ evaluate คนละมุม |
 | 4 | **Global + Local, compose แบบ intersection** | ชั้นล่างเข้มขึ้นได้ ผ่อนไม่ได้ เว้นแต่ชั้นบนเปิด `allowLocalOverride` |
 | 5 | **Fail-closed ทุกจุด** | ไม่มี policy match = deny · parse SQL ไม่ได้ = reject · webhook ไม่มี secret = 503 · expression ตัดสินไม่ได้ = deny |
-| 6 | **Enforcement ครบ 3 โหมดใน Phase 1** | 5.1.1 native config / 5.1.2 secure view / 5.2 query API — ผู้ใช้ยืนยันว่า "5.1.1 กับ 5.1.2 ต้องใช้งานได้" |
+| 6 | **Enforcement: Phase 1 ส่ง 5.1.2 + 5.2 · 5.1.1 เป็น opt-in** | ผู้ใช้เคยยืนยันว่า "5.1.1 กับ 5.1.2 ต้องใช้งานได้" แต่ต่อมาสั่งเพิ่มว่า **ไม่อยากให้เขียนทับ table เดิม** → ดูข้อ 8 |
 | 7 | **สแตกและ UI เลียนแบบ OpenMetadata 2.0.1** | dev ที่ดูแล OM อ่าน code เราออกทันที และ reuse design token / component ได้ |
-| 8 | **Secret อยู่ใน `.env` ที่ gitignore เท่านั้น** | repo เป็น **public** → ทุก commit ต้อง scan ก่อน push · ห้ามมี password / token / IP ภายใน ในไฟล์ที่ commit |
+| 8 | **ARAK ไม่เขียนคำนิยามของ table ลูกค้า** | สร้าง/ลบได้เฉพาะ **object ที่ตัวเองเป็นเจ้าของ** (view, policy object, entitlement table) + GRANT/REVOKE เท่านั้น · **ห้าม `ALTER TABLE ... ALTER COLUMN`** — ดูข้อ FR-6 |
+| 9 | **Secret อยู่ใน `.env` ที่ gitignore เท่านั้น** | repo เป็น **public** → ทุก commit ต้อง scan ก่อน push · ห้ามมี password / token / IP ภายใน ในไฟล์ที่ commit |
 
 ### 1.2 เส้นแบ่งกับ OpenMetadata
 
@@ -247,19 +248,39 @@ conf/dac.yml                 config เดียวที่ commit — ใช�
 | FR-5.2 | **Simulator / "View as user"** — SQL ที่จะ generate + preview data + policy ที่ match | ✅ `/simulator` — ถามแทนคนอื่นที่เวลา/IP/purpose ที่กำหนดเอง · ตอบ projection ต่อ column + row filter + เหตุผลต่อ policy · ใช้ `POST /v1/decisions` ตัวเดียวกับที่ query บังคับใช้ (ไม่ได้จำลอง) |
 | FR-5.3 | Impact analysis ก่อน publish global policy | ✅ `GET /v1/policies/{id}/impact` · **นับ binding ไม่ใช่คำตอบ** — evaluate ทุกคน×ทุก table สองรอบ (มี/ไม่มี policy นี้) แล้วรายงานเฉพาะส่วนต่าง → policy ที่ grant ซ้ำกับชั้นบนรายงาน 0 คน · cap 25 table × 200 principal แล้วประกาศ `sampled` (UI พูด “at least”) · panel “Who it changes things for” ในหน้า policy detail |
 | FR-5.4 | Explainability — ทุก decision บอกได้ว่าเพราะ policy ตัวไหน เงื่อนไขข้อไหน ชั้นไหน | ✅ `decisionReason` ใน `PolicyDecision` |
-| FR-5.5 | Decision cache + invalidate เมื่อ policy/attribute/tag เปลี่ยน (< 10ms cached / < 100ms cold) | ⬜ (มี `cacheKey`, `fromCache` ใน schema แล้ว) |
+| FR-5.5 | Decision cache + invalidate เมื่อ policy/attribute/tag เปลี่ยน (< 10ms cached / < 100ms cold) | ✅ `DecisionCache` (LRU + TTL) ใน `DecisionService` · **เข้าใหม่ได้ 3 ทาง ตายได้ 3 ทาง** — flush เมื่อมีคนเขียน (5 publisher ผ่าน `ChangeNotifier`) · `DecisionValidity` คำนวณขอบเวลาของ policy เอง (time window / `validUntil` / exemption) · TTL 60s เป็น backstop · `generation` counter กัน evaluation ที่เริ่มก่อน flush มาลงทีหลัง · วัดจริง cold 116ms / warm 15–25ms end-to-end ผ่าน HTTP · `GET /v1/system/decision-cache` · 25 tests |
 
 ### FR-6 Enforcement — ทั้ง 3 โหมดเป็น first-class เท่ากัน
 
-| | **5.1.1 Native config** (M6) | **5.1.2 Secure view** (M5) | **5.2 App proxy** (M7) |
+| | **5.1.1 Push config** (M6) | **5.1.2 Secure view** (M5) | **5.2 App proxy** (M7) |
 |---|---|---|---|
-| บังคับใช้ที่ | object เดิม (RLS/DDM/GRANT) | view ใหม่ `*_secure` | ชั้น app ตอน runtime |
-| user query ที่ไหน | **ตารางชื่อเดิม** | ต้องชี้ไป view ใหม่ | endpoint ของเรา |
+| บังคับใช้ที่ | **policy object ของ engine** ที่ผูกเข้ากับ table | view ใหม่ `*_secure` | ชั้น app ตอน runtime |
+| user query ที่ไหน | **ตารางชื่อเดิม** | ต้องชี้ไป view ใหม่ (หรือ rename swap) | endpoint ของเรา |
 | ต้องมี DB login ต่อคน | ต้องมี | ต้องมี (หรือผ่าน proxy) | ไม่ต้อง |
-| แตะ object เดิม | **ใช่ — ALTER production** | ไม่ (แค่ REVOKE) | ไม่แตะ |
+| เขียนคำนิยาม table ไหม | **ไม่ — ห้ามตามกติกาข้อ 8** | ไม่ (แค่ REVOKE) | ไม่แตะ |
 | Cell mask | ❌ | ✅ | ✅ |
 | BI ต่อตรง | ✅ | ✅ | ❌ (รอ 5.2b) |
+| Phase 1 | **opt-in ต่อ source · ทำทีหลัง** | ⭐ **หลัก** | ⭐ **หลัก** |
 | สถานะ | ⬜ | ⬜ | ⬜ |
+
+#### FR-6.2a เส้นแบ่งของ 5.1.1 — ผูก policy เข้ากับ table ได้ แต่ห้ามเขียนทับ table
+
+สิ่งที่เคยเรียกรวมกันว่า "native config" จริงๆ แล้วเป็น**ของสองแบบที่ความเสี่ยงต่างกันคนละเรื่อง**:
+
+| คำสั่ง | เกิดอะไรกับ table | Phase 1 |
+|---|---|---|
+| PG `CREATE POLICY` | object แยกต่างหาก — table ไม่เปลี่ยน | ✅ ทำได้ |
+| PG `ALTER TABLE ... ENABLE ROW LEVEL SECURITY` | **flag บน table** (กลับได้ ไม่แตะข้อมูล) | ⚠ทำได้เมื่อ source เปิดสวิตช์ไว้ |
+| PG `SECURITY LABEL` (`anon`) | catalog entry แยก | ✅ ถ้าลง extension ได้ |
+| MSSQL `CREATE SECURITY POLICY` | object แยกต่างหาก | ✅ ทำได้ |
+| MSSQL `GRANT/DENY SELECT(col)` | permission ล้วนๆ | ✅ ทำได้ |
+| **MSSQL DDM** (`ALTER TABLE ... ALTER COLUMN ... ADD MASKED WITH`) | **เขียนคำนิยาม column ทับ** | ❌ **ตัดออกจาก Phase 1** — ใช้ 5.1.2 แทน (และ DDM ทำ cell mask ไม่ได้อยู่แล้ว) |
+| BigQuery row access policy / policy tag | binding แยก | 🔮 Phase 2 — คือเคสที่โมเดลนี้เกิดมาเพื่อ |
+| Snowflake row access / masking policy | binding แยก | 🔮 Phase 2 |
+
+> **กติกา:** ARAK สร้างและลบ **object ที่ตัวเองเป็นเจ้าของ** ได้ และ GRANT/REVOKE ได้ — แต่**ไม่เขียนคำนิยามของ table ที่ลูกค้าเป็นคนสร้าง** เหตุผลไม่ใช่เรื่องเทคนิค — rollback ของ object ที่เราสร้างคือ `DROP` ซึ่งสะอาดเสมอ ส่วน rollback ของ `ALTER COLUMN` คือการเดาว่าเราจำนิยามเดิมได้ถูก
+
+> **ที่แลกมา:** เมื่อไม่ทำ DDM แล้ว คุณสมบัติ "query ตารางชื่อเดิมได้เลยโดยไม่ต้องแก้ report" จะหายไปในส่วนของ masking — ทางทดแทนคือ **rename swap ใน FR-6.1.1** (`customer` → `customer_raw`, view ชื่อ `customer`) ซึ่งให้ผลเท่ากันโดยไม่ต้องแตะคำนิยามของ table เลย
 
 - **FR-6.0a** เลือกโหมดได้ต่อ source/asset และ **ผสมกันได้** (เช่น RLS ด้วย 5.1.1 + masking ด้วย 5.1.2) ⬜
 - **FR-6.0b** **Capability matrix** ต่อ engine/เวอร์ชัน + เตือนตอนเลือกโหมดว่า policy ข้อไหน enforce ไม่ได้ ⬜ (ตาราง `engine_capability` มีแล้ว)
@@ -300,10 +321,10 @@ state `DRAFT → PENDING_APPROVAL → ACTIVE → DISABLED → ARCHIVED` ✅ (ม
 | **M0** | Maven multi-module + Dropwizard skeleton · Vite+React+Tailwind shell + vendor ui-core-components · JSON Schema codegen · OM client จาก swagger · Flyway · docker-compose · CI | 3 wk | ✅ **เสร็จ** |
 | **M1** | OM connector: REST client · entity mapper ครบทุก governance object · FQN mapping · full crawl · **webhook + poller** · `asset_facet` + effective facet · nightly reconcile · **Catalog UI** | 4 wk | 🚧 **~85%** — เหลือ Catalog UI + FR-1.6 + FR-1.7 |
 | **M2** | Entra OIDC · Graph sync · LocalProvider · OmTeamProvider · AttributeResolver · app RBAC | 2 wk | ⬜ (local auth ทำไปแล้ว) |
-| **M3** | Policy IR · AssetSelector resolver + `policy_binding` materializer · SubjectRule evaluator · layered composer · ConflictResolver · decision cache · Simulator | 5 wk | 🚧 **engine เสร็จ (72 tests)** — เหลือ persistence, binding materializer, cache, ANTLR |
+| **M3** | Policy IR · AssetSelector resolver + `policy_binding` materializer · SubjectRule evaluator · layered composer · ConflictResolver · decision cache · Simulator | 5 wk | 🚧 **~97%** — engine 156 tests · persistence + materializer + **decision cache เสร็จ** · เหลือ ANTLR grammar ของ `expr` |
 | **M4** | Policy Authoring UI (global + local builder, data policy builder, หน้า effective policy, view-as-user, impact analysis) | 4 wk | ⬜ |
 | **M5** | **5.1.2 Secure View** — ViewCompiler + dialect · `row_entitlement` maintainer · `DbPrincipalProvisioner` · cutover helper · dry-run/rollback · golden-file + Testcontainers | 4 wk | ⬜ |
-| **M6** | **5.1.1 Native Config** — PG RLS + column GRANT + `anon` · MSSQL Security Policy + DDM + UNMASK + `CREATE USER FROM EXTERNAL PROVIDER` · capability matrix | 3 wk | ⬜ |
+| **M6** | **5.1.1 Push config** — PG `CREATE POLICY` + column GRANT + `anon` · MSSQL `CREATE SECURITY POLICY` + granular UNMASK + `CREATE USER FROM EXTERNAL PROVIDER` · capability matrix · **ไม่ทำ DDM** (FR-6.2a) | 3 wk | ⬜ **เลื่อหลัง M5/M7 · opt-in ต่อ source** |
 | **M7** | **5.2a Query API** — JSqlParser rewrite · table resolution (CTE/sub-query/`SELECT *`) · fail-closed · stream · row limit/timeout · direct-access detector | 3 wk | ⬜ |
 | **M7b** | Cross-mode consistency harness + CI | 1 wk | ⬜ |
 | **M8** | Audit 3 ตาราง · DriftDetector + re-apply · manual grant + auto-revoke · compliance report · metrics · Vault | 3 wk | ⬜ |

@@ -19,6 +19,7 @@ import com.mfec.dac.json.JsonMapperProvider;
 import com.mfec.dac.config.OpenMetadataConfiguration;
 import com.mfec.dac.health.AppDatabaseHealthCheck;
 import com.mfec.dac.identity.IdentityAdminStore;
+import com.mfec.dac.policy.DecisionCache;
 import com.mfec.dac.identity.PrincipalQuery;
 import com.mfec.dac.om.OpenMetadataClient;
 import com.mfec.dac.resources.AuthResource;
@@ -147,8 +148,19 @@ public class DacApplication extends Application<DacConfiguration> {
     CatalogChangeApplier applier =
         new CatalogChangeApplier(jdbi, environment.getObjectMapper(), omClient);
 
+    // The decision cache (FR-5.5). Built here, ahead of the stores, because
+    // every one of them has to be able to tell it that something moved, and a
+    // store wired before the cache existed would be a store whose writes are
+    // never heard.
+    DecisionCache decisionCache =
+        new DecisionCache(
+            environment.getObjectMapper(),
+            config.getDecisionCache().isEnabled(),
+            config.getDecisionCache().getMaxEntries(),
+            config.getDecisionCache().ttl());
+
     environment.healthChecks().register("app-db", new AppDatabaseHealthCheck(jdbi));
-    environment.jersey().register(new SystemResource(config));
+    environment.jersey().register(new SystemResource(config, decisionCache));
     environment.jersey().register(new AuthResource(identities, tokens, identity));
     environment.jersey().register(new SyncResource(sync));
     // The connection itself, read-only: the page it feeds exists to say what
@@ -197,9 +209,9 @@ public class DacApplication extends Application<DacConfiguration> {
     // this content, and an edit here would be reverted by the next sync.
     environment.jersey().register(new GovernanceResource(new GovernanceQuery(jdbi)));
     environment.jersey().register(new SearchResource(new SearchQuery(jdbi)));
+    IdentityAdminStore identityAdmin = new IdentityAdminStore(jdbi, identities);
     environment.jersey().register(
-        new PrincipalResource(
-            new PrincipalQuery(jdbi), new IdentityAdminStore(jdbi, identities)));
+        new PrincipalResource(new PrincipalQuery(jdbi), identityAdmin));
 
     // The source registry (FR-6.0a). The probe is constructed here, with the
     // process environment behind it, so that the only component able to turn a
@@ -217,8 +229,22 @@ public class DacApplication extends Application<DacConfiguration> {
     // once, rendered once, and the rendered form is what runs. Giving the
     // simulator its own path would mean the thing people check and the thing
     // that enforces could disagree.
+    // Everything that can move an input to a decision, in one place, so that
+    // adding a sixth write path is a visible omission here rather than an
+    // invisible one somewhere else. The order does not matter; that the list is
+    // complete does.
+    //
+    // What is deliberately absent: the source registry and the query executor.
+    // Neither changes who may see what — they change where the data is read
+    // from, which a decision does not depend on.
+    policyStore.changes().listen(decisionCache::invalidateAll);
+    materializer.changes().listen(decisionCache::invalidateAll);
+    identityAdmin.changes().listen(decisionCache::invalidateAll);
+    applier.changes().listen(decisionCache::invalidateAll);
+    sync.changes().listen(decisionCache::invalidateAll);
+
     DecisionService decisionService =
-        new DecisionService(jdbi, contexts, principalLoader, policyStore, engine);
+        new DecisionService(jdbi, contexts, principalLoader, policyStore, engine, decisionCache);
     environment.jersey().register(new DecisionResource(decisionService));
     environment.jersey().register(
         new QueryResource(

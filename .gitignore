@@ -36,5 +36,6 @@ Thumbs.db
 
 # --- local run artefacts ---
 backend-run.log
+frontend/app/vite-run.log
 frontend/app/shot-*.mjs
 frontend/app/*.png

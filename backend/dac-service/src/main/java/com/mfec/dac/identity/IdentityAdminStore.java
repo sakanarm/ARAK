@@ -3,6 +3,7 @@ package com.mfec.dac.identity;
 import com.mfec.dac.audit.ClientAddress;
 import com.mfec.dac.auth.LocalIdentityDao;
 import com.mfec.dac.auth.PasswordHasher;
+import com.mfec.dac.common.ChangeNotifier;
 import java.time.Instant;
 import java.util.List;
 import java.util.Locale;
@@ -57,6 +58,20 @@ public class IdentityAdminStore {
 
   private final Jdbi jdbi;
   private final LocalIdentityDao credentials;
+  private final ChangeNotifier changes = new ChangeNotifier();
+
+  /**
+   * Announces every write that could change an access decision, so that the
+   * decision cache can drop what it is holding (FR-5.5).
+   *
+   * <p>Published from here rather than from the resource that took the request
+   * because writes arrive by more roads than one -- a webhook, a poller, the
+   * nightly reconcile -- and an invalidation wired to only some of them is the
+   * kind of wrong that never throws.
+   */
+  public ChangeNotifier changes() {
+    return changes;
+  }
 
   public IdentityAdminStore(Jdbi jdbi, LocalIdentityDao credentials) {
     this.jdbi = jdbi;
@@ -162,7 +177,7 @@ public class IdentityAdminStore {
     }
 
     String ip = ClientAddress.normalise(clientIp);
-    return jdbi.inTransaction(
+    UUID created = jdbi.inTransaction(
         handle -> {
           // Checked here as well as by the unique index from V10, so the answer
           // is a sentence rather than a constraint name.
@@ -220,6 +235,10 @@ public class IdentityAdminStore {
           }
           return id;
         });
+    // A name that did not resolve a moment ago now resolves, and the denial
+    // cached under it has to go with it.
+    changes.fire("local account " + username + " created");
+    return created;
   }
 
   /**
@@ -292,6 +311,8 @@ public class IdentityAdminStore {
               reason,
               ip);
         });
+    changes.fire(
+        "account " + target.username() + (enabled ? " enabled" : " disabled"));
   }
 
   /**
@@ -306,10 +327,17 @@ public class IdentityAdminStore {
     checkRole(role);
     Target target = require(principalId);
     String ip = ClientAddress.normalise(clientIp);
-    return jdbi.inTransaction(
-        handle ->
-            insertGrant(handle, principalId, target.username(), target.source(), role, actor,
-                reason, ip));
+    boolean granted =
+        jdbi.inTransaction(
+            handle ->
+                insertGrant(handle, principalId, target.username(), target.source(), role, actor,
+                    reason, ip));
+    // Only on a real change. Both of these are idempotent, and a screen where
+    // two people pressed the same button should not empty the cache twice.
+    if (granted) {
+      changes.fire("role " + role.appRole() + " granted to " + target.username());
+    }
+    return granted;
   }
 
   /**
@@ -326,7 +354,8 @@ public class IdentityAdminStore {
     Target target = require(principalId);
     String scope = blankToNull(role.scopeFqn());
     String ip = ClientAddress.normalise(clientIp);
-    return jdbi.inTransaction(
+    boolean revoked =
+        jdbi.inTransaction(
         handle -> {
           if ("PLATFORM_ADMIN".equals(role.appRole()) && scope == null) {
             guardLastAdmin(
@@ -364,6 +393,10 @@ public class IdentityAdminStore {
               ip);
           return true;
         });
+    if (revoked) {
+      changes.fire("role " + role.appRole() + " revoked from " + target.username());
+    }
+    return revoked;
   }
 
   // ------------------------------------------------------------------ reads

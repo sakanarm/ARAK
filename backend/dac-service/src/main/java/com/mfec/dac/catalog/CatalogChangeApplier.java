@@ -1,6 +1,7 @@
 package com.mfec.dac.catalog;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.mfec.dac.common.ChangeNotifier;
 import com.mfec.dac.om.OpenMetadataClient;
 import com.mfec.dac.om.client.ApiException;
 import com.mfec.dac.om.crawl.AssetRefresher;
@@ -59,6 +60,14 @@ public class CatalogChangeApplier {
   private final Jdbi jdbi;
   private final ObjectMapper json;
   private final OpenMetadataClient client;
+  // Named apart from the field elsewhere because apply() takes a parameter
+  // called changes.
+  private final ChangeNotifier notifier = new ChangeNotifier();
+
+  /** See {@link com.mfec.dac.policy.PolicyStore#changes()}. */
+  public ChangeNotifier changes() {
+    return notifier;
+  }
 
   public CatalogChangeApplier(Jdbi jdbi, ObjectMapper json, OpenMetadataClient client) {
     this.jdbi = jdbi;
@@ -139,6 +148,10 @@ public class CatalogChangeApplier {
     if (!outcome.quiet()) {
       LOG.info("Applied {} change(s) from {} event(s): {}", distinct.size(), changes.size(),
           outcome);
+      // A tag landing on a column is a policy change that nobody in this
+      // product authored, which is exactly the kind a cache is most likely to
+      // miss.
+      notifier.fire("catalog changed: " + outcome);
     }
     return outcome;
   }

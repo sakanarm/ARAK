@@ -82,6 +82,17 @@ identity:
   # local credential exists at all.
   bootstrapAdminPassword: ${IDENTITY_BOOTSTRAP_ADMIN_PASSWORD:-}
 
+decisionCache:
+  # Reuse of access decisions (FR-5.5). Turning this off costs three database
+  # reads per decision and is the first thing to try when a decision looks
+  # stale and nobody can say why.
+  enabled: ${DECISION_CACHE_ENABLED:-true}
+  maxEntries: ${DECISION_CACHE_MAX_ENTRIES:-50000}
+  # The ceiling on how long a decision can outlive a change nothing announced --
+  # including a change made by another instance of this service, whose flush
+  # this one never hears.
+  ttlSeconds: ${DECISION_CACHE_TTL_SECONDS:-60}
+
 secrets:
   provider: ${SECRETS_PROVIDER:-FERNET}
   fernetKey: ${FERNET_KEY:-}
