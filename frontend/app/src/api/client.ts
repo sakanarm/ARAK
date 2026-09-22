@@ -43,16 +43,33 @@ apiClient.interceptors.response.use(
 
 /** Pulls the message the backend sent, rather than showing an axios stack. */
 export function apiErrorMessage(error: unknown, fallback: string): string {
-  if (axios.isAxiosError(error)) {
-    const body = error.response?.data as { message?: string } | undefined;
-    if (body?.message) {
-      return body.message;
-    }
-    if (!error.response) {
-      return 'The service is not reachable. Is the backend running?';
-    }
+  if (!axios.isAxiosError(error)) {
+    return fallback;
   }
-  return fallback;
+
+  const response = error.response;
+  if (!response) {
+    return 'The service is not reachable. Is the backend running?';
+  }
+
+  const body = response.data as { message?: string; errors?: string[] } | undefined;
+  if (body?.message) {
+    return body.message;
+  }
+  // Jersey answers a bean-validation failure with a list and no `message`.
+  if (body?.errors?.length) {
+    return body.errors.join(' ');
+  }
+
+  // A reply that is not one of ours. In development this is the Vite proxy
+  // answering for a backend that is not listening: it returns 500 with an
+  // HTML body rather than failing the connection, so the branch above never
+  // fires and the caller's fallback used to be the whole story — which read
+  // as "the server refused this", when nothing had reached the server at all.
+  if (response.status >= 500) {
+    return `${fallback} The service answered ${response.status} without a reason, which usually means it is restarting or not running.`;
+  }
+  return `${fallback} (HTTP ${response.status})`;
 }
 
 export interface SystemVersion {

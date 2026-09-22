@@ -80,7 +80,7 @@ export default function SourcesPage() {
           <h1 className="tw:text-display-xs tw:font-semibold tw:text-primary">
             Sources
           </h1>
-          <p className="tw:mt-1 tw:max-w-3xl tw:text-sm tw:text-tertiary">
+          <p className="tw:mt-1 tw:max-w-3xl tw:text-balance tw:text-sm tw:text-tertiary">
             The databases policy is enforced in. OpenMetadata says what exists;
             a source says how a decision about it is applied, and with which
             credential.

@@ -8,6 +8,10 @@ import {
   type ColumnDetail,
   type FacetRow,
 } from '../../api/client';
+import {
+  fetchPoliciesForAsset,
+  type AppliedPolicy,
+} from '../../api/policies';
 import { FacetChip, OwnerChip, facetLabel, groupFacets } from './facets';
 import { plainText } from '../../lib/text';
 
@@ -20,8 +24,11 @@ import { plainText } from '../../lib/text';
  * out as they are on the list: down here they are the answer to "what exactly
  * does a policy on `schema = dbo` reach?".
  *
- * <p>What is not here yet: the policies that apply to this asset (FR-3.1.5) and
- * the enforcement state. Both arrive with M3/M5 and belong on this page.
+ * <p>The Policies panel is the other half of the policy summary screen: there
+ * you ask what one rule reaches, here you ask what reaches one table. Both read
+ * the same bindings, so the two answers cannot drift apart (FR-3.1.5).
+ *
+ * <p>What is not here yet: the enforcement state, which arrives with M5.
  */
 export default function AssetDetailPage() {
   // The FQN is one path param containing dots and, rarely, slashes; the route
@@ -95,7 +102,7 @@ export default function AssetDetailPage() {
           {asset.fqn}
         </p>
         {plainText(asset.description) && (
-          <p className="tw:mt-3 tw:max-w-3xl tw:text-sm tw:text-tertiary">
+          <p className="tw:mt-3 tw:max-w-3xl tw:text-pretty tw:text-sm tw:text-tertiary">
             {plainText(asset.description)}
           </p>
         )}
@@ -103,6 +110,8 @@ export default function AssetDetailPage() {
 
       <div className="tw:mt-8 tw:grid tw:gap-6 tw:lg:grid-cols-3">
         <section className="tw:lg:col-span-2 tw:space-y-6">
+          <Policies fqn={asset.fqn} />
+
           <Panel title="Governance">
             {grouped.length === 0 ? (
               <p className="tw:text-sm tw:text-tertiary">
@@ -205,6 +214,147 @@ export default function AssetDetailPage() {
         </aside>
       </div>
     </>
+  );
+}
+
+/**
+ * Every policy in force on this table, split the way the model splits them.
+ *
+ * <p>The two halves answer different questions and a data owner asks them
+ * separately: subscription decides whether the table opens at all, data policy
+ * decides what is left once it does. Merging them into one list would make the
+ * screen shorter and the answer worse.
+ */
+function Policies({ fqn }: { fqn: string }) {
+  const { data, isLoading, error } = useQuery({
+    queryKey: ['asset-policies', fqn],
+    queryFn: () => fetchPoliciesForAsset(fqn),
+    enabled: Boolean(fqn),
+    retry: false,
+  });
+
+  const rows = data ?? [];
+  const subscription = rows.filter(
+    (row) => row.policy.document.policyType === 'SUBSCRIPTION'
+  );
+  const dataRows = rows.filter(
+    (row) => row.policy.document.policyType === 'DATA'
+  );
+
+  return (
+    <Panel
+      subtitle="Active policies bound to this asset, outermost layer first"
+      title="Policies">
+      {isLoading && <p className="tw:text-sm tw:text-tertiary">Loading…</p>}
+
+      {error != null && (
+        <p className="tw:text-sm tw:text-error-primary">
+          {apiErrorMessage(error, 'The policies for this asset could not be read.')}
+        </p>
+      )}
+
+      {data && rows.length === 0 && (
+        // Not a neutral emptiness: default is deny, so no policy here means
+        // nobody reaches this table at all, which is worth saying outright.
+        <p className="tw:text-sm tw:text-warning-primary">
+          No active policy reaches this asset, so nothing grants access to it.
+          Access is denied by default until a subscription policy selects it.
+        </p>
+      )}
+
+      {rows.length > 0 && (
+        <div className="tw:space-y-5">
+          <PolicyGroup
+            empty="No subscription policy selects this asset, so nobody is granted access to it."
+            rows={subscription}
+            title="Subscription — who may read it"
+          />
+          <PolicyGroup
+            empty="No data policy applies, so rows and columns are returned whole to anyone the subscription lets in."
+            rows={dataRows}
+            title="Data — what is visible once they are in"
+          />
+        </div>
+      )}
+    </Panel>
+  );
+}
+
+function PolicyGroup({
+  title,
+  rows,
+  empty,
+}: {
+  title: string;
+  rows: AppliedPolicy[];
+  empty: string;
+}) {
+  return (
+    <div>
+      <h3 className="tw:text-xs tw:font-semibold tw:tracking-wide tw:text-tertiary tw:uppercase">
+        {title}
+      </h3>
+      {rows.length === 0 ? (
+        <p className="tw:mt-2 tw:text-pretty tw:text-sm tw:text-tertiary">{empty}</p>
+      ) : (
+        <ul className="tw:mt-2 tw:space-y-2">
+          {rows.map((row) => (
+            <AppliedRow key={row.policy.id} row={row} />
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+function AppliedRow({ row }: { row: AppliedPolicy }) {
+  const policy = row.policy.document;
+  const deny = policy.effect === 'DENY';
+  return (
+    <li className="tw:rounded-lg tw:border tw:border-secondary tw:p-3">
+      <div className="tw:flex tw:flex-wrap tw:items-center tw:gap-2">
+        <Link
+          className="tw:text-sm tw:font-medium tw:text-primary tw:hover:underline"
+          to={`/policies/${row.policy.id}`}>
+          {policy.displayName || policy.name}
+        </Link>
+        <Badge color="gray" size="sm" type="modern">
+          {policy.scopeLevel === 'ORG' ? 'Global' : policy.scopeLevel}
+        </Badge>
+        {policy.policyType === 'SUBSCRIPTION' && (
+          <Badge color={deny ? 'error' : 'success'} size="sm" type="pill-color">
+            {deny ? 'Deny' : 'Allow'}
+          </Badge>
+        )}
+        {!policy.allowLocalOverride && (
+          <span className="tw:text-xs tw:text-quaternary">cannot be relaxed below</span>
+        )}
+      </div>
+
+      {plainText(policy.description) && (
+        <p className="tw:mt-1 tw:text-pretty tw:text-xs tw:text-tertiary">
+          {plainText(policy.description)}
+        </p>
+      )}
+
+      {row.columns.length > 0 && (
+        <div className="tw:mt-2 tw:flex tw:flex-wrap tw:items-center tw:gap-1.5">
+          <span className="tw:text-xs tw:text-tertiary">Columns:</span>
+          {row.columns.map((column) => (
+            <span
+              className="tw:rounded tw:bg-secondary tw:px-1.5 tw:py-0.5 tw:font-mono tw:text-xs tw:text-secondary"
+              key={column.fqn}>
+              {column.name ?? column.fqn}
+              {typeof column.matchReason.action === 'string' && (
+                <span className="tw:ml-1 tw:text-quaternary">
+                  {String(column.matchReason.action).toLowerCase()}
+                </span>
+              )}
+            </span>
+          ))}
+        </div>
+      )}
+    </li>
   );
 }
 

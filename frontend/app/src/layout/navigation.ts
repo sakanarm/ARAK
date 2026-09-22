@@ -6,7 +6,6 @@ import {
   Home01,
   SearchRefraction,
   Server01,
-  Server02,
   Settings01,
   ShieldTick,
   User03,
@@ -100,14 +99,10 @@ export const NAV_SECTIONS: NavSection[] = [
     milestone: 'M8',
     description: 'Grants, expiry and who can reach what.',
   },
-  {
-    label: 'Sources',
-    href: '/sources',
-    icon: Server02,
-    milestone: null,
-    description:
-      'The databases policy is enforced in, and which of the three modes each one carries.',
-  },
+  // Sources is not in this rail. It is a setup screen, reached from Settings
+  // -> Data sources, the same place the OpenMetadata connection and the app
+  // roles live. A second door on the top-level rail made the rail read as
+  // though registering a database were daily work, which it is not.
   {
     label: 'Settings',
     href: '/settings',

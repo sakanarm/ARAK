@@ -118,7 +118,7 @@ export default function PrincipalsPage() {
           <h1 className="tw:text-display-sm tw:font-semibold tw:text-primary">
             People &amp; attributes
           </h1>
-          <p className="tw:mt-2 tw:max-w-3xl tw:text-md tw:text-tertiary">
+          <p className="tw:mt-2 tw:max-w-3xl tw:text-balance tw:text-md tw:text-tertiary">
             The identity cache a subject rule is written against. Synced from
             Entra and OpenMetadata, and read-only here — an edit would be
             reverted by the next sync.
@@ -533,9 +533,9 @@ function Th({
 
 function PrincipalRow({ principal }: { principal: Principal }) {
   const isGroup = principal.principalType === 'GROUP';
-  const membership = isGroup
-    ? `${principal.memberCount} member${principal.memberCount === 1 ? '' : 's'}`
-    : `${principal.groupCount} group${principal.groupCount === 1 ? '' : 's'}`;
+  const membership = `${principal.memberCount} member${
+    principal.memberCount === 1 ? '' : 's'
+  }`;
 
   return (
     <tr className="tw:border-b tw:border-secondary tw:last:border-0 tw:hover:bg-secondary">
@@ -571,16 +571,20 @@ function PrincipalRow({ principal }: { principal: Principal }) {
         {principal.attributeCount || '—'}
       </td>
       <td className="tw:px-4 tw:py-3 tw:text-right tw:whitespace-nowrap">
-        {/* A group is opened for exactly one reason, so the count is the door. */}
-        {isGroup && principal.memberCount > 0 ? (
-          <Link
-            className="tw:inline-flex tw:items-center tw:gap-1 tw:text-brand-secondary tw:hover:underline"
-            to={`/principals/${encodeURIComponent(principal.id)}`}>
-            <Users01 className="tw:size-3.5" />
-            {membership}
-          </Link>
+        {isGroup ? (
+          // A group is opened for exactly one reason, so the count is the door.
+          principal.memberCount > 0 ? (
+            <Link
+              className="tw:inline-flex tw:items-center tw:gap-1 tw:text-brand-secondary tw:hover:underline"
+              to={`/principals/${encodeURIComponent(principal.id)}`}>
+              <Users01 className="tw:size-3.5" />
+              {membership}
+            </Link>
+          ) : (
+            <span className="tw:text-tertiary">{membership}</span>
+          )
         ) : (
-          <span className="tw:text-tertiary">{membership}</span>
+          <Memberships principal={principal} />
         )}
       </td>
       <td className="tw:px-4 tw:py-3">
@@ -597,6 +601,53 @@ function PrincipalRow({ principal }: { principal: Principal }) {
         )}
       </td>
     </tr>
+  );
+}
+
+/**
+ * The groups a person is in, named and linked.
+ *
+ * <p>This column used to read "1 group" and go nowhere, which is the worst
+ * thing a count can do: it tells somebody a group exists, that the person they
+ * are looking at is in it, and offers no way to find out which one. The names
+ * are what the reader wanted in the first place, and the server caps how many
+ * come back, so a person in many groups falls back to the count and their own
+ * page — where all of them are listed.
+ */
+function Memberships({ principal }: { principal: Principal }) {
+  const named = principal.groups ?? [];
+
+  if (principal.groupCount === 0) {
+    return <span className="tw:text-tertiary">0 groups</span>;
+  }
+
+  // Two names is what fits beside the other columns without wrapping. Past
+  // that the count is the more useful thing to show, and it opens the page
+  // that lists every one.
+  if (named.length === 0 || principal.groupCount > 2) {
+    return (
+      <Link
+        className="tw:inline-flex tw:items-center tw:gap-1 tw:text-brand-secondary tw:hover:underline"
+        to={`/principals/${encodeURIComponent(principal.id)}`}>
+        <Users01 className="tw:size-3.5" />
+        {principal.groupCount} group{principal.groupCount === 1 ? '' : 's'}
+      </Link>
+    );
+  }
+
+  return (
+    <span className="tw:inline-flex tw:items-center tw:justify-end tw:gap-1.5">
+      {named.slice(0, 2).map((group) => (
+        <Link
+          className="tw:inline-flex tw:max-w-40 tw:items-center tw:gap-1 tw:rounded-full tw:border tw:border-secondary tw:px-2 tw:py-0.5 tw:text-xs tw:text-brand-secondary tw:hover:bg-secondary"
+          key={group.id}
+          title={group.name}
+          to={`/principals/${encodeURIComponent(group.id)}`}>
+          <Users01 className="tw:size-3 tw:shrink-0" />
+          <span className="tw:truncate">{group.name}</span>
+        </Link>
+      ))}
+    </span>
   );
 }
 

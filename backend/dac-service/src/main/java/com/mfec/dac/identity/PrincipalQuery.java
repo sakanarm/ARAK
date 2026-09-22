@@ -45,7 +45,20 @@ public class PrincipalQuery {
       int memberCount,
       /** Groups this principal belongs to. The one a user's row is read for. */
       int groupCount,
+      /**
+       * The first few of those groups by name, so a listing can link to one.
+       *
+       * <p>Capped, because {@code groupCount} already answers "how many" and a
+       * person in fifty groups would otherwise turn every row of the directory
+       * into a wall. What this is for is the common case — one or two groups —
+       * where the count alone is a dead end: it tells somebody a group exists
+       * and gives them no way to reach it.
+       */
+      List<GroupRef> groups,
       List<String> appRoles) {}
+
+  /** A group named from somebody else's row: enough to show it and open it. */
+  public record GroupRef(String id, String name) {}
 
   /** One value an attribute takes, and how many people carry it. */
   public record AttributeValue(String value, int principals) {}
@@ -129,6 +142,18 @@ public class PrincipalQuery {
                WHERE gm.group_id = p.id) AS member_count,
              (SELECT count(*) FROM group_member gg
                WHERE gg.member_id = p.id) AS group_count,
+             -- The named few behind that count. json rather than a delimited
+             -- string because a display name may contain anything at all,
+             -- including whatever separator looked safe at the time.
+             COALESCE((SELECT json_agg(json_build_object(
+                                 'id', named.id, 'name', named.name))
+                       FROM (SELECT g.id,
+                                    COALESCE(NULLIF(g.display_name, ''), g.username) AS name
+                               FROM group_member gn
+                               JOIN principal g ON g.id = gn.group_id
+                              WHERE gn.member_id = p.id
+                              ORDER BY 2
+                              LIMIT 5) named)::text, '[]') AS groups,
              COALESCE((SELECT string_agg(DISTINCT r.app_role, ',')
                        FROM app_role_assignment r
                        WHERE r.principal_id = p.id), '') AS app_roles
@@ -367,7 +392,33 @@ public class PrincipalQuery {
         rs.getInt("attribute_count"),
         rs.getInt("member_count"),
         rs.getInt("group_count"),
+        groups(rs.getString("groups")),
         roles == null || roles.isBlank() ? List.of() : List.of(roles.split(",")));
+  }
+
+  private static final com.fasterxml.jackson.databind.ObjectMapper JSON =
+      new com.fasterxml.jackson.databind.ObjectMapper();
+
+  /**
+   * Reads the aggregated group column.
+   *
+   * <p>A directory row is not worth failing over: if this column ever came
+   * back as something unreadable the listing should still show who exists,
+   * with the membership links missing, rather than returning nothing at all.
+   */
+  private static List<GroupRef> groups(String json) {
+    if (json == null || json.isBlank() || "[]".equals(json)) {
+      return List.of();
+    }
+    try {
+      List<GroupRef> refs = new ArrayList<>();
+      for (com.fasterxml.jackson.databind.JsonNode node : JSON.readTree(json)) {
+        refs.add(new GroupRef(node.path("id").asText(), node.path("name").asText()));
+      }
+      return List.copyOf(refs);
+    } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
+      return List.of();
+    }
   }
 
   private static String blankToNull(String value) {

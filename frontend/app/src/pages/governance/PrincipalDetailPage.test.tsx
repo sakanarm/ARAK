@@ -28,6 +28,7 @@ function principal(overrides: Partial<Principal>): Principal {
     enabled: true,
     attributeCount: 2,
     memberCount: 0,
+    groups: [],
     groupCount: 1,
     appRoles: [],
     ...overrides,

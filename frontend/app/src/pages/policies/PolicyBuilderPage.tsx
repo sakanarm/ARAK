@@ -112,6 +112,9 @@ export default function PolicyBuilderPage() {
       setSaveError(null);
       setLoaded(saved);
       queryClient.invalidateQueries({ queryKey: ['policies'] });
+      // A new policy lands on its own summary: the first thing an author
+      // wants after saving is what the selector actually caught, which is
+      // the one thing the form cannot show them.
       if (isNew) navigate(`/policies/${saved.id}`, { replace: true });
     },
     onError: (error) =>
@@ -163,6 +166,14 @@ export default function PolicyBuilderPage() {
             <Badge color="gray" size="sm" type="pill-color">
               v{loaded.version} · {loaded.lifecycleState.toLowerCase()}
             </Badge>
+          )}
+          {loaded && (
+            <Button
+              color="link-gray"
+              onPress={() => navigate(`/policies/${loaded.id}`)}
+              size="md">
+              Done
+            </Button>
           )}
           <Button
             isDisabled={incomplete || save.isPending}

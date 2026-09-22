@@ -1,6 +1,6 @@
 # HANDOFF — ARAK (Data Access Control Platform)
 
-> อัปเดต: 2026-09-20 · commit ล่าสุดที่ push สำเร็จ `e3aaa52` · **local นำหน้าอยู่หลาย commit — `git push` ยังค้าง ดู What Didn't Work** · repo https://github.com/sakanarm/ARAK (**public**)
+> อัปเดต: 2026-09-22 · commit ล่าสุดที่ push สำเร็จ `e3aaa52` · **local นำหน้าอยู่หลาย commit — `git push` ยังค้าง ดู What Didn't Work** · repo https://github.com/sakanarm/ARAK (**public**)
 >
 > อ่านคู่กับ **[docs/DESIGN.md](docs/DESIGN.md)** — ไฟล์นั้นคือ requirement + feature catalogue + สถานะครบทุกข้อ
 > ไฟล์นี้บอกเฉพาะ "ทำถึงไหน จะไปต่อยังไง อะไรที่ลองแล้วไม่เวิร์ค"
@@ -24,11 +24,11 @@ Phase 1 รองรับ SQL Server + PostgreSQL · identity หลักค�
 
 | Milestone | สถานะ |
 |---|---|
-| **M0 Foundation** | ✅ เสร็จ — Maven multi-module, Dropwizard 5, Vite+React+Tailwind shell, vendor `ui-core-components`, JSON Schema → Java/TS codegen, OM client จาก swagger ที่ pin ไว้, Flyway V1–V9, docker-compose, CI 4 jobs |
+| **M0 Foundation** | ✅ เสร็จ — Maven multi-module, Dropwizard 5, Vite+React+Tailwind shell, vendor `ui-core-components`, JSON Schema → Java/TS codegen, OM client จาก swagger ที่ pin ไว้, Flyway V1–V10, docker-compose, CI 4 jobs |
 | **M1 OM Connector** | 🚧 ~95% — full crawl + governance + effective facet + FR-1.5 webhook/poller/reconcile + catalog read API + Catalog UI + governance read API + Governance UI · **sync กับ OM จริงสำเร็จแล้ว** · เหลือ FR-1.6 (reconcile กับ JDBC จริง), FR-1.7 (local tag + push-back — **ผู้ใช้สั่ง read-only ตอนนี้**) |
-| **M2 Identity** | 🚧 ~35% — local sign-in ใช้ได้ · schema `principal`/`principal_attribute`/`group_member`/`app_role_assignment` มีตั้งแต่ V2 · read API + หน้า People & attributes (**filter ตาม attribute + กดเข้าไปดูสมาชิกใน group ได้ที่ `/principals/:id`**) + **หน้า Application roles (`/settings/roles`) อ่านอย่างเดียว** เสร็จ · **ยังไม่มี write API สำหรับ principal/attribute — ต้อง seed ด้วย SQL** · ยังไม่มี Entra OIDC / Graph sync |
-| **M3 Policy Engine** | 🚧 ~93% — engine **162 tests** (data policy 26 + subscription 45 เพิ่มรอบนี้ · เจอบั๊กจริง 2 ตัว ดูข้อ P) · persistence (`PolicyStore`) + `policy_binding` materializer + REST · `PolicyBindingMaterializerIT` 10 tests บน Postgres จริง · เหลือ decision cache (FR-5.5), ANTLR grammar ของ `expr` (FR-3.2) |
-| **M4 Policy Authoring UI** | 🚧 ~70% — Policy list + Policy builder (selector / subject / RLS / masking) + readback + capability matrix · เหลือ "policy ที่มีผลกับ asset นี้" ในหน้า asset (FR-3.1.5), View-as-user (FR-5.2), impact analysis (FR-5.3) |
+| **M2 Identity** | 🚧 ~50% — local sign-in ใช้ได้ · schema `principal`/`principal_attribute`/`group_member`/`app_role_assignment` มีตั้งแต่ V2 · read API + หน้า People & attributes (**filter ตาม attribute + กดเข้าไปดูสมาชิกใน group ได้ที่ `/principals/:id`**) + **หน้า Application roles (`/settings/roles`) อ่านอย่างเดียว** เสร็จ · **เพิ่ม local account + assign/withdraw app role ได้จาก UI แล้ว (V10 + `IdentityAdminStore` + audit)** · **ยังไม่มี write API สำหรับ *attribute* — ต้อง seed ด้วย SQL** · ยังไม่มีหน้าจอเปลี่ยน password (ทุก account ที่สร้างเป็น `must_change`) · ยังไม่มี Entra OIDC / Graph sync |
+| **M3 Policy Engine** | 🚧 ~93% — engine **156 tests** (data policy 26 + subscription 45 เพิ่มรอบนี้ · เจอบั๊กจริง 2 ตัว ดูข้อ P) · persistence (`PolicyStore`) + `policy_binding` materializer + REST · `PolicyBindingMaterializerIT` 10 tests บน Postgres จริง · เหลือ decision cache (FR-5.5), ANTLR grammar ของ `expr` (FR-3.2) |
+| **M4 Policy Authoring UI** | 🚧 ~80% — Policy list + Policy builder + readback + capability matrix · **รอบนี้เพิ่ม: `/policies/:id` เป็นหน้าสรุปอ่านอย่างเดียว (coverage + conflicts) แยกจาก `/policies/:id/edit` · panel Policies ในหน้า asset แยก Subscription/Data = ปิด FR-3.1.5 แล้ว** · เหลือ View-as-user (FR-5.2), impact analysis (FR-5.3) |
 | **M5 Secure View (5.1.2)** | ⬜ — `DecisionSql` + dialect ทั้งสองตัวพร้อมแล้ว (ใช้ร่วมกับ 5.2) เหลือ ViewCompiler + `row_entitlement` maintainer + DDL apply/rollback |
 | **M6 Source Config (5.1.1)** | ⬜ |
 | **M7 Query API (5.2a)** | 🚧 ~80% — **`POST /v1/query` + Query console ใช้งานได้จริงรอบนี้** · rewrite → RLS + mask + hidden column → execute → audit ครบ · พิสูจน์กับ Postgres จริงแล้วทั้ง allow / RLS / mask / refuse · เหลือ direct-access detector (FR-6.3.1) และ result cache |
@@ -43,13 +43,13 @@ Phase 1 รองรับ SQL Server + PostgreSQL · identity หลักค�
 | App DB (docker `dac-appdb`, postgres:16-alpine) | `:5432` db/user `dac` |
 | OpenMetadata ของทีม | `2.0.1` — sync ผ่าน **ingestion-bot JWT** (ดู What Didn't Work) |
 
-เทสต์ทั้งหมดเขียว — **dac-engine รันใหม่ 2026-09-21** (162 เขียว), module อื่นและ integration รันครบเมื่อ 2026-09-20, frontend `npx jest` + `npx tsc --noEmit` รันใหม่ 2026-09-21
+เทสต์ทั้งหมดเขียว — **backend รันครบทั้ง unit + integration ในคำสั่งเดียวเมื่อ 2026-09-22** (`-Pintegration verify`, BUILD SUCCESS), frontend `npx jest` + `npx tsc --noEmit` + `npx eslint` รันใหม่ 2026-09-22
 
 | ชุด | จำนวน | คำสั่ง |
 |---|---|---|
-| Backend unit | dac-common 6 · dac-engine **162** · dac-compiler-sql 7 · dac-connector-openmetadata 88 · dac-proxy 16 · dac-service **62** = **341** | `./mvnw -am -pl backend/dac-service test` |
-| Backend integration (Testcontainers `postgres:16-alpine`) | **50 tests** — `AssetStoreIT` 6 · `CatalogQueryIT` 15 · `GovernanceStoreIT` 9 · `PolicyStoreIT` 10 · `PolicyBindingMaterializerIT` 10 | `./mvnw -am -pl backend/dac-service verify -Pintegration` |
-| Frontend | **12 suites / 47 tests** | `yarn test` ใน `frontend/app` |
+| Backend unit | dac-common 6 · dac-engine 156 · dac-compiler-sql 7 · dac-connector-openmetadata 88 · dac-proxy 16 · dac-service **56** = **329** | `./mvnw -am -pl backend/dac-service test` |
+| Backend integration (Testcontainers `postgres:16-alpine`) | **103 tests** — `AssetStoreIT` 6 · `CatalogQueryIT` 15 · `DataSourceStoreIT` 13 · `GovernanceStoreIT` 10 · `IdentityAdminStoreIT` 15 · `PolicyBindingMaterializerIT` 10 · `PolicyOverviewIT` 24 · `PolicyStoreIT` 10 | `./mvnw -am -pl backend/dac-service verify -Pintegration` |
+| Frontend | **14 suites / 68 tests** | `npx jest` ใน `frontend/app` |
 
 `yarn type-check` · `yarn lint` · `yarn build` ผ่านหมด → **BUILD SUCCESS** ทั้งสองฝั่ง
 
@@ -988,6 +988,235 @@ API `{principal, attributes, groups, members}` **มีข้อมูลคร�
 
 ---
 
+### W. เพิ่ม local user + assign App role ได้จาก UI แล้ว (ปิดครึ่งหนึ่งของช่องว่างข้อ 2)
+
+> ผู้ใช้สั่ง — *"เอาเลย ให้สามารถเพิ่ม local user + App role ได้"*
+> สองข้อที่ตกลงกันไว้เป็นลายลักษณ์อักษรก่อนลงมือ และทำครบทั้งคู่: **กัน admin ถอด `PLATFORM_ADMIN` ของตัวเองคนสุดท้ายทิ้ง** และ **`scope_fqn` ของ `DATA_OWNER` ต้องเลือกจาก catalog ไม่ใช่พิมพ์**
+
+#### W.1 Migration `V10__identity_admin.sql` — ปิดบั๊กเงียบสองตัวที่ schema เดิมมีอยู่
+
+ทั้งสองตัวอยู่มาตั้งแต่ V2 และ **มองจากข้างนอกเหมือนทำงานปกติ** ซึ่งเป็นเหตุผลว่าทำไมต้องปิดก่อนเปิดให้เขียนผ่าน UI:
+
+| บั๊ก | ทำไมไม่มีใครเห็น | ที่แก้ |
+|---|---|---|
+| grant ระดับ global ซ้ำได้ไม่จำกัด | UNIQUE ของ V2 ครอบ `(principal_id, app_role, scope_fqn)` แต่ **Postgres ถือว่า NULL ไม่ชนกับ NULL** → grant ที่ `scope_fqn IS NULL` (คือ role ทุกตัวยกเว้น DATA_OWNER) `ON CONFLICT DO NOTHING` เลยไม่เคยทำงาน | `DELETE` ตัวซ้ำ แล้ว `CREATE UNIQUE INDEX app_role_assignment_global_idx ON app_role_assignment (principal_id, app_role) WHERE scope_fqn IS NULL` |
+| local username ต่างกันแค่ตัวพิมพ์ | `principal` unique ที่ `(source, username)` → สร้าง `Admin` คู่กับ `admin` ได้ แล้ว `findLocalAccount().findOne()` ตอน login จะโยน | `CREATE UNIQUE INDEX principal_local_username_ci_idx ON principal (lower(username)) WHERE source = 'local' AND principal_type <> 'GROUP'` |
+
+บวกตาราง **`audit_identity_change`** (append-only, ปิดข้อ 4 ของช่องว่างเฉพาะส่วน identity): `occurred_at, actor, action, target_principal_id, target_username, target_source, app_role, scope_fqn, reason, client_ip inet`
+`action` มี CHECK — `CREATE_PRINCIPAL | ENABLE_PRINCIPAL | DISABLE_PRINCIPAL | SET_PASSWORD | GRANT_ROLE | REVOKE_ROLE`
+**ไม่มี FK ไป `principal`** โดยตั้งใจ — log ต้องรอดแม้ principal ถูกลบ (พิสูจน์แล้วตอนเก็บกวาด probe account: ลบ principal ทิ้ง audit ยังอยู่ครบ)
+
+#### W.2 `IdentityAdminStore` — กฎที่ปฏิเสธก่อนถึง database
+
+| กฎ | ค่า |
+|---|---|
+| username | `[A-Za-z0-9][A-Za-z0-9._@-]{1,63}` |
+| password | 10–200 ตัว และ **ห้ามเท่ากับ username** (เทียบแบบไม่สนตัวพิมพ์) |
+| display name | **บังคับ** ≤ 200 |
+| ชนิดที่สร้างได้ | `USER` / `SERVICE` เท่านั้น — **`GROUP` ปฏิเสธ** เพราะ group มาจาก sync |
+| `DATA_OWNER` | **ต้องมี scope** |
+| role อื่นทุกตัว | **ต้องไม่มี scope** — `AuthenticatedUser` รวม scope ของทุก assignment เข้าลิสต์เดียว scope ที่ติดมากับ role ระดับแพลตฟอร์มจึงอ่านเป็นอำนาจที่ไม่ได้ตั้งใจให้ |
+| ลำดับการตรวจ | **ตรวจ role ก่อนสร้าง account** ไม่ใช่หลัง — ไม่งั้นได้ account มาครึ่งเดียวโดยไม่มีใครรู้ |
+
+**Last-administrator guard** — กันทั้งสองทางที่ทำให้ล็อกตัวเองออก (`revoke` และ `disable`) นับเฉพาะคนที่ `enabled` และ **ไม่นับคนที่กำลังจะถูกเปลี่ยน**:
+
+```java
+private static void guardLastAdmin(Handle handle, UUID principalId, String message) {
+  if (holdsGlobalAdmin(handle, principalId) && countGlobalAdmins(handle, principalId) == 0) {
+    throw new IdentityConflictException(message);
+  }
+}
+```
+
+#### W.3 Endpoint ใหม่หกตัว — `PrincipalResource`, `@Secured({"PLATFORM_ADMIN"})` ทุกตัว
+
+| Method | Path | คืน |
+|---|---|---|
+| `GET` | `/v1/principals/roles` | `{grants, appRoles, globalAdminCount}` |
+| `POST` | `/v1/principals` | `201` + `PrincipalDetail` |
+| `POST` | `/v1/principals/{id}/roles` | `{changed}` |
+| `DELETE` | `/v1/principals/{id}/roles?role=&scope=&reason=` | `{changed}` |
+| `POST` | `/v1/principals/{id}/enabled` | `PrincipalDetail` |
+| `POST` | `/v1/principals/{id}/password` | `204` |
+
+`clientIp` มาจาก `request.getRemoteAddr()` **ไม่ใช่ `X-Forwarded-For`** — กฎเดียวกับ `QueryResource` ห้ามเปลี่ยน
+`InvalidPrincipalException → 400` · `IdentityConflictException → 409`
+`inet` ย้ายออกจาก `QueryService` ไปเป็น `com.mfec.dac.audit.ClientAddress.normalise()` แล้ว (`QueryService.inet` เหลือ delegate บรรทัดเดียวเพื่อให้ `QueryServiceInetTest` ยังคุมของเดิมอยู่)
+
+#### W.4 หน้าจอ — `/settings/roles` เขียนได้แล้ว
+
+- **`Assignments`** ตาราง grant ทั้งหมด (Who · Role · Scope · Granted · Withdraw)
+  แถวที่เป็น **`PLATFORM_ADMIN` ระดับ global คนสุดท้าย** ขึ้นคำว่า *Last administrator* แทนปุ่ม — *กันไว้ที่หน้าจอก่อนกด ไม่ใช่โยน 409 ใส่หน้าหลังกด*
+- **`GrantForm`** — `PrincipalPicker` + เลือก role + (ถ้า `DATA_OWNER`) `ScopePicker` + เหตุผล
+- **`AccountForm`** — username · display name · kind (`USER`/`SERVICE`) · email · first password · role เริ่มต้น
+- **`pickers.tsx`** — `PrincipalPicker` / `ScopePicker` เป็น **search-and-pick ไม่ใช่ free text** เหตุผลเขียนไว้ใน doc comment: *username ที่พิมพ์ผิดคือ 404 ที่คนเห็น แต่ FQN ที่พิมพ์ผิดตัวเดียวคือ DATA_OWNER grant ที่ไม่ match อะไรเลย เงียบๆ และดูถูกต้องในทุกหน้าที่ list มันออกมา*
+- **ไม่มี route guard** ที่ `/settings/roles` (ทั้งแอปยังไม่มี) → หน้านี้ **ถาม `hasRole('PLATFORM_ADMIN')` แล้ว `enabled: isAdmin` ปิด query ทิ้งไปเลย** ไม่ใช่ปล่อยให้ยิงแล้วเจอ 403
+- ⚠️ **token ค้าง** — role ถูกอบเข้า JWT ตอน login (TTL 3600s) แต่ `/auth/me` อ่าน `app_role_assignment` สดทุกครั้ง → **console เห็นทันที แต่ authorization จริงเปลี่ยนตอน sign in รอบหน้า** เขียนประโยคนี้ไว้บนหัวตาราง ไม่ได้ซ่อน
+
+#### W.5 ทดสอบกับของจริงบน 8080 — เจอบั๊กที่เทสต์ไม่เจอ
+
+ยิงครบทั้งหกตัวด้วย token ของ `admin` จริง:
+
+| เคส | ผล |
+|---|---|
+| สร้าง account + role เริ่มต้น | `201` |
+| สร้างชื่อเดิมต่างตัวพิมพ์ | **`409`** (index ของ W.1 ทำงาน) |
+| password สั้น | `400` *A password is between 10 and 200 characters* |
+| `DATA_OWNER` + scope | `{"changed":true}` |
+| `DATA_OWNER` ไม่มี scope | `400` *A data owner owns something specific: give the scope it applies to* |
+| grant ซ้ำ | `{"changed":false}` — **ไม่ซ้ำแถว** |
+| ถอด `PLATFORM_ADMIN` ของ admin คนสุดท้าย | **`409`** |
+| disable admin คนสุดท้าย | **`409`** |
+| ไม่มี token | `401` |
+
+`audit_identity_change` เก็บครบ 10 แถวพร้อม `reason` และ `client_ip` = `::1`
+
+🐛 **บั๊กที่เจอเพราะยิงของจริง:** server บังคับ display name แต่ `AccountForm.ready` ไม่ได้เช็ค → ปุ่ม **Create เปิดให้กดทั้งที่ตอบได้แค่ 400**
+เทสต์ทั้ง 5 ตัวของหน้านี้ผ่านหมด เพราะไม่มีตัวไหนกด Create — *unit test ที่ mock API ทิ้งไม่มีทางเจอ validation ที่อยู่คนละฝั่ง* แก้แล้วทั้งสองฝั่ง (`ready` เช็ค `displayName.trim().length >= 2` และ hint เขียนว่า Required)
+
+#### W.6 🗑️ เอา **Sources** ออกจากรางซ้าย (ผู้ใช้สั่ง)
+
+> *"Source นี้ อยู่ใน Setting อยู่แล้ว ไม่ต้องแสดงที่ tab ซ้าย"*
+
+ลบ entry ออกจาก `NAV_SECTIONS` เท่านั้น — **route `/sources` ยังอยู่** และยังเข้าถึงได้สามทาง: Settings → Data sources (การ์ด), เมนู **+ Create → Register a source**, และเมนู account
+ถูกแล้วที่ไม่ลบ route: มันคือหน้า setup ไม่ใช่งานประจำวัน ซึ่งเป็นเหตุผลเดียวกับที่ไม่ควรอยู่บนรางระดับบนสุด (เขียนเป็น comment คาไว้ตรงที่ลบ กัน "เพิ่มกลับมาสิ" รอบหน้า)
+
+#### W.7 🐛 "Membership of 1 group" กดไม่ได้ (ผู้ใช้ชี้)
+
+> *"Membership of 1 group จากที่แสดงใน user / ทำไมกดไปดู group นั้นไม่ได้"*
+
+แถว **group** ลิงก์ด้วยจำนวนสมาชิกมาตั้งแต่รอบ V แต่แถว **user** เป็น text เปล่า — ซึ่งเป็นสิ่งที่แย่ที่สุดที่ตัวเลขตัวหนึ่งจะบอกได้: *มี group อยู่ คนนี้อยู่ในนั้น แต่ไม่มีทางรู้ว่า group ไหน*
+
+เหตุผลที่แก้ที่ฝั่ง API ไม่ใช่แค่ทำให้ตัวเลขเป็นลิงก์: list endpoint มีแต่ `groupCount` ไม่มี id ของ group เลยลิงก์ตรงไม่ได้ → เพิ่มคอลัมน์ลง `PRINCIPAL_COLUMNS`
+
+```sql
+COALESCE((SELECT json_agg(json_build_object('id', named.id, 'name', named.name))
+          FROM (SELECT g.id, COALESCE(NULLIF(g.display_name,''), g.username) AS name
+                  FROM group_member gn JOIN principal g ON g.id = gn.group_id
+                 WHERE gn.member_id = p.id
+                 ORDER BY 2 LIMIT 5) named)::text, '[]') AS groups,
+```
+
+- **`json` ไม่ใช่ string ที่คั่นด้วย comma** — display name มีอะไรอยู่ข้างในก็ได้ รวมถึงตัวคั่นที่ตอนนั้นดูปลอดภัย
+- **`LIMIT 5`** — `groupCount` ตอบ "กี่ group" อยู่แล้ว ลิสต์นี้มีไว้ตอบ "group ไหน" ในเคสปกติ (1–2 group) คนที่อยู่ 50 group ไม่ควรทำให้ทุกแถวของ directory กลายเป็นกำแพง
+- mapper แปลง JSON แบบ **ไม่โยน** — คอลัมน์เดียวอ่านไม่ออกไม่ควรทำให้ทั้ง directory หาย
+
+UI: ผู้ใช้ ≤ 2 group → **ชิปชื่อ group กดเข้าไปได้ตรงๆ** · มากกว่านั้น → `N groups` เป็นลิงก์ไปหน้าตัวเอง (ซึ่งการ์ด *Member of* list ครบอยู่แล้ว) · group ยังลิงก์ด้วย `N members` เหมือนเดิม
+ตรวจกับข้อมูลจริงในเครื่องแล้ว — `analyst_a` / `analyst_b` / `steward_c` คืน `[{"id":"51296ea9-…","name":"Finance"}]` ครบทั้งสามคน
+
+#### เทสต์
+
+- dac-service **69 เทสต์** *(ตัวเลขนี้นับผิด — วัดใหม่ 2026-09-22 ได้ **56**; ส่วนต่างคือ nested class ของ IT ที่รั่วเข้าเฟส unit ดู What Didn't Work)* (ใหม่ 7 — `IdentityAdminStoreTest` ที่สร้างบน `Jdbi` = `null` โดยตั้งใจ: **NullPointerException ในไฟล์นั้นแปลว่า input เดินทางไปถึง connection ก่อนที่จะมีใครตรวจ** ซึ่งคือ regression ที่ไฟล์นี้มีไว้จับ)
+- `IdentityAdminStoreIT` **15 เทสต์** (Testcontainers, `-Pintegration verify` exit 0) — Creating 4 · Roles 3 · **LastAdministrator 4** · SyncedPrincipals 2 · Audit 2
+- frontend **13 suites / 54 tests** — `AppRolesPage.test.tsx` **5 ตัว (ใหม่)** · `PrincipalsPage.test.tsx` **10 ตัว** (เพิ่ม 2: ชื่อ group ของคนต้องกดเข้าไปได้ · คนที่อยู่หลาย group ต้อง fallback เป็นตัวเลขที่ยังกดได้)
+
+---
+
+### X. หน้า Policy แยก "อ่าน" ออกจาก "แก้" + ตอบสองคำถามที่กลับด้านกัน (ปิด FR-3.1.5)
+
+> ผู้ใช้สั่ง — *"ใน Policies ต้องกด Edit ถึงจะไปหน้าแก้ไขได้ ถ้าไม่ Edit แค่ให้เห็น Configure แบบ สรุป ออกแบบหน้าจอให้ดี ง่าย และดูได้ว่ามี Table Column ไหน Apply กับ Policy นั้นบ้าง มี Policy ไหน ที่ COnflict กับ policy นี้บ้าง / ใน ทางกลับกัน ก็ต้องดูได้ว่า Table นี้ มี Subscription Policy และ Data policy ไหน apply อยู่บ้าง"*
+
+รอบนี้เป็นสองคำถามที่เป็นด้านกลับของกันและกัน และเดิมระบบตอบไม่ได้ทั้งคู่:
+
+| ถามจากฝั่ง policy | ถามจากฝั่ง asset |
+|---|---|
+| policy นี้ลงไปที่ **table/column ไหนจริงๆ** | table นี้มี **policy อะไรคุมอยู่** |
+| มี policy ไหน **ชนกับ**ตัวนี้ | แบ่งเป็น Subscription / Data |
+
+**ความต่างที่เป็นหัวใจ:** `selector` คือ *คำกล่าวอ้าง* ส่วน `policy_binding` คือ *ผลจริง* — สองอย่างนี้ต่างกันทุกครั้งที่ estate ขยับหลัง resolve ครั้งล่าสุด และนั่นคือสิ่งที่คนกำลังจะกด Activate ต้องเห็น
+
+#### X.1 Backend — `policy/PolicyOverview.java` (ใหม่, 492 บรรทัด)
+
+คลาสเดียว ตอบสามคำถาม อ่าน `policy_binding` เป็นแหล่งความจริงทั้งหมด:
+
+| method | ตอบว่า | endpoint |
+|---|---|---|
+| `coverage(policyId)` | policy นี้ลงที่ไหนบ้าง — `tableCount` / `columnCount` แยกกัน + `sample` + `truncated` + `resolvedAt` | `GET /v1/policies/{id}/bindings` |
+| `overlaps(policyId, document, environment)` | policy อื่นที่ bind target เดียวกัน + **คำตัดสินว่าเจอกันแล้วเกิดอะไร** | `GET /v1/policies/{id}/conflicts` |
+| `applied(fqn, activePolicies)` | table นี้โดน policy อะไร + **column ไหนของ table นี้ที่แต่ละตัวลงไปถึง** | `GET /v1/policies/for-asset/{fqn}` |
+
+**`sample` ถูก cap ที่ 200 (`SAMPLE_LIMIT`) แต่ `tableCount` / `columnCount` นับจาก SQL ทั้งหมดไม่ cap** — เป็นกติกาเดียวกับที่ผู้ใช้สั่งไว้ตอนหน้า Query (*"ต้องทำให้เห็นครบสิ ในอนาคตอาจจะมี Row เยอะ"*): ตัวเลขต้องจริงเสมอ ตัดได้แค่รายการที่โชว์ และหน้าจอต้องบอกว่าตัดแล้ว
+
+**`relate()` — คำตัดสินว่า overlap หนึ่งๆ แปลว่าอะไร** (เรียงตาม `RELATION_ORDER`, แรงสุดขึ้นก่อน):
+
+| relation | เกิดเมื่อ | ความหมาย |
+|---|---|---|
+| `BLOCKED_BY` | ตัวเราเป็น SUBSCRIPTION ALLOW เจอ DENY | **ตัวนี้ตายบน target ที่ชนกัน** — deny ชนะเสมอ |
+| `BLOCKS` | ตัวเราเป็น DENY เจอ ALLOW | ตัวโน้นตาย |
+| `MASK_OVERLAP` | DATA ทั้งคู่ และตัวเราแตะ column | ลงคอลัมน์เดียวกัน = เข้มกว่าชนะ อีกตัวไม่มีผลที่มองเห็น |
+| `NARROWS` | SUBSCRIPTION ALLOW ทั้งคู่ / DATA ที่เป็น row filter | **ต้องผ่านทุกชั้น** ไม่ใช่ผ่านตัวใดตัวหนึ่ง — เป็นข้อที่คนเข้าใจผิดบ่อยที่สุด |
+| `COMPOSES` | คนละ type / DENY ทั้งคู่ | อยู่ด้วยกันได้ ไม่มีใครทับใคร |
+
+`CANNOT_LOOSEN` มีอยู่ใน `RELATION_ORDER` และใน union ฝั่ง TS แต่ **`relate()` ไม่เคยคืนค่านี้** — เรื่อง "ใครมีสิทธิ์แก้" ถูกตอบด้วย `overrideNote` ต่างหาก (ดู X.4) จดไว้เป็นช่องว่างข้อ 7
+
+#### X.2 แก้ `affecting` ที่ default ผิด environment — บั๊กเงียบที่อันตรายที่สุดของรอบนี้
+
+`PolicyResource.affecting` default `environment` เป็น `"dev"` แต่ `DecisionService.DEFAULT_ENVIRONMENT` เป็น `"prod"` → **หน้าจอ "policy ที่มีผลกับ asset นี้" ตอบคนละ environment กับที่ engine ตัดสินจริง** และเพราะ policy ที่เขียนใหม่ส่วนใหญ่ถูกเก็บเป็น `dev` หน้าจอจะ *ดูเหมือนถูก* แล้วไปหลุดตอน enforce
+
+แก้เป็น helper ตัวเดียวที่ทุก endpoint ใช้ร่วมกัน:
+
+```java
+private static String environmentOr(String environment) {
+  return environment == null || environment.isBlank()
+      ? DecisionService.DEFAULT_ENVIRONMENT
+      : environment;
+}
+```
+
+ฝั่ง TS `fetchPoliciesAffecting` / `fetchPoliciesForAsset` ก็ default เป็น `'prod'` ตามกัน → **ปิดช่องว่างข้อ 3**
+
+> ⚠️ ที่ยังไม่ปิด: **หน้า builder ยัง default `environment: 'dev'` ตอนสร้าง policy** ในขณะที่ engine enforce `prod` → policy ที่เขียนด้วยค่า default ล้วนๆ จะไม่มีวันถูก enforce เลย จดเป็นช่องว่างข้อ 8
+
+#### X.3 `/policies/:id` = อ่านอย่างเดียว · `/policies/:id/edit` = builder
+
+`App.tsx` เพิ่มเส้นทางที่สอง — เดิม `/policies/:id` เปิด `PolicyBuilderPage` ตรงๆ ซึ่งแปลว่า **แค่กดดูก็อยู่ในโหมดแก้แล้ว**
+
+`pages/policies/PolicyDetailPage.tsx` (ใหม่, 629 บรรทัด) เรียง 5 ส่วน:
+
+| ส่วน | มีอะไร |
+|---|---|
+| **In plain words** | สรุป policy เป็นภาษาคนจาก readback ตัวเดิม |
+| **Configuration** | scope / effect / environment / lifecycle / allowLocalOverride เป็นแถว label–value |
+| **Coverage** | `N tables · M columns` + ต้นไม้ table → column จัดกลุ่มด้วย `groupByTable()` + เหตุผลที่ match ต่อ target + ปุ่ม **Re-resolve** |
+| **Conflicts** | overlap ทุกตัว เรียงตามความแรง + ป้าย relation + คำอธิบายเต็มประโยค + `overrideNote` |
+| **History** | version list เดิม |
+
+ปุ่มบนหัว: **Edit** (`Edit03` → `/policies/:id/edit`) · lifecycle transition · Re-resolve
+ไม่มี input ในหน้านี้เลยแม้แต่ช่องเดียว — เป็นหน้าอ่าน
+
+#### X.4 `overrideNote` — เคยคำนวณและมีเทสต์ แต่ไม่เคยไปถึงหน้าจอ
+
+`PolicyOverview.overrideNote(...)` มีมาตั้งแต่ต้น แต่ signature เดิมรับ `Overlap` ซึ่งทำให้ **เรียกจากใน `overlaps()` ไม่ได้ เพราะตรงนั้นกำลังสร้าง `Overlap` อยู่** → ค่าเลยไม่เคยถูกใส่ลง record และไม่เคยออก API
+
+แก้เป็น `overrideNote(Policy subject, String otherScopeLevel, boolean otherAllowsLocalOverride)` แล้วเรียกตอนประกอบแถว, เพิ่ม field ท้าย record, เพิ่มใน TS interface, และ render เป็นบรรทัดสีเตือนพร้อมไอคอน `AlertTriangle` ใต้คำอธิบาย
+
+**ทำไมต้องเป็นสองบรรทัด ไม่ใช่รวมเป็นอันเดียว** — `explanation` บอกว่า *engine ทำอะไรตรงที่สองตัวเจอกัน* ส่วน `overrideNote` บอกว่า *ใครมีสิทธิ์แก้* (FR-3.1.4) สองอย่างนี้ขัดกันได้: policy สองตัวอาจเห็นพ้องกันสนิทวันนี้ แต่ข้อหลังยังเป็นตัวตัดสินว่าพรุ่งนี้ใครแก้ตัวไหนได้ — เขียนเป็นคอมเมนต์ไว้ในไฟล์แล้ว
+
+#### X.5 ด้านกลับ — panel **Policies** ในหน้า asset
+
+`AssetDetailPage.tsx` เพิ่ม `<Policies fqn>` ที่แยกสองหัวข้อตามที่ model แยกไว้จริง:
+
+- **Subscription — who may read it**
+- **Data — what is visible once they are in**
+
+ว่างทั้งคู่ = **ไม่ใช่ข้อความกลางๆ** แต่เป็นคำเตือนสีส้มว่า *"No active policy reaches this asset, so nothing grants access to it. Access is denied by default…"* เพราะ default คือ deny การปล่อยให้ว่างเฉยๆ จะอ่านเหมือน "ไม่มีข้อจำกัด" ซึ่งตรงข้ามกับความจริง
+
+แต่ละแถวบอก scope level ที่มันมาจาก และ **data policy บอก column ที่มันลงไปถึงจริง** — เจ้าของ table อยากรู้ว่า `email` โดน mask ไม่ใช่ว่า "มี masking policy อยู่ที่ไหนสักแห่ง"
+
+#### X.6 สามบั๊กที่ integration test จับได้ — ทั้งหมดอยู่ในโค้ดของรอบนี้เอง
+
+รอบนี้เป็นตัวอย่างว่าทำไมต้องรัน IT จริงก่อนบอกว่าเสร็จ (ดู What Didn't Work ข้อใหม่ด้วย — ครั้งแรกที่รันมัน**ไม่ได้รันจริง**แต่รายงานว่าผ่าน):
+
+| บั๊ก | อาการ | ทำไมไม่มีใครเห็น | ที่แก้ |
+|---|---|---|---|
+| **1. `/conflicts` 500 ทุก policy** | `UnableToCreateStatementException: Missing named parameter '3'` | JDBI อ่าน `[1:3]` ใน `(array_agg(...))[1:3]` เป็น **named parameter ชื่อ `3`** — โค้ดคอมไพล์ผ่าน หน้าจอขึ้นแค่ error message ทั่วไป | ตัด slice ออกจาก SQL ไป cap ใน Java ด้วย `EXAMPLE_LIMIT = 3`; `count(*)` ยังนับครบเหมือนเดิม |
+| **2. column บอกว่าตัวเองเป็นพ่อของตัวเอง** | `parentFqn` ของ `...customer.email` = `...customer.email` | `policy_binding.asset_id` ถูกเขียนเฉพาะแถว TABLE → `COALESCE(a.fqn, b.target_fqn)` ตกมาที่ค่าของตัวเอง ต้นไม้ยังดูปกติเพราะ `groupByTable()` แค่จัดกลุ่มผิด | เพิ่ม `LEFT JOIN asset ca ON ca.id = c.asset_id` แล้ว `COALESCE(a.fqn, ca.fqn, b.target_fqn)` |
+| **3. เทสต์ยืนยันลำดับที่ไม่มีความหมาย** | `bothKinds` ใช้ `containsExactly(sub, mask)` | ไม่ใช่บั๊กของโค้ด — `activeFor` เรียง scope layer → depth → **name** ทั้งคู่อยู่ ORG ที่เหลือจึงเป็นตัวอักษร | เปลี่ยนเป็น `containsExactlyInAnyOrder` + คอมเมนต์ว่าทำไมลำดับข้าม type ไม่ใช่ข้อเท็จจริงที่ควรผูก |
+
+บั๊กข้อ 1 คือ **ฟีเจอร์ที่ผู้ใช้สั่งมาโดยตรง และมันพังหมดตั้งแต่บรรทัดแรก** ถ้าไม่รัน IT จะไปเจอตอนเปิดหน้าจอ
+
+---
+
 ## รอบก่อนหน้า — Global search ข้ามทุก entity + transition ตอนเปลี่ยนหน้า/เข้า-ออกระบบ + ชิป governance ที่อ่านออก
 
 > รอบนี้เพิ่ม **endpoint ใหม่หนึ่งตัว** (`GET /api/v1/search`) และงาน UX ล้วนๆ อีกสามเรื่องที่ผู้ใช้สั่งระหว่างทาง
@@ -1301,6 +1530,8 @@ estate ที่ใช้: `prod-mssql.SalesDB.dbo.{customer, order}` + **`prod-
 - ❌ **`.env` ไม่ถูกโหลดเอง** — ต้อง `set -a && . ./.env && set +a` ก่อนรัน
 - ❌ **`sleep 25 && tail`** ถูก harness บล็อก → ใช้ `until <check>; do sleep 2; done`
 - ❌ ผลการรัน IT อ่านจาก `backend/dac-service/target/failsafe-reports/*.txt` **ไม่ใช่** `surefire-reports`
+- ❌ **`@Nested` ใน `*IT.java` ที่ตั้งชื่อลงท้ายด้วย `Test` จะถูก surefire รันในเฟส unit ด้วย** — exclude ใน root pom เป็น `**/*IT.java` ซึ่ง match ตาม**ชื่อไฟล์** แต่ inner class คอมไพล์ออกมาเป็น `PolicyOverviewIT$CoverageTest` ซึ่งไปเข้า default include `**/*Test.java` ของ surefire แทน → IT ทั้งชุด **รันสองรอบ** (unit + failsafe) และถ้าพังในรอบแรก build จะตายก่อนที่ failsafe จะได้รัน · `IdentityAdminStoreIT` ไม่โดนเพราะตั้งชื่อ nested ว่า `Creating` / `Roles` / `Audit` **ไม่มีคำว่า Test** → **ตั้งชื่อ nested class ของ IT โดยไม่ลงท้ายด้วย `Test`** (รอบนี้เปลี่ยน `CoverageTest`→`Coverage`, `OverlapTest`→`Overlaps`, `OverrideNoteTest`→`OverrideNotes`, `ExampleTest`→`Examples`, `AppliedTest`→`AppliedToAsset`)
+- ❌ **รายงานว่า IT ผ่านทั้งที่มันไม่เคยรัน** — รอบนี้เกิดขึ้นจริงและถูกแก้คำพูดกับผู้ใช้: log บอก `No tests matching pattern "PolicyOverviewIT" were executed!` บน `dac-parent` เพราะใช้ property ผิดชื่อ แต่ task รายงาน exit 0 → **เห็น `Tests run:` ของคลาสนั้นในlog ก่อน ถึงจะพูดได้ว่าผ่าน**
 - ❌ **`git push origin main` ค้าง — หาเจอสาเหตุแล้ว** `credential.helper = manager` (Git Credential Manager) ถูกตั้งไว้ระดับ repo · GCM จะเปิดหน้าต่าง GUI ขอ login ซึ่ง session แบบ non-interactive กดไม่ได้ → push แขวนไปจน timeout (`GIT_TERMINAL_PROMPT=0` ไม่ช่วย เพราะมันกันแค่ prompt บน terminal) · `git ls-remote origin` ตอบปกติเพราะ repo เป็น public อ่านได้โดยไม่ต้อง auth · `gh` **ไม่ได้ติดตั้งบนเครื่องนี้** → **ผู้ใช้ต้อง `git push origin main` เองใน terminal ของตัวเองหนึ่งครั้ง** (หรือตั้ง PAT ไว้) · หลัง push ยืนยันด้วย `git ls-remote --heads origin` เสมอ อย่าเชื่อว่าสำเร็จเพราะคำสั่งไม่ error
 
 ### API / integration
@@ -1325,6 +1556,7 @@ estate ที่ใช้: `prod-mssql.SalesDB.dbo.{customer, order}` + **`prod-
 - ❌ **`NavItemBase.iconOnly` ใช้ไม่ได้** — prop ประกาศไว้ใน interface แต่ **ไม่ถูก destructure หรือใช้ใน body เลย** ทั้งสาม branch -> จะทำ icon rail ต้องเขียน nav item เอง อย่าส่ง prop นี้แล้วรอให้มันทำงาน
 - ❌ **สไตล์ active state โดยแก้ vendored component** — `scripts/sync-om-design-system.sh` จะทับกลับ · และการเขียนเป็น rule ใน `theme/overrides.css` ก็พิสูจน์แล้วว่าตามยาก -> **ประกาศ class สีไว้บน element ใน component ของเราเอง**
 - ❌ **`Tooltip` ครอบ `<button>` ธรรมดา** — ไม่ขึ้น · `TooltipTrigger` ของ react-aria ส่ง hover/focus handler ให้เฉพาะ trigger ที่รับมันเป็น (`AriaButton`, `Focusable`) · `<a>` ของ `NavLink` ก็เหมือนกัน ตอนพับรางจึงใช้ `title` ธรรมดาแทน
+- ❌ **JDBI + `[1:3]` (array slice ของ Postgres) ในคิวรี** — เหตุผลเดียวกับ `ESCAPE '\'` ข้างล่าง: JDBI สแกน SQL หา named parameter เอง แล้วอ่าน `:3` เป็นพารามิเตอร์ชื่อ `3` → `UnableToCreateStatementException: Missing named parameter '3'` **ทุกครั้งที่เรียก** โดยที่ compile ผ่านและหน้าจอขึ้นแค่ error กลางๆ → **อย่าใส่ `:` ดิบๆ ใน SQL ที่ผ่าน JDBI** ไม่ว่าจะเป็น slice, cast `::`(ตัวนี้ JDBI รู้จัก) หรืออะไรก็ตาม — ถ้าเลี่ยงได้ให้ไปทำใน Java
 - ❌ **JDBI + `ESCAPE '\'` ในคิวรี** — JDBI สแกน SQL เองเพื่อหา named parameter · backslash ใน string literal ทำให้มันคิดว่า string ยังไม่ปิด แล้ว `:name` ทุกตัวหลังจุดนั้น **ไม่ถูก bind** → Postgres ตอบ `syntax error at or near ":"` (เสีย 1 รอบ build กับเรื่องนี้) · **ใช้ `ESCAPE '!'` แทน** แล้ว escape เป็น `!!` / `!%` / `!_`
 - ❌ **ให้ search ของ column match `fqn` ด้วย** — fqn ของ column ลงท้ายด้วย fqn ของ table ผลคือพิมพ์ชื่อ table แล้วได้ column ทุกตัวในตารางนั้นขึ้นมากลบตัว table เอง → column ต้อง match **เฉพาะ `name`**
 - ❌ **ยกม่าน loading หลัง `await signIn()` สำเร็จ** — มีเฟรมที่ token มีแล้วแต่ม่านยังไม่ขึ้น หน้า guarded วาดแลบผ่าน (ผู้ใช้เห็นและชี้) → **ยกม่านตั้งแต่ submit** แล้วปิดทิ้งตอน error
@@ -1348,11 +1580,13 @@ estate ที่ใช้: `prod-mssql.SalesDB.dbo.{customer, order}` + **`prod-
 เขียนไว้ตรงนี้เพราะทุกข้อ **ดูเหมือนทำงานปกติจากข้างนอก** — เป็นชนิดที่จะถูกค้นพบตอนผิดแล้ว ถ้าไม่จด
 
 1. **`scopeFqn` ของ policy ระดับ DOMAIN / SERVICE / DATABASE ถูกใช้เป็น prefix ของ FQN ทางกายภาพ** — ผูก policy ไว้ที่ชื่อ domain (`Finance.Risk`) มันจะ bind ไม่ติดอะไรเลย ทั้งที่หน้าจอดูเหมือนสร้างสำเร็จ ต้องแยก scope เชิง governance ออกจาก scope เชิงกายภาพ
-2. **ไม่มี write API สำหรับ local principal / attribute (FR-2.2) และการติด facet แบบ local (FR-1.7)** — `analyst_a` / `steward_c` และ tag ของ demo ถูก seed ด้วย SQL ตรงๆ ไม่มีทางทำผ่าน UI
-3. **`PolicyResource.affecting` default `environment` เป็น `"dev"` แต่ `DecisionService.DEFAULT_ENVIRONMENT` เป็น `"prod"`** — หน้าจอ "policy ที่มีผลกับ asset นี้" กับสิ่งที่ engine ตัดสินจริง จะตอบคนละชุดโดยไม่มีใครรู้
-4. **ไม่มี audit ของการ configure เลย** — เปลี่ยน data source, เปลี่ยน OM settings, enable/disable source ไม่ถูกบันทึกที่ไหน มีแต่ audit ของ query / decision / policy change (FR-8.1 ครอบแค่ policy)
+2. **ยังไม่มี write API สำหรับ *attribute* ของ local principal (FR-2.2) และการติด facet แบบ local (FR-1.7)** — *account กับ app role เขียนได้แล้วตั้งแต่หัวข้อ W* แต่ `principal_attribute` ของ `analyst_a` / `steward_c` และ tag ของ demo ยังถูก seed ด้วย SQL ตรงๆ ไม่มีทางทำผ่าน UI → **ABAC ครึ่งฝั่ง user ยังแก้จากหน้าจอไม่ได้**
+3. ~~**`PolicyResource.affecting` default `environment` เป็น `"dev"`**~~ — **แก้แล้วรอบนี้ (ข้อ X.2)** ทุก endpoint ใช้ `environmentOr()` ที่ fallback เป็น `DecisionService.DEFAULT_ENVIRONMENT` และฝั่ง TS default เป็น `'prod'`
+4. **audit ของการ configure ยังไม่ครบ** — *identity ครบแล้ว* (`audit_identity_change` จาก V10: สร้าง account, enable/disable, ตั้ง password, grant/revoke role) แต่ **เปลี่ยน data source, เปลี่ยน OM settings, enable/disable source ยังไม่ถูกบันทึกที่ไหน**
 5. **`audit_decision.evaluation_ms` ไม่เคยถูกเขียนค่า** — เป็น NULL ทุกแถว ทำให้ยืนยัน NFR-2 (p95 < 50ms) ไม่ได้
 6. **capability matrix ยังไม่รู้จัก masking function ต่อ dialect และไม่รู้จักเวอร์ชันของ engine** — ดูหัวข้อ I ข้างบน
+7. **`CANNOT_LOOSEN` เป็นค่าตายทั้งใน `RELATION_ORDER` (Java) และ union `PolicyRelation` (TS)** — `relate()` ไม่เคยคืนค่านี้ และหน้า Policy มีสไตล์รออยู่ที่ไม่มีวันถูกใช้ · คำถาม "ใครมีสิทธิ์แก้" ถูกตอบด้วย `overrideNote` แทน → ต้องเลือกว่าจะลบค่านี้ทิ้ง หรือให้ `relate()` คืนมันจริง
+8. **หน้า Policy builder ยัง default `environment: 'dev'` ตอนสร้าง policy ใหม่ ในขณะที่ engine enforce `prod`** — policy ที่เขียนด้วยค่า default ล้วนๆ **จะไม่มีวันถูก enforce** และหน้าจอไม่มีอะไรบอก · นี่คือครึ่งที่ยังเหลือของช่องว่างข้อ 3 เดิม
 
 ---
 
@@ -1360,7 +1594,7 @@ estate ที่ใช้: `prod-mssql.SalesDB.dbo.{customer, order}` + **`prod-
 
 1. **push ให้ขึ้น** — local นำหน้า remote อยู่ (remote main ยังอยู่ที่ `e3aaa52`) · แก้เรื่อง `git push` ค้างก่อน (ดู What Didn't Work) แล้วยืนยันด้วย `git ls-remote --heads origin` · **scan secret ก่อน push ทุกครั้ง**
 2. **ปิด M3** — decision cache (FR-5.5) + ANTLR grammar ของ `expr` (FR-3.2)
-3. **ปิด M4** — หน้า asset ต้องโชว์ "policy ที่มีผลกับ asset นี้" (มี endpoint `/policies/affecting/{fqn}` รออยู่แล้ว — แก้ข้อ 3 ของช่องว่างด้วย), View-as-user (FR-5.2), impact analysis (FR-5.3)
+3. **ปิด M4** — *(FR-3.1.5 เสร็จแล้วรอบนี้ — ดูข้อ X)* เหลือ View-as-user (FR-5.2) และ impact analysis (FR-5.3) · impact analysis ต่อยอดจาก `PolicyOverview.coverage()` ได้โดยตรง เพราะมันตอบ "กี่ table กี่ column" อยู่แล้ว เหลือ "กี่ user"
 4. **ปิดช่องว่างข้อ 1–5 ข้างบน** โดยเฉพาะ **ข้อ 4 (audit ของการ configure)** ซึ่งเป็นของที่ auditor จะถามหาแน่นอน
 5. **M2** — write API ของ principal/attribute แล้วต่อ (ก) การ assign application role จริงในหน้า `/settings/roles` (ข) หน้า local group ที่ `/settings/groups` ซึ่ง card ในหน้า Settings ลิงก์ไปรออยู่แล้ว · *(filter ตาม attribute ในหน้า People เสร็จแล้ว — ดูข้อ U)*
 6. **M5 (secure view)** — `DecisionSql` + dialect ทั้งสองตัวพร้อมแล้ว เหลือ ViewCompiler + `row_entitlement` maintainer + dry-run/apply/rollback + golden-file test

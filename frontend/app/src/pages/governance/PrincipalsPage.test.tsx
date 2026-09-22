@@ -27,6 +27,7 @@ function principal(overrides: Partial<Principal>): Principal {
     enabled: true,
     attributeCount: 3,
     memberCount: 0,
+    groups: [],
     groupCount: 1,
     appRoles: [],
     ...overrides,
@@ -201,4 +202,46 @@ test('a user row counts the groups they are in, not the members they have', asyn
   renderPage();
 
   expect(await screen.findByText('2 groups')).toBeInTheDocument();
+});
+
+test('a person’s group is named and opens it, rather than being a dead count', async () => {
+  // "1 group" as plain text is the worst thing this column can say: it tells
+  // the reader a group exists, that this person is in it, and gives them no
+  // way to find out which one.
+  fetchPrincipals.mockResolvedValue([
+    principal({
+      groupCount: 1,
+      groups: [{ id: '22222222-2222-2222-2222-222222222222', name: 'Finance' }],
+    }),
+  ]);
+  renderPage();
+
+  const link = await screen.findByRole('link', { name: 'Finance' });
+  expect(link).toHaveAttribute(
+    'href',
+    '/principals/22222222-2222-2222-2222-222222222222'
+  );
+});
+
+test('somebody in more groups than fit falls back to a count that still opens', async () => {
+  fetchPrincipals.mockResolvedValue([
+    principal({
+      groupCount: 6,
+      groups: [
+        { id: 'g1', name: 'Finance' },
+        { id: 'g2', name: 'Risk' },
+        { id: 'g3', name: 'Credit' },
+      ],
+    }),
+  ]);
+  renderPage();
+
+  const link = await screen.findByRole('link', { name: /6 groups/ });
+  expect(link).toHaveAttribute(
+    'href',
+    '/principals/11111111-1111-1111-1111-111111111111'
+  );
+  // Three names beside four other columns is a wrapped row, so they are not
+  // shown at all rather than shown partially and read as the whole list.
+  expect(screen.queryByRole('link', { name: 'Finance' })).toBeNull();
 });

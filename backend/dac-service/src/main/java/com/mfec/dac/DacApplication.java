@@ -18,6 +18,7 @@ import com.mfec.dac.config.IdentityConfiguration;
 import com.mfec.dac.json.JsonMapperProvider;
 import com.mfec.dac.config.OpenMetadataConfiguration;
 import com.mfec.dac.health.AppDatabaseHealthCheck;
+import com.mfec.dac.identity.IdentityAdminStore;
 import com.mfec.dac.identity.PrincipalQuery;
 import com.mfec.dac.om.OpenMetadataClient;
 import com.mfec.dac.resources.AuthResource;
@@ -34,6 +35,7 @@ import com.mfec.dac.source.jdbc.JdbcIntrospector;
 import com.mfec.dac.source.jdbc.QueryExecutor;
 import com.mfec.dac.policy.AssetContextLoader;
 import com.mfec.dac.policy.PolicyBindingMaterializer;
+import com.mfec.dac.policy.PolicyOverview;
 import com.mfec.dac.policy.PolicyStore;
 import com.mfec.dac.resources.CatalogResource;
 import com.mfec.dac.resources.GovernanceResource;
@@ -163,14 +165,22 @@ public class DacApplication extends Application<DacConfiguration> {
     PolicyStore policyStore = new PolicyStore(jdbi, environment.getObjectMapper());
     PolicyBindingMaterializer materializer =
         new PolicyBindingMaterializer(jdbi, environment.getObjectMapper(), contexts);
-    environment.jersey().register(new PolicyResource(policyStore, materializer));
+    environment
+        .jersey()
+        .register(
+            new PolicyResource(
+                policyStore,
+                materializer,
+                new PolicyOverview(jdbi, environment.getObjectMapper())));
 
     // The vocabulary a selector is written against, and the people a subject
     // rule is written about. Both are read-only: OpenMetadata and Entra own
     // this content, and an edit here would be reverted by the next sync.
     environment.jersey().register(new GovernanceResource(new GovernanceQuery(jdbi)));
     environment.jersey().register(new SearchResource(new SearchQuery(jdbi)));
-    environment.jersey().register(new PrincipalResource(new PrincipalQuery(jdbi)));
+    environment.jersey().register(
+        new PrincipalResource(
+            new PrincipalQuery(jdbi), new IdentityAdminStore(jdbi, identities)));
 
     // The source registry (FR-6.0a). The probe is constructed here, with the
     // process environment behind it, so that the only component able to turn a

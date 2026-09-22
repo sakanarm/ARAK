@@ -66,7 +66,18 @@ export interface Principal {
   memberCount: number;
   /** Groups this principal belongs to. Zero for a group with no parent. */
   groupCount: number;
+  /**
+   * The first few of those groups, named, so a listing can link to one.
+   * Capped by the server; `groupCount` remains the true total.
+   */
+  groups: GroupRef[];
   appRoles: string[];
+}
+
+/** A group named from somebody else's row: enough to show it and open it. */
+export interface GroupRef {
+  id: string;
+  name: string;
 }
 
 /** One attribute this principal carries, and which sync put it there. */
@@ -154,6 +165,124 @@ export async function fetchAttributeVocabulary(): Promise<AttributeVocabulary> {
     '/v1/principals/attributes'
   );
   return data;
+}
+
+// --------------------------------------------------- local accounts and roles
+
+/**
+ * The write half of the directory (FR-2.2, FR-2.6).
+ *
+ * Two different things live here, and the difference decides what the UI may
+ * offer. A **local account** is ours to create and edit; an Entra or
+ * OpenMetadata one is not, and editing it would be undone by the next sync. An
+ * **app role** is ours outright, so it can be granted to anybody whatever
+ * directory they came from.
+ *
+ * A granted role reaches this console at once — `/auth/me` re-reads the table —
+ * but reaches *authorisation* only when the affected person signs in again,
+ * because the filter reads the roles baked into their token. Screens that use
+ * these calls have to say so.
+ */
+
+/** One role held by one principal, as the roles screen lists it. */
+export interface RoleGrant {
+  id: string;
+  principalId: string;
+  username: string;
+  displayName: string | null;
+  principalType: 'USER' | 'GROUP' | 'SERVICE';
+  source: string;
+  enabled: boolean;
+  appRole: string;
+  /** Set only for DATA_OWNER: the asset FQN the ownership applies to. */
+  scopeFqn: string | null;
+  grantedBy: string | null;
+  grantedAt: string | null;
+}
+
+export interface RoleGrants {
+  grants: RoleGrant[];
+  appRoles: string[];
+  /**
+   * Enabled holders of a global PLATFORM_ADMIN. At one, the server refuses to
+   * revoke or disable the last of them, and the UI says so before the attempt.
+   */
+  globalAdminCount: number;
+}
+
+export interface NewLocalPrincipal {
+  username: string;
+  displayName?: string | null;
+  email?: string | null;
+  principalType: 'USER' | 'SERVICE';
+  password: string;
+  roles: { appRole: string; scopeFqn?: string | null }[];
+}
+
+export async function fetchRoleGrants(): Promise<RoleGrants> {
+  const { data } = await apiClient.get<RoleGrants>('/v1/principals/roles');
+  return data;
+}
+
+export async function createLocalPrincipal(
+  input: NewLocalPrincipal
+): Promise<PrincipalDetail> {
+  const { data } = await apiClient.post<PrincipalDetail>('/v1/principals', input);
+  return data;
+}
+
+/** Answers `changed: false` when the principal already held the role. */
+export async function grantAppRole(
+  principalId: string,
+  change: { appRole: string; scopeFqn?: string | null; reason?: string | null }
+): Promise<boolean> {
+  const { data } = await apiClient.post<{ changed: boolean }>(
+    `/v1/principals/${encodeURIComponent(principalId)}/roles`,
+    change
+  );
+  return data.changed;
+}
+
+/**
+ * Withdraws a role.
+ *
+ * The role and scope travel as query parameters because they identify what is
+ * being deleted, and a DELETE body is read inconsistently on the way.
+ */
+export async function revokeAppRole(
+  principalId: string,
+  change: { appRole: string; scopeFqn?: string | null; reason?: string | null }
+): Promise<boolean> {
+  const params = new URLSearchParams({ role: change.appRole });
+  if (change.scopeFqn) params.set('scope', change.scopeFqn);
+  if (change.reason) params.set('reason', change.reason);
+  const { data } = await apiClient.delete<{ changed: boolean }>(
+    `/v1/principals/${encodeURIComponent(principalId)}/roles?${params}`
+  );
+  return data.changed;
+}
+
+export async function setPrincipalEnabled(
+  principalId: string,
+  enabled: boolean,
+  reason?: string
+): Promise<PrincipalDetail> {
+  const { data } = await apiClient.post<PrincipalDetail>(
+    `/v1/principals/${encodeURIComponent(principalId)}/enabled`,
+    { enabled, reason }
+  );
+  return data;
+}
+
+/** The holder must choose a new one at their next sign-in. */
+export async function resetPrincipalPassword(
+  principalId: string,
+  password: string
+): Promise<void> {
+  await apiClient.post(
+    `/v1/principals/${encodeURIComponent(principalId)}/password`,
+    { password }
+  );
 }
 
 /** Flattens a nested vocabulary tree into pickable options, depth-first. */

@@ -3,13 +3,47 @@ import { render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import AssetDetailPage from './AssetDetailPage';
 import type { FacetRow } from '../../api/client';
+import type { AppliedPolicy } from '../../api/policies';
 
 const fetchAsset = jest.fn();
+const fetchPoliciesForAsset = jest.fn();
 
 jest.mock('../../api/client', () => ({
   apiErrorMessage: (_error: unknown, fallback: string) => fallback,
   fetchAsset: (...args: unknown[]) => fetchAsset(...args),
 }));
+
+jest.mock('../../api/policies', () => ({
+  fetchPoliciesForAsset: (...args: unknown[]) => fetchPoliciesForAsset(...args),
+}));
+
+function applied(
+  overrides: Partial<AppliedPolicy['policy']['document']>,
+  columns: AppliedPolicy['columns'] = []
+): AppliedPolicy {
+  return {
+    policy: {
+      id: `p-${overrides.name}`,
+      document: {
+        name: 'unnamed',
+        policyType: 'SUBSCRIPTION',
+        scopeLevel: 'ORG',
+        selector: {
+          condition: { facet: 'tags', operator: 'contains', value: 'PII' },
+        },
+        ...overrides,
+      },
+      lifecycleState: 'ACTIVE',
+      environment: 'prod',
+      version: 1,
+      createdBy: 'author@example.com',
+      updatedBy: 'author@example.com',
+      updatedAt: '2026-09-20T09:00:00Z',
+    },
+    matchReason: { facet: 'tags', value: 'PII' },
+    columns,
+  };
+}
 
 function facet(overrides: Partial<FacetRow>): FacetRow {
   return {
@@ -96,6 +130,69 @@ function renderPage(fqn = 'prod-pg.SalesDB.dbo.customer') {
 beforeEach(() => {
   fetchAsset.mockReset();
   fetchAsset.mockResolvedValue(DETAIL);
+  fetchPoliciesForAsset.mockReset();
+  fetchPoliciesForAsset.mockResolvedValue([]);
+});
+
+test('the two kinds of policy are answered separately', async () => {
+  fetchPoliciesForAsset.mockResolvedValue([
+    applied({
+      name: 'finance-read',
+      displayName: 'Finance may read',
+      policyType: 'SUBSCRIPTION',
+      effect: 'ALLOW',
+    }),
+    applied(
+      {
+        name: 'mask-pii',
+        displayName: 'Mask PII columns',
+        policyType: 'DATA',
+        scopeLevel: 'SCHEMA',
+      },
+      [
+        {
+          fqn: 'prod-pg.SalesDB.dbo.customer.email',
+          kind: 'COLUMN',
+          name: 'email',
+          parentFqn: 'prod-pg.SalesDB.dbo.customer',
+          dataType: 'VARCHAR',
+          matchReason: { action: 'MASK' },
+          resolvedAt: null,
+        },
+      ]
+    ),
+  ]);
+  renderPage();
+
+  expect(await screen.findByText('Finance may read')).toBeInTheDocument();
+  expect(screen.getByText('Mask PII columns')).toBeInTheDocument();
+  expect(screen.getByText('Allow')).toBeInTheDocument();
+  // A data policy says where inside the table it lands, which is the part a
+  // data owner came for.
+  // By the action rather than by the name: 'email' is also a row in the
+  // columns table below, and the chip is the one that says what happens to it.
+  expect(screen.getByText('mask').parentElement).toHaveTextContent('email');
+  expect(screen.getByText('SCHEMA')).toBeInTheDocument();
+});
+
+test('a table nothing selects is called out as denied, not left blank', async () => {
+  renderPage();
+
+  expect(
+    await screen.findByText(/No active policy reaches this asset/)
+  ).toBeInTheDocument();
+});
+
+test('a subscription policy without a data policy says what that means', async () => {
+  fetchPoliciesForAsset.mockResolvedValue([
+    applied({ name: 'finance-read', displayName: 'Finance may read' }),
+  ]);
+  renderPage();
+
+  expect(await screen.findByText('Finance may read')).toBeInTheDocument();
+  expect(
+    screen.getByText(/rows and columns are returned whole/)
+  ).toBeInTheDocument();
 });
 
 test('asks for the whole dotted FQN, not the first path segment', async () => {

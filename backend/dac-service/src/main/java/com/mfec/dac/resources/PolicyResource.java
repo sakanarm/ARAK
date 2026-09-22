@@ -3,7 +3,9 @@ package com.mfec.dac.resources;
 import com.mfec.dac.auth.AuthenticatedUser;
 import com.mfec.dac.auth.Secured;
 import com.mfec.dac.common.Fqns;
+import com.mfec.dac.policy.DecisionService;
 import com.mfec.dac.policy.PolicyBindingMaterializer;
+import com.mfec.dac.policy.PolicyOverview;
 import com.mfec.dac.policy.PolicyStore;
 import com.mfec.dac.schema.entity.policy.Policy;
 import jakarta.ws.rs.BadRequestException;
@@ -43,10 +45,13 @@ public class PolicyResource {
 
   private final PolicyStore policies;
   private final PolicyBindingMaterializer materializer;
+  private final PolicyOverview overview;
 
-  public PolicyResource(PolicyStore policies, PolicyBindingMaterializer materializer) {
+  public PolicyResource(
+      PolicyStore policies, PolicyBindingMaterializer materializer, PolicyOverview overview) {
     this.policies = policies;
     this.materializer = materializer;
+    this.overview = overview;
   }
 
   @GET
@@ -82,8 +87,62 @@ public class PolicyResource {
   @GET
   @Path("/affecting/{fqn: .+}")
   public List<PolicyStore.StoredPolicy> affecting(
-      @PathParam("fqn") String fqn, @QueryParam("environment") @DefaultValue("dev") String environment) {
-    return policies.activeFor(fqn, environment);
+      @PathParam("fqn") String fqn,
+      // The environment the engine decides in when nobody says otherwise. This
+      // used to default to dev, so the screen meant to show what governs a
+      // table showed a different environment's answer -- an empty list on an
+      // asset that was in fact covered, which is the worst way to be wrong
+      // about access control.
+      @QueryParam("environment") String environment) {
+    return policies.activeFor(fqn, environmentOr(environment));
+  }
+
+  /**
+   * The same list, with the columns each policy lands on (FR-3.1.5).
+   *
+   * <p>Separate from {@link #affecting} rather than replacing it: the bare list is what the engine
+   * and the tests want, and this is what the asset page wants. Both read the same rows.
+   */
+  @GET
+  @Path("/for-asset/{fqn: .+}")
+  public List<PolicyOverview.Applied> forAsset(
+      @PathParam("fqn") String fqn, @QueryParam("environment") String environment) {
+    return overview.applied(fqn, policies.activeFor(fqn, environmentOr(environment)));
+  }
+
+  private static String environmentOr(String environment) {
+    return environment == null || environment.isBlank()
+        ? DecisionService.DEFAULT_ENVIRONMENT
+        : environment;
+  }
+
+  /**
+   * The tables and columns this policy actually lands on (FR-3.1.5, reversed).
+   *
+   * <p>A selector is a claim; this is the result. The two differ whenever the
+   * estate has moved since the last resolve, which is exactly what somebody
+   * about to activate a policy needs to see.
+   */
+  @GET
+  @Path("/{id}/bindings")
+  public PolicyOverview.Coverage bindings(@PathParam("id") UUID id) {
+    policies.find(id).orElseThrow(() -> new NotFoundException("No policy " + id));
+    return overview.coverage(id);
+  }
+
+  /**
+   * The policies that meet this one on the same targets, and what happens there.
+   *
+   * <p>Overlap on its own is not news -- layering is the design (FR-3.1.3).
+   * What each row carries is the consequence: which of the two still has an
+   * effect where they meet.
+   */
+  @GET
+  @Path("/{id}/conflicts")
+  public List<PolicyOverview.Overlap> conflicts(@PathParam("id") UUID id) {
+    PolicyStore.StoredPolicy policy =
+        policies.find(id).orElseThrow(() -> new NotFoundException("No policy " + id));
+    return overview.overlaps(id, policy.document(), policy.environment());
   }
 
   @POST

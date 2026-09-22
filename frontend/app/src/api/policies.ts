@@ -26,6 +26,60 @@ export interface StoredPolicy {
   updatedAt: string;
 }
 
+/** One table or column a policy resolved onto. */
+export interface PolicyTarget {
+  fqn: string;
+  kind: 'TABLE' | 'COLUMN';
+  name: string | null;
+  parentFqn: string | null;
+  dataType: string | null;
+  matchReason: Record<string, unknown>;
+  resolvedAt: string | null;
+}
+
+/** What a policy currently lands on. `sample` is capped; the counts are not. */
+export interface PolicyCoverage {
+  tableCount: number;
+  columnCount: number;
+  sample: PolicyTarget[];
+  truncated: boolean;
+  resolvedAt: string | null;
+}
+
+/**
+ * How a policy sharing targets with this one affects it.
+ *
+ * `BLOCKED_BY` is the only one that means this policy is dead where they meet;
+ * the rest are layering working as designed, in descending order of how much
+ * they change the outcome.
+ */
+export type PolicyRelation =
+  | 'BLOCKED_BY'
+  | 'BLOCKS'
+  | 'CANNOT_LOOSEN'
+  | 'MASK_OVERLAP'
+  | 'NARROWS'
+  | 'COMPOSES';
+
+export interface PolicyOverlap {
+  policyId: string;
+  name: string;
+  displayName: string | null;
+  policyType: 'SUBSCRIPTION' | 'DATA';
+  effect: 'ALLOW' | 'DENY';
+  scopeLevel: string;
+  scopeFqn: string | null;
+  lifecycleState: string;
+  environment: string;
+  allowLocalOverride: boolean;
+  sharedTargets: number;
+  examples: string[];
+  relation: PolicyRelation;
+  explanation: string;
+  /** Set when that policy outranks this one and forbids relaxing it. */
+  overrideNote: string | null;
+}
+
 export interface BindingResult {
   policyId: string;
   scanned: number;
@@ -64,10 +118,53 @@ export async function fetchPolicyVersions(id: string): Promise<StoredPolicy[]> {
   return data;
 }
 
-/** Every active policy reaching an asset, outermost layer first (FR-3.1.5). */
+/** The tables and columns this policy actually landed on. */
+export async function fetchPolicyCoverage(id: string): Promise<PolicyCoverage> {
+  const { data } = await apiClient.get<PolicyCoverage>(
+    `/v1/policies/${id}/bindings`
+  );
+  return data;
+}
+
+/** The other policies bound to the same targets, and what happens there. */
+export async function fetchPolicyConflicts(
+  id: string
+): Promise<PolicyOverlap[]> {
+  const { data } = await apiClient.get<PolicyOverlap[]>(
+    `/v1/policies/${id}/conflicts`
+  );
+  return data;
+}
+
+/** One policy reaching an asset, and where inside it the policy lands. */
+export interface AppliedPolicy {
+  policy: StoredPolicy;
+  matchReason: Record<string, unknown>;
+  columns: PolicyTarget[];
+}
+
+/** The policies governing one asset, with the columns each one reaches. */
+export async function fetchPoliciesForAsset(
+  fqn: string,
+  environment = 'prod'
+): Promise<AppliedPolicy[]> {
+  const { data } = await apiClient.get<AppliedPolicy[]>(
+    `/v1/policies/for-asset/${encodeURI(fqn)}`,
+    { params: { environment } }
+  );
+  return data;
+}
+
+/**
+ * Every active policy reaching an asset, outermost layer first (FR-3.1.5).
+ *
+ * The default is the environment the engine decides in, not the one the
+ * builder opens on. Those differ, and defaulting to the builder's would answer
+ * "what governs this table" with a list that is never enforced.
+ */
 export async function fetchPoliciesAffecting(
   fqn: string,
-  environment = 'dev'
+  environment = 'prod'
 ): Promise<StoredPolicy[]> {
   const { data } = await apiClient.get<StoredPolicy[]>(
     `/v1/policies/affecting/${encodeURIComponent(fqn)}?environment=${environment}`
