@@ -28,7 +28,7 @@ Phase 1 รองรับ SQL Server + PostgreSQL · identity หลักค�
 | **M1 OM Connector** | 🚧 ~95% — full crawl + governance + effective facet + FR-1.5 webhook/poller/reconcile + catalog read API + Catalog UI + governance read API + Governance UI · **sync กับ OM จริงสำเร็จแล้ว** · เหลือ FR-1.6 (reconcile กับ JDBC จริง), FR-1.7 (local tag + push-back — **ผู้ใช้สั่ง read-only ตอนนี้**) |
 | **M2 Identity** | 🚧 ~50% — local sign-in ใช้ได้ · schema `principal`/`principal_attribute`/`group_member`/`app_role_assignment` มีตั้งแต่ V2 · read API + หน้า People & attributes (**filter ตาม attribute + กดเข้าไปดูสมาชิกใน group ได้ที่ `/principals/:id`**) + **หน้า Application roles (`/settings/roles`) อ่านอย่างเดียว** เสร็จ · **เพิ่ม local account + assign/withdraw app role ได้จาก UI แล้ว (V10 + `IdentityAdminStore` + audit)** · **ยังไม่มี write API สำหรับ *attribute* — ต้อง seed ด้วย SQL** · ยังไม่มีหน้าจอเปลี่ยน password (ทุก account ที่สร้างเป็น `must_change`) · ยังไม่มี Entra OIDC / Graph sync |
 | **M3 Policy Engine** | 🚧 ~93% — engine **156 tests** (data policy 26 + subscription 45 เพิ่มรอบนี้ · เจอบั๊กจริง 2 ตัว ดูข้อ P) · persistence (`PolicyStore`) + `policy_binding` materializer + REST · `PolicyBindingMaterializerIT` 10 tests บน Postgres จริง · เหลือ decision cache (FR-5.5), ANTLR grammar ของ `expr` (FR-3.2) |
-| **M4 Policy Authoring UI** | 🚧 ~90% — Policy list + Policy builder + readback + capability matrix + `/policies/:id` หน้าสรุปอ่านอย่างเดียว + panel Policies ในหน้า asset (FR-3.1.5) · **รอบนี้ปิด View-as-user (FR-5.2) — `/simulator` ใช้งานได้จริง ยิงกับ engine ตัวเดียวกับที่ query ใช้ ดูข้อ Z** · เหลือ impact analysis (FR-5.3) |
+| **M4 Policy Authoring UI** | ✅ **เสร็จ** — Policy list + Policy builder + readback + capability matrix + `/policies/:id` หน้าสรุปอ่านอย่างเดียว + panel Policies ในหน้า asset (FR-3.1.5) + View-as-user (FR-5.2, ข้อ Z) · **รอบนี้ปิดข้อสุดท้าย: impact analysis (FR-5.3) — `GET /v1/policies/{id}/impact` + panel “Who it changes things for” ดูข้อ AA** |
 | **M5 Secure View (5.1.2)** | ⬜ — `DecisionSql` + dialect ทั้งสองตัวพร้อมแล้ว (ใช้ร่วมกับ 5.2) เหลือ ViewCompiler + `row_entitlement` maintainer + DDL apply/rollback |
 | **M6 Source Config (5.1.1)** | ⬜ |
 | **M7 Query API (5.2a)** | 🚧 ~80% — **`POST /v1/query` + Query console ใช้งานได้จริงรอบนี้** · rewrite → RLS + mask + hidden column → execute → audit ครบ · พิสูจน์กับ Postgres จริงแล้วทั้ง allow / RLS / mask / refuse · เหลือ direct-access detector (FR-6.3.1) และ result cache |
@@ -48,14 +48,134 @@ Phase 1 รองรับ SQL Server + PostgreSQL · identity หลักค�
 | ชุด | จำนวน | คำสั่ง |
 |---|---|---|
 | Backend unit | dac-common 6 · dac-engine 156 · dac-compiler-sql 7 · dac-connector-openmetadata 88 · dac-proxy 16 · dac-service **56** = **329** | `./mvnw -am -pl backend/dac-service test` |
-| Backend integration (Testcontainers `postgres:16-alpine`) | **103 tests** — `AssetStoreIT` 6 · `CatalogQueryIT` 15 · `DataSourceStoreIT` 13 · `GovernanceStoreIT` 10 · `IdentityAdminStoreIT` 15 · `PolicyBindingMaterializerIT` 10 · `PolicyOverviewIT` 24 · `PolicyStoreIT` 10 | `./mvnw -am -pl backend/dac-service verify -Pintegration` |
-| Frontend | **16 suites / 80 tests** | `npx jest` ใน `frontend/app` |
+| Backend integration (Testcontainers `postgres:16-alpine`) | **111 tests** — `AssetStoreIT` 6 · `CatalogQueryIT` 15 · `DataSourceStoreIT` 13 · `GovernanceStoreIT` 10 · `IdentityAdminStoreIT` 15 · `ImpactAnalysisIT` **8** · `PolicyBindingMaterializerIT` 10 · `PolicyOverviewIT` 24 · `PolicyStoreIT` 10 | `./mvnw -am -pl backend/dac-service verify -Pintegration` |
+| Frontend | **16 suites / 85 tests** | `npx jest` ใน `frontend/app` |
 
 `yarn type-check` · `yarn lint` · `yarn build` ผ่านหมด → **BUILD SUCCESS** ทั้งสองฝั่ง
 
 ---
 
-## รอบล่าสุดทำอะไรไป — Query console (5.2a ใช้งานได้จริง) + บั๊กร้ายแรงสามตัว
+## รอบล่าสุดทำอะไรไป — Impact analysis (FR-5.3) · **ปิด M4**
+
+> ข้อสุดท้ายของ M4 · รอบนี้แตะ backend (3 ไฟล์แก้ + 1 ไฟล์ใหม่ + 1 IT ใหม่) และ frontend (2 ไฟล์) · **ไม่มี migration** — คำถามนี้ตอบได้ด้วยของที่มีอยู่แล้วทั้งหมด
+
+### AA. "ถ้าเปิด policy นี้ ใครกระทบบ้าง" (FR-5.3)
+
+#### AA.1 คำถามที่ดูง่ายแต่ตอบผิดได้ง่ายกว่า
+
+สิ่งที่คนคาดว่าจะเห็นตรงนี้คือ **จำนวน binding** — "policy นี้ผูกกับ 40 table, 12 column" ซึ่ง `PolicyOverview.coverage()` ตอบอยู่แล้วและ **เป็นคำตอบที่ผิด**:
+
+> policy ที่ผูกกับ 40 table อาจ **ไม่เปลี่ยนอะไรให้ใครเลยแม้แต่คนเดียว** ถ้าทุกอย่างที่มันห้าม ถูกห้ามอยู่แล้วโดยชั้นที่อยู่เหนือมัน
+> ในทางกลับกัน policy ที่ผูกกับ **table เดียว** อาจตัดคนทั้งบริษัทออกจากข้อมูลนั้น
+
+เพราะ composition เป็น intersection (FR-5.1) "เพิ่ม policy หนึ่งตัว" จึงไม่ได้แปลว่า "เพิ่มข้อจำกัดหนึ่งข้อ" · คำตอบที่ถูกคือ **counterfactual**: สำหรับทุกคู่ (คน, table) ให้ engine ตัดสินสองครั้ง — **มี** policy นี้ในกอง กับ **ไม่มี** — แล้วรายงานเฉพาะส่วนที่ต่าง
+
+#### AA.2 สองโลกที่ต่างกันแค่ policy เดียว — บังคับด้วย SQL ไม่ใช่ด้วยวินัย
+
+`PolicyStore.activeForIncluding(assetFqn, environment, candidate)` (ใหม่) — query เดียวกับ `activeFor()` ทุกประการ **บวกเงื่อนไข `p.id = :candidate` เข้าไปใน `WHERE`** เพื่อให้ draft ที่ยังไม่ ACTIVE ถูกดันเข้ากองด้วย
+
+ทำไมต้องยัดใน SQL แทนที่จะ `list.add(draft)` ใน Java: ลำดับชั้น `ORG → DOMAIN → … → COLUMN` อยู่ใน `ORDER BY CASE p.scope_level …` ของ query นั้น · ถ้าแทรกจากฝั่ง Java ต้อง**เขียนลำดับนั้นซ้ำอีกที่หนึ่ง** แล้วสองที่จะค่อยๆ ไม่ตรงกัน
+
+แล้วโลกที่ "ไม่มี" ได้มาจาก **กรองลิสต์เดิมในหน่วยความจำ** ไม่ใช่ query ใหม่:
+
+```java
+List<Policy> withDocs    = documents(with, null);   // ทั้งกอง
+List<Policy> withoutDocs = documents(with, id);     // กองเดิม ลบตัวเดียว
+```
+
+> query สองครั้งจะต่างกันได้**มากกว่าหนึ่ง policy** — policy อื่นหมดอายุระหว่างสองคำสั่งก็เป็นไปได้ · แล้ว impact report จะไปโทษ policy นี้ว่าเป็นต้นเหตุของการหมดอายุของคนอื่น ซึ่งแย่กว่าไม่มี report
+
+#### AA.3 `PrincipalLoader.everyone()` — และทำไม group ไม่ถูกนับ
+
+`find()` เดิมโหลดทีละคนด้วย 4 query · วน 200 คนจะได้ 800 query → เพิ่ม `everyone(handle, limit)` ที่ยิง **4 query รวม** (principal, app role, membership, attribute) แล้วประกอบเป็น `Principal` **รูปร่างเดียวกันเป๊ะ** กับ `find()` — สำคัญเพราะถ้าสองทางประกอบไม่เหมือนกัน หน้า impact กับหน้า simulator จะบรรยายคนคนเดียวกันคนละแบบ
+
+membership ใช้ recursive CTE **สองคอลัมน์** ที่แบก seed member id ไปด้วย เพื่อให้ปิด transitive closure ของทุกคนได้ในคำสั่งเดียว:
+
+```sql
+WITH RECURSIVE reachable(member_id, group_id) AS (
+    SELECT member_id, group_id FROM group_member WHERE member_id IN (<ids>)
+  UNION
+    SELECT r.member_id, m.group_id FROM group_member m
+    JOIN reachable r ON m.member_id = r.group_id)
+```
+
+**group ไม่ถูกนับเป็น "คน"** — `principal_type IN ('USER','SERVICE')` เท่านั้น · group เป็นแถวใน `principal` เพื่อให้ membership ซ้อนกันได้ แต่ **ไม่มีใคร login เป็น group** และการนับ group รวมไปด้วยจะทำให้ทุกตัวเลขบนหน้าจอพองขึ้นโดยไม่มีความหมาย (มีเทสต์กันไว้: `principalsKnown == 3` ทั้งที่มี 4 แถวใน `principal`)
+
+#### AA.4 6 ผลลัพธ์ เรียงตามความร้ายแรง — และ ordinal คือลำดับนั้นจริงๆ
+
+```java
+public enum Change { LOSES_ACCESS, GAINS_ACCESS, CHANGED, SEES_LESS, SEES_MORE, UNCHANGED }
+```
+
+`compare(fqn, before, after)` เทียบ **verdict ก่อน** (allow/deny พลิก = เรื่องใหญ่สุด) · ถ้า deny ทั้งสองข้าง = `UNCHANGED` (สิ่งที่ *จะ* ถูก mask ถ้าเข้าถึงได้ ไม่ใช่ความต่างที่ใครสังเกตได้) · ไม่งั้นค่อย diff สามชุด: `hidden()` / `masks()` / `rows()`
+
+**mask เทียบด้วย `column:function:condition` ไม่ใช่ object identity** — column เดียวกันถูก mask ด้วย function เดียวกันแต่มาจาก policy คนละตัว **ไม่ใช่ความเปลี่ยนแปลงที่ใครมองเห็นในข้อมูล** และถ้ารายงานมันจะกลบความเปลี่ยนแปลงจริงที่อยู่ในรายการเดียวกัน
+
+การ sort ใช้ `ordinal()` ตรงๆ ทั้งระดับ table และระดับคน (`worst = tables.get(0).change()`) · เคยเขียน `worseThan()` ไว้แล้วลบทิ้ง เพราะไม่มีใครเรียก — โค้ดตายที่อ่านเหมือนเป็นกฎ
+
+#### AA.5 ประกาศว่าสุ่ม ไม่ใช่ซ่อนว่าสุ่ม
+
+cap: **25 table × 200 principal × 2 evaluations** · แต่ `Impact` แบก `tablesBound` vs `tablesMeasured`, `principalsKnown` vs `principalsMeasured`, และ `sampled` ออกไปด้วยทุกครั้ง
+
+- table ที่ผูกอยู่แต่ **ไม่มีใน cache** จะ `continue` โดย**ไม่เพิ่ม** `measured` — เวอร์ชันแรกรายงาน `fqns.size()` ซึ่งแปลว่า run ที่วัดได้ครึ่งเดียวจะขึ้นจอว่าวัดครบ
+- ฝั่ง UI `sampled === true` เปลี่ยนคำเป็น **"at least"** ทุกที่ + ต่อท้ายว่า *"capped for speed, so these are floors rather than totals"*
+- บรรทัดขอบเขต (`1 of 1 table · 3 of 3 people`) **ขึ้นเสมอ ไม่ใช่เฉพาะตอนไม่ครบ** — ตัวเลขที่ซ่อนตัวหารคือสิ่งที่ panel นี้มีไว้เพื่อไม่ให้เกิด
+
+#### AA.6 draft กับ active ใช้เลขชุดเดียวกัน ต่างแค่กาล
+
+`candidateActive` บอก UI ว่าจะเล่าด้วยกาลไหน — เลขไม่ต่างกันเลย เพราะ policy ที่ ACTIVE อยู่แล้วก็ถูกวัดเทียบกับ "โลกที่ไม่มีมัน" เหมือนกัน:
+
+| | ประโยคบนจอ |
+|---|---|
+| DRAFT | *"Activating this would change what 2 people see on 1 table."* |
+| ACTIVE | *"This policy is the reason 2 people see what they see on 1 table."* |
+| กระทบ 0 คน | *"Activating this would change nothing for anyone. Everything it restricts is already restricted by the policies around it."* |
+
+ป้ายทุกใบ (`loses the table` / `sees less` / …) เขียนจาก**มุมที่ policy เปิดอยู่** เสมอ เพราะเลขเดินทางเดียว — ประโยคข้างบนเท่านั้นที่เปลี่ยน
+
+#### AA.7 ไฟล์
+
+| ไฟล์ | |
+|---|---|
+| `policy/ImpactAnalysis.java` | **ใหม่ ~420 บรรทัด** — `measure(StoredPolicy)` · `TABLE_LIMIT=25` `PRINCIPAL_LIMIT=200` `DETAIL_LIMIT=50` · record `Impact` / `PrincipalChange` / `TableChange` |
+| `policy/PolicyStore.java` | `+activeForIncluding(fqn, env, candidate)` |
+| `policy/PrincipalLoader.java` | `+everyone()` `+countEveryone()` `+allMemberships()` (batched) |
+| `resources/PolicyResource.java` | `GET /{id}/impact` · ctor รับ `ImpactAnalysis` เป็นตัวที่ 4 |
+| `DacApplication.java` | ย้าย `PolicyEngine` ขึ้นมาก่อน `PolicyResource` + แชร์ `PrincipalLoader` ตัวเดียวกับ `DecisionService` (authoring ต้องใช้ engine ตัวเดียวกับ enforcement ไม่งั้น preview โกหกได้) |
+| `test/.../ImpactAnalysisIT.java` | **ใหม่ 8 tests** บน Postgres จริง |
+| `frontend/app/src/api/policies.ts` | `+PolicyImpact` / `PolicyImpactPrincipal` / `PolicyImpactTable` / `PolicyImpactChange` + `fetchPolicyImpact()` |
+| `frontend/app/src/pages/policies/PolicyDetailPage.tsx` | panel `<Impact>` ระหว่าง Coverage กับ Conflicts · `refetchOnWindowFocus: false` (สองการ evaluate ต่อคนต่อ table — invalidate ตอน re-resolve / เปลี่ยน lifecycle แทน) |
+
+#### AA.8 เทสต์
+
+`ImpactAnalysisIT` **8 ตัว** — `baseline()` สร้างและ **activate** ORG SUBSCRIPTION ALLOW ก่อนทุกเคส เพราะถ้าไม่มี ทุก decision จะ deny ทั้งสองข้างและ**ทุกเทสต์จะผ่านแบบว่างเปล่า** (จดไว้ใน javadoc ของมันแล้ว)
+
+- `Population` — group ไม่ถูกนับเป็นคน · estate เล็กวัดครบและบอกว่าครบ (`sampled == false`)
+- `Changes` — draft ที่ deny ดึงสิทธิ์จากทุกคนที่เคยมี · **draft ที่ grant สิ่งที่ถูก grant อยู่แล้ว กระทบ 0 คน** (ข้อกลางของทั้งหมด) · denial ที่ผูกกับ attribute ระบุชื่อเฉพาะคนที่ตก · draft ที่ mask บอกชื่อ column ที่มันแคบลง · policy ที่ ACTIVE อยู่แล้ววัดเทียบโลกที่ไม่มีมัน · policy ที่ไม่ผูกกับอะไรเลยคือ report ว่าง ไม่ใช่ error
+
+`PolicyDetailPage.test.tsx` **+5 ตัว** (11 → 16) — กระทบ 0 คนต้องพูดออกมาแม้ผูก 40 table · คนที่เสียสิทธิ์ต้องถูกระบุชื่อพร้อม table · ACTIVE ต้องเล่าด้วยกาลปัจจุบัน · run ที่สุ่มต้องขึ้น "at least" · ผูก 0 table ต้องบอกให้ไป re-resolve ไม่ใช่โชว์เลข 0
+
+#### AA.9 ยิงจริงกับ backend ที่รันอยู่
+
+```
+GET /api/v1/policies/b594579f…/impact   (finance-subscription, ACTIVE)
+  tablesBound 1 · principalsKnown 4 · sampled false
+  principalsAffected 2 · byChange { GAINS_ACCESS: 2, UNCHANGED: 2 }
+  analyst_a GAINS_ACCESS  "can read this table"
+  steward_c GAINS_ACCESS  "can read this table"
+
+GET /api/v1/policies/1a294978…/impact   (pii-masking-below-l2, ACTIVE)
+  principalsAffected 1 · byChange { SEES_LESS: 1, UNCHANGED: 3 }
+  analyst_a SEES_LESS  "citizen_id, email now masked"
+```
+
+อ่านได้ตรงกับที่ควรเป็น: `finance-subscription` เป็น**ตัวเดียว**ที่เปิดประตู → ถอดออกแล้วสองคนหมดสิทธิ์ · `pii-masking-below-l2` แตะเฉพาะ `analyst_a` เพราะ `steward_c` clearance ผ่าน L2
+
+> **ทำตามกับดักเดิมแล้ว** — restart backend ก่อนยิง เพราะ `verify` เพิ่งเขียนทับ `dac-service.jar` ใต้ JVM ที่เปิดไฟล์นั้นค้างอยู่ (ดู Z.5)
+
+---
+
+## รอบก่อนหน้านี้ (ข้อ A–Z) — Query console (5.2a ใช้งานได้จริง) + บั๊กร้ายแรงสามตัว
 
 รอบนี้คือรอบที่ **โหมด 5.2 เดินจากต้นจนจบได้จริงเป็นครั้งแรก** — พิมพ์ SQL ในเบราว์เซอร์ -> rewrite ตาม policy -> ยิงลง Postgres จริง -> ได้แถวที่ถูก filter และ column ที่ถูก mask กลับมา พร้อม audit ครบ
 
@@ -1710,7 +1830,7 @@ estate ที่ใช้: `prod-mssql.SalesDB.dbo.{customer, order}` + **`prod-
 
 1. **push ให้ขึ้น** — local นำหน้า remote อยู่ (remote main ยังอยู่ที่ `e3aaa52`) · แก้เรื่อง `git push` ค้างก่อน (ดู What Didn't Work) แล้วยืนยันด้วย `git ls-remote --heads origin` · **scan secret ก่อน push ทุกครั้ง**
 2. **ปิด M3** — decision cache (FR-5.5) + ANTLR grammar ของ `expr` (FR-3.2)
-3. **ปิด M4** — *(FR-3.1.5 ปิดที่ข้อ X · FR-5.2 ปิดที่ข้อ Z)* **เหลือ impact analysis (FR-5.3) อย่างเดียว** · ต่อยอดจาก `PolicyOverview.coverage()` ได้โดยตรง เพราะมันตอบ "กี่ table กี่ column" อยู่แล้ว เหลือ "กี่ user" — ซึ่งคือการเอา `DecisionService` ตัวเดียวกับที่ `/simulator` เรียก มาวนข้าม principal ทั้งชุดของ binding แทนที่ละคน
+3. ~~**ปิด M4**~~ — **ปิดแล้ว** (FR-3.1.5 ข้อ X · FR-5.2 ข้อ Z · FR-5.3 ข้อ AA) · ของที่ค้างไว้จาก M4 ต่อได้ถ้าต้องการ: impact analysis ยังวัดเฉพาะ **table binding** (COLUMN binding ถูกครอบด้วย TABLE row ที่ materializer เขียนไว้อยู่แล้ว) และ cap 25×200 ยังเป็นค่าตายในโค้ด ไม่ได้ config
 4. **ปิดช่องว่างข้อ 1–5 ข้างบน** โดยเฉพาะ **ข้อ 4 (audit ของการ configure)** ซึ่งเป็นของที่ auditor จะถามหาแน่นอน
 5. **M2** — write API ของ principal/attribute แล้วต่อ (ก) การ assign application role จริงในหน้า `/settings/roles` (ข) หน้า local group ที่ `/settings/groups` ซึ่ง card ในหน้า Settings ลิงก์ไปรออยู่แล้ว · *(filter ตาม attribute ในหน้า People เสร็จแล้ว — ดูข้อ U)*
 6. **M5 (secure view)** — `DecisionSql` + dialect ทั้งสองตัวพร้อมแล้ว เหลือ ViewCompiler + `row_entitlement` maintainer + dry-run/apply/rollback + golden-file test

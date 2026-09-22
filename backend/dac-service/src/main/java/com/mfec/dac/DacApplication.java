@@ -27,6 +27,7 @@ import com.mfec.dac.engine.EngineConfig;
 import com.mfec.dac.engine.PolicyEngine;
 import com.mfec.dac.engine.PolicyExpressionEvaluator;
 import com.mfec.dac.policy.DecisionService;
+import com.mfec.dac.policy.ImpactAnalysis;
 import com.mfec.dac.policy.PrincipalLoader;
 import com.mfec.dac.policy.QueryService;
 import com.mfec.dac.resources.DecisionResource;
@@ -165,13 +166,31 @@ public class DacApplication extends Application<DacConfiguration> {
     PolicyStore policyStore = new PolicyStore(jdbi, environment.getObjectMapper());
     PolicyBindingMaterializer materializer =
         new PolicyBindingMaterializer(jdbi, environment.getObjectMapper(), contexts);
+    // The expression evaluator is wired here and nowhere else. An engine built
+    // without one treats every `expr` as undecidable and fails closed, which
+    // looks exactly like a policy that simply does not grant — so the moment a
+    // policy uses a cross-side comparison, forgetting this line becomes an
+    // outage that reads as correct behaviour (FR-3.2, FR-2A.4).
+    //
+    // Built here rather than beside the runtime resources below because
+    // authoring needs it too: impact analysis (FR-5.3) answers "what changes if
+    // this is activated" by running this same engine twice, and an authoring
+    // screen that judged a policy with a different engine than the one that
+    // will enforce it would be worse than having no screen.
+    PolicyEngine engine =
+        new PolicyEngine(
+            EngineConfig.defaults()
+                .withZone(ZoneId.of("Asia/Bangkok"))
+                .withExpressions(new PolicyExpressionEvaluator()));
+    PrincipalLoader principalLoader = new PrincipalLoader();
     environment
         .jersey()
         .register(
             new PolicyResource(
                 policyStore,
                 materializer,
-                new PolicyOverview(jdbi, environment.getObjectMapper())));
+                new PolicyOverview(jdbi, environment.getObjectMapper()),
+                new ImpactAnalysis(jdbi, contexts, principalLoader, policyStore, engine)));
 
     // The vocabulary a selector is written against, and the people a subject
     // rule is written about. Both are read-only: OpenMetadata and Entra own
@@ -198,18 +217,8 @@ public class DacApplication extends Application<DacConfiguration> {
     // once, rendered once, and the rendered form is what runs. Giving the
     // simulator its own path would mean the thing people check and the thing
     // that enforces could disagree.
-    // The expression evaluator is wired here and nowhere else. An engine built
-    // without one treats every `expr` as undecidable and fails closed, which
-    // looks exactly like a policy that simply does not grant — so the moment a
-    // policy uses a cross-side comparison, forgetting this line becomes an
-    // outage that reads as correct behaviour (FR-3.2, FR-2A.4).
-    PolicyEngine engine =
-        new PolicyEngine(
-            EngineConfig.defaults()
-                .withZone(ZoneId.of("Asia/Bangkok"))
-                .withExpressions(new PolicyExpressionEvaluator()));
     DecisionService decisionService =
-        new DecisionService(jdbi, contexts, new PrincipalLoader(), policyStore, engine);
+        new DecisionService(jdbi, contexts, principalLoader, policyStore, engine);
     environment.jersey().register(new DecisionResource(decisionService));
     environment.jersey().register(
         new QueryResource(

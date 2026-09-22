@@ -4,6 +4,7 @@ import com.mfec.dac.auth.AuthenticatedUser;
 import com.mfec.dac.auth.Secured;
 import com.mfec.dac.common.Fqns;
 import com.mfec.dac.policy.DecisionService;
+import com.mfec.dac.policy.ImpactAnalysis;
 import com.mfec.dac.policy.PolicyBindingMaterializer;
 import com.mfec.dac.policy.PolicyOverview;
 import com.mfec.dac.policy.PolicyStore;
@@ -46,12 +47,17 @@ public class PolicyResource {
   private final PolicyStore policies;
   private final PolicyBindingMaterializer materializer;
   private final PolicyOverview overview;
+  private final ImpactAnalysis impact;
 
   public PolicyResource(
-      PolicyStore policies, PolicyBindingMaterializer materializer, PolicyOverview overview) {
+      PolicyStore policies,
+      PolicyBindingMaterializer materializer,
+      PolicyOverview overview,
+      ImpactAnalysis impact) {
     this.policies = policies;
     this.materializer = materializer;
     this.overview = overview;
+    this.impact = impact;
   }
 
   @GET
@@ -143,6 +149,23 @@ public class PolicyResource {
     PolicyStore.StoredPolicy policy =
         policies.find(id).orElseThrow(() -> new NotFoundException("No policy " + id));
     return overview.overlaps(id, policy.document(), policy.environment());
+  }
+
+  /**
+   * Who this policy changes things for, and how (FR-5.3).
+   *
+   * <p>Deliberately not cached and deliberately not cheap. It evaluates the
+   * engine twice for every person against every table the policy lands on,
+   * because the only honest answer to "what does activating this do" is the
+   * difference between the two worlds. The result declares its own sampling;
+   * callers must not present its counts as totals when {@code sampled} is set.
+   */
+  @GET
+  @Path("/{id}/impact")
+  public ImpactAnalysis.Impact impact(@PathParam("id") UUID id) {
+    PolicyStore.StoredPolicy policy =
+        policies.find(id).orElseThrow(() -> new NotFoundException("No policy " + id));
+    return impact.measure(policy);
   }
 
   @POST

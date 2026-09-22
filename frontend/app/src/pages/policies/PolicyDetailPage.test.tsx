@@ -4,6 +4,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import PolicyDetailPage from './PolicyDetailPage';
 import type {
   PolicyCoverage,
+  PolicyImpact,
   PolicyOverlap,
   PolicyTarget,
   StoredPolicy,
@@ -13,6 +14,7 @@ import type { Policy } from '../../generated/entity/policy/policy';
 const fetchPolicy = jest.fn();
 const fetchPolicyCoverage = jest.fn();
 const fetchPolicyConflicts = jest.fn();
+const fetchPolicyImpact = jest.fn();
 const resolveBindings = jest.fn();
 const transitionPolicy = jest.fn();
 
@@ -20,6 +22,7 @@ jest.mock('../../api/policies', () => ({
   fetchPolicy: (...args: unknown[]) => fetchPolicy(...args),
   fetchPolicyCoverage: (...args: unknown[]) => fetchPolicyCoverage(...args),
   fetchPolicyConflicts: (...args: unknown[]) => fetchPolicyConflicts(...args),
+  fetchPolicyImpact: (...args: unknown[]) => fetchPolicyImpact(...args),
   resolveBindings: (...args: unknown[]) => resolveBindings(...args),
   transitionPolicy: (...args: unknown[]) => transitionPolicy(...args),
 }));
@@ -110,6 +113,27 @@ function overlap(overrides: Partial<PolicyOverlap> = {}): PolicyOverlap {
   };
 }
 
+function impact(overrides: Partial<PolicyImpact> = {}): PolicyImpact {
+  return {
+    policyId: ID,
+    policyName: 'mask-pii',
+    candidateActive: false,
+    environment: 'prod',
+    tablesBound: 1,
+    tablesMeasured: 1,
+    principalsKnown: 3,
+    principalsMeasured: 3,
+    sampled: false,
+    principalsAffected: 0,
+    tablesAffected: 0,
+    byChange: { UNCHANGED: 3 },
+    principals: [],
+    principalsTruncated: false,
+    measuredAt: '2026-09-22T03:00:00Z',
+    ...overrides,
+  };
+}
+
 function renderPage() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
@@ -128,6 +152,7 @@ beforeEach(() => {
   fetchPolicy.mockReset().mockResolvedValue(stored());
   fetchPolicyCoverage.mockReset().mockResolvedValue(coverage());
   fetchPolicyConflicts.mockReset().mockResolvedValue([]);
+  fetchPolicyImpact.mockReset().mockResolvedValue(impact());
   resolveBindings.mockReset().mockResolvedValue({});
   transitionPolicy.mockReset().mockResolvedValue(stored());
 });
@@ -269,5 +294,136 @@ test('a refused lifecycle change is shown, not swallowed', async () => {
 
   expect(
     await screen.findByText('The lifecycle change was refused.')
+  ).toBeInTheDocument();
+});
+
+/*
+ * The claim the whole panel exists to make. A policy can bind to every table
+ * in the estate and still change nothing, because everything it restricts is
+ * already restricted above it -- and a binding count would report that as a
+ * large, alarming number.
+ */
+test('a policy that changes nothing for anyone says so, however much it binds', async () => {
+  fetchPolicyImpact.mockResolvedValue(
+    impact({ tablesBound: 40, tablesMeasured: 25, sampled: true })
+  );
+
+  renderPage();
+
+  expect(
+    await screen.findByText(/would change nothing for anyone/i)
+  ).toBeInTheDocument();
+  // No people, so no floor-wording creeps into a zero: "at least 0" would be
+  // technically true of a sampled run and useless to read.
+  expect(screen.queryByText(/at least/i)).not.toBeInTheDocument();
+  expect(screen.getByText(/25 of 40 tables/)).toBeInTheDocument();
+});
+
+test('the people who lose access are named, with the table they lose', async () => {
+  fetchPolicyImpact.mockResolvedValue(
+    impact({
+      principalsAffected: 1,
+      tablesAffected: 1,
+      byChange: { LOSES_ACCESS: 1, UNCHANGED: 2 },
+      principals: [
+        {
+          principal: 'analyst_a',
+          change: 'LOSES_ACCESS',
+          tablesAffected: 1,
+          tables: [
+            {
+              assetFqn: TABLE,
+              change: 'LOSES_ACCESS',
+              detail: 'can read it today, could not after this',
+            },
+          ],
+        },
+      ],
+    })
+  );
+
+  renderPage();
+
+  expect(
+    await screen.findByText(/Activating this would change what 1 person sees/i)
+  ).toBeInTheDocument();
+  expect(screen.getByText('analyst_a')).toBeInTheDocument();
+  expect(screen.getByText('1 loses the table')).toBeInTheDocument();
+  expect(
+    screen.getByText(/could not after this/, { exact: false })
+  ).toBeInTheDocument();
+});
+
+/*
+ * Same arithmetic, different tense. An active policy is measured against the
+ * world without it, so the report is about what it is doing now -- saying
+ * "activating this would" over a policy already in force would read as though
+ * nothing were enforced yet.
+ */
+test('a policy already in force is described in the present tense', async () => {
+  fetchPolicyImpact.mockResolvedValue(
+    impact({
+      candidateActive: true,
+      principalsAffected: 2,
+      tablesAffected: 1,
+      byChange: { SEES_LESS: 2, UNCHANGED: 1 },
+      principals: [
+        {
+          principal: 'analyst_a',
+          change: 'SEES_LESS',
+          tablesAffected: 1,
+          tables: [
+            { assetFqn: TABLE, change: 'SEES_LESS', detail: 'email now masked' },
+          ],
+        },
+      ],
+    })
+  );
+
+  renderPage();
+
+  expect(
+    await screen.findByText(/This policy is the reason 2 people/i)
+  ).toBeInTheDocument();
+  expect(screen.queryByText(/Activating this/i)).not.toBeInTheDocument();
+});
+
+/*
+ * A capped run reports floors. Printing the figure bare would let somebody
+ * approve a policy on the strength of a number that was never the total.
+ */
+test('a sampled run says "at least" rather than a bare number', async () => {
+  fetchPolicyImpact.mockResolvedValue(
+    impact({
+      sampled: true,
+      tablesBound: 300,
+      tablesMeasured: 25,
+      principalsKnown: 4000,
+      principalsMeasured: 200,
+      principalsAffected: 180,
+      tablesAffected: 25,
+      byChange: { LOSES_ACCESS: 180 },
+      principals: [],
+      principalsTruncated: true,
+    })
+  );
+
+  renderPage();
+
+  expect(
+    await screen.findByText(/at least 180 people/i)
+  ).toBeInTheDocument();
+  expect(screen.getByText(/floors rather than totals/i)).toBeInTheDocument();
+});
+
+test('a policy bound to nothing is told to resolve, not shown a zero', async () => {
+  fetchPolicyImpact.mockResolvedValue(
+    impact({ tablesBound: 0, tablesMeasured: 0, byChange: {} })
+  );
+
+  renderPage();
+
+  expect(
+    await screen.findByText(/bound to no tables/i)
   ).toBeInTheDocument();
 });

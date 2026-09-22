@@ -3,8 +3,10 @@ package com.mfec.dac.policy;
 import com.mfec.dac.engine.Attribute;
 import com.mfec.dac.engine.Principal;
 import com.mfec.dac.schema.entity.policy.AttributeCondition;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.TreeSet;
@@ -126,6 +128,173 @@ public class PrincipalLoader {
       builder.attribute(attribute);
     }
     return Optional.of(builder.build());
+  }
+
+  /**
+   * Everyone a decision can be asked about, loaded in four queries rather than
+   * four per person.
+   *
+   * <p>{@link #find} is shaped for one principal at a time, which is right for
+   * a decision and wrong for impact analysis (FR-5.3): answering "who does this
+   * policy change things for" means evaluating the whole directory, and doing
+   * that one {@code find} at a time is four round trips per person for no
+   * reason. The shaping is identical -- same buckets, same transitive
+   * membership, same attribute filter -- because a person who appears one way
+   * in the impact report and another way in the simulator is a bug report
+   * nobody can reproduce.
+   *
+   * <p>Groups are left out. A group is a row in {@code principal} so that
+   * membership can nest, but nobody logs in as one, and counting groups among
+   * the people affected would inflate every number on the screen.
+   *
+   * @param limit how many to load, newest-irrelevant, ordered by username so
+   *     that a truncated run is at least a stable prefix rather than a
+   *     different arbitrary subset each time
+   */
+  public List<Principal> everyone(Handle handle, int limit) {
+    List<Row> rows =
+        handle
+            .createQuery(
+                """
+                SELECT id, username, email, enabled
+                FROM principal
+                WHERE principal_type IN ('USER', 'SERVICE')
+                  AND enabled
+                ORDER BY lower(username)
+                LIMIT :limit
+                """)
+            .bind("limit", limit)
+            .map(
+                (rs, ctx) ->
+                    new Row(
+                        rs.getString("id"),
+                        rs.getString("username"),
+                        rs.getString("email"),
+                        rs.getBoolean("enabled")))
+            .list();
+    if (rows.isEmpty()) {
+      return List.of();
+    }
+
+    List<String> ids = rows.stream().map(Row::id).toList();
+
+    Map<String, Set<String>> roles = new HashMap<>();
+    handle
+        .createQuery(
+            """
+            SELECT principal_id, app_role FROM app_role_assignment
+            WHERE principal_id IN (<ids>)
+            """)
+        .bindList("ids", ids.stream().map(java.util.UUID::fromString).toList())
+        .map((rs, ctx) -> new String[] {rs.getString("principal_id"), rs.getString("app_role")})
+        .forEach(
+            pair ->
+                roles
+                    .computeIfAbsent(pair[0], key -> new TreeSet<>(String.CASE_INSENSITIVE_ORDER))
+                    .add(pair[1]));
+
+    Map<String, List<Membership>> memberships = allMemberships(handle, ids);
+
+    Map<String, List<Attribute>> attributes = new HashMap<>();
+    handle
+        .createQuery(
+            """
+            SELECT principal_id, attr_key, attr_value, source
+            FROM principal_attribute
+            WHERE principal_id IN (<ids>)
+              AND valid_to IS NULL
+            ORDER BY attr_key, attr_value
+            """)
+        .bindList("ids", ids.stream().map(java.util.UUID::fromString).toList())
+        .map(
+            (rs, ctx) ->
+                Map.entry(
+                    rs.getString("principal_id"),
+                    new Attribute(
+                        rs.getString("attr_key"),
+                        rs.getString("attr_value"),
+                        source(rs.getString("source")))))
+        .forEach(
+            entry ->
+                attributes
+                    .computeIfAbsent(entry.getKey(), key -> new java.util.ArrayList<>())
+                    .add(entry.getValue()));
+
+    List<Principal> out = new java.util.ArrayList<>(rows.size());
+    for (Row row : rows) {
+      Set<String> teams = new TreeSet<>(String.CASE_INSENSITIVE_ORDER);
+      Set<String> groups = new TreeSet<>(String.CASE_INSENSITIVE_ORDER);
+      for (Membership membership : memberships.getOrDefault(row.id(), List.of())) {
+        if ("openmetadata".equals(membership.source())) {
+          teams.add(membership.username());
+        } else {
+          groups.add(membership.username());
+        }
+      }
+      Principal.Builder builder =
+          Principal.withId(row.username())
+              .email(row.email())
+              .roles(roles.getOrDefault(row.id(), Set.of()).toArray(String[]::new))
+              .teams(teams.toArray(String[]::new))
+              .groups(groups.toArray(String[]::new));
+      for (Attribute attribute : attributes.getOrDefault(row.id(), List.of())) {
+        builder.attribute(attribute);
+      }
+      out.add(builder.build());
+    }
+    return List.copyOf(out);
+  }
+
+  /** How many people {@link #everyone} would return without a limit. */
+  public int countEveryone(Handle handle) {
+    return handle
+        .createQuery(
+            """
+            SELECT count(*) FROM principal
+            WHERE principal_type IN ('USER', 'SERVICE') AND enabled
+            """)
+        .mapTo(Integer.class)
+        .one();
+  }
+
+  /**
+   * The transitive closure of the membership graph, for many members at once.
+   *
+   * <p>Same walk as {@link #memberships}, seeded from every requested member
+   * rather than one, with the seed carried along so each row can be attributed
+   * back. {@code UNION} again, for the same reason: a diamond in the graph
+   * would otherwise not terminate.
+   */
+  private static Map<String, List<Membership>> allMemberships(Handle handle, List<String> ids) {
+    Map<String, List<Membership>> out = new HashMap<>();
+    handle
+        .createQuery(
+            """
+            WITH RECURSIVE reachable(member_id, group_id) AS (
+                SELECT member_id, group_id FROM group_member
+                WHERE member_id IN (<ids>)
+              UNION
+                SELECT r.member_id, m.group_id
+                FROM group_member m
+                JOIN reachable r ON m.member_id = r.group_id
+            )
+            SELECT r.member_id, p.username, p.source
+            FROM reachable r
+            JOIN principal p ON p.id = r.group_id
+            WHERE p.enabled
+            ORDER BY p.username
+            """)
+        .bindList("ids", ids.stream().map(java.util.UUID::fromString).toList())
+        .map(
+            (rs, ctx) ->
+                Map.entry(
+                    rs.getString("member_id"),
+                    new Membership(rs.getString("username"), rs.getString("source"))))
+        .forEach(
+            entry ->
+                out.computeIfAbsent(entry.getKey(), key -> new java.util.ArrayList<>())
+                    .add(entry.getValue()));
+    return out;
   }
 
   /** Same as {@link #find}, for callers that treat an unknown principal as an error. */

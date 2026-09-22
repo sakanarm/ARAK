@@ -295,6 +295,50 @@ public class PolicyStore {
                 .list());
   }
 
+  /**
+   * The same list, with one named policy forced in whatever state it is in.
+   *
+   * <p>This is what makes impact analysis (FR-5.3) an honest comparison rather
+   * than a second implementation of it. A draft is not active, so
+   * {@link #activeFor} cannot see it; the alternative to this method is for the
+   * caller to fetch the draft separately and splice it into the list, which
+   * means copying the {@code ORDER BY} below into Java and hoping the two
+   * agree about where a {@code SCHEMA} policy sits relative to a {@code TABLE}
+   * one. They would not agree for long. Here the database still decides the
+   * layering, and the caller gets the composed order it would really see.
+   *
+   * <p>The candidate bypasses the lifecycle and validity filters but not the
+   * binding check: a policy that resolves onto nothing changes nothing, and
+   * pretending otherwise would invent an impact that activating it would not
+   * produce.
+   */
+  public List<StoredPolicy> activeForIncluding(String assetFqn, String environment, UUID candidate) {
+    return jdbi.withHandle(
+        handle ->
+            handle
+                .createQuery(
+                    """
+                    SELECT p.* FROM policy p
+                    WHERE (p.id = :candidate
+                           OR (p.lifecycle_state = 'ACTIVE'
+                               AND (p.valid_from IS NULL OR p.valid_from <= now())
+                               AND (p.valid_until IS NULL OR p.valid_until > now())))
+                      AND p.environment = :environment
+                      AND EXISTS (SELECT 1 FROM policy_binding b
+                                  WHERE b.policy_id = p.id AND b.target_fqn = :fqn)
+                    ORDER BY CASE p.scope_level
+                               WHEN 'ORG' THEN 0 WHEN 'DOMAIN' THEN 1 WHEN 'SERVICE' THEN 2
+                               WHEN 'DATABASE' THEN 3 WHEN 'SCHEMA' THEN 4 WHEN 'TABLE' THEN 5
+                               ELSE 6 END,
+                             p.scope_depth, p.name
+                    """)
+                .bind("fqn", assetFqn)
+                .bind("environment", environment)
+                .bind("candidate", candidate)
+                .map(this::map)
+                .list());
+  }
+
   /** The history of one policy, newest first (FR-9.2). */
   public List<StoredPolicy> history(UUID id) {
     return jdbi.withHandle(

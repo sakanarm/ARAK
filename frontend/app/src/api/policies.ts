@@ -125,12 +125,72 @@ export async function fetchPolicyCoverage(id: string): Promise<PolicyCoverage> {
   return data;
 }
 
+/**
+ * What changes for real people if this policy is switched on (FR-5.3).
+ *
+ * Every field is a counterfactual, not a count of bindings: the backend
+ * composes each person's decision on each bound table twice, once with this
+ * policy in the stack and once without, and reports only the differences. A
+ * policy that grants what something above it already grants therefore reports
+ * nobody affected even though it binds to plenty.
+ *
+ * `sampled` says the run was capped. When it is true the counts are floors —
+ * the screen must say "at least", never a bare number.
+ */
+export type PolicyImpactChange =
+  | 'LOSES_ACCESS'
+  | 'GAINS_ACCESS'
+  | 'CHANGED'
+  | 'SEES_LESS'
+  | 'SEES_MORE'
+  | 'UNCHANGED';
+
+export interface PolicyImpactTable {
+  assetFqn: string;
+  change: PolicyImpactChange;
+  detail: string;
+}
+
+export interface PolicyImpactPrincipal {
+  principal: string;
+  change: PolicyImpactChange;
+  tablesAffected: number;
+  tables: PolicyImpactTable[];
+}
+
+export interface PolicyImpact {
+  policyId: string;
+  policyName: string;
+  /** True when the policy is already in force — the report then reads backwards. */
+  candidateActive: boolean;
+  environment: string;
+  tablesBound: number;
+  tablesMeasured: number;
+  principalsKnown: number;
+  principalsMeasured: number;
+  sampled: boolean;
+  principalsAffected: number;
+  tablesAffected: number;
+  byChange: Partial<Record<PolicyImpactChange, number>>;
+  principals: PolicyImpactPrincipal[];
+  principalsTruncated: boolean;
+  measuredAt: string;
+}
+
 /** The other policies bound to the same targets, and what happens there. */
 export async function fetchPolicyConflicts(
   id: string
 ): Promise<PolicyOverlap[]> {
   const { data } = await apiClient.get<PolicyOverlap[]>(
     `/v1/policies/${id}/conflicts`
+  );
+  return data;
+}
+
+/** Who this policy changes things for, and how (FR-5.3). */
+export async function fetchPolicyImpact(id: string): Promise<PolicyImpact> {
+  const { data } = await apiClient.get<PolicyImpact>(
+    `/v1/policies/${id}/impact`
   );
   return data;
 }
