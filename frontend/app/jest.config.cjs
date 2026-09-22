@@ -2,6 +2,17 @@
 module.exports = {
   preset: 'ts-jest',
   testEnvironment: 'jsdom',
+  /*
+   * Jest's 5s default is a budget for the behaviour under test. Here the first
+   * `findBy*` in a suite also pays for ts-jest type-checking and compiling the
+   * whole vendored design-system module graph behind that page -- tens of
+   * seconds on a loaded machine, and none of it the component's doing. At 5s
+   * the suites rendering the heaviest pages (policy builder, app roles) passed
+   * or failed depending on what else was running, and a different set failed
+   * each run. A timeout that fires on compilation says nothing about the code,
+   * so the budget is raised to one a genuinely hung test still trips.
+   */
+  testTimeout: 30000,
   roots: ['<rootDir>/src'],
   // The design system is vendored OUTSIDE this package (frontend/ui-core-components),
   // so walking up from its files never reaches a node_modules. Point Jest at ours

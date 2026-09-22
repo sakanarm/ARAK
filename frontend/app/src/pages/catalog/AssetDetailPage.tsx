@@ -1,7 +1,8 @@
 import { useQuery } from '@tanstack/react-query';
-import { Link, useParams } from 'react-router-dom';
-import { ArrowLeft, AlertCircle } from '@untitledui/icons';
+import { Link, useNavigate, useParams } from 'react-router-dom';
+import { ArrowLeft, AlertCircle, Eye } from '@untitledui/icons';
 import { Badge } from '@openmetadata/ui-core-components/components/base/badges/badges';
+import { Button } from '@openmetadata/ui-core-components/components/base/buttons/button';
 import {
   apiErrorMessage,
   fetchAsset,
@@ -35,6 +36,7 @@ export default function AssetDetailPage() {
   // uses a splat so React Router hands over the whole tail rather than the
   // first segment.
   const params = useParams();
+  const navigate = useNavigate();
   const fqn = params['*'] ?? params.fqn ?? '';
 
   const { data, isLoading, error } = useQuery({
@@ -84,6 +86,23 @@ export default function AssetDetailPage() {
           <h1 className="tw:text-display-xs tw:font-semibold tw:text-primary">
             {asset.displayName || asset.name}
           </h1>
+          {/*
+            The policies below say what governs this table. This says what
+            that adds up to for one person -- the question an owner asks
+            straight after reading the list, and the one the list cannot
+            answer, because composing seven layers in your head is exactly
+            what nobody can do reliably (FR-5.2).
+          */}
+          <Button
+            className="tw:ml-auto"
+            color="secondary"
+            iconLeading={Eye}
+            onPress={() =>
+              navigate(`/simulator?asset=${encodeURIComponent(asset.fqn)}`)
+            }
+            size="sm">
+            View as someone
+          </Button>
           <Badge color="gray" size="sm" type="modern">
             {asset.assetType}
           </Badge>

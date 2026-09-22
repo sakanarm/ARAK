@@ -28,7 +28,7 @@ Phase 1 รองรับ SQL Server + PostgreSQL · identity หลักค�
 | **M1 OM Connector** | 🚧 ~95% — full crawl + governance + effective facet + FR-1.5 webhook/poller/reconcile + catalog read API + Catalog UI + governance read API + Governance UI · **sync กับ OM จริงสำเร็จแล้ว** · เหลือ FR-1.6 (reconcile กับ JDBC จริง), FR-1.7 (local tag + push-back — **ผู้ใช้สั่ง read-only ตอนนี้**) |
 | **M2 Identity** | 🚧 ~50% — local sign-in ใช้ได้ · schema `principal`/`principal_attribute`/`group_member`/`app_role_assignment` มีตั้งแต่ V2 · read API + หน้า People & attributes (**filter ตาม attribute + กดเข้าไปดูสมาชิกใน group ได้ที่ `/principals/:id`**) + **หน้า Application roles (`/settings/roles`) อ่านอย่างเดียว** เสร็จ · **เพิ่ม local account + assign/withdraw app role ได้จาก UI แล้ว (V10 + `IdentityAdminStore` + audit)** · **ยังไม่มี write API สำหรับ *attribute* — ต้อง seed ด้วย SQL** · ยังไม่มีหน้าจอเปลี่ยน password (ทุก account ที่สร้างเป็น `must_change`) · ยังไม่มี Entra OIDC / Graph sync |
 | **M3 Policy Engine** | 🚧 ~93% — engine **156 tests** (data policy 26 + subscription 45 เพิ่มรอบนี้ · เจอบั๊กจริง 2 ตัว ดูข้อ P) · persistence (`PolicyStore`) + `policy_binding` materializer + REST · `PolicyBindingMaterializerIT` 10 tests บน Postgres จริง · เหลือ decision cache (FR-5.5), ANTLR grammar ของ `expr` (FR-3.2) |
-| **M4 Policy Authoring UI** | 🚧 ~80% — Policy list + Policy builder + readback + capability matrix · **รอบนี้เพิ่ม: `/policies/:id` เป็นหน้าสรุปอ่านอย่างเดียว (coverage + conflicts) แยกจาก `/policies/:id/edit` · panel Policies ในหน้า asset แยก Subscription/Data = ปิด FR-3.1.5 แล้ว** · เหลือ View-as-user (FR-5.2), impact analysis (FR-5.3) |
+| **M4 Policy Authoring UI** | 🚧 ~90% — Policy list + Policy builder + readback + capability matrix + `/policies/:id` หน้าสรุปอ่านอย่างเดียว + panel Policies ในหน้า asset (FR-3.1.5) · **รอบนี้ปิด View-as-user (FR-5.2) — `/simulator` ใช้งานได้จริง ยิงกับ engine ตัวเดียวกับที่ query ใช้ ดูข้อ Z** · เหลือ impact analysis (FR-5.3) |
 | **M5 Secure View (5.1.2)** | ⬜ — `DecisionSql` + dialect ทั้งสองตัวพร้อมแล้ว (ใช้ร่วมกับ 5.2) เหลือ ViewCompiler + `row_entitlement` maintainer + DDL apply/rollback |
 | **M6 Source Config (5.1.1)** | ⬜ |
 | **M7 Query API (5.2a)** | 🚧 ~80% — **`POST /v1/query` + Query console ใช้งานได้จริงรอบนี้** · rewrite → RLS + mask + hidden column → execute → audit ครบ · พิสูจน์กับ Postgres จริงแล้วทั้ง allow / RLS / mask / refuse · เหลือ direct-access detector (FR-6.3.1) และ result cache |
@@ -49,7 +49,7 @@ Phase 1 รองรับ SQL Server + PostgreSQL · identity หลักค�
 |---|---|---|
 | Backend unit | dac-common 6 · dac-engine 156 · dac-compiler-sql 7 · dac-connector-openmetadata 88 · dac-proxy 16 · dac-service **56** = **329** | `./mvnw -am -pl backend/dac-service test` |
 | Backend integration (Testcontainers `postgres:16-alpine`) | **103 tests** — `AssetStoreIT` 6 · `CatalogQueryIT` 15 · `DataSourceStoreIT` 13 · `GovernanceStoreIT` 10 · `IdentityAdminStoreIT` 15 · `PolicyBindingMaterializerIT` 10 · `PolicyOverviewIT` 24 · `PolicyStoreIT` 10 | `./mvnw -am -pl backend/dac-service verify -Pintegration` |
-| Frontend | **15 suites / 70 tests** | `npx jest` ใน `frontend/app` |
+| Frontend | **16 suites / 80 tests** | `npx jest` ใน `frontend/app` |
 
 `yarn type-check` · `yarn lint` · `yarn build` ผ่านหมด → **BUILD SUCCESS** ทั้งสองฝั่ง
 
@@ -1248,6 +1248,89 @@ private static String environmentOr(String environment) {
 
 ---
 
+### Z. View-as-user / Simulator (FR-5.2) — ปิดแล้ว
+
+> แผนเขียนถึงฟีเจอร์นี้ว่า *"ฟีเจอร์นี้คือสิ่งที่ทำให้ทีม data กล้าใช้ระบบ ถ้าไม่มีจะไม่มีใครกล้า apply"*
+
+#### Z.1 backend ไม่ต้องแตะเลย — สำรวจก่อนเขียน แล้วพบว่ามีครบอยู่แล้ว
+
+ก่อนเริ่มได้ไล่ดู backend ทั้งเส้นทาง แล้วพบว่า **FR-5.2 ฝั่ง backend เสร็จไปแล้วตั้งแต่ M3**:
+
+| ของที่มีอยู่แล้ว | ที่ไหน |
+|---|---|
+| `POST /api/v1/decisions` รับ `{principal, assetFqn, at, ip, purpose, environment}` | `DecisionResource.java` |
+| gate การถามแทนคนอื่น: ต้องเป็น PLATFORM_ADMIN / POLICY_AUTHOR / DATA_OWNER / AUDITOR | `DecisionResource.decide()` |
+| `POST /api/v1/query` + `asPrincipal` (รันจริงในฐานะคนอื่น ไม่ใช่ preview) | `QueryResource.java` |
+| register ทั้งคู่ | `DacApplication.java:212-213` |
+
+→ **รอบนี้เป็นงาน frontend ล้วน ไม่มี migration ไม่มี Maven build** · `DecisionService` เขียนคอมเมนต์ดักไว้ตั้งแต่ต้นแล้วว่า *"every runtime path — the simulator (FR-5.2), the query proxy (FR-6.3), the compilers — goes through it so that a decision shown in a preview is the same object that governs a query"* ซึ่งเป็นเหตุผลที่หน้านี้ **ไม่ได้จำลองอะไรเลย** มันแสดง decision ตัวจริง
+
+#### Z.2 ไฟล์ที่เพิ่ม/แก้
+
+- **`api/decisions.ts` (ใหม่)** — `simulate(ask)` บาง ๆ ทับ `POST /v1/decisions` · default `environment` เป็น `ENFORCED_ENVIRONMENT` ตัวเดียวกับที่ builder ใช้ (ผลพลอยได้จากข้อ Y.2 — ถ้ายังเป็น literal `'dev'` หน้านี้จะตอบคนละ policy set กับที่ engine บังคับใช้ โดยไม่มีอะไรบอก)
+- **`pages/simulator/SimulatorPage.tsx` (ใหม่, ~560 บรรทัด)**
+- **`App.tsx`** — route `/simulator`
+- **`layout/navigation.ts`** — Simulator `milestone: 'M4'` → `null` (nav จองที่ไว้แล้ว เหลือแค่ปลดป้าย)
+- **`pages/catalog/AssetDetailPage.tsx`** — ปุ่ม **View as someone** บน header → `/simulator?asset=<fqn>` · ใช้ `onPress` + `navigate()` ตามแบบที่หน้า Policy ใช้ **ไม่ใช่ `href`** (ซึ่งจะ reload ทั้งหน้า)
+- **`shot-simulator.mjs`** — สคริปต์ถ่ายภาพหน้าจอ 3 คน (gitignore อยู่แล้ว)
+
+#### Z.3 การตัดสินใจที่สำคัญ 4 ข้อ
+
+**(ก) projection ไล่จาก column ของ catalog ไม่ใช่จาก mask list**
+ถ้าไล่จาก `columnMasks` หน้าจอจะบอกได้แค่ "อะไรถูก mask" แต่ **สิ่งที่คนเปิดหน้านี้มาหาคือ column ที่ *ไม่* ถูก mask** — `citizen_id · as stored` คือบรรทัดที่ทำให้มีคนไปเขียน policy ส่วน mask list ไม่มีทางแสดงมันได้เลย · ใช้ `queryKey: ['catalog-asset', fqn]` **ตัวเดียวกับ AssetDetailPage** → เปิดต่อกันเสียคำขอเดียว
+
+**(ข) แยก "matched" ออกจาก "decisive" และ **สลับข้างตามผลลัพธ์**
+เวอร์ชันแรกใช้ `reason.matched` เป็นตัวตัดสินว่าอันไหนสำคัญ — **ผิด และเห็นชัดตอนถ่ายภาพหน้าจอ analyst_b จริง**: หน้าจอ deny แต่ขึ้น policy สีเขียว `allow` เป็นเหตุผลหลัก ส่วนสองประโยคที่ตอบคำถามจริง (`expression is false for this principal: user.country == asset.prop('dataResidency')` / `attribute condition not satisfied: clearance lt L2`) ถูกยุบอยู่ใต้สามเหลี่ยม
+
+กติกาที่ถูกคือ **เหตุผลที่ "สำคัญ" คือเหตุผลที่เถียงไปทางผลลัพธ์** และมันกลับข้างกับผลลัพธ์:
+- **allow** → decisive = `matched`
+- **deny** → decisive = `!matched || effect === 'DENY'` เพราะ policy ที่ *ไม่* match คือสิ่งที่กันไว้ ส่วน policy ที่ match ไม่ได้ทำให้ถูก deny
+- reason ที่ **ไม่มี `policyId`** (`(composition)`) ไม่ใช่ policy — มันคือประโยคของ engine เองว่าชั้นต่างๆ รวมกันแล้วได้อะไร → ขึ้นบนสุดของ deny เสมอ
+- ป้าย effect ระบายสีตาม**สิ่งที่เกิดขึ้น** ไม่ใช่ตามที่ policy ประกาศ: ไม่ match = เทา + คำว่า *"would allow, did not match"* · สีเขียว `allow` ข้างประโยค "expression is false" คือการพูดความจริงที่ถูกอ่านเป็นตรงข้าม
+
+**(ค) deny แล้วไม่แสดง projection เลย**
+สิ่งที่ *จะ* ถูก mask ถ้าเข้าถึงได้ ไม่ใช่คำตอบฉบับย่อของ deny — มันเป็นคนละคำตอบ และการโชว์มันชวนให้สรุปผิด
+
+**(ง) datalist ไม่ใช่ dropdown**
+ทั้งรายชื่อคนและรายชื่อ table ยาวเท่าองค์กร · datalist พิมพ์กรองได้ **และยังรับชื่อที่ไม่อยู่ในลิสต์** ซึ่งสำคัญ เพราะ "principal ที่ระบบไม่รู้จัก" เป็นคำถามที่ถูกต้อง และคำตอบคือ denial ที่บอกเหตุผลนั้นตรงๆ
+
+#### Z.4 field `at` / `ip` / `purpose` มีไว้ทำไม
+
+policy ที่เปิดหน้าต่าง 08:00–18:00 และ policy ที่ผูกกับ IP range **ทดสอบไม่ได้เลย** ถ้าเวลาที่ถามได้มีแค่ "ตอนนี้" และ IP มีแค่ของตัวเอง · นี่คือสิ่งที่เปลี่ยน "เราคิดว่ามันน่าจะ deny นอกเวลา" ให้เป็นของที่ใครก็ตรวจได้ในไม่กี่วินาที · `at` ถูกแปลงเป็น ISO instant ก่อนส่ง และ URL ถูก sync (`?principal=&asset=`) เพื่อให้ **deny ที่มีคนไม่เห็นด้วย ส่งเป็นลิงก์ได้** ไม่ใช่ส่งเป็นคำอธิบายว่าให้กรอกช่องไหนบ้าง
+
+#### Z.5 เทสต์ + ยืนยันกับของจริง
+
+`SimulatorPage.test.tsx` (ใหม่, **10 ตัว**) — column ที่ไม่มี mask ต้องโผล่ · deny ต้องไม่โชว์ projection · **deny ต้องนำด้วยสิ่งที่กันไว้ ไม่ใช่สิ่งที่ match** (กันข้อ ข ไม่ให้กลับมา) · policy ที่ดูแล้วไม่เข้าเงื่อนไขต้องถูกยุบ · unenforceable ต้องพูดออกมา · ไม่กรอกครบต้องกดไม่ได้ · `describePredicate` 4 ตัว
+
+**ยิงจริงกับ backend ที่รันอยู่** (`demo-pg.salesdb.sales.customer`) — ตรงกับ manual E2E ข้อ 9 ของแผนเป๊ะ:
+
+| คน | ผลจาก engine | หน้าจอแสดง |
+|---|---|---|
+| `analyst_a` | allow · `citizen_id` PARTIAL(5) · `email` REGEX · rows `branch_code IN (BKK-01)` | 7 as stored · 2 masked · 0 hidden · *"Only rows where branch_code is BKK-01."* |
+| `analyst_b` | deny (`user.country != dataResidency`, `clearance lt L2`) | ไม่มี projection · Why นำด้วยประโยค composition |
+| `steward_c` | allow · ไม่มี mask · rows `IN (BKK-01, CNX-01)` | 9 as stored · 0 masked · *"is one of BKK-01, CNX-01."* |
+
+> **กับดักที่เจอระหว่างทาง:** backend ที่รันค้างอยู่พ่น `ClassNotFoundException` ของคลาสที่อยู่ใน jar ตัวเอง — ไม่ใช่บั๊กโค้ด แต่เพราะ **`verify` เขียนทับ jar ใต้ JVM ที่เปิดไฟล์นั้นค้างไว้** classloader จึงโหลดคลาสที่ยังไม่เคยโหลดไม่ได้ → **restart backend ทุกครั้งหลัง build ก่อนจะยิงทดสอบ** ไม่งั้นจะไล่หาบั๊กที่ไม่มีอยู่จริง
+
+#### Z.6 เทสต์ที่ล้มไม่ซ้ำชุดกัน — สองนาฬิกาที่ต้องตั้งทั้งคู่
+
+รอบนี้ full suite **ล้มคนละชุดกันสามรอบติด** (6 → 4 → 2 suites) ทั้งที่โค้ดไม่ได้เปลี่ยนระหว่างรอบ · suite ที่ล้มคือ suite ที่ใช้เวลา 90–114 วินาที เสมอ
+
+สาเหตุไม่ใช่โค้ด: `findBy*` **ตัวแรก**ของแต่ละ suite เป็นคนจ่ายค่า ts-jest type-check + compile ของ design system ทั้งกอง (ไม่ cache ข้าม worker) → พอเครื่องมีโหลด (JVM + Vite dev + jest 16 suites พร้อมกัน) งบหมดไปกับการคอมไพล์ก่อนที่ component จะได้ render อะไรเลย
+
+**มีนาฬิกาสองตัว และต้องตั้งทั้งคู่ — ตั้งตัวเดียวแล้วอาการย้ายที่เฉยๆ:**
+
+| นาฬิกา | default | ตั้งที่ | อาการตอนหมดเวลา |
+|---|---|---|---|
+| งบต่อเทสต์ของ jest | **5s** | `jest.config.cjs` → `testTimeout: 30000` | `Exceeded timeout of 5000 ms for a test` |
+| งบของ `findBy*` เอง (คนละตัวกับข้างบน) | **1s** | `src/setupTests.ts` → `configure({ asyncUtilTimeout: 15000 })` | `Unable to find an element with the text: …` + dump DOM ที่ยัง render ไม่เสร็จ |
+
+ตัวที่สองหลอกที่สุด เพราะข้อความมันอ่านเหมือน **assertion ผิด** ไม่ใช่ timeout — DOM ที่ dump ออกมาคือหน้าจอครึ่งเดียวที่ render ทันในหนึ่งวินาที ไม่ใช่หน้าจอสุดท้าย
+
+> **timeout ที่ยิงตอนคอมไพล์ไม่ได้บอกอะไรเกี่ยวกับโค้ด** — รอนานขึ้นสำหรับ element ที่กำลังจะมา ไม่มีต้นทุน ส่วน element ที่ไม่มีวันมาก็ยังล้มอยู่ดี แค่ช้าลง
+
+---
+
 ## รอบก่อนหน้า — Global search ข้ามทุก entity + transition ตอนเปลี่ยนหน้า/เข้า-ออกระบบ + ชิป governance ที่อ่านออก
 
 > รอบนี้เพิ่ม **endpoint ใหม่หนึ่งตัว** (`GET /api/v1/search`) และงาน UX ล้วนๆ อีกสามเรื่องที่ผู้ใช้สั่งระหว่างทาง
@@ -1598,6 +1681,8 @@ estate ที่ใช้: `prod-mssql.SalesDB.dbo.{customer, order}` + **`prod-
 - ❌ **`type="badge-modern"`** — ค่าที่ถูกคือ `type="modern"` · และ `Badge` ควรส่ง `type` ชัดเจนเสมอเพื่อให้ generic `BadgeColor<T>` inference ทำงาน
 - ❌ **Jest พังทั้ง suite เพราะ `import logo from '…png'`** — แก้ด้วย `moduleNameMapper` → `src/__mocks__/fileMock.cjs` · **บทเรียน: รัน `yarn test` เต็มชุดทุกครั้ง**
 - ❌ **`@testing-library/user-event` ไม่ได้ติดตั้ง** — ใช้ `fireEvent`
+- ❌ **build ทับ jar ใต้ JVM ที่กำลังรันอยู่** — `verify` repackage `dac-service.jar` ทับไฟล์ที่ JVM เปิดค้างไว้ → endpoint ที่ login ไปแล้วยังทำงาน แต่ endpoint ที่ยังไม่เคยถูกเรียกจะพ่น `ClassNotFoundException` / `NoClassDefFoundError` ของคลาสใน jar ตัวเอง (รอบนี้เจ๊ `io.dropwizard.util.Throwables`, `org.glassfish.jersey.internal.inject.InjecteeImpl`) และ curl ได้ HTTP 000 — **ไม่ใช่บั๊กโค้ด แต่เสียเวลาไล่เหมือนเป็นบั๊ก** → **restart backend ทุกครั้งหลัง build ก่อนยิงทดสอบ**
+- ❌ **jest default `testTimeout` 5s กับ ts-jest** — `findBy*` ตัวแรกของ suite จ่ายค่า type-check + compile กอง design system ทั้งกองไปด้วย (หลายสิบวินาทีต่อ suite ตอนเครื่องมีโหลด) → suite ที่ render หน้าหนักสุด (policy builder, app roles) **พังคนละชุดทุกรอบ** โดยที่โค้ดไม่ได้เปลี่ยน · timeout ที่ยิงตอน compile ไม่ได้บอกอะไรเกี่ยวกับโค้ด → **มีนาฬิกาสองตัว ต้องตั้งทั้งคู่** — `testTimeout: 30000` ใน `jest.config.cjs` (งบต่อเทสต์) และ `configure({ asyncUtilTimeout: 15000 })` ใน `src/setupTests.ts` (งบของ `findBy*` เอง default แค่ **1s**) · ตัวหลังหลอกที่สุด เพราะมันขึ้นว่า `Unable to find an element with the text: …` พร้อม dump DOM — อ่านเหมือน assertion ผิด ทั้งที่ DOM นั้นคือหน้าจอที่ render ทันในหนึ่งวินาที ไม่ใช่หน้าจอสุดท้าย
 - ❌ Playwright browsers ไม่ได้ติดตั้ง — ใช้ `chromium.launch({ channel: 'msedge' })` และ script ต้องอยู่ใน `frontend/app/`
 - ❌ **`shortFqn` ฉบับแรกคืน "สอง segment ท้าย"** — ใช้ไม่ได้กับข้อมูลจริง เพราะ domain สองชั้นท้ายยาวชั้นละ ~45 ตัวอักษร ผลคือชิปยาวเท่าเดิม → ต้องคิดเป็น **งบของ parent** (`PARENT_BUDGET = 18`) แล้วยุบ parent ที่ยาวเกินงบเป็น `…`
 - ❌ **คิดจะตัด parent ทิ้งเสมอให้เหลือแค่ leaf** — `PII.Sensitive` กับ `MFEC-PDPA.Sentitive` จะเหลือ `Sensitive`/`Sentitive` ที่แยกไม่ออกว่ามาจากหมวดไหน = ชิปที่อ่านง่ายแต่ผิด
@@ -1625,7 +1710,7 @@ estate ที่ใช้: `prod-mssql.SalesDB.dbo.{customer, order}` + **`prod-
 
 1. **push ให้ขึ้น** — local นำหน้า remote อยู่ (remote main ยังอยู่ที่ `e3aaa52`) · แก้เรื่อง `git push` ค้างก่อน (ดู What Didn't Work) แล้วยืนยันด้วย `git ls-remote --heads origin` · **scan secret ก่อน push ทุกครั้ง**
 2. **ปิด M3** — decision cache (FR-5.5) + ANTLR grammar ของ `expr` (FR-3.2)
-3. **ปิด M4** — *(FR-3.1.5 เสร็จแล้วรอบนี้ — ดูข้อ X)* เหลือ View-as-user (FR-5.2) และ impact analysis (FR-5.3) · impact analysis ต่อยอดจาก `PolicyOverview.coverage()` ได้โดยตรง เพราะมันตอบ "กี่ table กี่ column" อยู่แล้ว เหลือ "กี่ user"
+3. **ปิด M4** — *(FR-3.1.5 ปิดที่ข้อ X · FR-5.2 ปิดที่ข้อ Z)* **เหลือ impact analysis (FR-5.3) อย่างเดียว** · ต่อยอดจาก `PolicyOverview.coverage()` ได้โดยตรง เพราะมันตอบ "กี่ table กี่ column" อยู่แล้ว เหลือ "กี่ user" — ซึ่งคือการเอา `DecisionService` ตัวเดียวกับที่ `/simulator` เรียก มาวนข้าม principal ทั้งชุดของ binding แทนที่ละคน
 4. **ปิดช่องว่างข้อ 1–5 ข้างบน** โดยเฉพาะ **ข้อ 4 (audit ของการ configure)** ซึ่งเป็นของที่ auditor จะถามหาแน่นอน
 5. **M2** — write API ของ principal/attribute แล้วต่อ (ก) การ assign application role จริงในหน้า `/settings/roles` (ข) หน้า local group ที่ `/settings/groups` ซึ่ง card ในหน้า Settings ลิงก์ไปรออยู่แล้ว · *(filter ตาม attribute ในหน้า People เสร็จแล้ว — ดูข้อ U)*
 6. **M5 (secure view)** — `DecisionSql` + dialect ทั้งสองตัวพร้อมแล้ว เหลือ ViewCompiler + `row_entitlement` maintainer + dry-run/apply/rollback + golden-file test

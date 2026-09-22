@@ -244,7 +244,7 @@ conf/dac.yml                 config เดียวที่ commit — ใช�
 | # | Feature | สถานะ |
 |---|---|---|
 | FR-5.1 | Conflict resolution: DENY ชนะ · row filter **AND** กัน · mask เข้มสุดชนะ (`NULLIFY > CONSTANT > HASH > REGEX > PARTIAL > ROUNDING > plaintext`) · ไม่ match = deny | ✅ `PolicyEngine`, `MaskStrength` (72 tests ผ่าน) |
-| FR-5.2 | **Simulator / "View as user"** — SQL ที่จะ generate + preview data + policy ที่ match | ⬜ (M4) |
+| FR-5.2 | **Simulator / "View as user"** — SQL ที่จะ generate + preview data + policy ที่ match | ✅ `/simulator` — ถามแทนคนอื่นที่เวลา/IP/purpose ที่กำหนดเอง · ตอบ projection ต่อ column + row filter + เหตุผลต่อ policy · ใช้ `POST /v1/decisions` ตัวเดียวกับที่ query บังคับใช้ (ไม่ได้จำลอง) |
 | FR-5.3 | Impact analysis ก่อน publish global policy | ⬜ (M4) |
 | FR-5.4 | Explainability — ทุก decision บอกได้ว่าเพราะ policy ตัวไหน เงื่อนไขข้อไหน ชั้นไหน | ✅ `decisionReason` ใน `PolicyDecision` |
 | FR-5.5 | Decision cache + invalidate เมื่อ policy/attribute/tag เปลี่ยน (< 10ms cached / < 100ms cold) | ⬜ (มี `cacheKey`, `fromCache` ใน schema แล้ว) |

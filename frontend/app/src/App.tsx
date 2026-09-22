@@ -16,6 +16,7 @@ import PolicyBuilderPage from './pages/policies/PolicyBuilderPage';
 import PolicyDetailPage from './pages/policies/PolicyDetailPage';
 import PolicyListPage from './pages/policies/PolicyListPage';
 import QueryPage from './pages/query/QueryPage';
+import SimulatorPage from './pages/simulator/SimulatorPage';
 import AppRolesPage from './pages/settings/AppRolesPage';
 import OpenMetadataSettingsPage from './pages/settings/OpenMetadataSettingsPage';
 import SettingsPage from './pages/settings/SettingsPage';
@@ -72,6 +73,7 @@ export default function App() {
           <Route element={<PolicyDetailPage />} path="/policies/:id" />
           <Route element={<PolicyBuilderPage />} path="/policies/:id/edit" />
           <Route element={<QueryPage />} path="/query" />
+          <Route element={<SimulatorPage />} path="/simulator" />
           <Route element={<SourcesPage />} path="/sources" />
           <Route
             element={<OpenMetadataSettingsPage />}

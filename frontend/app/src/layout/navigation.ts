@@ -80,7 +80,7 @@ export const NAV_SECTIONS: NavSection[] = [
     label: 'Simulator',
     href: '/simulator',
     icon: Activity,
-    milestone: 'M4',
+    milestone: null,
     description:
       'See a table as another person sees it before a policy reaches production.',
   },
