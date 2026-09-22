@@ -49,7 +49,7 @@ Phase 1 รองรับ SQL Server + PostgreSQL · identity หลักค�
 |---|---|---|
 | Backend unit | dac-common 6 · dac-engine 156 · dac-compiler-sql 7 · dac-connector-openmetadata 88 · dac-proxy 16 · dac-service **56** = **329** | `./mvnw -am -pl backend/dac-service test` |
 | Backend integration (Testcontainers `postgres:16-alpine`) | **103 tests** — `AssetStoreIT` 6 · `CatalogQueryIT` 15 · `DataSourceStoreIT` 13 · `GovernanceStoreIT` 10 · `IdentityAdminStoreIT` 15 · `PolicyBindingMaterializerIT` 10 · `PolicyOverviewIT` 24 · `PolicyStoreIT` 10 | `./mvnw -am -pl backend/dac-service verify -Pintegration` |
-| Frontend | **14 suites / 68 tests** | `npx jest` ใน `frontend/app` |
+| Frontend | **15 suites / 70 tests** | `npx jest` ใน `frontend/app` |
 
 `yarn type-check` · `yarn lint` · `yarn build` ผ่านหมด → **BUILD SUCCESS** ทั้งสองฝั่ง
 
@@ -1217,6 +1217,37 @@ private static String environmentOr(String environment) {
 
 ---
 
+### Y. ปิดช่องว่างข้อ 7 และ 8 ที่เพิ่งจดไว้ในรอบเดียวกัน
+
+สองข้อนี้เป็นเศษที่เหลือจากข้อ X — เล็กทั้งคู่ แต่ข้อที่สองเป็นบั๊กที่ผู้ใช้จะไม่มีวันเห็นด้วยตาตัวเอง
+
+#### Y.1 ลบ `CANNOT_LOOSEN` ทิ้ง ไม่ใช่ทำให้มันทำงาน
+
+ทางเลือกมีสองทาง: ให้ `relate()` คืนค่านี้จริง หรือลบทิ้ง — **เลือกลบ** เพราะมันผิดหมวดตั้งแต่ต้น
+
+`relation` ทุกค่าตอบคำถามเดียวกันคือ *"engine ทำอะไรตรงที่ policy สองตัวเจอกัน"* ส่วน "ใครมีสิทธิ์แก้ตัวไหน" (FR-3.1.4) เป็นคนละแกน และถูกตอบด้วย `overrideNote` ไปแล้วในข้อ X.4 — สองอย่างนี้ขัดกันได้โดยที่ทั้งคู่ถูก การยัดคำตอบของแกนหนึ่งเข้าไปเป็นค่าหนึ่งของอีกแกนจะทำให้ policy ที่ compose กันสนิทแต่แก้ไม่ได้ ถูกจัดอันดับว่า "ชนกันแรงกว่า" ตัวที่ compose กันสนิทและแก้ได้ ซึ่งไม่จริง
+
+ลบออกจากสามที่: `RELATION_ORDER` (Java), union `PolicyRelation` (TS), และตาราง `RELATION` ในหน้า Policy พร้อมเลื่อน `rank` ที่เหลือ · เขียนคอมเมนต์เหนือตารางไว้ว่าทำไมแกน "ใครแก้ได้" ไม่อยู่ในนี้
+
+#### Y.2 builder default `environment` จาก `dev` → `prod`
+
+**บั๊กเดิม:** policy ที่เขียนด้วยค่า default ล้วนๆ ถูกเก็บเป็น `dev` แต่ engine ตัดสินที่ `prod` → มัน **save ได้ activate ได้ โผล่ในทุก list และไม่เคยถูก enforce สักครั้ง** ไม่มี error ไม่มีหน้าจอว่าง ไม่มีอะไรผิดให้เห็น
+
+**ทำไม default เป็น `prod` ถึงปลอดภัย:** สิ่งที่ทำให้ policy มีผลคือ lifecycle ไม่ใช่ field นี้ — `PolicyStore.create()` สร้างทุกตัวเป็น `DRAFT` เสมอ และต้องมีคนกด transition ไป `ACTIVE` การกดนั้นคือการตัดสินใจที่ตั้งใจ ส่วน field นี้ไม่ควรเป็นการตัดสินใจที่สองที่ไม่มีใครรู้ตัวว่ากำลังทำอยู่
+
+แก้สามจุด:
+- `api/policies.ts` เพิ่ม **`ENFORCED_ENVIRONMENT`** เป็นค่าคงที่ตัวเดียว (สะท้อน `DecisionService.DEFAULT_ENVIRONMENT`) แล้วให้ `fetchPoliciesForAsset` / `fetchPoliciesAffecting` / builder ใช้ร่วมกัน — บั๊กทั้งตระกูลนี้เกิดจาก literal `'dev'`/`'prod'` หลายก๊อปปี้ที่ drift จากกัน
+- `EMPTY.environment` = `ENFORCED_ENVIRONMENT`
+- ตัวเลือกในดรอปดาวน์มี hint ต่อค่า (`dev` / `uat` = *Authoring only — not enforced*, `prod` = *The environment the engine enforces*) **และ** มีคำเตือนใต้ field ที่ขึ้น**เฉพาะตอนเลือกค่าที่ engine ไม่อ่าน** — hint ที่อยู่ในดรอปดาวน์หายไปพร้อมดรอปดาวน์ ส่วนคำเตือนที่ขึ้นทุกครั้งคือคำเตือนที่ไม่มีใครอ่านตอนที่มันสำคัญ
+
+#### Y.3 เทสต์
+
+`PolicyBuilderPage.test.tsx` (ใหม่, 2 ตัว) — ค่า default ของ field นี้ต้องถูก **assert** ไม่ใช่ปล่อยให้เชื่อ เพราะค่าที่ผิดของมันไม่แสดงอาการอะไรเลย
+- policy ใหม่เปิดมาที่ environment ที่ engine enforce
+- เลือก `dev` แล้วต้องมีคำเตือน · ตอนอยู่ที่ `prod` ต้องไม่มี
+
+---
+
 ## รอบก่อนหน้า — Global search ข้ามทุก entity + transition ตอนเปลี่ยนหน้า/เข้า-ออกระบบ + ชิป governance ที่อ่านออก
 
 > รอบนี้เพิ่ม **endpoint ใหม่หนึ่งตัว** (`GET /api/v1/search`) และงาน UX ล้วนๆ อีกสามเรื่องที่ผู้ใช้สั่งระหว่างทาง
@@ -1585,8 +1616,8 @@ estate ที่ใช้: `prod-mssql.SalesDB.dbo.{customer, order}` + **`prod-
 4. **audit ของการ configure ยังไม่ครบ** — *identity ครบแล้ว* (`audit_identity_change` จาก V10: สร้าง account, enable/disable, ตั้ง password, grant/revoke role) แต่ **เปลี่ยน data source, เปลี่ยน OM settings, enable/disable source ยังไม่ถูกบันทึกที่ไหน**
 5. **`audit_decision.evaluation_ms` ไม่เคยถูกเขียนค่า** — เป็น NULL ทุกแถว ทำให้ยืนยัน NFR-2 (p95 < 50ms) ไม่ได้
 6. **capability matrix ยังไม่รู้จัก masking function ต่อ dialect และไม่รู้จักเวอร์ชันของ engine** — ดูหัวข้อ I ข้างบน
-7. **`CANNOT_LOOSEN` เป็นค่าตายทั้งใน `RELATION_ORDER` (Java) และ union `PolicyRelation` (TS)** — `relate()` ไม่เคยคืนค่านี้ และหน้า Policy มีสไตล์รออยู่ที่ไม่มีวันถูกใช้ · คำถาม "ใครมีสิทธิ์แก้" ถูกตอบด้วย `overrideNote` แทน → ต้องเลือกว่าจะลบค่านี้ทิ้ง หรือให้ `relate()` คืนมันจริง
-8. **หน้า Policy builder ยัง default `environment: 'dev'` ตอนสร้าง policy ใหม่ ในขณะที่ engine enforce `prod`** — policy ที่เขียนด้วยค่า default ล้วนๆ **จะไม่มีวันถูก enforce** และหน้าจอไม่มีอะไรบอก · นี่คือครึ่งที่ยังเหลือของช่องว่างข้อ 3 เดิม
+7. ~~**`CANNOT_LOOSEN` เป็นค่าตาย**~~ — **ปิดแล้ว (ข้อ Y.1)** ลบทิ้งทั้ง Java และ TS เพราะมันเป็นคำตอบของคนละแกนกับ `relation`
+8. ~~**builder default `environment: 'dev'` ขณะที่ engine enforce `prod`**~~ — **ปิดแล้ว (ข้อ Y.2)** default เป็น `ENFORCED_ENVIRONMENT` ค่าเดียวที่ทุกฝั่งใช้ร่วมกัน + เตือนเมื่อเลือก environment ที่ไม่ถูก enforce
 
 ---
 

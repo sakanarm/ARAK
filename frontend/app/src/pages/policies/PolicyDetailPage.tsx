@@ -45,17 +45,22 @@ const STATE_TONE: Record<string, 'success' | 'gray' | 'warning'> = {
   ARCHIVED: 'gray',
 };
 
-/** The relations, worst first, with the word and colour each is shown in. */
+/**
+ * The relations, worst first, with the word and colour each is shown in.
+ *
+ * Every one of these describes what the engine does where the two policies
+ * meet. Who is allowed to change which of them is a different question with a
+ * different answer -- `overrideNote` -- and it does not belong in this list.
+ */
 const RELATION: Record<
   string,
   { label: string; tone: 'error' | 'warning' | 'gray'; rank: number }
 > = {
   BLOCKED_BY: { label: 'Overrules this', tone: 'error', rank: 0 },
   BLOCKS: { label: 'Overruled by this', tone: 'warning', rank: 1 },
-  CANNOT_LOOSEN: { label: 'Cannot be relaxed', tone: 'warning', rank: 2 },
-  MASK_OVERLAP: { label: 'Same columns', tone: 'warning', rank: 3 },
-  NARROWS: { label: 'Narrows this', tone: 'gray', rank: 4 },
-  COMPOSES: { label: 'Applies alongside', tone: 'gray', rank: 5 },
+  MASK_OVERLAP: { label: 'Same columns', tone: 'warning', rank: 2 },
+  NARROWS: { label: 'Narrows this', tone: 'gray', rank: 3 },
+  COMPOSES: { label: 'Applies alongside', tone: 'gray', rank: 4 },
 };
 
 export default function PolicyDetailPage() {

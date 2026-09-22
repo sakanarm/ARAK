@@ -316,7 +316,7 @@ public class PolicyOverview {
 
   /** Worst first: this is the order the screen reads in, so the real conflict is at the top. */
   private static final List<String> RELATION_ORDER =
-      List.of("BLOCKED_BY", "BLOCKS", "CANNOT_LOOSEN", "MASK_OVERLAP", "NARROWS", "COMPOSES");
+      List.of("BLOCKED_BY", "BLOCKS", "MASK_OVERLAP", "NARROWS", "COMPOSES");
 
   private record Verdict(String relation, String explanation) {}
 

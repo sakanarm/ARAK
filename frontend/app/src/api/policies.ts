@@ -56,7 +56,6 @@ export interface PolicyCoverage {
 export type PolicyRelation =
   | 'BLOCKED_BY'
   | 'BLOCKS'
-  | 'CANNOT_LOOSEN'
   | 'MASK_OVERLAP'
   | 'NARROWS'
   | 'COMPOSES';
@@ -136,6 +135,17 @@ export async function fetchPolicyConflicts(
   return data;
 }
 
+/**
+ * The environment the engine decides in when a caller names none.
+ *
+ * It mirrors `DecisionService.DEFAULT_ENVIRONMENT` on the backend, and it is a
+ * constant rather than a literal in each caller because the whole class of bug
+ * it exists to prevent is one copy of it drifting: a policy authored into one
+ * environment and enforced from another is invisible rather than wrong, which
+ * is the harder kind to notice.
+ */
+export const ENFORCED_ENVIRONMENT = 'prod';
+
 /** One policy reaching an asset, and where inside it the policy lands. */
 export interface AppliedPolicy {
   policy: StoredPolicy;
@@ -146,7 +156,7 @@ export interface AppliedPolicy {
 /** The policies governing one asset, with the columns each one reaches. */
 export async function fetchPoliciesForAsset(
   fqn: string,
-  environment = 'prod'
+  environment = ENFORCED_ENVIRONMENT
 ): Promise<AppliedPolicy[]> {
   const { data } = await apiClient.get<AppliedPolicy[]>(
     `/v1/policies/for-asset/${encodeURI(fqn)}`,
@@ -164,7 +174,7 @@ export async function fetchPoliciesForAsset(
  */
 export async function fetchPoliciesAffecting(
   fqn: string,
-  environment = 'prod'
+  environment = ENFORCED_ENVIRONMENT
 ): Promise<StoredPolicy[]> {
   const { data } = await apiClient.get<StoredPolicy[]>(
     `/v1/policies/affecting/${encodeURIComponent(fqn)}?environment=${environment}`

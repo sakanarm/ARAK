@@ -12,6 +12,7 @@ import {
 } from '../../api/governance';
 import {
   createPolicy,
+  ENFORCED_ENVIRONMENT,
   fetchPolicy,
   resolveBindings,
   transitionPolicy,
@@ -38,13 +39,24 @@ import { describePolicy } from './policyLanguage';
  * presses apply, not after.
  */
 
+/*
+ * A new policy opens on the environment the engine decides in, not on `dev`.
+ * It used to open on `dev`, which meant a policy written entirely with the
+ * defaults was stored somewhere the engine never looks -- it saved, it
+ * activated, it showed up in every list, and it was never enforced once.
+ *
+ * Opening on `prod` is safe because the environment is not what makes a policy
+ * live: every policy is created in DRAFT and somebody has to transition it.
+ * That transition is the deliberate act, and this field should not be a second
+ * one that nobody knows they are performing.
+ */
 const EMPTY: Policy = {
   name: '',
   policyType: 'SUBSCRIPTION',
   scopeLevel: 'ORG',
   selector: {},
   effect: 'ALLOW',
-  environment: 'dev',
+  environment: ENFORCED_ENVIRONMENT,
 };
 
 export default function PolicyBuilderPage() {
@@ -244,17 +256,43 @@ export default function PolicyBuilderPage() {
                   value={draft.policyType}
                 />
               </Field>
-              <Field label="Environment">
+              <Field
+                hint={
+                  // Shown only when it matters. Saying "this one is enforced"
+                  // on every policy would be noise; saying nothing when the
+                  // policy is parked in an environment the engine never reads
+                  // is how the default used to hide.
+                  (draft.environment ?? ENFORCED_ENVIRONMENT) !==
+                  ENFORCED_ENVIRONMENT
+                    ? `The engine decides in ${ENFORCED_ENVIRONMENT}. A policy in ` +
+                      `${draft.environment} is authored and versioned, but it is ` +
+                      `never enforced, however it is activated.`
+                    : undefined
+                }
+                label="Environment"
+              >
                 <Select
                   onChange={(next) =>
                     patch({ environment: next as Policy['environment'] })
                   }
                   options={[
-                    { value: 'dev', label: 'dev' },
-                    { value: 'uat', label: 'uat' },
-                    { value: 'prod', label: 'prod' },
+                    {
+                      value: 'dev',
+                      label: 'dev',
+                      hint: 'Authoring only — not enforced',
+                    },
+                    {
+                      value: 'uat',
+                      label: 'uat',
+                      hint: 'Authoring only — not enforced',
+                    },
+                    {
+                      value: 'prod',
+                      label: 'prod',
+                      hint: 'The environment the engine enforces',
+                    },
                   ]}
-                  value={draft.environment ?? 'dev'}
+                  value={draft.environment ?? ENFORCED_ENVIRONMENT}
                 />
               </Field>
               <Field className="tw:sm:col-span-2" label="Description">
