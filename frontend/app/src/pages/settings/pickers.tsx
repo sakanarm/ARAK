@@ -202,7 +202,7 @@ function Option({
   return (
     <li>
       <button
-        className="tw:flex tw:w-full tw:items-center tw:justify-between tw:gap-3 tw:px-3 tw:py-2 tw:text-left tw:hover:bg-secondary"
+        className="tw:cursor-pointer tw:flex tw:w-full tw:items-center tw:justify-between tw:gap-3 tw:px-3 tw:py-2 tw:text-left tw:hover:bg-secondary"
         onClick={onPick}
         type="button">
         <span className="tw:min-w-0">
@@ -236,7 +236,7 @@ function Chosen({
         </span>
       </span>
       <button
-        className="tw:flex-none tw:text-sm tw:font-medium tw:text-brand-secondary tw:disabled:text-quaternary"
+        className="tw:flex-none tw:cursor-pointer tw:text-sm tw:font-medium tw:text-brand-secondary tw:disabled:cursor-default tw:disabled:text-quaternary"
         disabled={disabled}
         onClick={onClear}
         type="button">

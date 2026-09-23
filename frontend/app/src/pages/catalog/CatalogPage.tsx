@@ -246,7 +246,7 @@ export default function CatalogPage() {
               const value = facet.slice(cut + 1);
               return (
                 <button
-                  className="tw:inline-flex tw:max-w-80 tw:items-center tw:gap-1 tw:rounded-full tw:bg-brand-primary tw:px-2 tw:py-0.5 tw:text-xs tw:text-brand-secondary"
+                  className="tw:cursor-pointer tw:inline-flex tw:max-w-80 tw:items-center tw:gap-1 tw:rounded-full tw:bg-brand-primary tw:px-2 tw:py-0.5 tw:text-xs tw:text-brand-secondary"
                   key={facet}
                   onClick={() => toggleFacet(facet)}
                   title={`${facetLabel(type)} · ${value}`}
@@ -601,7 +601,7 @@ function FacetGroup({
     <div className="tw:border-b tw:border-secondary tw:last:border-b-0">
       <button
         aria-expanded={open}
-        className="tw:flex tw:w-full tw:items-center tw:gap-2 tw:px-4 tw:py-2.5 tw:text-left tw:hover:bg-secondary"
+        className="tw:cursor-pointer tw:flex tw:w-full tw:items-center tw:gap-2 tw:px-4 tw:py-2.5 tw:text-left tw:hover:bg-secondary"
         onClick={() => setOpen((it) => !it)}
         type="button">
         <span className="tw:flex-1 tw:truncate tw:text-sm tw:font-medium tw:text-secondary">
@@ -681,7 +681,7 @@ function FacetGroup({
 
           {matching.length > FACET_PREVIEW && (
             <button
-              className="tw:px-2 tw:pt-1 tw:text-xs tw:font-medium tw:text-fg-brand-primary tw:hover:underline"
+              className="tw:cursor-pointer tw:px-2 tw:pt-1 tw:text-xs tw:font-medium tw:text-fg-brand-primary tw:hover:underline"
               onClick={() => setAll((it) => !it)}
               type="button">
               {all ? 'Show less' : `Show all ${matching.length}`}

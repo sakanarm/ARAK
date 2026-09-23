@@ -1,5 +1,6 @@
 package com.mfec.dac.compiler.sql;
 
+import com.mfec.dac.schema.api.MaskingSpec;
 import com.mfec.dac.schema.api.PolicyDecision;
 import com.mfec.dac.schema.api.ResolvedColumnMask;
 import com.mfec.dac.schema.api.ResolvedRowPredicate;
@@ -92,20 +93,7 @@ public final class DecisionSql {
       String expression = reference;
       if (mask != null) {
         try {
-          expression = dialect.mask(reference, mask.getMasking());
-          if (mask.getCondition() != null && !mask.getCondition().isBlank()) {
-            // A cell mask: masked only where the condition holds. The condition
-            // is authored SQL and is emitted as written, which is why writing
-            // one is a privileged act.
-            expression =
-                "CASE WHEN ("
-                    + mask.getCondition()
-                    + ") THEN "
-                    + expression
-                    + " ELSE "
-                    + reference
-                    + " END";
-          }
+          expression = masked(dialect, reference, mask.getMasking(), mask.getCondition());
         } catch (UnsupportedMaskingException e) {
           // Strictest possible reading of "cannot express it".
           expression = "NULL";
@@ -127,6 +115,30 @@ public final class DecisionSql {
 
     String where = where(decision, alias, unenforceable);
     return new Result(List.copyOf(expressions), List.copyOf(labels), where, List.copyOf(unenforceable));
+  }
+
+  /**
+   * The expression that reads one column through its mask.
+   *
+   * <p>Shared with {@link ViewCompiler} so that a column masked in a secure
+   * view and the same column masked by the proxy are the same characters. They
+   * are compared byte for byte by the cross-mode suite (FR-6.0c), and two
+   * copies of this that drifted apart would be the exact failure that suite
+   * exists to catch.
+   *
+   * @param condition a cell mask (FR-4.3): masked only where it holds. It is
+   *     authored SQL and is emitted as written, which is why writing one is a
+   *     privileged act.
+   * @throws UnsupportedMaskingException when the dialect cannot express it
+   */
+  static String masked(
+      SqlDialect dialect, String reference, MaskingSpec spec, String condition) {
+
+    String expression = dialect.mask(reference, spec);
+    if (condition == null || condition.isBlank()) {
+      return expression;
+    }
+    return "CASE WHEN (" + condition + ") THEN " + expression + " ELSE " + reference + " END";
   }
 
   /** The ANDed row predicate, or null when there is none. */

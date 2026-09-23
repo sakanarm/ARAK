@@ -142,4 +142,58 @@ public final class PostgresDialect implements SqlDialect {
     }
     return value;
   }
+
+  // --------------------------------------------------- DDL spelling (FR-6.1)
+
+  @Override
+  public String currentDbPrincipal() {
+    return "CAST(CURRENT_USER AS text)";
+  }
+
+  @Override
+  public String sessionPrincipal() {
+    // The second argument makes an unset setting read as NULL rather than
+    // raising, and NULL compares equal to nothing -- so a connection that did
+    // not come through the proxy sees no rows instead of an error the reader
+    // might mistake for a broken view.
+    return "current_setting('app.principal', true)";
+  }
+
+  @Override
+  public String aclTextType() {
+    return "text";
+  }
+
+  @Override
+  public String createSchemaIfAbsent(String schema) {
+    return "CREATE SCHEMA IF NOT EXISTS " + quote(schema);
+  }
+
+  @Override
+  public String createTableIfAbsent(String qualifiedName, String body) {
+    return "CREATE TABLE IF NOT EXISTS " + qualifiedName + " (\n" + body + "\n)";
+  }
+
+  @Override
+  public String createOrReplaceView(String qualifiedName, String body) {
+    // REPLACE rather than DROP and CREATE: dropping takes the grants with it,
+    // and a view that exists for a moment with nobody able to read it is an
+    // outage for every report pointed at it.
+    return "CREATE OR REPLACE VIEW " + qualifiedName + " AS\n" + body;
+  }
+
+  @Override
+  public String dropViewIfExists(String qualifiedName) {
+    return "DROP VIEW IF EXISTS " + qualifiedName;
+  }
+
+  @Override
+  public String grantSelect(String qualifiedName, String role) {
+    return "GRANT SELECT ON " + qualifiedName + " TO " + quote(role);
+  }
+
+  @Override
+  public String revokeAllOn(String qualifiedName, String role) {
+    return "REVOKE ALL ON " + qualifiedName + " FROM " + quote(role);
+  }
 }

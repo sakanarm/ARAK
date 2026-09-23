@@ -650,7 +650,7 @@ function ResultPanel({
           ] as const
         ).map(([key, label]) => (
           <button
-            className={`tw:border-b-2 tw:px-3 tw:py-2 tw:text-sm ${
+            className={`tw:cursor-pointer tw:border-b-2 tw:px-3 tw:py-2 tw:text-sm ${
               tab === key
                 ? 'tw:border-brand tw:font-semibold tw:text-primary'
                 : 'tw:border-transparent tw:text-tertiary'

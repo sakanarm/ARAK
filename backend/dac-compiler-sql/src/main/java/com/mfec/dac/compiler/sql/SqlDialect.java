@@ -48,4 +48,49 @@ public interface SqlDialect {
   default String nullLiteral() {
     return "NULL";
   }
+
+  // --------------------------------------------------- DDL spelling (FR-6.1)
+  //
+  // The secure view is the one mode that installs objects of its own, so the
+  // difference between the engines stops being about expressions and starts
+  // being about statements. They live here, next to the expression spellings,
+  // so that a third engine is a new file rather than a new branch in old code.
+
+  /** Expression naming the database principal running the statement. */
+  String currentDbPrincipal();
+
+  /**
+   * Expression naming the principal a trusted proxy put on this session, or
+   * NULL when nothing did.
+   *
+   * <p>Only safe where every connection to the data comes through that proxy.
+   * On both engines the setting is writable by the session itself, so a reader
+   * who can open a direct connection can name themselves anybody at all — which
+   * is why {@link #currentDbPrincipal()} is the default and this is the opt-in.
+   */
+  String sessionPrincipal();
+
+  /** The type the entitlement tables use for a name or a value. */
+  String aclTextType();
+
+  /** Creates a schema if it is not there yet, in a single statement. */
+  String createSchemaIfAbsent(String schema);
+
+  /**
+   * Creates a table if it is not there yet.
+   *
+   * @param body the column list and constraints, already rendered and indented
+   */
+  String createTableIfAbsent(String qualifiedName, String body);
+
+  /** Replaces a view definition in place, keeping the grants already on it. */
+  String createOrReplaceView(String qualifiedName, String body);
+
+  /** Drops a view, succeeding when it was never there. */
+  String dropViewIfExists(String qualifiedName);
+
+  String grantSelect(String qualifiedName, String role);
+
+  /** Takes every privilege on an object away from one role. */
+  String revokeAllOn(String qualifiedName, String role);
 }

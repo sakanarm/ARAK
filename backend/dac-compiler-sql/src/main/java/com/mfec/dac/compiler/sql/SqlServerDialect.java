@@ -135,4 +135,59 @@ public final class SqlServerDialect implements SqlDialect {
         ? "***REDACTED***"
         : spec.getConstant();
   }
+
+  // --------------------------------------------------- DDL spelling (FR-6.1)
+
+  @Override
+  public String currentDbPrincipal() {
+    // USER_NAME() and not SUSER_SNAME(): the name this returns is the database
+    // principal, which is the name DbPrincipalProvisioner creates and therefore
+    // the name written into the entitlement tables. A login name would be a
+    // second identity to keep in step with the first.
+    return "CAST(USER_NAME() AS nvarchar(256))";
+  }
+
+  @Override
+  public String sessionPrincipal() {
+    return "CAST(SESSION_CONTEXT(N'app.principal') AS nvarchar(256))";
+  }
+
+  @Override
+  public String aclTextType() {
+    return "nvarchar(256)";
+  }
+
+  @Override
+  public String createSchemaIfAbsent(String schema) {
+    // CREATE SCHEMA has to be the only statement in its batch, so it goes
+    // through EXEC rather than sitting under the IF directly.
+    return "IF SCHEMA_ID(" + literal(schema) + ") IS NULL EXEC(" + literal("CREATE SCHEMA " + quote(schema)) + ")";
+  }
+
+  @Override
+  public String createTableIfAbsent(String qualifiedName, String body) {
+    return "IF OBJECT_ID(" + literal(qualifiedName) + ", N'U') IS NULL\nCREATE TABLE " + qualifiedName + " (\n" + body + "\n)";
+  }
+
+  @Override
+  public String createOrReplaceView(String qualifiedName, String body) {
+    // CREATE OR ALTER needs SQL Server 2016 SP1; the capability matrix records
+    // 2016 as the floor for this mode and this is the part that decides it.
+    return "CREATE OR ALTER VIEW " + qualifiedName + " AS\n" + body;
+  }
+
+  @Override
+  public String dropViewIfExists(String qualifiedName) {
+    return "DROP VIEW IF EXISTS " + qualifiedName;
+  }
+
+  @Override
+  public String grantSelect(String qualifiedName, String role) {
+    return "GRANT SELECT ON OBJECT::" + qualifiedName + " TO " + quote(role);
+  }
+
+  @Override
+  public String revokeAllOn(String qualifiedName, String role) {
+    return "REVOKE ALL ON OBJECT::" + qualifiedName + " FROM " + quote(role);
+  }
 }

@@ -29,7 +29,7 @@ Phase 1 รองรับ SQL Server + PostgreSQL · identity หลักค�
 | **M2 Identity** | 🚧 ~50% — local sign-in ใช้ได้ · schema `principal`/`principal_attribute`/`group_member`/`app_role_assignment` มีตั้งแต่ V2 · read API + หน้า People & attributes (**filter ตาม attribute + กดเข้าไปดูสมาชิกใน group ได้ที่ `/principals/:id`**) + **หน้า Application roles (`/settings/roles`) อ่านอย่างเดียว** เสร็จ · **เพิ่ม local account + assign/withdraw app role ได้จาก UI แล้ว (V10 + `IdentityAdminStore` + audit)** · **ยังไม่มี write API สำหรับ *attribute* — ต้อง seed ด้วย SQL** · ยังไม่มีหน้าจอเปลี่ยน password (ทุก account ที่สร้างเป็น `must_change`) · ยังไม่มี Entra OIDC / Graph sync |
 | **M3 Policy Engine** | 🚧 ~97% — engine **277 tests** (+10 รอบนี้ — `DataPolicyCompositionTest.MaskConflicts` ที่ทำให้เจอบั๊กการให้เครดิต policy ดูข้อ AH.3) (+101 รอบนี้ — `PolicyAlgebraTest` 34 ที่ assert **เซตของคนที่ผ่าน** ไม่ใช่ทีละคน + `ExpressionReferenceTest` ที่รันทุก example ในหน้า doc ผ่าน evaluator จริง) · เดิม **166 tests** (+10 รอบนี้ · **เจอบั๊กจริงสองตัวที่ grant โดนเต็มๆ ดูข้อ AE.1/AE.2**) (data policy 26 + subscription 45 เพิ่มรอบนี้ · เจอบั๊กจริง 2 ตัว ดูข้อ P) · persistence (`PolicyStore`) + `policy_binding` materializer + REST · `PolicyBindingMaterializerIT` 10 tests บน Postgres จริง · **decision cache (FR-5.5) ปิดแล้วรอบนี้ — 25 tests ดูข้อ AB** · เหลือ ANTLR grammar ของ `expr` (FR-3.2) ข้อเดียว |
 | **M4 Policy Authoring UI** | ✅ **เสร็จ** — Policy list + Policy builder + readback + capability matrix + `/policies/:id` หน้าสรุปอ่านอย่างเดียว + panel Policies ในหน้า asset (FR-3.1.5) + View-as-user (FR-5.2, ข้อ Z) · **รอบนี้ปิดข้อสุดท้าย: impact analysis (FR-5.3) — `GET /v1/policies/{id}/impact` + panel “Who it changes things for” ดูข้อ AA** · **รอบนี้เพิ่มหน้า `/docs/expressions` — syntax reference ที่ backend ส่งมาจาก jar ของ engine กดจากช่อง expression ได้ พร้อม 11 policy ตัวอย่างจริงใน DB (ข้อ AF.3/AF.4)** |
-| **M5 Secure View (5.1.2)** | ⬜ — `DecisionSql` + dialect ทั้งสองตัวพร้อมแล้ว (ใช้ร่วมกับ 5.2) เหลือ ViewCompiler + `row_entitlement` maintainer + DDL apply/rollback |
+| **M5 Secure View (5.1.2)** | 🚧 ~30% — **slice 1 จบ: `ViewCompiler` + golden-file test 2 dialect (18 tests เขียว) ดูข้อ AK.1** · `DecisionSql` + dialect ใช้ร่วมกับ 5.2 เหมือนเดิม · เหลือ slice 2 (`V12__row_entitlement.sql` + maintainer) · slice 3 (dry-run / apply / rollback + `enforcement_state` + REST + UI + cutover) · slice 4 (Testcontainers กับ PG/MSSQL จริง) |
 | **M6 Push Config (5.1.1)** | ⬜ **re-scope รอบนี้ · เลื่อนหลัง M5/M7 · opt-in ต่อ source** — ยิงเฉพาะ **policy object ที่แยกจาก table** (PG `CREATE POLICY` · MSSQL `CREATE SECURITY POLICY` · column GRANT) · **ตัด MSSQL DDM ออก** เพราะมัน `ALTER COLUMN` ทับนิยาม table — ดูข้อ AC.1 และ DESIGN FR-6.2a |
 | **M7 Query API (5.2a)** | 🚧 ~80% — **`POST /v1/query` + Query console ใช้งานได้จริงรอบนี้** · rewrite → RLS + mask + hidden column → execute → audit ครบ · พิสูจน์กับ Postgres จริงแล้วทั้ง allow / RLS / mask / refuse · เหลือ direct-access detector (FR-6.3.1) และ result cache |
 | **M7b Cross-mode consistency** | ⬜ — ต้องมี M5/M6 ก่อน |
@@ -48,7 +48,7 @@ Phase 1 รองรับ SQL Server + PostgreSQL · identity หลักค�
 
 | ชุด | จำนวน | คำสั่ง |
 |---|---|---|
-| Backend unit | dac-common 6 · dac-engine **277** · dac-compiler-sql 7 · dac-connector-openmetadata 88 · dac-proxy 16 · dac-service **86** = **480** | `./mvnw -am -pl backend/dac-service test` |
+| Backend unit | dac-common 6 · dac-engine **277** · dac-compiler-sql **25 (+18 รอบนี้ — `ViewCompilerTest`)** · dac-connector-openmetadata 88 · dac-proxy 16 · dac-service **86** = **498** | `./mvnw -am -pl backend/dac-service test` |
 | Backend integration (Testcontainers `postgres:16-alpine`) | **128 tests** — `AssetStoreIT` 6 · `CatalogQueryIT` 15 · `DataSourceStoreIT` 13 · `GovernanceStoreIT` 10 · `GrantCompositionIT` **17 (+4 รอบนี้: `AgainstDataPolicies` — grant ตรงต้องไม่ถอด mask)** · `IdentityAdminStoreIT` 15 · `ImpactAnalysisIT` 8 · `PolicyBindingMaterializerIT` 10 · `PolicyOverviewIT` 24 · `PolicyStoreIT` 10 | `./mvnw -am -pl backend/dac-service verify -Pintegration` |
 | Frontend | **21 suites / 126 tests** (+`ProfilePage.test.tsx` 3 — attribute ของตัวเอง) | `npx jest` ใน `frontend/app` |
 
@@ -56,7 +56,143 @@ Phase 1 รองรับ SQL Server + PostgreSQL · identity หลักค�
 
 ---
 
-## รอบนี้ — **ค้นหา policy ได้** · **หน้า Your profile** · และเริ่ม **M5 Secure View**
+## รอบนี้ — **M5 slice 1: `ViewCompiler` เสร็จ** · **เคอร์เซอร์เป็นรูปมือทั้งแอป (กวาดทีเดียว 20 ปุ่ม)** · และ **Analyst A/B/C ล็อกอินได้จริงแล้ว**
+
+### AK.1 `ViewCompiler` — โจทย์คือ "view ใบเดียว แต่ `PolicyDecision` เป็นของรายคน"
+
+Secure view เป็น **object เดียวที่เสิร์ฟคนทั้งองค์กร** แต่ `PolicyDecision` ที่ engine คืนมาเป็นของ principal คนเดียว
+ถ้าเอา decision ของ `analyst_a` ไป compile ตรงๆ จะได้ view ที่ hard-code สิทธิ์ของ `analyst_a` แล้วคนอื่นเห็นข้อมูลของ `analyst_a` หมด
+
+**ทางออก: compile จาก *โครงสร้าง* ของ decision แล้วโยนค่าที่ขึ้นกับคน ไปเป็น lookup ตอน runtime**
+ค่าที่ขึ้นกับคนทุกตัวย้ายไปอยู่ในตาราง ACL 3 ใบบน source:
+
+| ตาราง | คีย์ | ตอบคำถามว่า |
+|---|---|---|
+| `acl.asset_subscription` | `(principal, asset)` | คนนี้เห็น table นี้ได้ไหม |
+| `acl.row_entitlement` | `(principal, asset, entitlement_key, value)` | คนนี้เห็นแถวที่ค่าเท่ากับอะไรบ้าง |
+| `acl.column_grant` | `(principal, asset, column_name, treatment)` | คนนี้เห็น column นี้ในรูปแบบไหน |
+
+view ที่ออกมาจึงไม่มี literal ของใครอยู่เลย — ทุก gate เป็น `EXISTS (SELECT 1 FROM acl.… WHERE principal = CURRENT_USER …)`
+
+**การตัดสินใจ 4 ข้อที่ต้องจำ:**
+
+1. **`ALWAYS_FALSE` ไม่เขียน `1 = 0` ลง view** — view ใบนี้เสิร์ฟทุกคน ถ้าเขียน `1 = 0` ลงไปคือ table หายทั้งใบสำหรับทุกคน
+   วิธีปฏิเสธคนคนเดียวคือ **ไม่ใส่แถวให้เขาใน `asset_subscription`** แล้ว gate ตัวแรกปิดเอง
+2. **mask เรียงจากเข้มสุดลงมา และ `ELSE` คือตัวที่เข้มที่สุด** — ไม่มี grant = ได้ของที่เข้มที่สุด (fail-closed ตาม FR-5.1)
+   **`PLAIN` เป็น treatment ที่ต้องถูก grant เหมือนกัน** ไม่ใช่ค่า default
+3. **hidden column หายจาก view สำหรับทุกคน** — view ใบเดียวมี column list ชุดเดียว บังคับ per-principal ไม่ได้ → มี note เตือนตรงๆ (FR-4.5)
+4. **operator ที่ lookup table แทนไม่ได้ (`GT/GTE/LT/LTE/CONTAINS/STARTS_WITH/MATCHES`) → ปิด view ทิ้ง** (`(1 = 0)`) พร้อม `Unenforceable{suggestedMode = PROXY}`
+   **ห้ามเงียบๆ ตัด filter ทิ้งแล้วปล่อยผ่าน** — นั่นคือข้อมูลหลุด
+
+`ViewCompiler.treatmentKey(MaskingSpec, String condition)` เป็น `public static` **โดยตั้งใจ** — slice 2 (`row_entitlement` maintainer) ต้องคำนวณคีย์เดียวกันเป๊ะ ห้ามเขียนใหม่ซ้ำ
+คีย์เป็น `FUNCTION#<sha256 4 ไบต์แรก>` ของทุกพารามิเตอร์ของ mask → **ตัวคีย์เองไม่พก plaintext ของ mask ติดไปด้วย** (มีเทสต์ยืนยัน)
+
+### AK.2 🔍 บั๊ก 2 ตัวที่เจอเพราะ **นั่งอ่าน DDL ที่มันสร้างออกมา** ไม่ใช่เพราะเทสต์แดง
+
+เทสต์ 18 ตัวเขียวหมดแล้ว แต่พอเอา golden file มาอ่านทีละบรรทัดถึงเจอ:
+
+1. **ฝั่ง SQL Server แพงเกินจำเป็น** — row gate เดิมใช้ `SqlDialect.toText(...)` ซึ่งบน SQL Server แปลว่า `CAST(... AS nvarchar(max))`
+   เทียบ `nvarchar(max)` กับคอลัมน์ `nvarchar(256)` → **index seek บน PK ของ `row_entitlement` ใช้ไม่ได้** และ predicate ตัวนี้รัน **ทุกแถวของตารางจริง** → ชน NFR-2 เต็มๆ
+   แก้เป็น `CAST(... AS <aclTextType()>)` คือ cast ไปเป็นชนิดของคอลัมน์ ACL เอง
+   ```
+   secure-view-postgres.sql:79    AND e."value"  = CAST("t"."branch_code"  AS text)
+   secure-view-sqlserver.sql:82   AND e.[value]  = CAST([t].[branch_code]  AS nvarchar(256))
+   ```
+2. **`condition` ของ cell mask เป็น SQL ที่คนเขียนเอง** แล้วถูกใส่ลง view **ดิบๆ ตามที่เขียน** — และมันข้าม engine ได้ (เขียนบน PG แล้วไป compile ลง MSSQL)
+   raw row filter มีคำเตือนอยู่แล้ว แต่อันนี้ไม่มี → เพิ่ม note ที่ระบุชื่อ dialect ให้คนที่กด approve DDL เห็น
+
+> **บทเรียนที่ต้องจำ:** golden-file test พิสูจน์แค่ว่า "ผลลัพธ์ไม่เปลี่ยน" ไม่ได้พิสูจน์ว่า "ผลลัพธ์ถูก" — ตอน bless ไฟล์ครั้งแรกต้องอ่านจริงทั้งไฟล์
+
+### AK.3 ⚠️ ข้อจำกัดที่ **จงใจไม่แก้** — `CONSTANT` บน column ที่เป็นตัวเลข
+
+fixture มี `CONSTANT '***'` ทับ column `salary` ที่เป็น numeric → ได้
+```sql
+CASE WHEN … THEN "t"."salary" ELSE CASE WHEN (…) THEN '***' ELSE "t"."salary" END END AS "salary"
+```
+PostgreSQL จะปฏิเสธตอน `CREATE VIEW` ด้วย numeric coercion error
+
+**ทำไมไม่แก้:** นี่เป็น **policy ที่คนเขียนผิด** ไม่ใช่บั๊กของ compiler และมันผิดเท่ากันทั้ง 3 โหมด (นิพจน์มาจาก `DecisionSql.masked` ที่ใช้ร่วมกัน)
+ถ้า "แก้" ด้วยการ cast `salary` เป็น text จะทำให้ **ชนิดของคอลัมน์ใน view เปลี่ยนไปสำหรับผู้อ่านทุกคน** — แย่กว่าเดิม
+→ ปล่อยให้ขั้นตอน apply DDL (slice 3) เป็นคนบอก แล้วให้คนเขียน policy แก้ที่ต้นทาง
+
+### AK.4 เคอร์เซอร์ไม่เป็นรูปมือ — คราวนี้กวาดทั้งแอปทีเดียว
+
+ผู้ใช้ทักเรื่องนี้เป็น**ครั้งที่ 3** (หน้า Governance กับหน้า People & attributes) → เลิกแก้ทีละจุด เขียนสคริปต์ไล่ `<button>` ทุกตัวใน `src/**/*.tsx` แล้วเช็กว่า className มี `tw:cursor-pointer` ไหม
+
+เจอ **20 ปุ่ม** ที่ขาด แก้ครบทั้งหมด:
+
+| ไฟล์ | จำนวน |
+|---|---|
+| `pages/governance/GovernancePage.tsx` | 3 (แท็บ · ปุ่ม action · chevron) |
+| `pages/governance/PrincipalsPage.tsx` | 4 (ชิปตัวกรอง · ปุ่มสลับ kind · หัว accordion · show all) |
+| `pages/catalog/CatalogPage.tsx` | 3 |
+| `pages/catalog/GrantDialog.tsx` | 3 (หนึ่งในนั้นแก้ที่ helper `chip()` ไม่ใช่ที่ call site) |
+| `pages/query/SchemaExplorer.tsx` | 3 |
+| `pages/query/QueryPage.tsx` · `pages/docs/ExpressionDocsPage.tsx` · `pages/settings/pickers.tsx` | 4 |
+
+`pickers.tsx` ปุ่ม **Change** disable ได้ → ใส่ `tw:disabled:cursor-default` คู่ไปด้วย ปุ่มที่กดไม่ได้ต้องไม่ยื่นรูปมือให้
+
+**สคริปต์ตรวจเก็บไว้ที่** `scripts/check-cursor-pointer.mjs` — รันซ้ำได้ ถ้าเลข > 1 แปลว่ามีปุ่มใหม่ที่ลืม
+(ที่เหลือ 1 ตัวคือ `<button>` ที่อยู่ใน**คอมเมนต์** ของ `layout/TopNav.tsx` — false positive)
+
+### AK.5 Analyst A / B / C ล็อกอินได้จริงแล้ว
+
+`analyst_a` กับ `analyst_b` **มีอยู่ใน DB มาตลอดพร้อม attribute ครบ แต่ไม่มี password** → ไม่เคยมีใครล็อกอินเป็นพวกเขาได้จริงเลย
+`analyst_c` (เพอร์โซนา "เจ้าของ asset" ของ E2E ข้อ 10) ยังไม่มีเลย
+
+| user | department | clearance | country | branch | บทบาทในเทสต์ |
+|---|---|---|---|---|---|
+| `analyst_a` | FINANCE | **L1** | **TH** | BKK-01 | โดน mask · เห็นเฉพาะ branch ตัวเอง |
+| `analyst_b` | FINANCE | **L2** | **SG** | SIN-01 | clearance ผ่าน แต่โดน **deny ทั้ง table** เพราะ country ≠ dataResidency |
+| `analyst_c` | FINANCE | **L1** | TH | CNX-01 | **ตั้ง clearance ต่ำโดยตั้งใจ** — ถ้าเข้าถึงได้ ต้องเป็นเพราะ `assetOwner: true` ไม่ใช่เพราะ clearance |
+
+ทั้งสามได้ app role `REQUESTER` และเคลียร์ `must_change` ให้แล้ว (เพราะ**ยังไม่มีหน้าจอเปลี่ยน password** ถ้าไม่เคลียร์จะล็อกอินเข้าไปแล้วติดอยู่ตรงนั้น)
+
+⚠️ **attribute ของ `analyst_c` ต้อง `INSERT` ด้วย SQL ตรงๆ** เพราะ M2 **ยังไม่มี write API สำหรับ attribute** — ข้อนี้ยังค้างอยู่เหมือนเดิม
+
+> password เป็นของ **dev บน localhost เท่านั้น** อยู่ในแชทกับใน DB ที่รันอยู่ ไม่ได้ถูกเขียนลงไฟล์ไหนที่ commit ทั้งสิ้น
+
+### AK.6 🪤 กับดักใหม่ 3 ตัวที่เสียเวลาไปรอบนี้
+
+1. **heredoc ของ Bash ใหญ่พอจะใส่ไฟล์ Java ~600 บรรทัดไม่ได้** → `ENAMETOOLONG: name too long, uv_spawn` ต้องใช้ Write tool
+2. **heredoc ของ Bash แปลง `\n` ในเนื้อหาให้เป็นขึ้นบรรทัดจริง** → พัง Java string literal เงียบๆ (`"... AS\n" + body` กลายเป็น literal ที่ไม่ปิด) **โดนไป 3 ครั้งรอบนี้** รวมถึงตอนแก้ `PostgresDialect` / `SqlServerDialect` / `ViewCompilerTest`
+   เช่นเดียวกัน `\\` ในเนื้อหา heredoc ก็ยุบเหลือ `\` → `os.path.join(...).replace('\', '/')` พังทันที
+   **→ อะไรที่มี backslash ให้เขียนไฟล์สคริปต์ด้วย Write tool แล้ว `python <path>` เท่านั้น**
+3. **`-DfailIfNoSpecifiedTests=false` ไม่มีอยู่จริง** ชื่อที่ถูกคือ **`-Dsurefire.failIfNoSpecifiedTests=false`** (ต้องใช้เมื่อ `-Dtest=` คู่กับ `-am` เพราะ `dac-spec` ไม่มีเทสต์ที่ชื่อตรง)
+
+### AK.7 ผลรันจริงรอบนี้
+
+```
+./mvnw -o test                      → BUILD SUCCESS   (ทุก module)
+./mvnw -o -pl backend/dac-compiler-sql -am test
+    DecisionSqlRowFilterTest  7      Failures: 0
+    ViewCompilerTest         18      Failures: 0
+    dac-compiler-sql         25      Failures: 0
+npx tsc --noEmit                    → exit 0
+VITE_BASE=/Arak/ npx vite build     → built in 9.03s
+login analyst_a / analyst_b / analyst_c → 200 · roles=[REQUESTER] · mustChange=False
+http://localhost:8090/Arak/         → 200
+```
+
+### AK.8 ไฟล์ที่แตะรอบนี้
+
+| ไฟล์ | ทำอะไร |
+|---|---|
+| `backend/dac-compiler-sql/…/ViewCompiler.java` | **ใหม่** ~640 บรรทัด — หัวใจของ M5 slice 1 |
+| `backend/dac-compiler-sql/…/ViewCompilerTest.java` | **ใหม่** — 18 tests |
+| `backend/dac-compiler-sql/src/test/resources/golden/secure-view-{postgres,sqlserver}.sql` | **ใหม่** — golden file 2 dialect |
+| `backend/dac-compiler-sql/…/{PostgresDialect,SqlServerDialect}.java` | ซ่อม string literal ที่ `\n` ถูกเขียนเป็นขึ้นบรรทัดจริง |
+| `frontend/app/src/pages/**` 8 ไฟล์ | `tw:cursor-pointer` 20 ปุ่ม |
+| `scripts/check-cursor-pointer.mjs` | **ใหม่** — ตัวตรวจว่ามีปุ่มไหนลืมใส่ |
+
+### AK.9 ต่อจากนี้ (M5 slice 2)
+
+`V12__row_entitlement.sql` + `RowEntitlementMaintainer` ที่แปลง `PolicyDecision` ของแต่ละ principal → แถวในตาราง ACL 3 ใบ
+**ต้องเรียก `ViewCompiler.treatmentKey(...)` ห้ามคำนวณคีย์เอง** ไม่งั้น key ที่ maintainer เขียนกับที่ view มองหาจะไม่ตรงกัน แล้วทุกคนจะได้ `ELSE` (mask เข้มสุด) โดยไม่มีอะไรฟ้อง
+
+---
+
+## รอบก่อนหน้า — **ค้นหา policy ได้** · **หน้า Your profile** · และเริ่ม **M5 Secure View**
 
 ### AJ.1 หน้า Policies ค้นหาได้แล้ว — และค้นที่ server ไม่ใช่ที่หน้าจอ
 

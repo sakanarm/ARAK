@@ -279,7 +279,7 @@ function Example({
 
       <div className="tw:mt-3 tw:flex tw:flex-wrap tw:items-center tw:gap-3">
         <button
-          className="tw:rounded-md tw:border tw:border-secondary tw:px-3 tw:py-1 tw:text-sm tw:text-secondary"
+          className="tw:cursor-pointer tw:rounded-md tw:border tw:border-secondary tw:px-3 tw:py-1 tw:text-sm tw:text-secondary"
           onClick={() => void validateExpression(example.expression).then(setVerdict)}
           type="button">
           Check against the engine

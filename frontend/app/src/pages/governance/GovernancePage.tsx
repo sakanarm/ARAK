@@ -86,7 +86,7 @@ export default function GovernancePage() {
       <nav className="tw:mt-8 tw:flex tw:flex-wrap tw:gap-2">
         {TABS.map((entry) => (
           <button
-            className={`tw:rounded-lg tw:px-3 tw:py-2 tw:text-sm tw:font-medium ${
+            className={`tw:cursor-pointer tw:rounded-lg tw:px-3 tw:py-2 tw:text-sm tw:font-medium ${
               entry.key === tab
                 ? 'tw:bg-brand-solid tw:text-white'
                 : 'tw:border tw:border-secondary tw:text-secondary'
@@ -195,7 +195,7 @@ function BulkButton({
 }) {
   return (
     <button
-      className="tw:flex tw:items-center tw:gap-1.5 tw:rounded-lg tw:border tw:border-secondary tw:bg-primary tw:px-3 tw:py-2 tw:text-sm tw:font-medium tw:text-secondary tw:hover:bg-secondary"
+      className="tw:cursor-pointer tw:flex tw:items-center tw:gap-1.5 tw:rounded-lg tw:border tw:border-secondary tw:bg-primary tw:px-3 tw:py-2 tw:text-sm tw:font-medium tw:text-secondary tw:hover:bg-secondary"
       onClick={onPress}
       type="button">
       {icon}
@@ -282,7 +282,7 @@ function ValueRow({
         {hasChildren ? (
           <button
             aria-label={expanded ? 'Collapse' : 'Expand'}
-            className="tw:text-tertiary"
+            className="tw:cursor-pointer tw:text-tertiary"
             onClick={() => setOpen(!open)}
             type="button">
             {expanded ? (

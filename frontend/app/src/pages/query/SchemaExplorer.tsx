@@ -155,7 +155,7 @@ function TreeNode({
           <button
             aria-expanded={open}
             aria-label={open ? `Collapse ${node.name}` : `Expand ${node.name}`}
-            className="tw:shrink-0 tw:text-quaternary"
+            className="tw:cursor-pointer tw:shrink-0 tw:text-quaternary"
             onClick={() => setOpen((it) => !it)}
             type="button">
             {open ? (
@@ -175,7 +175,7 @@ function TreeNode({
         )}
 
         <button
-          className="tw:min-w-0 tw:flex-1 tw:truncate tw:text-left tw:text-xs tw:text-primary"
+          className="tw:cursor-pointer tw:min-w-0 tw:flex-1 tw:truncate tw:text-left tw:text-xs tw:text-primary"
           onClick={() => {
             if (node.asset) {
               // Schema-qualified: the proxy refuses a bare table name rather
@@ -243,7 +243,7 @@ function Columns({
     <>
       {(data?.columns ?? []).map((column) => (
         <button
-          className="tw:flex tw:w-full tw:items-center tw:gap-2 tw:rounded-md tw:py-0.5 tw:pr-2 tw:text-left tw:hover:bg-secondary"
+          className="tw:cursor-pointer tw:flex tw:w-full tw:items-center tw:gap-2 tw:rounded-md tw:py-0.5 tw:pr-2 tw:text-left tw:hover:bg-secondary"
           key={column.fqn}
           onClick={() => onInsert(column.name)}
           style={{ paddingLeft: `${depth * 12 + 24}px` }}

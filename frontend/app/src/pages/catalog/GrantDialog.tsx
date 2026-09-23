@@ -215,7 +215,7 @@ export function GrantDialog({
                     would invite somebody to fill in both and wonder which
                     one won. */}
                 <button
-                  className="tw:text-xs tw:text-brand-secondary tw:underline"
+                  className="tw:cursor-pointer tw:text-xs tw:text-brand-secondary tw:underline"
                   onClick={() =>
                     setMode(mode === 'duration' ? 'dates' : 'duration')
                   }
@@ -360,7 +360,7 @@ function PrincipalGroup({
         {rows.map((row) => (
           <li key={row.id}>
             <button
-              className="tw:flex tw:w-full tw:items-center tw:gap-2 tw:px-3 tw:py-2 tw:text-left tw:hover:bg-secondary"
+              className="tw:cursor-pointer tw:flex tw:w-full tw:items-center tw:gap-2 tw:px-3 tw:py-2 tw:text-left tw:hover:bg-secondary"
               onClick={() => onPick(row)}
               type="button">
               {row.principalType === 'GROUP' ? (
@@ -396,7 +396,7 @@ const DURATIONS = [
 type WindowMode = 'duration' | 'dates';
 
 function chip(active: boolean) {
-  return `tw:rounded-md tw:border tw:px-2.5 tw:py-1.5 tw:text-sm ${
+  return `tw:cursor-pointer tw:rounded-md tw:border tw:px-2.5 tw:py-1.5 tw:text-sm ${
     active
       ? 'tw:border-brand tw:bg-brand-primary tw:text-brand-secondary'
       : 'tw:border-secondary tw:text-tertiary tw:hover:text-primary'
