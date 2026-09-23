@@ -43,11 +43,11 @@ Phase 1 รองรับ SQL Server + PostgreSQL · identity หลักค�
 | App DB (docker `dac-appdb`, postgres:16-alpine) | `:5432` db/user `dac` |
 | OpenMetadata ของทีม | `2.0.1` — sync ผ่าน **ingestion-bot JWT** (ดู What Didn't Work) |
 
-เทสต์ทั้งหมดเขียว — **backend รันครบทั้ง unit + integration ในคำสั่งเดียวเมื่อ 2026-09-23** (`-Pintegration verify` → BUILD SUCCESS · unit 362 · integration **124** · `AssetStoreIT`/`CatalogQueryIT`/`DataSourceStoreIT` ที่เคยล้มเพราะ Testcontainers เขียวหมดรอบนี้), frontend `npx jest` + `npx tsc --noEmit` + `npx eslint` รันใหม่ **2026-09-23** (87/87 เขียว · tsc exit 0)
+เทสต์ทั้งหมดเขียว — **backend รันครบทั้ง unit + integration ในคำสั่งเดียวเมื่อ 2026-09-23** (`-Pintegration verify` → BUILD SUCCESS · unit **369** · integration **124** · `AssetStoreIT`/`CatalogQueryIT`/`DataSourceStoreIT` ที่เคยล้มเพราะ Testcontainers เขียวหมดรอบนี้), frontend `npx jest` + `npx tsc --noEmit` + `npx eslint` รันใหม่ **2026-09-23** (87/87 เขียว · tsc exit 0)
 
 | ชุด | จำนวน | คำสั่ง |
 |---|---|---|
-| Backend unit | dac-common 6 · dac-engine **166** · dac-compiler-sql 7 · dac-connector-openmetadata 88 · dac-proxy 16 · dac-service **79** = **362** | `./mvnw -am -pl backend/dac-service test` |
+| Backend unit | dac-common 6 · dac-engine **166** · dac-compiler-sql 7 · dac-connector-openmetadata 88 · dac-proxy 16 · dac-service **86** = **369** | `./mvnw -am -pl backend/dac-service test` |
 | Backend integration (Testcontainers `postgres:16-alpine`) | **124 tests** — `AssetStoreIT` 6 · `CatalogQueryIT` 15 · `DataSourceStoreIT` 13 · `GovernanceStoreIT` 10 · `GrantCompositionIT` **13 (ใหม่รอบนี้)** · `IdentityAdminStoreIT` 15 · `ImpactAnalysisIT` 8 · `PolicyBindingMaterializerIT` 10 · `PolicyOverviewIT` 24 · `PolicyStoreIT` 10 | `./mvnw -am -pl backend/dac-service verify -Pintegration` |
 | Frontend | **16 suites / 87 tests** | `npx jest` ใน `frontend/app` |
 
@@ -124,6 +124,34 @@ private static boolean selects(Policy policy, AssetContext asset) {
 ### AE.5 `audit_decision.evaluation_ms` มีค่าแล้ว (ปิดช่องว่างข้อ 5)
 
 จับเวลาที่ **จุดที่ผู้เรียกรอจริง** ใน `QueryService` ไม่ใช่ข้างใน engine — เพราะ NFR-2 ถามถึงเวลาที่ผู้ใช้รอ ไม่ใช่เวลาที่ engine ใช้คิด · ปัดขึ้นเสมอ เพราะ column ที่เป็นศูนย์ทั้งแถวกับ column ที่เป็น NULL ทั้งแถว ตอบคำถาม p95 ได้พอๆ กันคือไม่ได้เลย
+
+### AE.6 🔴 หน้า asset ทุกหน้าจะ **404 ตอน refresh บน prod** — เจอเพราะลองเปิดของจริงที่ URL จริง
+
+ผู้ใช้สั่งว่าอยากเห็น **แบบที่ลง prod ได้ ไม่ใช่ docker และไม่ใช่ dev server** · พอเปิด jar เสิร์ฟ `dist` ที่ build ด้วย `VITE_BASE=/Arak/` แล้วยิงตาม URL จริง เจอว่า:
+
+```
+GET /Arak/                                        → 200
+GET /Arak/assets/index-C0TORp7Z.js                → 200
+GET /Arak/catalog/prod-pg.SalesDB.dbo.customer    → 404   ← ทุกหน้า asset
+```
+
+**สาเหตุ** — `SpaServlet.looksLikeFile()` ตัดสินว่า path ไหนเป็นไฟล์ด้วยกฎ *"segment สุดท้ายมีจุด"* ซึ่งถูกกับ `index-a91f3c.js` แต่ผิดกับทุก route ของแอปนี้ที่ลงท้ายด้วย **FQN** (`/catalog/<service>.<db>.<schema>.<table>`) · pathที่ถูกอ่านว่าเป็นไฟล์ที่หายไป → 404 แทนที่จะคืน `index.html` ให้ router ในเบราว์เซอร์จัดการ
+
+**ผลจริง** — คลิกจากหน้า Catalog เข้าไปได้ปกติ (router เดินในเบราว์เซอร์ ไม่ได้ยิง request) แต่ **กด F5 / เปิด bookmark / แชร์ลิงก์ให้คนอื่น = 404** บนหน้าที่ data owner เปิดบ่อยที่สุด
+
+**แก้** — เปลี่ยนกฎจาก "มีจุด" เป็น **"นามสกุลอยู่ใน `TYPES` ที่ servlet เสิร์ฟได้จริง"** ซึ่งเป็น list ปิดอยู่แล้วในไฟล์เดียวกัน (ใช้ dot ตัวท้าย ไม่ใช่ตัวแรก — `app.min.js` นามสกุลคือ `js`) · `.customer` ไม่ใช่ file type → เป็น route · `.js` ที่หายไปยัง 404 เสียงดังเหมือนเดิม
+
+**บทเรียนสองข้อ**
+1. บั๊กนี้ **มองไม่เห็นจาก dev server** — Vite มี SPA fallback ของตัวเองที่คืน `index.html` ให้ทุก path ที่ไม่ใช่ไฟล์ · จะเจอได้ก็ต่อเมื่อเปิด **artifact ตัวที่จะเอาไปลงจริง** เท่านั้น
+2. `SpaServlet` **ไม่เคยมีเทสต์เลย** ทั้งที่มันเป็นตัวตัดสินว่า request ไหนเป็นหน้าเว็บ request ไหนเป็นไฟล์ · เพิ่ม `SpaServletTest` 7 เทสต์ (route / ไฟล์ / FQN / asset ที่หายไป / path traversal ออกไปหา `.env` / index ต้องไม่ถูก cache)
+
+### AE.7 วิธีดูของจริงบนเครื่อง dev โดยไม่แตะโค้ด prod
+
+nginx บนเครื่องปลายทางตัด prefix ทิ้งด้วย **slash ท้าย `proxy_pass`** (`proxy_pass http://127.0.0.1:8090/;`) → ตัว service ไม่เคยรู้เลยว่าตัวเองถูก mount ที่ `/Arak/` · แต่ **bundle รู้** เพราะมันสร้าง URL ในเบราว์เซอร์ (`src/basePath.ts` อ่านจาก `<meta name="arak-base">`)
+
+แปลว่า **เปิด jar เดี่ยวๆ ที่ `/Arak/` ไม่ได้** — ไม่มีใครตัด prefix ให้ · วิธีที่ใช้รอบนี้คือเขียน reverse proxy ~40 บรรทัดใน scratchpad ที่ทำสิ่งเดียวกับ `deploy/nginx-arak.conf` (301 จาก `/Arak`, ตัด prefix, ส่งต่อ 8080) แล้วเปิดที่ `http://localhost:8090/Arak/` → **artifact ที่ทดสอบคือไฟล์ตัวเดียวกับที่จะ copy ขึ้น host เป๊ะๆ ไม่ได้ build พิเศษ**
+
+> ทางเลือกที่ **ไม่เลือก**: ทำให้ `SpaServlet` ตัด prefix เองเวลาเจอ · มันจะทำให้ jar เปิดเดี่ยวๆ ได้และกัน `proxy_pass` ที่ลืม slash ท้ายด้วย — แต่เป็นการเพิ่มโค้ดใน prod เพื่อแก้ปัญหาของการดูบนเครื่อง dev และ Jersey ถูก map ที่ `/api/*` ไปแล้ว การ rewrite ต้องไปอยู่ชั้น Jetty handler ก่อน servlet mapping ไม่ใช่ filter ธรรมดา · จดไว้เป็นช่องว่างข้อ 10
 
 ---
 
@@ -2232,6 +2260,8 @@ estate ที่ใช้: `prod-mssql.SalesDB.dbo.{customer, order}` + **`prod-
 7. ~~**`CANNOT_LOOSEN` เป็นค่าตาย**~~ — **ปิดแล้ว (ข้อ Y.1)** ลบทิ้งทั้ง Java และ TS เพราะมันเป็นคำตอบของคนละแกนกับ `relation`
 8a. **asset ที่ match data source ไม่ได้ ถูกเก็บเงียบๆ โดยที่ UI ไม่บอก** — `AssetStore` ใช้ `.orElse(null)` เมื่อหา `om_service_fqn` ไม่เจอ → ตอนนี้ **36 จาก 40 asset มี `data_source_id IS NULL`** เขียน policy ได้แต่ enforce ไม่ได้ · ต้องมี banner/badge บอก และควรมีหน้า "source ที่ยังไม่ผูก" (ดูข้อ AC.3)
 9. 🪤 **`PolicyStore.create` เติม `environment = 'dev'` ให้ policy ที่ไม่ได้ระบุ ขณะที่ทุก decision ตัดสินใน `prod`** — policy แบบนั้น **save ผ่าน bind ติด activate ได้ อ่านกลับมาครบ และไม่เคยถูกเรียกใช้** (ข้อ AE.3) · ยังไม่แก้เพราะการสลับ default แปลว่าแถวเก่าทุกแถวที่นอนอยู่ใน `dev` จะเริ่มบังคับใช้ทันทีที่ deploy — ต้องทำพร้อม migration ที่ตัดสินใจให้แต่ละแถวอย่างตั้งใจ
+10. **jar เปิดเดี่ยวๆ ที่ `/Arak/` ไม่ได้ ต้องมี nginx ตัด prefix ให้เสมอ** — `SpaServlet` ไม่รู้จัก `web.basePath` เลย มันเสิร์ฟจาก `/` ล้วน · ถ้าใครตั้ง `proxy_pass http://127.0.0.1:8090` **ลืม slash ท้าย** prefix จะไม่ถูกตัด → ทุก asset 404 → **หน้าขาว** โดยที่ log ของ service ไม่มีอะไรผิดเลย (ข้อ AE.7) · ตอน deploy ให้เช็คด้วย `curl -I http://127.0.0.1:8090/assets/<ชื่อไฟล์จริง>` ว่าต้องได้ 200
+
 8. ~~**builder default `environment: 'dev'` ขณะที่ engine enforce `prod`**~~ — **ปิดแล้ว (ข้อ Y.2)** default เป็น `ENFORCED_ENVIRONMENT` ค่าเดียวที่ทุกฝั่งใช้ร่วมกัน + เตือนเมื่อเลือก environment ที่ไม่ถูก enforce
 
 ---

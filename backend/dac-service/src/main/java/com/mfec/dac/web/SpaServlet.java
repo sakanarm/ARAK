@@ -29,6 +29,13 @@ import java.util.Map;
  * {@code .js} is a broken deploy and should say so, not return HTML that the
  * browser will then fail to parse as a script.
  *
+ * <p>Which makes "names a file type" load-bearing, and it is the one thing
+ * here that cannot be decided by looking for a dot. Half the routes in this
+ * app end in a fully-qualified name —
+ * {@code /catalog/prod-pg.SalesDB.dbo.customer} — and a dot rule reads every
+ * one of them as a missing asset. The rule is therefore an extension this
+ * servlet can actually serve, which is a closed list a few lines down.
+ *
  * <p>Paths under {@code /api} never reach here: Jersey is mounted there by
  * {@code rootPath} and Jetty prefers the more specific mapping.
  */
@@ -119,10 +126,26 @@ public class SpaServlet extends HttpServlet {
     return looksLikeFile(path) ? null : (Files.isReadable(index) ? index : null);
   }
 
-  /** True when the last segment carries an extension, e.g. {@code app.js}. */
+  /**
+   * True when the last segment names a file this servlet knows how to serve.
+   *
+   * <p>Deliberately the same list the {@code Content-Type} comes from: a
+   * request this cannot name a type for is a request it could not have
+   * answered correctly anyway, so there is nothing to be gained by 404ing it
+   * instead of handing back the app. What it buys is that an FQN in a route
+   * stays a route — {@code .customer} is not a file type, so
+   * {@code /catalog/prod-pg.SalesDB.dbo.customer} reaches the router, while a
+   * genuinely missing {@code .js} still fails loudly.
+   */
   private static boolean looksLikeFile(String path) {
     int slash = path.lastIndexOf('/');
-    return path.indexOf('.', slash + 1) > slash + 1;
+    // The last dot, not the first, and for the same reason contentType uses
+    // the last one: the extension of "app.min.js" is "js".
+    int dot = path.lastIndexOf('.');
+    if (dot <= slash + 1) {
+      return false;
+    }
+    return TYPES.containsKey(path.substring(dot + 1).toLowerCase(Locale.ROOT));
   }
 
   /**
