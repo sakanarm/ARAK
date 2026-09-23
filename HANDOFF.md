@@ -27,13 +27,13 @@ Phase 1 รองรับ SQL Server + PostgreSQL · identity หลักค�
 | **M0 Foundation** | ✅ เสร็จ — Maven multi-module, Dropwizard 5, Vite+React+Tailwind shell, vendor `ui-core-components`, JSON Schema → Java/TS codegen, OM client จาก swagger ที่ pin ไว้, Flyway V1–V10, docker-compose, CI 4 jobs |
 | **M1 OM Connector** | 🚧 ~95% — full crawl + governance + effective facet + FR-1.5 webhook/poller/reconcile + catalog read API + Catalog UI + governance read API + Governance UI · **sync กับ OM จริงสำเร็จแล้ว** · เหลือ FR-1.6 (reconcile กับ JDBC จริง), FR-1.7 (local tag + push-back — **ผู้ใช้สั่ง read-only ตอนนี้**) |
 | **M2 Identity** | 🚧 ~50% — local sign-in ใช้ได้ · schema `principal`/`principal_attribute`/`group_member`/`app_role_assignment` มีตั้งแต่ V2 · read API + หน้า People & attributes (**filter ตาม attribute + กดเข้าไปดูสมาชิกใน group ได้ที่ `/principals/:id`**) + **หน้า Application roles (`/settings/roles`) อ่านอย่างเดียว** เสร็จ · **เพิ่ม local account + assign/withdraw app role ได้จาก UI แล้ว (V10 + `IdentityAdminStore` + audit)** · **ยังไม่มี write API สำหรับ *attribute* — ต้อง seed ด้วย SQL** · ยังไม่มีหน้าจอเปลี่ยน password (ทุก account ที่สร้างเป็น `must_change`) · ยังไม่มี Entra OIDC / Graph sync |
-| **M3 Policy Engine** | 🚧 ~97% — engine **156 tests** (data policy 26 + subscription 45 เพิ่มรอบนี้ · เจอบั๊กจริง 2 ตัว ดูข้อ P) · persistence (`PolicyStore`) + `policy_binding` materializer + REST · `PolicyBindingMaterializerIT` 10 tests บน Postgres จริง · **decision cache (FR-5.5) ปิดแล้วรอบนี้ — 25 tests ดูข้อ AB** · เหลือ ANTLR grammar ของ `expr` (FR-3.2) ข้อเดียว |
+| **M3 Policy Engine** | 🚧 ~97% — engine **166 tests** (+10 รอบนี้ · **เจอบั๊กจริงสองตัวที่ grant โดนเต็มๆ ดูข้อ AE.1/AE.2**) (data policy 26 + subscription 45 เพิ่มรอบนี้ · เจอบั๊กจริง 2 ตัว ดูข้อ P) · persistence (`PolicyStore`) + `policy_binding` materializer + REST · `PolicyBindingMaterializerIT` 10 tests บน Postgres จริง · **decision cache (FR-5.5) ปิดแล้วรอบนี้ — 25 tests ดูข้อ AB** · เหลือ ANTLR grammar ของ `expr` (FR-3.2) ข้อเดียว |
 | **M4 Policy Authoring UI** | ✅ **เสร็จ** — Policy list + Policy builder + readback + capability matrix + `/policies/:id` หน้าสรุปอ่านอย่างเดียว + panel Policies ในหน้า asset (FR-3.1.5) + View-as-user (FR-5.2, ข้อ Z) · **รอบนี้ปิดข้อสุดท้าย: impact analysis (FR-5.3) — `GET /v1/policies/{id}/impact` + panel “Who it changes things for” ดูข้อ AA** |
 | **M5 Secure View (5.1.2)** | ⬜ — `DecisionSql` + dialect ทั้งสองตัวพร้อมแล้ว (ใช้ร่วมกับ 5.2) เหลือ ViewCompiler + `row_entitlement` maintainer + DDL apply/rollback |
 | **M6 Push Config (5.1.1)** | ⬜ **re-scope รอบนี้ · เลื่อนหลัง M5/M7 · opt-in ต่อ source** — ยิงเฉพาะ **policy object ที่แยกจาก table** (PG `CREATE POLICY` · MSSQL `CREATE SECURITY POLICY` · column GRANT) · **ตัด MSSQL DDM ออก** เพราะมัน `ALTER COLUMN` ทับนิยาม table — ดูข้อ AC.1 และ DESIGN FR-6.2a |
 | **M7 Query API (5.2a)** | 🚧 ~80% — **`POST /v1/query` + Query console ใช้งานได้จริงรอบนี้** · rewrite → RLS + mask + hidden column → execute → audit ครบ · พิสูจน์กับ Postgres จริงแล้วทั้ง allow / RLS / mask / refuse · เหลือ direct-access detector (FR-6.3.1) และ result cache |
 | **M7b Cross-mode consistency** | ⬜ — ต้องมี M5/M6 ก่อน |
-| **M8 Audit + Ops** | 🚧 ~35% — **FR-7 ปิดครบวงรอบนี้ (grant ตรงระดับ table + auto-revoke + audit trail + หน้าจอ) ดูข้อ AD.1** · `audit_query` / `audit_decision` / `audit_policy_change` เขียนจริงแล้วและอ่านได้ · **ยังไม่มี audit ของการ configure** (เปลี่ยน data source / OM settings ไม่ถูกบันทึกที่ไหนเลย) · ยังไม่มี compliance report / drift detector / auto-revoke / SIEM export |
+| **M8 Audit + Ops** | 🚧 ~35% — **FR-7 ปิดครบวงรอบนี้ (grant ตรงระดับ table + auto-revoke + audit trail + หน้าจอ) ดูข้อ AD.1** · `audit_query` / `audit_decision` / `audit_policy_change` เขียนจริงแล้วและอ่านได้ · **`evaluation_ms` มีค่าแล้ว (ข้อ AE.5)** · **ยังไม่มี audit ของการ configure** (เปลี่ยน data source / OM settings ไม่ถูกบันทึกที่ไหนเลย) · ยังไม่มี compliance report / drift detector / auto-revoke / SIEM export |
 
 **ที่รันอยู่ตอนนี้**
 | | |
@@ -43,19 +43,91 @@ Phase 1 รองรับ SQL Server + PostgreSQL · identity หลักค�
 | App DB (docker `dac-appdb`, postgres:16-alpine) | `:5432` db/user `dac` |
 | OpenMetadata ของทีม | `2.0.1` — sync ผ่าน **ingestion-bot JWT** (ดู What Didn't Work) |
 
-เทสต์ทั้งหมดเขียว — **backend รันครบทั้ง unit + integration ในคำสั่งเดียวเมื่อ 2026-09-22** (`-Pintegration verify`, BUILD SUCCESS), frontend `npx jest` + `npx tsc --noEmit` + `npx eslint` รันใหม่ **2026-09-23** (87/87 เขียว · tsc exit 0)
+เทสต์ทั้งหมดเขียว — **backend รันครบทั้ง unit + integration ในคำสั่งเดียวเมื่อ 2026-09-23** (`-Pintegration verify` → BUILD SUCCESS · unit 362 · integration **124** · `AssetStoreIT`/`CatalogQueryIT`/`DataSourceStoreIT` ที่เคยล้มเพราะ Testcontainers เขียวหมดรอบนี้), frontend `npx jest` + `npx tsc --noEmit` + `npx eslint` รันใหม่ **2026-09-23** (87/87 เขียว · tsc exit 0)
 
 | ชุด | จำนวน | คำสั่ง |
 |---|---|---|
-| Backend unit | dac-common 6 · dac-engine 156 · dac-compiler-sql 7 · dac-connector-openmetadata 88 · dac-proxy 16 · dac-service **56** = **329** | `./mvnw -am -pl backend/dac-service test` |
-| Backend integration (Testcontainers `postgres:16-alpine`) | **111 tests** — `AssetStoreIT` 6 · `CatalogQueryIT` 15 · `DataSourceStoreIT` 13 · `GovernanceStoreIT` 10 · `IdentityAdminStoreIT` 15 · `ImpactAnalysisIT` **8** · `PolicyBindingMaterializerIT` 10 · `PolicyOverviewIT` 24 · `PolicyStoreIT` 10 | `./mvnw -am -pl backend/dac-service verify -Pintegration` |
+| Backend unit | dac-common 6 · dac-engine **166** · dac-compiler-sql 7 · dac-connector-openmetadata 88 · dac-proxy 16 · dac-service **79** = **362** | `./mvnw -am -pl backend/dac-service test` |
+| Backend integration (Testcontainers `postgres:16-alpine`) | **124 tests** — `AssetStoreIT` 6 · `CatalogQueryIT` 15 · `DataSourceStoreIT` 13 · `GovernanceStoreIT` 10 · `GrantCompositionIT` **13 (ใหม่รอบนี้)** · `IdentityAdminStoreIT` 15 · `ImpactAnalysisIT` 8 · `PolicyBindingMaterializerIT` 10 · `PolicyOverviewIT` 24 · `PolicyStoreIT` 10 | `./mvnw -am -pl backend/dac-service verify -Pintegration` |
 | Frontend | **16 suites / 87 tests** | `npx jest` ใน `frontend/app` |
 
 `yarn type-check` · `yarn lint` · `yarn build` ผ่านหมด → **BUILD SUCCESS** ทั้งสองฝั่ง
 
 ---
 
-## รอบล่าสุดทำอะไรไป — FR-7 grant ครบวง · หน้า Asset เป็น 5 แท็บ · และ **ย้าย deploy ไปเป็นแบบเดียวกับแอปอื่นบนเครื่องปลายทาง**
+## รอบนี้ — เขียน IT ให้ FR-7 แล้วพบว่า **grant ไม่เคยถึง engine เลยสักใบ** กับอีกสองบั๊กที่ซ่อนอยู่ใต้มัน
+
+> รอบที่แล้วปิด FR-7 ด้วยการพิสูจน์ด้วยมือ (ตาราง 6 แถวในข้อ AD.1) แล้วจดค้างไว้ว่า *"property ข้อที่สามพิสูจน์ด้วยมือแล้ว แต่ยังไม่มีใน CI"* · รอบนี้เขียน IT ให้มัน แล้ว **ล้ม 5 จาก 12 ตั้งแต่รันแรก — ไม่ใช่เพราะเทสต์ผิด** · ทั้งสามบั๊กข้างล่างนี้ไม่มีตัวไหนมองเห็นได้จากหน้าจอ
+
+### AE.1 🔴 grant ไม่เคยถูก engine อ่านเลยสักใบ ตั้งแต่วันที่ merge
+
+`PolicyEngine.bind()` คัด policy ด้วย `SelectorMatcher.matches(policy.getSelector(), asset)` และ `matches(null, …)` คืน `false` เสมอ — **ซึ่งถูกแล้ว** สำหรับ policy ที่คนเขียน: selector ที่ไม่ได้ระบุอะไร ต้องแปลว่า "ไม่ selects อะไรเลย" ไม่ใช่ "selects ทุกอย่าง" (fail-closed)
+
+แต่ **grant คือ policy ตัวเดียวที่ไม่มี selector โดยธรรมชาติ** เพราะมันไม่เคยถูกเขียนจาก facet — มีคนชี้ table หนึ่งใบให้คนหนึ่งคน แล้ว `GrantStore.asPolicy` พา asset มาใน `scopeFqn` แทน → **grant ทุกใบถูกทิ้งก่อนถึงขั้น compose**
+
+แก้ที่ `PolicyEngine` ไม่ใช่ที่ `SelectorMatcher` และไม่ใช่ด้วยการปั้น selector ปลอมให้ grant (`FacetCondition.FacetType` ไม่มี `fqn` ให้ใช้อยู่แล้ว):
+
+```java
+private static boolean selects(Policy policy, AssetContext asset) {
+  if (policy.getSelector() != null) {
+    return SelectorMatcher.matches(policy.getSelector(), asset);
+  }
+  return policy.getScopeFqn() != null && policy.getScopeFqn().equals(asset.fqn());
+}
+```
+
+ข้อยกเว้นถูกบีบให้แคบที่สุดเท่าที่จะทำได้ — ต้องมี `scopeFqn` **ตรงกับ asset ที่กำลังถาม** ไม่งั้น "policy ที่ไม่มี selector" จะกลายเป็น "policy ที่ใช้กับทุก asset" ซึ่งคือความพังที่ `SelectorMatcher` ตั้งใจกันไว้ตั้งแต่ต้น
+
+### AE.2 🔴 grant ให้คนหนึ่งคน = ปิด table นั้นจากคนที่เหลือทั้งองค์กร
+
+พอ grant ถึง engine ได้แล้ว เทสต์ล้มต่ออีกตัว และตัวนี้หนักกว่าตัวแรก
+
+`decideSubscription` compose แบบ intersection: **ทุกชั้นที่มีความเห็นต้องอนุญาต** และ "ชั้นที่มีความเห็น" ถูกนิยามว่า *ชั้นที่มี ALLOW อยู่* · grant คือ ALLOW ที่ชั้น TABLE → **grant หนึ่งใบสร้าง gate ที่ชั้น TABLE ขึ้นมา** แล้วคนอื่นทุกคนที่ผ่าน ORG policy มาได้ ก็ตกที่ชั้นนี้เพราะ grant ไม่ได้ระบุชื่อเขา
+
+พูดเป็นภาษาคน: **owner คนหนึ่งให้ analyst_a เข้า table หนึ่งใบ = ยึด table ใบนั้นคืนจากทุกคนที่เหลือ** โดยไม่มี log ไม่มีคำเตือน และหน้าจอยังแสดงว่า policy เดิม active อยู่ครบ
+
+แก้โดยแยก "ALLOW ที่ตั้ง gate ได้" ออกจาก "ALLOW ที่เพิ่มสิทธิ์อย่างเดียว":
+
+| | policy ที่คนเขียน | grant (FR-7) |
+|---|---|---|
+| เขียนจาก | selector บน facet → พูดแทน asset ทั้งกลุ่ม | ชื่อคนหนึ่งคน + table หนึ่งใบ |
+| ตั้ง gate ให้ชั้นตัวเองได้ไหม | **ได้** — เป็นความเห็นเรื่องว่า "ใครควรผ่านชั้นนี้" | **ไม่ได้** — ไม่ได้พูดถึงใครนอกจากคนที่ระบุ |
+| ผ่าน gate ที่ชั้นเดียวกันที่คนอื่นตั้งไว้ได้ไหม | ได้ | **ได้** — นี่คือประโยชน์ทั้งหมดของ grant |
+| ผ่าน gate ชั้นที่สูงกว่า (ORG) ได้ไหม | — | **ไม่ได้** เว้นแต่ policy ชั้นนั้นเปิด `allowLocalOverride` (FR-3.1.4) |
+
+**ผลสองชั้นที่ซ้อนกันอยู่:** `AccessQuery` (แท็บ Access) ตอบคำถาม "ใครเข้า table นี้ได้บ้าง" ด้วยการ **รัน engine ให้ทุก principal จริงๆ** ไม่ใช่อ่านตาราง grant มาบวกตาราง policy — ซึ่งเป็นการออกแบบที่ถูก และแปลว่าหน้าจอนั้นสะท้อนบั๊กทั้งสองตัวตรงๆ: ก่อนแก้ข้อ AE.1 **ไม่มีใครเคยขึ้นเป็น origin `GRANT` ได้เลย** และหลังจากนั้นพอมี grant หนึ่งใบ รายชื่อทั้งหน้าก็จะยุบเหลือคนที่ถือ grant คนเดียว — โดยหน้าจอรายงานอย่างมั่นใจว่านั่นคือคำตอบที่ถูก
+
+ตัวแยกใช้ field เดียวกับข้อ AE.1: `additive(policy) == (policy.getSelector() == null)` · เมื่อไม่มี gate เลยทั้ง asset (เคสปกติของ FR-7 — table ที่ไม่มีใครเขียน policy ถึง) grant ที่ match คือคำตอบทั้งหมด
+
+### AE.3 🪤 `PolicyStore.create` เติม `environment = 'dev'` ให้เงียบๆ ขณะที่ทุก decision ตัดสินใน `prod`
+
+เทสต์สองตัวล้มด้วยทิศกลับด้าน (คาดว่า deny แต่ได้ allow) และคราวนี้ **ไม่ใช่บั๊กของ engine แต่เป็นกับดักที่ fixture เดินเข้าไปเหยียบ**
+
+```java
+// PolicyStore.java:120
+.bind("environment", document.getEnvironment() == null ? "dev" : value(document.getEnvironment()))
+```
+ขณะที่ `DecisionService.DEFAULT_ENVIRONMENT = "prod"` และ `activeFor` กรอง `AND p.environment = :environment`
+
+→ policy ที่สร้างโดยไม่ระบุ environment **save ผ่าน · bind ติด · activate ได้ · อ่านกลับมาครบทุก field · และไม่เคยถูกเรียกใช้** — ความพังแบบเดียวกับที่ commit `63361eb` แก้ไปแล้วรอบหนึ่ง แต่เหลือทางเข้าไว้อีกทาง
+
+**ยังไม่แก้ในโค้ด production รอบนี้** เพราะการสลับ default เป็น `prod` แปลว่า **policy เก่าทุกแถวที่ตอนนี้นอนอยู่เฉยๆ ใน `dev` จะเริ่มบังคับใช้ทันทีที่ deploy** — เป็นการเปลี่ยนพฤติกรรมของข้อมูลที่มีอยู่แล้ว ไม่ใช่แค่แก้บั๊ก · จดเป็นช่องว่างข้อ 9 แทน · ฝั่ง fixture ปักไว้ที่ `DecisionService.DEFAULT_ENVIRONMENT` ตรงๆ
+
+### AE.4 ⚠️ แก้บันทึกของรอบที่แล้ว — "หลักฐานจากของจริง" ในข้อ AD.1 พิสูจน์สิ่งที่เขียนไว้ไม่ได้
+
+ตาราง 6 แถวในข้อ AD.1 จบด้วยแถวที่ว่า *grant ถูกบันทึกแล้วแต่ `analyst_b` ยังเข้าไม่ได้* แล้วสรุปว่า **"นี่คือ FR-5.1 ทำงานจริง — policy DENY ชนะ grant"**
+
+ผลลัพธ์นั้นถูก แต่ **คำอธิบายพิสูจน์ไม่ได้** — "grant ถูก policy DENY ทับ" กับ "grant ไม่เคยถูกโหลดเลย" (ข้อ AE.1) ให้ผลหน้าจอเหมือนกันทุกประการ · การเช็คด้วยมือแยกสองกรณีนี้ไม่ออกโดยหลักการ เพราะมันดูได้แค่คำตอบสุดท้าย · IT แยกออกเพราะมันถามคำถามที่ขั้วกลับกันด้วย (**analyst_b ต้องเข้าได้**) ซึ่งเป็น assertion ที่ล้มทันทีถ้า ALLOW ฝั่งตรงข้ามไม่ทำงาน
+
+> บทเรียนที่ควรจดไว้: **เทสต์ที่ยืนยันเฉพาะฝั่ง deny ผ่านได้ด้วยเหตุผลที่ผิด** — ระบบที่พังจนปฏิเสธทุกอย่างก็ทำให้เทสต์ฝั่ง deny เขียวหมดเหมือนกัน · ทุกกลุ่มเทสต์เรื่องสิทธิ์ต้องมีแถว "แล้วใครที่ *ควร* เข้าได้ ยังเข้าได้อยู่ไหม" เสมอ
+
+### AE.5 `audit_decision.evaluation_ms` มีค่าแล้ว (ปิดช่องว่างข้อ 5)
+
+จับเวลาที่ **จุดที่ผู้เรียกรอจริง** ใน `QueryService` ไม่ใช่ข้างใน engine — เพราะ NFR-2 ถามถึงเวลาที่ผู้ใช้รอ ไม่ใช่เวลาที่ engine ใช้คิด · ปัดขึ้นเสมอ เพราะ column ที่เป็นศูนย์ทั้งแถวกับ column ที่เป็น NULL ทั้งแถว ตอบคำถาม p95 ได้พอๆ กันคือไม่ได้เลย
+
+---
+
+## รอบก่อนหน้า — FR-7 grant ครบวง · หน้า Asset เป็น 5 แท็บ · และ **ย้าย deploy ไปเป็นแบบเดียวกับแอปอื่นบนเครื่องปลายทาง**
 
 > รอบนี้มีสามเรื่องที่ไม่เกี่ยวกัน และ **บั๊ก schema หนึ่งตัวที่ซ่อนมาตั้งแต่ V3** ซึ่งโผล่ออกมาเพราะเรื่องแรก
 
@@ -95,7 +167,9 @@ Phase 1 รองรับ SQL Server + PostgreSQL · identity หลักค�
 | `POST /v1/access/grants/{id}/revoke` | **200** |
 | history อีกรอบ | `REVOKE` + `GRANT` ครบสองแถว · `grants: 0` |
 
-> แถวที่สำคัญที่สุดคือแถวที่สาม — **grant ถูกบันทึกแล้ว แต่ `analyst_b` ยังเข้าไม่ได้** เพราะ policy DENY เขาอยู่ (country SG ≠ dataResidency TH) · นี่คือ FR-5.1 ทำงานจริงแบบ end-to-end ไม่ใช่แค่ใน unit test
+> แถวที่สำคัญที่สุดคือแถวที่สาม — **grant ถูกบันทึกแล้ว แต่ `analyst_b` ยังเข้าไม่ได้** เพราะ policy DENY เขาอยู่ (country SG ≠ dataResidency TH)
+>
+> ⚠️ **คำอธิบายบรรทัดบนนี้ผิด — ดูข้อ AE.4** · ตอนที่บันทึกนี้ถูกเขียน grant ยังไม่เคยถึง engine เลยสักใบ (ข้อ AE.1) ผลที่เห็นจึงอธิบายได้ทั้งสองทางและการเช็คด้วยมือแยกไม่ออก · ตอนนี้ property นี้มี IT คุมแล้วจริง
 
 ### AD.2 หน้า Asset แตกเป็น 5 แท็บ
 
@@ -269,7 +343,7 @@ demo-pg |     (NULL)     |    t         demo-pg    |   ใช่   |     4
 
 `AssetStoreIT` (137.0 s) และ `CatalogQueryIT` (100.4 s) ล้มด้วย `ContainerLaunchException: Container startup failed for image postgres:16-alpine` → `Timed out waiting for log output matching '.*database system is ready to accept connections.*'`
 
-Docker แน่นเพราะรัน backend + Vite + `dac-appdb` + `dac-srcpg` พร้อมกัน · **IT ตัวถัดไปในรอบเดียวกันผ่านหมด** (`GovernanceStoreIT` 10 · `IdentityAdminStoreIT` 11 · `ImpactAnalysisIT` 8) และ unit test **71/71 ผ่าน 0 failures 0 errors** → ยืนยันว่าเป็น resource ไม่ใช่ regression · **ยังต้องรันซ้ำสองตัวนี้ตอน Docker ว่าง**
+Docker แน่นเพราะรัน backend + Vite + `dac-appdb` + `dac-srcpg` พร้อมกัน · **IT ตัวถัดไปในรอบเดียวกันผ่านหมด** (`GovernanceStoreIT` 10 · `IdentityAdminStoreIT` 15 · `ImpactAnalysisIT` 8) และ unit test **71/71 ผ่าน 0 failures 0 errors** → ยืนยันว่าเป็น resource ไม่ใช่ regression · **ยังต้องรันซ้ำสองตัวนี้ตอน Docker ว่าง**
 
 ---
 
@@ -2153,10 +2227,11 @@ estate ที่ใช้: `prod-mssql.SalesDB.dbo.{customer, order}` + **`prod-
 2. **ยังไม่มี write API สำหรับ *attribute* ของ local principal (FR-2.2) และการติด facet แบบ local (FR-1.7)** — *account กับ app role เขียนได้แล้วตั้งแต่หัวข้อ W* แต่ `principal_attribute` ของ `analyst_a` / `steward_c` และ tag ของ demo ยังถูก seed ด้วย SQL ตรงๆ ไม่มีทางทำผ่าน UI → **ABAC ครึ่งฝั่ง user ยังแก้จากหน้าจอไม่ได้**
 3. ~~**`PolicyResource.affecting` default `environment` เป็น `"dev"`**~~ — **แก้แล้วรอบนี้ (ข้อ X.2)** ทุก endpoint ใช้ `environmentOr()` ที่ fallback เป็น `DecisionService.DEFAULT_ENVIRONMENT` และฝั่ง TS default เป็น `'prod'`
 4. **audit ของการ configure ยังไม่ครบ** — *identity ครบแล้ว* (`audit_identity_change` จาก V10: สร้าง account, enable/disable, ตั้ง password, grant/revoke role) แต่ **เปลี่ยน data source, เปลี่ยน OM settings, enable/disable source ยังไม่ถูกบันทึกที่ไหน**
-5. **`audit_decision.evaluation_ms` ไม่เคยถูกเขียนค่า** — เป็น NULL ทุกแถว ทำให้ยืนยัน NFR-2 (p95 < 50ms) ไม่ได้
+5. ~~**`audit_decision.evaluation_ms` ไม่เคยถูกเขียนค่า**~~ — **ปิดแล้วรอบนี้ (ข้อ AE.5)** จับเวลาที่จุดที่ผู้เรียกรอจริงใน `QueryService` · ยังเหลือการอ่านค่ามาทำ p95 report จริงๆ ซึ่งอยู่ใน M8
 6. **capability matrix ยังไม่รู้จัก masking function ต่อ dialect และไม่รู้จักเวอร์ชันของ engine** — ดูหัวข้อ I ข้างบน
 7. ~~**`CANNOT_LOOSEN` เป็นค่าตาย**~~ — **ปิดแล้ว (ข้อ Y.1)** ลบทิ้งทั้ง Java และ TS เพราะมันเป็นคำตอบของคนละแกนกับ `relation`
 8a. **asset ที่ match data source ไม่ได้ ถูกเก็บเงียบๆ โดยที่ UI ไม่บอก** — `AssetStore` ใช้ `.orElse(null)` เมื่อหา `om_service_fqn` ไม่เจอ → ตอนนี้ **36 จาก 40 asset มี `data_source_id IS NULL`** เขียน policy ได้แต่ enforce ไม่ได้ · ต้องมี banner/badge บอก และควรมีหน้า "source ที่ยังไม่ผูก" (ดูข้อ AC.3)
+9. 🪤 **`PolicyStore.create` เติม `environment = 'dev'` ให้ policy ที่ไม่ได้ระบุ ขณะที่ทุก decision ตัดสินใน `prod`** — policy แบบนั้น **save ผ่าน bind ติด activate ได้ อ่านกลับมาครบ และไม่เคยถูกเรียกใช้** (ข้อ AE.3) · ยังไม่แก้เพราะการสลับ default แปลว่าแถวเก่าทุกแถวที่นอนอยู่ใน `dev` จะเริ่มบังคับใช้ทันทีที่ deploy — ต้องทำพร้อม migration ที่ตัดสินใจให้แต่ละแถวอย่างตั้งใจ
 8. ~~**builder default `environment: 'dev'` ขณะที่ engine enforce `prod`**~~ — **ปิดแล้ว (ข้อ Y.2)** default เป็น `ENFORCED_ENVIRONMENT` ค่าเดียวที่ทุกฝั่งใช้ร่วมกัน + เตือนเมื่อเลือก environment ที่ไม่ถูก enforce
 
 ---
@@ -2164,9 +2239,9 @@ estate ที่ใช้: `prod-mssql.SalesDB.dbo.{customer, order}` + **`prod-
 ## Next Steps
 
 1. **push ให้ขึ้น** — local นำหน้า remote อยู่ (remote main ยังอยู่ที่ `e3aaa52`) · แก้เรื่อง `git push` ค้างก่อน (ดู What Didn't Work) แล้วยืนยันด้วย `git ls-remote --heads origin` · **scan secret ก่อน push ทุกครั้ง**
-2. **FR-7 Manual grant** — *ผู้ใช้สั่งเป็นงานถัดไป* · grant ระดับ table ให้ user/group ตรงๆ พร้อม start/end date · หน้า asset รื้อเป็น tab **Overview / Access / Policies / Columns / Audit** (อ้างอิง Immuta แต่ใช้ theme เรา) · tab Access ต้อง**แยกให้ชัดว่าสิทธิมาจาก direct grant หรือมาจาก policy** · group รองรับทุกแหล่ง (local + OM team + Entra ในอนาคต) · **grant ไม่ชนะ global policy** — compose แบบ intersection เหมือนเดิม
+2. ~~**FR-7 Manual grant**~~ — **ปิดแล้วจริงรอบนี้** · รอบที่แล้วปิดด้วยการเช็คด้วยมือซึ่งแยกไม่ออกว่า grant ทำงานหรือไม่เคยถูกโหลด (ข้อ AE.4) · ตอนนี้มี `GrantCompositionIT` 13 tests บน Postgres จริงคุมอยู่ และการเขียนมันคือสิ่งที่ทำให้เจอบั๊กข้อ AE.1/AE.2 · *บันทึกเดิมของงานนี้:* · grant ระดับ table ให้ user/group ตรงๆ พร้อม start/end date · หน้า asset รื้อเป็น tab **Overview / Access / Policies / Columns / Audit** (อ้างอิง Immuta แต่ใช้ theme เรา) · tab Access ต้อง**แยกให้ชัดว่าสิทธิมาจาก direct grant หรือมาจาก policy** · group รองรับทุกแหล่ง (local + OM team + Entra ในอนาคต) · **grant ไม่ชนะ global policy** — compose แบบ intersection เหมือนเดิม
 2a. **ผูก `demo-pg` เข้ากับ service ของ OM** — *รอคำตอบผู้ใช้* ว่า `demo-pg` คือ `dtp-iprm` หรือคนละเครื่อง (ดูข้อ AC.3) · ตราบใดที่ยังไม่ผูก asset 36 ตัวจาก OM จริงยัง enforce ไม่ได้เลย
-2b. **รันซ้ำ `AssetStoreIT` + `CatalogQueryIT`** ตอน Docker ว่าง — ล้มเพราะ Testcontainers ตั้ง Postgres ไม่ขึ้น ไม่ใช่ regression (ดูข้อ AC.4)
+2b. ~~**รันซ้ำ `AssetStoreIT` + `CatalogQueryIT`**~~ — **เขียวแล้วรอบนี้** ยืนยันว่าข้อ AC.4 เป็นเรื่อง Docker ไม่ใช่ regression จริง
 3. **ปิด M3** — เหลือ ANTLR grammar ของ `expr` (FR-3.2) ข้อเดียว (**decision cache FR-5.5 ปิดแล้ว ดูข้อ AB**)
 3. ~~**ปิด M4**~~ — **ปิดแล้ว** (FR-3.1.5 ข้อ X · FR-5.2 ข้อ Z · FR-5.3 ข้อ AA) · ของที่ค้างไว้จาก M4 ต่อได้ถ้าต้องการ: impact analysis ยังวัดเฉพาะ **table binding** (COLUMN binding ถูกครอบด้วย TABLE row ที่ materializer เขียนไว้อยู่แล้ว) และ cap 25×200 ยังเป็นค่าตายในโค้ด ไม่ได้ config
 4. **ปิดช่องว่างข้อ 1–5 ข้างบน** โดยเฉพาะ **ข้อ 4 (audit ของการ configure)** ซึ่งเป็นของที่ auditor จะถามหาแน่นอน

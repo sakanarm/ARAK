@@ -121,9 +121,21 @@ public final class PolicyEngine {
 
   // ---------------------------------------------------------------- binding
 
-  /** A policy that binds to this asset, together with what its subject rule said. */
+  /**
+   * A policy that binds to this asset, together with what its subject rule said.
+   *
+   * @param additive true for a policy that only ever opens a door for the
+   *     people it names -- a direct grant (FR-7). It is the one kind of ALLOW
+   *     that must not narrow the asset for anybody else, so it is tracked
+   *     separately from the authored policies that do.
+   */
   private record Candidate(
-      Policy policy, int layer, boolean subjectMatched, String explanation, boolean exempt) {
+      Policy policy,
+      int layer,
+      boolean subjectMatched,
+      String explanation,
+      boolean exempt,
+      boolean additive) {
 
     boolean allows() {
       return effect() == Policy.Effect.ALLOW;
@@ -157,7 +169,7 @@ public final class PolicyEngine {
       if (policy == null || !enforceable(policy, context)) {
         continue;
       }
-      if (!SelectorMatcher.matches(policy.getSelector(), asset)) {
+      if (!selects(policy, asset)) {
         continue;
       }
 
@@ -171,7 +183,7 @@ public final class PolicyEngine {
                     + exemption.getExpiresAt()
                     + ": "
                     + exemption.getReason()));
-        out.add(new Candidate(policy, layerOf(policy), false, "exempt", true));
+        out.add(new Candidate(policy, layerOf(policy), false, "exempt", true, additive(policy)));
         continue;
       }
 
@@ -196,7 +208,8 @@ public final class PolicyEngine {
                 + (matched ? "matching" : "not matching");
       }
       reasons.add(reason(policy, matched, explanation));
-      out.add(new Candidate(policy, layerOf(policy), matched, explanation, false));
+      out.add(
+          new Candidate(policy, layerOf(policy), matched, explanation, false, additive(policy)));
     }
     return out;
   }
@@ -241,6 +254,41 @@ public final class PolicyEngine {
       }
     }
     return null;
+  }
+
+  /**
+   * Whether this policy reaches this asset at all.
+   *
+   * <p>A policy is normally bound by its selector, and a selector that says
+   * nothing selects nothing. That is the fail-closed reading and the one a
+   * half-written policy has to get: "I never said which assets" must not
+   * come out as "all of them".
+   *
+   * <p>A direct grant (FR-7) is the one thing that legitimately has no
+   * selector. It was never written against a facet -- somebody named one
+   * table and one person -- so it carries the asset in {@code scopeFqn}
+   * instead, and is only ever loaded for that asset in the first place.
+   * Requiring the FQN to match is what keeps this exception from widening
+   * into "a policy with no selector applies everywhere", which is the
+   * failure this whole method exists to avoid.
+   */
+  /**
+   * Whether this policy only ever adds access for the people it names.
+   *
+   * <p>Read off the same field {@link #selects} reads: a direct grant is the
+   * one policy with no selector, because it was never written against a facet.
+   * Everything else here was authored against a set of assets and speaks for
+   * that set, which is what makes it able to narrow as well as widen.
+   */
+  private static boolean additive(Policy policy) {
+    return policy.getSelector() == null;
+  }
+
+  private static boolean selects(Policy policy, AssetContext asset) {
+    if (policy.getSelector() != null) {
+      return SelectorMatcher.matches(policy.getSelector(), asset);
+    }
+    return policy.getScopeFqn() != null && policy.getScopeFqn().equals(asset.fqn());
   }
 
   /**
@@ -298,18 +346,46 @@ public final class PolicyEngine {
     // Only layers that actually contain an ALLOW act as gates. A layer holding
     // nothing but unmatched DENY policies has no opinion about who may in, and
     // treating it as a gate would deny everyone for having written a DENY.
+    //
+    // Direct grants are left out of the gate set for the same reason, and it is
+    // the sharper one: a grant names one person, so counting it would turn
+    // "Ann may read this table" into "only Ann may read this table" and quietly
+    // shut out everybody an organisation-wide policy already let in. A grant
+    // adds access and never removes it; it can satisfy a gate somebody else
+    // put up (below), but it may not put one up itself.
     Set<Integer> gates = new TreeSet<>();
+    boolean anyGrant = false;
     for (Candidate c : subscriptions) {
-      if (c.allows()) {
-        gates.add(c.layer());
+      if (!c.allows()) {
+        continue;
       }
+      if (c.additive()) {
+        anyGrant = true;
+        continue;
+      }
+      gates.add(c.layer());
     }
     if (gates.isEmpty()) {
+      // Nothing gates the asset, so a grant is the whole of the answer -- which
+      // is the ordinary case for FR-7: a table nobody wrote a policy for.
+      for (Candidate c : subscriptions) {
+        if (c.additive() && c.allows() && c.applies()) {
+          reasons.add(
+              reason(
+                  c.policy(),
+                  true,
+                  "granted directly to this principal, and no policy gates this asset"));
+          return true;
+        }
+      }
       reasons.add(
           bareReason(
               false,
-              "only deny policies bind to this asset; nothing grants access, so access is denied "
-                  + "by default"));
+              anyGrant
+                  ? "the only thing that opens this asset is a direct grant, and none names this "
+                      + "principal; access is denied by default"
+                  : "only deny policies bind to this asset; nothing grants access, so access is "
+                      + "denied by default"));
       return false;
     }
 

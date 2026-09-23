@@ -384,10 +384,16 @@ public class QueryService {
     // query means and the only shape of ask the decision cache may reuse
     // (FR-5.5). Passing Instant.now() here would pin the decision to a
     // microsecond and make every query on the hottest path a cold one.
+    long startedAt = System.nanoTime();
     PolicyDecision decision =
         decisions.decide(
             new DecisionService.Ask(principal, fqn.get(), null, clientIp, purpose, null));
-    recordDecision(decision, clientIp, purpose);
+    // Rounded up, so a decision that took any time at all never records as
+    // having taken none: a column of zeroes and a column of nulls are
+    // equally useless for answering whether p95 is under 50ms.
+    int evaluationMs = (int) Math.min(Integer.MAX_VALUE,
+        (System.nanoTime() - startedAt + 999_999L) / 1_000_000L);
+    recordDecision(decision, clientIp, purpose, evaluationMs);
     return new QueryRewriter.Governed(fqn.get(), decision, columns);
   }
 
@@ -400,7 +406,8 @@ public class QueryService {
 
   // ----------------------------------------------------------------- audit
 
-  private void recordDecision(PolicyDecision decision, String clientIp, String purpose) {
+  private void recordDecision(
+      PolicyDecision decision, String clientIp, String purpose, int evaluationMs) {
     try {
       List<UUID> matched = new ArrayList<>();
       if (decision.getReasons() != null) {
@@ -417,16 +424,18 @@ public class QueryService {
                   .createUpdate(
                       """
                       INSERT INTO audit_decision (principal_name, target_fqn, allowed, mode,
-                                                  decision, matched_policy_ids, from_cache,
-                                                  purpose, client_ip)
+                                                  decision, matched_policy_ids, evaluation_ms,
+                                                  from_cache, purpose, client_ip)
                       VALUES (:principal, :fqn, :allowed, 'PROXY', CAST(:document AS jsonb),
-                              :policyIds, :fromCache, :purpose, CAST(:ip AS inet))
+                              :policyIds, :evaluationMs, :fromCache, :purpose,
+                              CAST(:ip AS inet))
                       """)
                   .bind("principal", decision.getPrincipal())
                   .bind("fqn", decision.getAssetFqn())
                   .bind("allowed", Boolean.TRUE.equals(decision.getAllowed()))
                   .bind("document", document)
                   .bindArray("policyIds", UUID.class, matched.toArray(new UUID[0]))
+                  .bind("evaluationMs", evaluationMs)
                   .bind("fromCache", Boolean.TRUE.equals(decision.getFromCache()))
                   .bind("purpose", purpose)
                   .bind("ip", inet(clientIp))

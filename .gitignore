@@ -40,3 +40,4 @@ frontend/app/vite-run.log
 maven-build.log
 frontend/app/shot-*.mjs
 frontend/app/*.png
+grant-*.log
