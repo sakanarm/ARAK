@@ -1,8 +1,10 @@
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { Plus, ShieldTick } from '@untitledui/icons';
+import { Plus, SearchLg, ShieldTick } from '@untitledui/icons';
 import { Chip as Badge } from '../../components/chips';
 import { Button } from '@openmetadata/ui-core-components/components/base/buttons/button';
+import { Input } from '@openmetadata/ui-core-components/components/base/input/input';
 import { apiErrorMessage } from '../../api/client';
 import { fetchPolicies, type StoredPolicy } from '../../api/policies';
 import { Select } from './controls';
@@ -31,10 +33,12 @@ export default function PolicyListPage() {
   const state = params.get('state') ?? '';
   const type = params.get('type') ?? '';
   const scopeLevel = params.get('scopeLevel') ?? '';
+  const search = params.get('q') ?? '';
+  const [searchDraft, setSearchDraft] = useState(search);
 
   const { data, isLoading, error } = useQuery({
-    queryKey: ['policies', state, type, scopeLevel],
-    queryFn: () => fetchPolicies({ state, type, scopeLevel }),
+    queryKey: ['policies', state, type, scopeLevel, search],
+    queryFn: () => fetchPolicies({ state, type, scopeLevel, q: search }),
   });
 
   function update(key: string, value: string) {
@@ -70,7 +74,44 @@ export default function PolicyListPage() {
         </Button>
       </header>
 
-      <section className="tw:mt-8 tw:flex tw:flex-wrap tw:gap-3">
+      {/*
+        Searched on the server, not here. The list arrives one page at a time,
+        so filtering the rows already on screen would quietly answer "no such
+        policy" for anything past the first hundred -- the worst possible
+        answer to give somebody checking whether a rule already exists.
+      */}
+      <form
+        className="tw:mt-8 tw:flex tw:min-w-72 tw:items-center tw:gap-2"
+        onSubmit={(event) => {
+          event.preventDefault();
+          update('q', searchDraft.trim());
+        }}>
+        <div className="tw:min-w-56 tw:max-w-md tw:flex-1">
+          <Input
+            aria-label="Search policies"
+            icon={SearchLg}
+            onChange={setSearchDraft}
+            placeholder="Name, description or the table it scopes to"
+            value={searchDraft}
+          />
+        </div>
+        <Button size="md" type="submit">
+          Search
+        </Button>
+        {search && (
+          <Button
+            color="tertiary"
+            onPress={() => {
+              setSearchDraft('');
+              update('q', '');
+            }}
+            size="md">
+            Clear
+          </Button>
+        )}
+      </form>
+
+      <section className="tw:mt-4 tw:flex tw:flex-wrap tw:gap-3">
         <Select
           ariaLabel="Lifecycle state"
           className="tw:w-48"
@@ -127,7 +168,9 @@ export default function PolicyListPage() {
           <div className="tw:rounded-xl tw:border tw:border-dashed tw:border-secondary tw:p-10 tw:text-center">
             <ShieldTick className="tw:mx-auto tw:size-8 tw:text-tertiary" />
             <p className="tw:mt-3 tw:text-md tw:font-medium tw:text-primary">
-              No policy matches these filters
+              {search
+                ? `No policy matches “${search}”`
+                : 'No policy matches these filters'}
             </p>
             <p className="tw:mt-1 tw:text-sm tw:text-tertiary">
               With nothing active, the engine denies by default — assets are not

@@ -44,19 +44,65 @@ Phase 1 รองรับ SQL Server + PostgreSQL · identity หลักค�
 | App DB (docker `dac-appdb`, postgres:16-alpine) | `:5432` db/user `dac` |
 | OpenMetadata ของทีม | `2.0.1` — sync ผ่าน **ingestion-bot JWT** (ดู What Didn't Work) |
 
-เทสต์ทั้งหมดเขียว — **backend unit รันครบเมื่อ 2026-09-23 16:00 → exit 0 · unit 480** (integration **128** ครั้งล่าสุด `-Pintegration verify` → BUILD SUCCESS), frontend `npx jest` + `npx tsc --noEmit` + `npx eslint src` + `vite build` รันใหม่ **2026-09-23** (**123/123** เขียว · tsc exit 0 · eslint สะอาด · build ผ่าน)
+เทสต์ทั้งหมดเขียว — **backend unit รันครบเมื่อ 2026-09-23 16:00 → exit 0 · unit 480** (integration **128** ครั้งล่าสุด `-Pintegration verify` → BUILD SUCCESS), frontend `npx jest` + `npx tsc --noEmit` + `npx eslint src` + `vite build` รันใหม่ **2026-09-23** (**126/126** เขียว · tsc exit 0 · eslint สะอาด · build ผ่าน)
 
 | ชุด | จำนวน | คำสั่ง |
 |---|---|---|
 | Backend unit | dac-common 6 · dac-engine **277** · dac-compiler-sql 7 · dac-connector-openmetadata 88 · dac-proxy 16 · dac-service **86** = **480** | `./mvnw -am -pl backend/dac-service test` |
 | Backend integration (Testcontainers `postgres:16-alpine`) | **128 tests** — `AssetStoreIT` 6 · `CatalogQueryIT` 15 · `DataSourceStoreIT` 13 · `GovernanceStoreIT` 10 · `GrantCompositionIT` **17 (+4 รอบนี้: `AgainstDataPolicies` — grant ตรงต้องไม่ถอด mask)** · `IdentityAdminStoreIT` 15 · `ImpactAnalysisIT` 8 · `PolicyBindingMaterializerIT` 10 · `PolicyOverviewIT` 24 · `PolicyStoreIT` 10 | `./mvnw -am -pl backend/dac-service verify -Pintegration` |
-| Frontend | **20 suites / 123 tests** (+`tabular.test.ts` 14 — CSV/Excel export) | `npx jest` ใน `frontend/app` |
+| Frontend | **21 suites / 126 tests** (+`ProfilePage.test.tsx` 3 — attribute ของตัวเอง) | `npx jest` ใน `frontend/app` |
 
 `yarn type-check` · `yarn lint` · `yarn build` ผ่านหมด → **BUILD SUCCESS** ทั้งสองฝั่ง
 
 ---
 
-## รอบนี้ — **build ที่ผู้ใช้เห็นอยู่เก่าไป 1 ชั่วโมง** · ชิปบอกคำว่า inherited · **query แทนคนอื่นเหลือแค่ admin** · และ **subscription policy เลือกได้แค่ระดับ table**
+## รอบนี้ — **ค้นหา policy ได้** · **หน้า Your profile** · และเริ่ม **M5 Secure View**
+
+### AJ.1 หน้า Policies ค้นหาได้แล้ว — และค้นที่ server ไม่ใช่ที่หน้าจอ
+
+ผู้ใช้สั่ง *"หน้า Policies อยากให้มี Search ด้วย"*
+
+**จุดที่เกือบพลาด:** `GET /v1/policies` ส่งมาทีละหน้า (`limit` default 50, เพดาน 200) ถ้า filter เอาเฉพาะแถวที่อยู่บนจอ คนที่ค้นหาว่า "มี policy คุม PII อยู่แล้วหรือยัง" จะได้คำตอบว่า **"ไม่มี"** ทั้งที่มี — เป็นคำตอบที่ผิดแบบอันตรายที่สุดในหน้านี้ จึงทำเป็น server-side
+
+- `PolicyStore.list(...)` รับ `search` เพิ่ม → `name ILIKE ... OR display_name ILIKE ... OR description ILIKE ... OR scope_fqn ILIKE ...`
+  ค้น 4 คอลัมน์เพราะคนจำคนละอย่าง: ชื่อที่ตั้งไว้ / ชื่อที่แปะทีหลัง / เหตุผลที่เขียนไว้ / **ชื่อตารางที่มันคุม** (อันหลังคือที่คนใช้จริงมากที่สุด)
+- `escapeLike()` — FQN เต็มไปด้วยจุด (LIKE ไม่สนใจ) แต่ชื่อ policy มี `_` ซึ่ง LIKE อ่านเป็น "อักษรอะไรก็ได้ 1 ตัว" ถ้าไม่ escape คนค้น `pii_mask` จะเจอ `piixmask` ด้วย
+- `GET /v1/policies?q=` · `fetchPolicies({ q })` · ช่อง Search + ปุ่ม Clear บนหน้า `/policies` เก็บคำค้นไว้ใน URL (`?q=`) เหมือนหน้า People จะได้ copy link ส่งต่อได้
+- empty state เปลี่ยนเป็น `No policy matches "<คำค้น>"` ไม่ใช่ข้อความกลางๆ
+
+**พิสูจน์กับ API จริง:** `q=finance` → 3 · `q=owner` → 1 · `q=salesdb.sales` → 12 · **`q=example_owner` → 0** (ข้อสุดท้ายคือหลักฐานว่า `_` ถูก escape จริง ไม่งั้นต้องเจอ `example-owner`)
+**พิสูจน์ในเบราว์เซอร์:** 14 แถว → ค้น `owner` → 1 แถว → ค้นคำมั่ว → empty state ที่มีคำค้นอยู่ในข้อความ → Clear → 14 แถว
+
+### AJ.2 หน้า `/profile` — "ระบบรู้อะไรเกี่ยวกับฉันบ้าง"
+
+ผู้ใช้สั่ง *"อยากให้เพิ่มหน้า profile ที่บอกว่าตัวเองมี User attribute อะไรบ้าง"*
+
+เป็นหน้า **อ่านอย่างเดียว** ไม่ใช่หน้า settings — ตอบคำถามที่คนถามหลังโดนปฏิเสธไม่ให้เข้า table ว่า "ระบบคิดว่าฉันเป็นใคร" เดิมทางเดียวที่จะเห็น attribute ของตัวเองคือไปที่ directory (`/principals`) ซึ่งลิสต์ทุกคนและอ่านแล้วเหมือนเรื่องของคนอื่น
+
+- `frontend/app/src/pages/ProfilePage.tsx` — ตัวตน · **Attributes** · Groups · Platform roles
+- เรียก `GET /v1/principals/{id}` ด้วย **id จาก token** (username ไม่ unique ข้าม directory) · endpoint นี้เป็น `@Secured` เฉยๆ ไม่ได้จำกัด role อยู่แล้ว
+- route `/profile` + เมนู **Your profile** ใต้ avatar มุมขวาบน
+- **จงใจไม่ใช้ `/principals/:id`** — route นั้นคือ directory (เรื่องของคนอื่น เข้าถึงโดยค้นหา) ส่วน `/profile` ไม่ต้องมี id จึงยังทำงานได้ถ้าวันหนึ่ง directory ถูกจำกัดเฉพาะ admin
+
+**สามประโยคบนหน้าที่ตั้งใจเขียน ไม่ใช่ filler:**
+1. attribute หนึ่ง key มีได้หลายค่า — `clearance` ที่มีทั้ง `L1` และ `L2` ผ่าน policy ที่ขอ L2 (หน้าเว็บ**ห้าม**ยุบสองแถวเป็นแถวเดียว)
+2. ไม่มี attribute เลย ≠ ผ่านทุก policy — **engine deny by default** ข้อความจึงเขียนว่า *"Any policy that tests one will refuse"* ไม่ใช่ *"ยังไม่มีข้อมูล"* เฉยๆ
+3. **platform role ไม่ใช่สิทธิ์เข้าข้อมูล** — `PLATFORM_ADMIN` บอกว่าทำอะไรกับ *ARAK* ได้ ไม่ได้แปลว่าเห็นแถวไหนในตารางลูกค้า คนสับสนข้อนี้บ่อย
+
+**เทสต์ 3 ตัวใน `ProfilePage.test.tsx`** — เพราะ account เดียวที่ login ได้บนเครื่อง dev (`admin`) **มี attribute = 0** ทางที่จะพิสูจน์ layout ตอนมีข้อมูลจริงจึงไม่มีในเบราว์เซอร์ ต้อง mock
+⚠️ **กับดัก:** `getAllByText('clearance')` ได้ 3 ไม่ใช่ 2 เพราะประโยคอธิบายด้านบนใช้ `<code>clearance</code>` เป็นตัวอย่าง → แก้ด้วยการใส่ `aria-label="Your attributes"` / `"Your groups"` ให้ `<ul>` แล้ว query ด้วย `within()` (ได้ a11y เป็นของแถม)
+
+### AJ.3 เทสต์
+
+| ชุด | ก่อน | หลัง |
+|---|---|---|
+| Frontend | 20 suites / 123 | **21 suites / 126** (+`ProfilePage.test.tsx` 3) |
+
+`npx tsc --noEmit` exit 0 · `npx eslint` สะอาด · backend `package` BUILD SUCCESS · rebuild `dist` + restart backend แล้ว (ตามกฎข้อ AI.1)
+
+---
+
+## รอบก่อนหน้า — **build ที่ผู้ใช้เห็นอยู่เก่าไป 1 ชั่วโมง** · ชิปบอกคำว่า inherited · **query แทนคนอื่นเหลือแค่ admin** · และ **subscription policy เลือกได้แค่ระดับ table**
 
 ผู้ใช้ส่งภาพหน้าจอมาบอกว่า "ไม่เห็นมีอะไรเปลี่ยนเลย" — ทั้งลูกศรขึ้นลงบนแถบแท็บที่บอกว่าแก้แล้ว และชิป Domain ที่ยังขึ้นชื่อจากกลาง FQN **คำตอบคือโค้ดถูก แต่ของที่เสิร์ฟอยู่เก่า** ส่วนที่เหลือเป็นคำสั่งใหม่สี่ข้อ
 

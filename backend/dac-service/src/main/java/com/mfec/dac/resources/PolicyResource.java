@@ -65,9 +65,11 @@ public class PolicyResource {
       @QueryParam("state") String lifecycleState,
       @QueryParam("type") String policyType,
       @QueryParam("scopeLevel") String scopeLevel,
+      @QueryParam("q") String search,
       @QueryParam("limit") @DefaultValue("50") int limit,
       @QueryParam("offset") @DefaultValue("0") int offset) {
-    return policies.list(lifecycleState, policyType, scopeLevel, Math.min(limit, 200), offset);
+    return policies.list(
+        lifecycleState, policyType, scopeLevel, search, Math.min(limit, 200), offset);
   }
 
   @GET

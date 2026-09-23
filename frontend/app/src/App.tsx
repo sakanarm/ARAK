@@ -10,6 +10,7 @@ import HomePage from './pages/HomePage';
 import LoginPage from './pages/LoginPage';
 import GovernancePage from './pages/governance/GovernancePage';
 import NotBuiltYetPage from './pages/NotBuiltYetPage';
+import ProfilePage from './pages/ProfilePage';
 import PrincipalDetailPage from './pages/governance/PrincipalDetailPage';
 import PrincipalsPage from './pages/governance/PrincipalsPage';
 import PolicyBuilderPage from './pages/policies/PolicyBuilderPage';
@@ -76,6 +77,14 @@ export default function App() {
           <Route element={<QueryPage />} path="/query" />
           <Route element={<SimulatorPage />} path="/simulator" />
           <Route element={<SourcesPage />} path="/sources" />
+          {/*
+            Not under /principals/:id, though it renders much the same facts.
+            That route is the directory -- somebody else's record, reached by
+            searching for them. This one is reached from your own name in the
+            corner and needs no id, so it keeps working when the directory is
+            restricted to administrators.
+          */}
+          <Route element={<ProfilePage />} path="/profile" />
           <Route
             element={<OpenMetadataSettingsPage />}
             path="/settings/openmetadata"

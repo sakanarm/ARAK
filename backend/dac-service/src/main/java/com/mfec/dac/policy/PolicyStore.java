@@ -261,7 +261,8 @@ public class PolicyStore {
   }
 
   /** Policies, newest first, optionally narrowed the way the list screen narrows them. */
-  public List<StoredPolicy> list(String lifecycleState, String policyType, String scopeLevel, int limit, int offset) {
+  public List<StoredPolicy> list(
+      String lifecycleState, String policyType, String scopeLevel, String search, int limit, int offset) {
     StringBuilder sql = new StringBuilder("SELECT * FROM policy WHERE 1 = 1");
     if (lifecycleState != null) {
       sql.append(" AND lifecycle_state = :lifecycleState");
@@ -271,6 +272,17 @@ public class PolicyStore {
     }
     if (scopeLevel != null) {
       sql.append(" AND scope_level = :scopeLevel");
+    }
+    String term = search == null ? null : search.trim();
+    if (term != null && !term.isEmpty()) {
+      // Four columns, because people arrive with whichever one they remember:
+      // the name a policy was filed under, the label somebody gave it later,
+      // the sentence explaining why it exists, or -- most often -- the table
+      // it is about. Searching only the name finds a policy for whoever named
+      // it and nobody else.
+      sql.append(
+          " AND (name ILIKE :search OR display_name ILIKE :search"
+              + " OR description ILIKE :search OR scope_fqn ILIKE :search)");
     }
     sql.append(" ORDER BY updated_at DESC LIMIT :limit OFFSET :offset");
 
@@ -286,8 +298,24 @@ public class PolicyStore {
           if (scopeLevel != null) {
             query.bind("scopeLevel", scopeLevel);
           }
+          if (term != null && !term.isEmpty()) {
+            query.bind("search", "%" + escapeLike(term) + "%");
+          }
           return query.map(this::map).list();
         });
+  }
+
+  /**
+   * Make a typed search term mean itself.
+   *
+   * <p>An FQN is full of dots, which LIKE does not care about, but a name may
+   * hold an underscore -- which LIKE reads as "any one character", so a search
+   * for {@code pii_mask} would also return {@code piixmask}. Nobody typing a
+   * policy name means a wildcard by it. The backslash matches the ESCAPE that
+   * PostgreSQL applies to LIKE by default.
+   */
+  private static String escapeLike(String term) {
+    return term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_");
   }
 
   /**

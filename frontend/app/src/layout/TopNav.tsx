@@ -34,6 +34,7 @@ import {
   ShieldTick,
   Table,
   Tag01,
+  User01,
   XClose,
 } from '@untitledui/icons';
 import {
@@ -797,6 +798,11 @@ function AccountMenu() {
         </div>
 
         <Dropdown.Menu selectionMode="none">
+          <Dropdown.Item
+            icon={User01}
+            label="Your profile"
+            onAction={() => navigate('/profile')}
+          />
           <Dropdown.Item
             icon={Server01}
             label="System status"

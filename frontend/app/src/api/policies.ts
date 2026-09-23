@@ -92,6 +92,7 @@ export async function fetchPolicies(query: {
   state?: string;
   type?: string;
   scopeLevel?: string;
+  q?: string;
   limit?: number;
   offset?: number;
 } = {}): Promise<StoredPolicy[]> {
@@ -99,6 +100,7 @@ export async function fetchPolicies(query: {
   if (query.state) params.set('state', query.state);
   if (query.type) params.set('type', query.type);
   if (query.scopeLevel) params.set('scopeLevel', query.scopeLevel);
+  if (query.q?.trim()) params.set('q', query.q.trim());
   params.set('limit', String(query.limit ?? 100));
   params.set('offset', String(query.offset ?? 0));
   const { data } = await apiClient.get<StoredPolicy[]>(`/v1/policies?${params}`);
