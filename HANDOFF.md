@@ -1,6 +1,6 @@
 # HANDOFF — ARAK (Data Access Control Platform)
 
-> อัปเดต: 2026-09-22 · commit ล่าสุดที่ push สำเร็จ `e3aaa52` · **local นำหน้าอยู่หลาย commit — `git push` ยังค้าง ดู What Didn't Work** · repo https://github.com/sakanarm/ARAK (**public**)
+> อัปเดต: 2026-09-23 · commit ล่าสุดที่ push สำเร็จ `e3aaa52` · **local นำหน้าอยู่หลาย commit — `git push` ยังค้าง ดู What Didn't Work** · repo https://github.com/sakanarm/ARAK (**public**)
 >
 > อ่านคู่กับ **[docs/DESIGN.md](docs/DESIGN.md)** — ไฟล์นั้นคือ requirement + feature catalogue + สถานะครบทุกข้อ
 > ไฟล์นี้บอกเฉพาะ "ทำถึงไหน จะไปต่อยังไง อะไรที่ลองแล้วไม่เวิร์ค"
@@ -33,7 +33,7 @@ Phase 1 รองรับ SQL Server + PostgreSQL · identity หลักค�
 | **M6 Push Config (5.1.1)** | ⬜ **re-scope รอบนี้ · เลื่อนหลัง M5/M7 · opt-in ต่อ source** — ยิงเฉพาะ **policy object ที่แยกจาก table** (PG `CREATE POLICY` · MSSQL `CREATE SECURITY POLICY` · column GRANT) · **ตัด MSSQL DDM ออก** เพราะมัน `ALTER COLUMN` ทับนิยาม table — ดูข้อ AC.1 และ DESIGN FR-6.2a |
 | **M7 Query API (5.2a)** | 🚧 ~80% — **`POST /v1/query` + Query console ใช้งานได้จริงรอบนี้** · rewrite → RLS + mask + hidden column → execute → audit ครบ · พิสูจน์กับ Postgres จริงแล้วทั้ง allow / RLS / mask / refuse · เหลือ direct-access detector (FR-6.3.1) และ result cache |
 | **M7b Cross-mode consistency** | ⬜ — ต้องมี M5/M6 ก่อน |
-| **M8 Audit + Ops** | 🚧 ~20% — `audit_query` / `audit_decision` / `audit_policy_change` เขียนจริงแล้วและอ่านได้ · **ยังไม่มี audit ของการ configure** (เปลี่ยน data source / OM settings ไม่ถูกบันทึกที่ไหนเลย) · ยังไม่มี compliance report / drift detector / auto-revoke / SIEM export |
+| **M8 Audit + Ops** | 🚧 ~35% — **FR-7 ปิดครบวงรอบนี้ (grant ตรงระดับ table + auto-revoke + audit trail + หน้าจอ) ดูข้อ AD.1** · `audit_query` / `audit_decision` / `audit_policy_change` เขียนจริงแล้วและอ่านได้ · **ยังไม่มี audit ของการ configure** (เปลี่ยน data source / OM settings ไม่ถูกบันทึกที่ไหนเลย) · ยังไม่มี compliance report / drift detector / auto-revoke / SIEM export |
 
 **ที่รันอยู่ตอนนี้**
 | | |
@@ -43,19 +43,151 @@ Phase 1 รองรับ SQL Server + PostgreSQL · identity หลักค�
 | App DB (docker `dac-appdb`, postgres:16-alpine) | `:5432` db/user `dac` |
 | OpenMetadata ของทีม | `2.0.1` — sync ผ่าน **ingestion-bot JWT** (ดู What Didn't Work) |
 
-เทสต์ทั้งหมดเขียว — **backend รันครบทั้ง unit + integration ในคำสั่งเดียวเมื่อ 2026-09-22** (`-Pintegration verify`, BUILD SUCCESS), frontend `npx jest` + `npx tsc --noEmit` + `npx eslint` รันใหม่ 2026-09-22
+เทสต์ทั้งหมดเขียว — **backend รันครบทั้ง unit + integration ในคำสั่งเดียวเมื่อ 2026-09-22** (`-Pintegration verify`, BUILD SUCCESS), frontend `npx jest` + `npx tsc --noEmit` + `npx eslint` รันใหม่ **2026-09-23** (87/87 เขียว · tsc exit 0)
 
 | ชุด | จำนวน | คำสั่ง |
 |---|---|---|
 | Backend unit | dac-common 6 · dac-engine 156 · dac-compiler-sql 7 · dac-connector-openmetadata 88 · dac-proxy 16 · dac-service **56** = **329** | `./mvnw -am -pl backend/dac-service test` |
 | Backend integration (Testcontainers `postgres:16-alpine`) | **111 tests** — `AssetStoreIT` 6 · `CatalogQueryIT` 15 · `DataSourceStoreIT` 13 · `GovernanceStoreIT` 10 · `IdentityAdminStoreIT` 15 · `ImpactAnalysisIT` **8** · `PolicyBindingMaterializerIT` 10 · `PolicyOverviewIT` 24 · `PolicyStoreIT` 10 | `./mvnw -am -pl backend/dac-service verify -Pintegration` |
-| Frontend | **16 suites / 85 tests** | `npx jest` ใน `frontend/app` |
+| Frontend | **16 suites / 87 tests** | `npx jest` ใน `frontend/app` |
 
 `yarn type-check` · `yarn lint` · `yarn build` ผ่านหมด → **BUILD SUCCESS** ทั้งสองฝั่ง
 
 ---
 
-## รอบล่าสุดทำอะไรไป — เส้นแบ่งของ 5.1.1 · หน้า Catalog · และ **ช่องโหว่ที่เจอระหว่างตอบคำถาม**
+## รอบล่าสุดทำอะไรไป — FR-7 grant ครบวง · หน้า Asset เป็น 5 แท็บ · และ **ย้าย deploy ไปเป็นแบบเดียวกับแอปอื่นบนเครื่องปลายทาง**
+
+> รอบนี้มีสามเรื่องที่ไม่เกี่ยวกัน และ **บั๊ก schema หนึ่งตัวที่ซ่อนมาตั้งแต่ V3** ซึ่งโผล่ออกมาเพราะเรื่องแรก
+
+### AD.1 FR-7 — grant ตรงระดับ table ครบวง (ผู้ใช้สั่ง)
+
+โจทย์จากผู้ใช้: *"อยากให้สามารถ Grant แบบ Assign ตรง ได้ด้วย คือ Grant ระดับ Table … เข้าตั้งแต่ Start date end date หรือนับถอยหลัง · มีหน้าจอให้ดู ระดับ Table ที่บอกว่า Table นี้ให้ User หรือ group ไหน เข้าได้ จาก การ assign ตรง หรือมาจาก Global policy"*
+
+**เส้นแบ่ง:** policy บอกว่า *ใครเข้าถึง asset กลุ่มไหนได้* · grant บอกว่า *คนนี้ เข้า table นี้ ได้ถึงวันนี้* ทั้งคู่จบที่ `PolicyDecision` ตัวเดียวกัน และ **grant compose แบบ intersection เหมือนทุกอย่าง (FR-5.1)** — เปิดให้ได้ตรงที่ไม่มี policy พูดถึง แต่ **แหก DENY ของ policy ไม่ได้** ถ้า grant ผ่อน global policy ได้เมื่อไหร่ global policy ทุกตัวก็กลายเป็นแค่ข้อเสนอแนะ
+
+| ไฟล์ | บรรทัด | หน้าที่ |
+|---|---|---|
+| `access/GrantStore.java` | 598 | อ่าน/เขียน grant + เขียน `audit_grant_change` ทุกครั้ง · `asPolicy` แปลง grant เป็น input ของ engine |
+| `access/AccessQuery.java` | 291 | "ใครเข้า table นี้ได้บ้าง" — รวมคนที่มาจาก policy กับคนที่มาจาก grant ไว้ในคำตอบเดียว พร้อมบอก origin |
+| `access/GrantExpiryJob.java` | 80 | FR-7.2 — ปิด grant ที่หมดอายุ เขียน tombstone ด้วย actor `system` |
+| `resources/AccessResource.java` | 177 | `/v1/access/{assets,history,mine,principals}/…` + `POST /grants` + `POST /grants/{id}/revoke` |
+| `db/migration/V11__access_grant.sql` | 105 | **ALTER ไม่ใช่ CREATE** — ดูข้อ AD.4 |
+| `frontend/app/src/api/access.ts` | 190 | client |
+| `pages/catalog/AccessTab.tsx` | 506 | หน้าจอหลัก — คนที่เข้าได้ แยกว่ามาจาก grant หรือจาก policy |
+| `pages/catalog/GrantDialog.tsx` | 325 | ฟอร์ม grant — ใคร / นานเท่าไหร่ / ทำไม · นับถอยหลังเป็นปุ่ม (7/30/90/365/ไม่มีวันหมด) default 30 วัน |
+| `pages/catalog/AuditTab.tsx` | 135 | trail ของ GRANT / REVOKE / EXPIRE |
+
+**ที่ตั้งใจให้เป็นแบบนี้:**
+- **grant ผูกกับ `asset_fqn` ไม่ใช่ `asset.id`** — `asset` เป็น SCD2 ถ้าผูกกับ id แล้ววันหนึ่งมีคนเพิ่ม column สิทธิ์ของทุกคนจะหายเงียบๆ
+- **principal มาจากทุกแหล่ง** (local / OpenMetadata team / Entra ในอนาคต) เพราะทั้งหมดเป็นแถวใน `principal` อยู่แล้ว — ตรงกับที่ผู้ใช้สั่งว่า *"เอาทุก group ที่มีอะ local group, openmetadata, entra ในอนาคต"*
+- **revoke เป็น tombstone ไม่ใช่ delete** — "เมื่อมีนาคมใครมีสิทธิ์" ต้องตอบได้
+- **`reason` บังคับ** — ปีหน้ามันคือ column เดียวที่ยังอธิบายแถวนี้ได้
+- **ไม่มี unique constraint บน (asset, principal)** เพราะคนหนึ่งถือ grant สองใบพร้อมกันได้จริง (ใบยืนพื้น + ใบต่ออายุสั้นๆ) · ที่ต้องกันคือ **double-click** → unique index บน `(asset_fqn, principal_id, valid_from)` เฉพาะแถวที่ยังไม่ revoke
+
+**พิสูจน์กับของจริงแล้ว** (2026-09-23 · backend + `dac-appdb` + policy fixture เดิม):
+
+| ขั้น | ผล |
+|---|---|
+| `GET /v1/access/assets/demo-pg.salesdb.sales.customer` | `analyst_a` (3 policies · mask 2 column · row filter 1) และ `steward_c` (2 policies) — origin `POLICY` ทั้งคู่ |
+| `POST /v1/access/grants` ให้ `analyst_b` | **201** · คืน row เต็มพร้อม `grantedBy: admin` |
+| `GET /v1/access/assets/…` อีกรอบ | `grants: 1` แต่ **`analyst_b` ยังไม่โผล่ในรายชื่อคนที่เข้าได้** |
+| `GET /v1/access/history/…` | `GRANT analyst_b by admin` |
+| `POST /v1/access/grants/{id}/revoke` | **200** |
+| history อีกรอบ | `REVOKE` + `GRANT` ครบสองแถว · `grants: 0` |
+
+> แถวที่สำคัญที่สุดคือแถวที่สาม — **grant ถูกบันทึกแล้ว แต่ `analyst_b` ยังเข้าไม่ได้** เพราะ policy DENY เขาอยู่ (country SG ≠ dataResidency TH) · นี่คือ FR-5.1 ทำงานจริงแบบ end-to-end ไม่ใช่แค่ใน unit test
+
+### AD.2 หน้า Asset แตกเป็น 5 แท็บ
+
+ผู้ใช้เคยบอกว่า *"หน้าที่เข้าไปดู Asset ยังไม่สวยเลย"* และขอ *"Tab เต็มรูปแบบ: Overview / Access / Policies / Columns / Audit"*
+
+`AssetDetailPage.tsx` 456 → 538 บรรทัด · **หัวหน้าเพจไม่ขยับแม้แต่ byte เดียว** และ panel ทุกอันเป็นของเดิม ย้ายที่อยู่เฉยๆ ตามที่ผู้ใช้กำชับว่า *"เอาให้ทุกอย่าเหมือนเดิมนะ ความสวยงาม หรือทุกอย่าง"*
+
+- **แท็บที่เปิดอยู่อยู่ใน query string** (`?tab=access`) — "ไปดู access ของ table นี้หน่อย" เป็นข้อความที่คนส่งกันจริง ลิงก์ควรพาไปถึงคำตอบ ไม่ใช่พาไปหัวเพจ
+- `setSearch(…, { replace: true })` — อ่าน 5 แท็บไม่ควรทิ้ง 5 ขั้นไว้ในปุ่ม back ระหว่างหน้านี้กับ catalog
+- `Panel` / `Field` ย้ายไปอยู่ `panels.tsx` เพราะ 3 แท็บใช้ร่วมกันแล้ว ถ้าแต่ละแท็บวาดการ์ดของตัวเองมันจะเลิกดูเหมือนหน้าเดียวกัน
+- badge นับจำนวนมีแค่แท็บ Columns — เป็นตัวเดียวที่มีตัวเลขอยู่ในมือแล้ว ตัวอื่นต้องยิง request เพิ่มเพื่อเอาเลขไปแปะบนแท็บที่ยังไม่มีใครเปิด และเลขที่บางทีเป็นตัวเลขบางทีเป็น spinner อ่านแล้วเหมือนระบบพัง
+
+### AD.3 ย้าย deploy ไปเป็นแบบเดียวกับแอปอื่นบนเครื่องปลายทาง — **ไม่ใช่ Docker**
+
+ผู้ใช้ให้เข้าไปดูเครื่อง deploy จริงแล้วถามว่า *"เราเปลี่ยนให้เป็นแบบเขาได้ไหม"* — คำตอบเดิมที่เคยให้ไว้ (docker image) **ใช้กับเครื่องนั้นไม่ได้** เพราะไม่มี Docker ไม่มี Java ของระบบ และไม่มี sudo แบบไม่ต้องถาม
+
+แบบของเขา: **PM2 หนึ่ง process ต่อแอป · แต่ละแอปพอร์ตของตัวเอง · nginx ตัวเดียวข้างหน้าแยกด้วย path prefix** → ARAK ได้ `/Arak/` → `127.0.0.1:8090` (admin 8091)
+
+| ไฟล์ | ทำอะไร |
+|---|---|
+| `config/WebConfiguration.java` | `web.root` / `web.basePath` / `web.assetCacheSeconds` — **ชี้ไปที่ไดเรกทอรีบนดิสก์ ไม่ใช่ฝังไฟล์ไว้ใน jar** จะได้แก้ CSS แล้ว copy ทับได้โดยไม่ต้องมี Maven บนเครื่องที่ไม่มี Maven |
+| `web/SpaServlet.java` (164) | กติกาสองข้อ — **ขอไฟล์ที่มีอยู่ = ได้ไฟล์นั้น** (asset ที่มี hash cache 1 ปี · `index.html` `no-store`) · **ขอ path ที่ไม่มี = ได้ตัวแอป** (SPA fallback) ยกเว้น path ที่หน้าตาเป็นชื่อไฟล์ → 404 ไม่ใช่ยัด HTML ให้ browser ไป parse เป็น script |
+| `DacApplication.serveWebApp` + `checkMountPoint` | ติดตั้ง servlet + **เทียบ mount point ที่ bundle ประกาศไว้กับ `web.basePath` ตอน start** |
+| `basePath.ts` + meta `arak-base` ใน `index.html` | Vite เขียน `%BASE_URL%` ลง meta tag ตอน build · runtime อ่านจาก meta → router `basename` + axios `baseURL` · **ไม่ใช้ `import.meta.env.BASE_URL`** เพราะ ts-jest รันเป็น CommonJS แล้ว `import.meta` พังทุกเทสต์ที่ import ไฟล์นั้น |
+| `deploy/start.sh` | สิ่งที่ PM2 รัน · ไม่มี `.env` ไม่ยอม start · `-XX:MaxRAMPercentage=40` ไม่ใช่ `-Xmx` เพราะเครื่องใช้ร่วมกันหลายแอป · `exec` เพื่อให้ PM2 คุม JVM ตรงๆ |
+| `deploy/nginx-arak.conf` | อยู่ในโฟลเดอร์ของแอปเอง เพื่อให้แตะ `/etc/nginx` ครั้งเดียวด้วย `include` บรรทัดเดียว (**ต้องเป็น full path — nginx ไม่ขยาย `~`**) |
+| `deploy/DEPLOY.md` | ขั้นตอนทั้งหมด + สองขั้นที่ต้องใช้สิทธิ์ admin (`CREATE ROLE`/`CREATE DATABASE` · include + `nginx -t && systemctl reload`) |
+
+**ทำไมต้องมี `checkMountPoint`:** bundle ที่ build มาเพื่อ `/` แล้วเอาไป mount ที่ `/Arak/` คือ **หน้าขาวเปล่า** ที่เบาะแสเดียวคือ 404 ของไฟล์ที่มีอยู่จริง · ตอนนี้ service log ERROR พร้อมบอกคำสั่ง rebuild ที่ถูกต้อง — และมันทำงานจริง เห็นกับตารอบนี้ (ดูข้อ AD.5)
+
+**ยิงจริงแล้วทั้งหมด** (backend รันพร้อม `APP_WEB_ROOT` + `APP_WEB_BASE_PATH=/Arak/`):
+
+| request | ผล |
+|---|---|
+| `GET /` | 200 · `text/html` · `no-store, must-revalidate` |
+| `GET /assets/index-Dpp5UynE.js` | 200 · `text/javascript` · `public, max-age=31536000, immutable` |
+| `GET /catalog` | 200 · html (SPA fallback) |
+| `GET /assets/missing.js` | **404** ไม่ใช่ index.html |
+| `GET /assets/../../../conf/dac.yml` (`curl --path-as-is`) | **400** — Jetty ตีตกก่อนถึง servlet ด้วยซ้ำ |
+| `POST /api/v1/auth/login` (รหัสผิด) | **401 json** — Jersey ยังได้ route ของตัวเอง |
+| `GET /api/v1/catalog/assets` (ไม่มี token) | **401 json** |
+
+> nginx ตัด prefix ออกด้วย trailing slash ใน `proxy_pass` → **service ไม่เคยเห็น `/Arak` เลย เห็นแต่ browser** · path ที่ทดสอบข้างบนจึงเป็น path ที่ service จะได้รับจริงหลัง nginx
+
+**ยังไม่ได้ทำ:** ยังไม่ได้ขึ้นเครื่องจริง — บนเครื่องนั้นแตะแค่ `mkdir -p ~/Arak/deploy` ตามที่ผู้ใช้สั่งว่า *"ห้ามแตะของคนอื่น"* · ตอนอ่าน `.env` ของทีมอื่นพิมพ์แต่ชื่อ key ไม่เคยพิมพ์ค่า
+
+### AD.4 🐛 `access_grant` ถูกประกาศไว้สองที่ — V3 กับ V11 ชนกัน
+
+อาการ: backend start ไม่ขึ้นเลย
+```
+Migration of schema "public" to version "11 - access grant" failed! Changes successfully rolled back.
+Message : ERROR: relation "access_grant" already exists
+```
+แต่ `flyway_schema_history` **ไม่มีแถว v11 เลยสักแถว** ไม่ว่าจะสำเร็จหรือล้มเหลว · และ `access_grant` มีอยู่จริงโดยมี 0 แถว
+
+**เกือบ drop ตารางทิ้งเพราะเข้าใจผิดว่าเป็นของค้างจาก rollback** — ที่ช่วยไว้คือดู `\d access_grant` ก่อน แล้วเห็นว่า column ไม่ตรงกับที่ V11 เขียน (`target_fqn` + `policy_id` แทนที่จะเป็น `asset_fqn`) → `grep -l access_grant *.sql` → **`V3__policy.sql:77` สร้างมันไปแล้วตั้งแต่ migration ที่ 3**
+
+V3 ร่างตารางนี้ไว้ตอนวางโครง policy ล่วงหน้าหลายเดือน ก่อนที่ FR-7 จะมีรูปร่าง · ไม่มีโค้ดไหนเคยอ่านหรือเขียนมันเลย (มีแต่ `TRUNCATE` ใน IT สามไฟล์) และ `GrantStore` ทั้งไฟล์เขียนตามรูปของ V11
+
+**ทางที่เลือก — V11 กลายเป็น ALTER ไม่ใช่ CREATE:** rename `target_fqn` → `asset_fqn` · rename `created_at` → `granted_at` · drop `policy_id` · `reason` เป็น NOT NULL · เพิ่ม `revoke_reason` + constraint 2 ตัว · rename index เดิม + สร้างที่ขาด · แล้วค่อย `CREATE TABLE audit_grant_change`
+
+> **ทำไมไม่ `DROP TABLE` แล้วสร้างใหม่ ทั้งที่ diff สั้นกว่ามาก:** migration ที่ drop ตารางคือ migration ที่ **ทำลายข้อมูลบนทุก database ที่การเดาของ V3 ดันถูกใช้งานจริง** — และ "มั่นใจว่าไม่มี database ไหนเป็นแบบนั้น" เป็นสิ่งที่ migration ตรวจเองไม่ได้ · ยอมเขียนยาวกว่าแล้วถูกทุกที่ดีกว่า
+
+**บทเรียนที่ควรจำ:** ก่อนเขียน migration ใหม่ `grep -l '<ชื่อตาราง>' src/main/resources/db/migration/*.sql` ก่อนเสมอ
+
+**และอีกกับดักที่ตามมาทันที:** แก้ไฟล์ `.sql` แล้ว restart — ยังพังข้อความเดิมเป๊ะ เพราะ **Flyway อ่าน migration จาก classpath คือจากใน jar ไม่ใช่จาก source tree** · ระหว่าง smoke test แก้ชั่วคราวด้วย `jar uf` ยัด resource ตัวใหม่เข้าไป แล้ว build ใหม่ทั้งก้อนทีหลัง
+
+### AD.5 🪤 Git Bash แปลง path ให้เอง — โดนสามครั้งในรอบเดียว
+
+MSYS แปลงค่าที่ **หน้าตาเหมือน absolute path ของ Unix** ก่อนส่งให้โปรแกรม native (`java.exe`, `node.exe`) โดยไม่บอกใคร
+
+| ครั้ง | เขียนไป | โปรแกรมได้รับจริง | อาการ |
+|---|---|---|---|
+| build | `VITE_BASE=/Arak/ npx vite build` | `/Program Files/Git/Arak/` | build ผ่านสวยงาม · เสิร์ฟแล้ว **หน้าขาว** |
+| run | `APP_WEB_BASE_PATH=/Arak/ java -jar …` | `C:/Program Files/Git/Arak/` | `checkMountPoint` ร้อง ERROR ถูกเป๊ะ |
+| run (หลังแก้) | `MSYS_NO_PATHCONV=1` + `APP_WEB_ROOT="$PWD/…"` | `C:\c\Users\…` | พอปิดการแปลง `$PWD` ที่เป็น `/c/Users/…` ก็ไม่ถูกแปลงกลับด้วย |
+
+**ทางแก้:** build จาก **PowerShell** (`$env:VITE_BASE='/Arak/'`) · ตอนรันตั้ง `MSYS_NO_PATHCONV=1` **แล้วใช้ `$(pwd -W)` สำหรับ path ที่เป็นไฟล์จริง**
+
+> เป็นปัญหาของเครื่อง dev บน Windows เท่านั้น — บนเครื่อง deploy ที่เป็น Linux ไม่มีอาการนี้ · ที่น่าสนใจกว่าคือ **`checkMountPoint` จับได้ตั้งแต่ตอน start** ซึ่งเป็นเหตุผลที่เขียนมันขึ้นมาพอดี
+
+### AD.6 เทสต์ frontend ที่ต้องแก้เพราะแท็บ (85 → 87)
+
+4 เทสต์ใน `AssetDetailPage.test.tsx` ล้ม เพราะ assert ของที่ย้ายไปอยู่หลังแท็บแล้ว · `renderPage` รับ `tab` เพิ่มแล้วส่งผ่าน **query string ไม่ใช่การคลิก** — เพราะนั่นคือวิธีที่หน้านี้ถูกเปิดจริง ถ้าให้ทุกเทสต์คลิกเข้าไป ทุกเทสต์จะกลายเป็นเทสต์ของแถบแท็บไปด้วย
+
+เพิ่มใหม่ 2 ตัวสำหรับแถบแท็บเอง — เปิดตามที่ลิงก์สั่ง · กดแล้วเปลี่ยนคำตอบจริง
+
+> ตัวหลังเขียนผิดรอบแรก: assert `queryByText('Governance')` ว่าต้องหายไป แต่ **ตารางในแท็บ Columns มี header ชื่อ `Governance` ของตัวเอง** ข้อความจึงเจอทั้งสองแท็บและพิสูจน์อะไรไม่ได้เลย · แก้เป็น `queryByRole('heading', …)`
+
+---
+
+## รอบก่อนหน้า — เส้นแบ่งของ 5.1.1 · หน้า Catalog · และ **ช่องโหว่ที่เจอระหว่างตอบคำถาม**
 
 > รอบนี้ไม่มีโค้ด backend ใหม่เลย — เป็นรอบของ **การตัดสินใจเชิงสถาปัตยกรรมหนึ่งข้อ** (ซึ่งผู้ใช้เป็นคนทัก), **งาน UI หนึ่งหน้า** และ **ช่องโหว่ของ config ที่ไม่มีใครเห็นเพราะระบบไม่ร้อง**
 

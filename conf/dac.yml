@@ -38,6 +38,17 @@ database:
 
 migrateOnStartup: ${APP_DB_MIGRATE_ON_STARTUP:-true}
 
+# Serving the built front end from this same process. Left empty in
+# development, where Vite serves it and proxies /api here. Set on a deployment
+# that runs one process on one port behind a shared proxy -- there is nothing
+# else there to serve it.
+web:
+  root: ${APP_WEB_ROOT:-}
+  # What the bundle was built for. Behind a path-prefix proxy that strips the
+  # prefix, this process never sees it; it is here so startup can say so when
+  # the bundle and the mount point disagree, instead of serving a blank page.
+  basePath: ${APP_WEB_BASE_PATH:-/}
+
 openMetadata:
   baseUrl: ${OM_BASE_URL:-http://localhost:8585}
   # Use a BOT token (Settings -> Bots in the OpenMetadata UI), not a human account.

@@ -1,5 +1,8 @@
 package com.mfec.dac;
 
+import com.mfec.dac.access.AccessQuery;
+import com.mfec.dac.access.GrantExpiryJob;
+import com.mfec.dac.access.GrantStore;
 import com.mfec.dac.auth.AuthFilter;
 import com.mfec.dac.auth.JwtService;
 import com.mfec.dac.auth.LocalIdentityDao;
@@ -15,6 +18,7 @@ import com.mfec.dac.catalog.SyncStateDao;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.mfec.dac.config.DacConfiguration;
 import com.mfec.dac.config.IdentityConfiguration;
+import com.mfec.dac.config.WebConfiguration;
 import com.mfec.dac.json.JsonMapperProvider;
 import com.mfec.dac.config.OpenMetadataConfiguration;
 import com.mfec.dac.health.AppDatabaseHealthCheck;
@@ -22,6 +26,7 @@ import com.mfec.dac.identity.IdentityAdminStore;
 import com.mfec.dac.policy.DecisionCache;
 import com.mfec.dac.identity.PrincipalQuery;
 import com.mfec.dac.om.OpenMetadataClient;
+import com.mfec.dac.resources.AccessResource;
 import com.mfec.dac.resources.AuthResource;
 import com.mfec.dac.catalog.SourceCatalogImporter;
 import com.mfec.dac.engine.EngineConfig;
@@ -35,6 +40,7 @@ import com.mfec.dac.resources.DecisionResource;
 import com.mfec.dac.resources.QueryResource;
 import com.mfec.dac.source.jdbc.JdbcIntrospector;
 import com.mfec.dac.source.jdbc.QueryExecutor;
+import com.mfec.dac.web.SpaServlet;
 import com.mfec.dac.policy.AssetContextLoader;
 import com.mfec.dac.policy.PolicyBindingMaterializer;
 import com.mfec.dac.policy.PolicyOverview;
@@ -56,10 +62,16 @@ import io.dropwizard.configuration.SubstitutingSourceProvider;
 import io.dropwizard.core.Application;
 import io.dropwizard.core.setup.Bootstrap;
 import io.dropwizard.core.setup.Environment;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Duration;
 import java.time.LocalTime;
 import java.time.ZoneId;
 import java.util.Optional;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.UUID;
 import javax.sql.DataSource;
 import org.flywaydb.core.Flyway;
@@ -218,6 +230,11 @@ public class DacApplication extends Application<DacConfiguration> {
     // credential reference into a credential is one the application wired
     // itself — a resource that built its own resolver could be handed a
     // different environment by a test and nobody would notice.
+    // Direct grants (FR-7). Built beside the policy store because that is what
+    // it is: a second writer of subscription policies, differing only in that a
+    // person writes one row instead of a selector.
+    GrantStore grants = new GrantStore(jdbi);
+
     DataSourceStore sources = new DataSourceStore(jdbi);
     SourceCatalogImporter importer =
         new SourceCatalogImporter(jdbi, sources, new JdbcIntrospector());
@@ -230,7 +247,7 @@ public class DacApplication extends Application<DacConfiguration> {
     // simulator its own path would mean the thing people check and the thing
     // that enforces could disagree.
     // Everything that can move an input to a decision, in one place, so that
-    // adding a sixth write path is a visible omission here rather than an
+    // adding a seventh write path is a visible omission here rather than an
     // invisible one somewhere else. The order does not matter; that the list is
     // complete does.
     //
@@ -242,10 +259,22 @@ public class DacApplication extends Application<DacConfiguration> {
     identityAdmin.changes().listen(decisionCache::invalidateAll);
     applier.changes().listen(decisionCache::invalidateAll);
     sync.changes().listen(decisionCache::invalidateAll);
+    grants.changes().listen(decisionCache::invalidateAll);
 
     DecisionService decisionService =
-        new DecisionService(jdbi, contexts, principalLoader, policyStore, engine, decisionCache);
+        new DecisionService(
+            jdbi, contexts, principalLoader, policyStore, grants, engine, decisionCache);
     environment.jersey().register(new DecisionResource(decisionService));
+    environment
+        .jersey()
+        .register(
+            new AccessResource(
+                new AccessQuery(jdbi, contexts, principalLoader, policyStore, grants, engine),
+                grants));
+    // Hourly. The number matters less than it looks: expiry already holds on
+    // every decision, so this only controls how soon the table and the audit
+    // trail catch up with what the engine has been doing since the hour turned.
+    environment.lifecycle().manage(new GrantExpiryJob(grants, Duration.ofHours(1)));
     environment.jersey().register(
         new QueryResource(
             new QueryService(
@@ -262,6 +291,7 @@ public class DacApplication extends Application<DacConfiguration> {
     environment.jersey().register(new AuthFilter(tokens));
 
     startCatalogSync(environment, om, omClient, sync, applier, syncState);
+    serveWebApp(config.getWeb(), environment);
 
     LOG.info("Data Access Control Platform started against OpenMetadata {}",
         config.getOpenMetadata().getBaseUrl());
@@ -316,6 +346,78 @@ public class DacApplication extends Application<DacConfiguration> {
                   LocalTime.parse(om.getReconcileAt()),
                   ZoneId.of(om.getReconcileZone())));
     }
+  }
+
+  /**
+   * Serves the built front end from this process, where it is configured to.
+   *
+   * <p>Off by default, because in development Vite serves the app and proxying
+   * a stale copy of it from here would be worse than not serving it at all. On
+   * in a deployment that puts one process on one port behind a shared proxy:
+   * there is nothing else there to serve it.
+   *
+   * <p>The mount-point check exists because its failure mode is silent. A
+   * bundle built for "/" and mounted at "/Arak/" loads an index.html that asks
+   * for "/assets/index-*.js", the proxy has no route for that, and the user
+   * gets a blank page whose only clue is a 404 for a file that does exist. One
+   * line in the log at startup costs nothing and names the cause.
+   */
+  private void serveWebApp(WebConfiguration web, Environment environment) {
+    if (!web.isEnabled()) {
+      LOG.info("Not serving a front end from this process (web.root is unset).");
+      return;
+    }
+    Path root = Path.of(web.getRoot()).toAbsolutePath().normalize();
+    Path index = root.resolve("index.html");
+    if (!Files.isReadable(index)) {
+      // Not fatal. The API is the part that has to be up, and an operator who
+      // has not copied the bundle across yet should get a working API and a
+      // clear reason rather than a service that refuses to start.
+      LOG.error("web.root is {} but there is no readable index.html in it; serving the API only.",
+          root);
+      return;
+    }
+    checkMountPoint(index, web.getBasePath());
+
+    environment
+        .servlets()
+        .addServlet("web", new SpaServlet(root, web.getAssetCacheSeconds()))
+        .addMapping("/*");
+    LOG.info("Serving the front end from {} at {}", root, web.getBasePath());
+  }
+
+  /** Warns when the bundle was built for a different mount point than the one configured. */
+  private void checkMountPoint(Path index, String configured) {
+    String builtFor;
+    try {
+      String html = Files.readString(index, StandardCharsets.UTF_8);
+      Matcher matcher =
+          Pattern.compile(
+                  "<meta[^>]*name=[\"']arak-base[\"'][^>]*content=[\"']([^\"']*)[\"']")
+              .matcher(html);
+      if (!matcher.find()) {
+        LOG.warn("index.html carries no arak-base meta tag, so its mount point cannot be checked.");
+        return;
+      }
+      builtFor = matcher.group(1);
+    } catch (IOException e) {
+      LOG.warn("Could not read index.html to check its mount point: {}", e.toString());
+      return;
+    }
+    if (!normalizeBase(builtFor).equals(normalizeBase(configured))) {
+      LOG.error(
+          "The front end bundle was built for {} but web.basePath is {}. "
+              + "It will load a blank page. Rebuild with VITE_BASE={} and copy it across.",
+          builtFor, configured, configured);
+    }
+  }
+
+  private static String normalizeBase(String value) {
+    if (value == null || value.isBlank()) {
+      return "/";
+    }
+    String trimmed = value.startsWith("/") ? value : "/" + value;
+    return trimmed.endsWith("/") ? trimmed : trimmed + "/";
   }
 
   /**

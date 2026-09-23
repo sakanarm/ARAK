@@ -41,6 +41,17 @@ const vendoredDependencies: Plugin = {
 };
 
 export default defineConfig({
+  /**
+   * Where the app is mounted.
+   *
+   * "/" in development and on a host of its own. Set to "/Arak/" when building
+   * for a proxy that routes several applications by path prefix, so that the
+   * emitted index.html asks for "/Arak/assets/..." rather than for a path that
+   * belongs to a different application. src/basePath.ts reads it back at
+   * runtime through a meta tag, and the service logs an error at startup if the
+   * bundle and its mount point disagree.
+   */
+  base: process.env.VITE_BASE ?? '/',
   plugins: [vendoredDependencies, react(), tailwindcss()],
   resolve: {
     alias: [

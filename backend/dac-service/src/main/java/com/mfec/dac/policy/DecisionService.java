@@ -1,5 +1,6 @@
 package com.mfec.dac.policy;
 
+import com.mfec.dac.access.GrantStore;
 import com.mfec.dac.engine.AssetContext;
 import com.mfec.dac.engine.DecisionValidity;
 import com.mfec.dac.engine.PolicyEngine;
@@ -43,6 +44,15 @@ import org.jdbi.v3.core.Jdbi;
  * <p>Only an ask that did not pin a time is cached. A simulation of 20:00
  * asks a different question from the one a query at 14:00 asks, and neither may
  * answer the other.
+ *
+ * <h2>Direct grants arrive as policies</h2>
+ *
+ * <p>A grant (FR-7) is read here alongside the bound policies and appended to
+ * the same list. It is not a second authorisation path with its own rules: it
+ * enters the engine as a TABLE-layer ALLOW and is composed by the same
+ * intersection as everything else, which is what makes "a grant cannot open a
+ * table a global policy has closed" (FR-3.1.4) a property of the code rather
+ * than a promise in a document.
  */
 public class DecisionService {
 
@@ -53,6 +63,7 @@ public class DecisionService {
   private final AssetContextLoader contexts;
   private final PrincipalLoader principals;
   private final PolicyStore policies;
+  private final GrantStore grants;
   private final PolicyEngine engine;
   private final DecisionCache cache;
 
@@ -62,20 +73,28 @@ public class DecisionService {
       PrincipalLoader principals,
       PolicyStore policies,
       PolicyEngine engine) {
-    this(jdbi, contexts, principals, policies, engine, DecisionCache.disabled());
+    this(jdbi, contexts, principals, policies, null, engine, DecisionCache.disabled());
   }
 
+  /**
+   * @param grants may be null, which means "no grants exist in this deployment"
+   *     and is how a test that is only about policies avoids standing one up. It
+   *     does not mean "grants are ignored": where a store is given, every
+   *     decision reads it.
+   */
   public DecisionService(
       Jdbi jdbi,
       AssetContextLoader contexts,
       PrincipalLoader principals,
       PolicyStore policies,
+      GrantStore grants,
       PolicyEngine engine,
       DecisionCache cache) {
     this.jdbi = jdbi;
     this.contexts = contexts;
     this.principals = principals;
     this.policies = policies;
+    this.grants = grants;
     this.engine = engine;
     this.cache = cache == null ? DecisionCache.disabled() : cache;
   }
@@ -189,6 +208,14 @@ public class DecisionService {
           List<Policy> documents = new ArrayList<>(stored.size());
           for (PolicyStore.StoredPolicy one : stored) {
             documents.add(one.document());
+          }
+
+          // Appended rather than merged: the engine sorts by scope level, and a
+          // grant is a TABLE-layer policy like any other. Reading at `now`
+          // rather than filtering later means a simulation of next Tuesday sees
+          // the grants that will exist then, not the ones that exist today.
+          if (grants != null) {
+            documents.addAll(grants.policiesFor(handle, ask.assetFqn(), now));
           }
 
           RequestContext context =

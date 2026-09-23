@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import AssetDetailPage from './AssetDetailPage';
 import type { FacetRow } from '../../api/client';
@@ -114,11 +114,23 @@ const DETAIL = {
   owners: [{ type: 'team', name: 'Finance', direct: true, inheritedFrom: null }],
 };
 
-function renderPage(fqn = 'prod-pg.SalesDB.dbo.customer') {
+/**
+ * Renders the page with one tab open.
+ *
+ * <p>The tab is passed in the URL rather than clicked, because that is how
+ * the page is really reached: the open tab is in the query string so a link
+ * can point at one. A test that clicked its way there would be asserting
+ * about the tab strip in every test that is about something else.
+ */
+function renderPage(
+  fqn = 'prod-pg.SalesDB.dbo.customer',
+  tab?: 'access' | 'policies' | 'columns' | 'audit'
+) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const query = tab ? `?tab=${tab}` : '';
   return render(
     <QueryClientProvider client={client}>
-      <MemoryRouter initialEntries={[`/catalog/${fqn}`]}>
+      <MemoryRouter initialEntries={[`/catalog/${fqn}${query}`]}>
         <Routes>
           <Route element={<AssetDetailPage />} path="/catalog/*" />
         </Routes>
@@ -162,21 +174,20 @@ test('the two kinds of policy are answered separately', async () => {
       ]
     ),
   ]);
-  renderPage();
+  renderPage(undefined, 'policies');
 
   expect(await screen.findByText('Finance may read')).toBeInTheDocument();
   expect(screen.getByText('Mask PII columns')).toBeInTheDocument();
   expect(screen.getByText('Allow')).toBeInTheDocument();
   // A data policy says where inside the table it lands, which is the part a
-  // data owner came for.
-  // By the action rather than by the name: 'email' is also a row in the
-  // columns table below, and the chip is the one that says what happens to it.
+  // data owner came for. By the action rather than by the name, because the
+  // chip is the thing that says what happens to the column.
   expect(screen.getByText('mask').parentElement).toHaveTextContent('email');
   expect(screen.getByText('SCHEMA')).toBeInTheDocument();
 });
 
 test('a table nothing selects is called out as denied, not left blank', async () => {
-  renderPage();
+  renderPage(undefined, 'policies');
 
   expect(
     await screen.findByText(/No active policy reaches this asset/)
@@ -187,7 +198,7 @@ test('a subscription policy without a data policy says what that means', async (
   fetchPoliciesForAsset.mockResolvedValue([
     applied({ name: 'finance-read', displayName: 'Finance may read' }),
   ]);
-  renderPage();
+  renderPage(undefined, 'policies');
 
   expect(await screen.findByText('Finance may read')).toBeInTheDocument();
   expect(
@@ -204,7 +215,7 @@ test('asks for the whole dotted FQN, not the first path segment', async () => {
 });
 
 test('shows each column with the facets that reach it', async () => {
-  renderPage();
+  renderPage(undefined, 'columns');
 
   expect(await screen.findByText('email')).toBeInTheDocument();
   expect(screen.getByText('id')).toBeInTheDocument();
@@ -242,4 +253,31 @@ test('an asset missing from the cache says so without blaming OpenMetadata', asy
     await screen.findByText('That asset could not be read.')
   ).toBeInTheDocument();
   expect(screen.getByText(/not the same as not being in/)).toBeInTheDocument();
+});
+
+test('opens the tab the link asked for', async () => {
+  renderPage(undefined, 'policies');
+
+  const tab = await screen.findByRole('tab', { name: 'Policies' });
+  expect(tab).toHaveAttribute('aria-selected', 'true');
+  // And the one it did not ask for is not rendering underneath it.
+  expect(screen.queryByText('Custom properties')).not.toBeInTheDocument();
+});
+
+test('moving between tabs changes what the page answers', async () => {
+  renderPage();
+
+  // Overview is the default, and it is what a link with no tab lands on.
+  // By heading rather than by text: the columns table has a 'Governance'
+  // header of its own, so a plain text match is true on both tabs and proves
+  // nothing about which one is open.
+  expect(
+    await screen.findByRole('heading', { name: 'Governance' })
+  ).toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole('tab', { name: /Columns/ }));
+  expect(await screen.findByText('2 columns \u00b7 1 carrying a facet')).toBeInTheDocument();
+  expect(
+    screen.queryByRole('heading', { name: 'Governance' })
+  ).not.toBeInTheDocument();
 });

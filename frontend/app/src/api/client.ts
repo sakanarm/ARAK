@@ -1,4 +1,5 @@
 import axios, { AxiosError } from 'axios';
+import { withBase } from '../basePath';
 import {
   clearSession,
   notifySessionExpired,
@@ -12,9 +13,14 @@ import {
  * The base URL is relative on purpose: in development Vite proxies /api to the
  * Dropwizard service, and in production both are served from the same origin,
  * so no build knows or cares where the backend lives.
+ *
+ * It carries the mount point because "same origin" is not the same as "root of
+ * the origin". Behind a proxy that routes /Arak/ to this app, a request to
+ * /api/... leaves the app's own prefix and reaches whatever else is routed at
+ * the root — which is somebody else's application, not a 404 we would notice.
  */
 export const apiClient = axios.create({
-  baseURL: '/api',
+  baseURL: withBase('api'),
   timeout: 60_000,
   headers: { 'Content-Type': 'application/json' },
 });

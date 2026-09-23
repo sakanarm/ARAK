@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, AlertCircle, Eye } from '@untitledui/icons';
 import { Badge } from '@openmetadata/ui-core-components/components/base/badges/badges';
 import { Button } from '@openmetadata/ui-core-components/components/base/buttons/button';
@@ -14,6 +14,9 @@ import {
   type AppliedPolicy,
 } from '../../api/policies';
 import { FacetChip, OwnerChip, facetLabel, groupFacets } from './facets';
+import { AccessTab } from './AccessTab';
+import { AuditTab } from './AuditTab';
+import { Field, Panel } from './panels';
 import { plainText } from '../../lib/text';
 
 /**
@@ -29,6 +32,17 @@ import { plainText } from '../../lib/text';
  * you ask what one rule reaches, here you ask what reaches one table. Both read
  * the same bindings, so the two answers cannot drift apart (FR-3.1.5).
  *
+ * <p>The five tabs are the five questions asked here, and they are separate
+ * tabs because they are asked one at a time: what is this, who can read it,
+ * what governs it, what is in it, what has been done to it. Stacked on one
+ * page they made the two that matter most -- access and policies -- the two
+ * furthest down.
+ *
+ * <p>The open tab is in the query string, so a link to this page can be a
+ * link to an answer. "Look at the access on this table" is the message
+ * somebody actually sends, and it should not arrive as a link to the top of a
+ * page.
+ *
  * <p>What is not here yet: the enforcement state, which arrives with M5.
  */
 export default function AssetDetailPage() {
@@ -37,7 +51,22 @@ export default function AssetDetailPage() {
   // first segment.
   const params = useParams();
   const navigate = useNavigate();
+  const [search, setSearch] = useSearchParams();
   const fqn = params['*'] ?? params.fqn ?? '';
+  const requested = search.get('tab');
+  const tab: TabId = isTab(requested) ? requested : 'overview';
+
+  const openTab = (next: TabId) => {
+    const updated = new URLSearchParams(search);
+    if (next === 'overview') {
+      updated.delete('tab');
+    } else {
+      updated.set('tab', next);
+    }
+    // Replaced rather than pushed: reading five tabs on one asset should not
+    // put five entries in the back button between here and the catalog.
+    setSearch(updated, { replace: true });
+  };
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['catalog-asset', fqn],
@@ -127,40 +156,108 @@ export default function AssetDetailPage() {
         )}
       </header>
 
-      <div className="tw:mt-8 tw:grid tw:gap-6 tw:lg:grid-cols-3">
-        <section className="tw:lg:col-span-2 tw:space-y-6">
-          <Policies fqn={asset.fqn} />
+      <AssetTabs columnCount={columns.length} onChange={openTab} value={tab} />
 
-          <Panel title="Governance">
-            {grouped.length === 0 ? (
+      <div className="tw:mt-6">
+        {tab === 'overview' && (
+          <div className="tw:grid tw:gap-6 tw:lg:grid-cols-3">
+            <section className="tw:lg:col-span-2 tw:space-y-6">
+              <Panel title="Governance">
+                {grouped.length === 0 ? (
+                  <p className="tw:text-sm tw:text-tertiary">
+                    No tags, terms, domains or data products reach this asset. A
+                    policy written against facets will not select it.
+                  </p>
+                ) : (
+                  <dl className="tw:space-y-3">
+                    {grouped.map(([type, facets]) => (
+                      <div className="tw:flex tw:flex-wrap tw:gap-2" key={type}>
+                        <dt className="tw:w-40 tw:shrink-0 tw:text-xs tw:text-tertiary">
+                          {facetLabel(type)}
+                        </dt>
+                        <dd className="tw:flex tw:flex-wrap tw:gap-1.5">
+                          {facets.map((facet) => (
+                            <FacetChip facet={facet} key={facetKey(facet)} />
+                          ))}
+                        </dd>
+                      </div>
+                    ))}
+                  </dl>
+                )}
+              </Panel>
+            </section>
+
+            <aside className="tw:space-y-6">
+              <Panel title="Owners">
+                {data.owners.length === 0 ? (
+                  // Worth saying rather than leaving blank: no owner means no one
+                  // can author a local policy here (FR-3.1.2) and, in Phase 2, no
+                  // one to route a request to.
+                  <p className="tw:text-sm tw:text-warning-primary">
+                    Nobody owns this asset in OpenMetadata, so no local policy
+                    can be authored for it.
+                  </p>
+                ) : (
+                  <div className="tw:flex tw:flex-wrap tw:gap-1.5">
+                    {data.owners.map((owner) => (
+                      <OwnerChip
+                        key={`${owner.type}:${owner.name}`}
+                        owner={owner}
+                      />
+                    ))}
+                  </div>
+                )}
+              </Panel>
+
+              <Panel title="Location">
+                <dl className="tw:space-y-2 tw:text-sm">
+                  <Field label="Source" value={asset.dataSource} />
+                  <Field label="Parent" value={asset.parentFqn} />
+                  <Field
+                    label="Columns"
+                    value={asset.columnCount > 0 ? String(asset.columnCount) : null}
+                  />
+                </dl>
+              </Panel>
+
+              {properties.length > 0 && (
+                <Panel
+                  subtitle="Asset-side attributes an ABAC rule can compare against"
+                  title="Custom properties">
+                  <dl className="tw:space-y-2 tw:text-sm">
+                    {properties.map(([name, value]) => (
+                      <Field
+                        key={name}
+                        label={name}
+                        value={
+                          typeof value === 'object' && value !== null
+                            ? JSON.stringify(value)
+                            : String(value)
+                        }
+                      />
+                    ))}
+                  </dl>
+                </Panel>
+              )}
+            </aside>
+          </div>
+        )}
+
+        {tab === 'access' && <AccessTab fqn={asset.fqn} />}
+
+        {tab === 'policies' && <Policies fqn={asset.fqn} />}
+
+        {tab === 'columns' && (
+          <Panel
+            subtitle={`${columns.length} columns · ${
+              columns.filter((column) => column.facets.length > 0).length
+            } carrying a facet`}
+            title="Columns">
+            {columns.length === 0 ? (
               <p className="tw:text-sm tw:text-tertiary">
-                No tags, terms, domains or data products reach this asset. A
-                policy written against facets will not select it.
+                The crawl found no columns on this asset.
               </p>
             ) : (
-              <dl className="tw:space-y-3">
-                {grouped.map(([type, facets]) => (
-                  <div className="tw:flex tw:flex-wrap tw:gap-2" key={type}>
-                    <dt className="tw:w-40 tw:shrink-0 tw:text-xs tw:text-tertiary">
-                      {facetLabel(type)}
-                    </dt>
-                    <dd className="tw:flex tw:flex-wrap tw:gap-1.5">
-                      {facets.map((facet) => (
-                        <FacetChip facet={facet} key={facetKey(facet)} />
-                      ))}
-                    </dd>
-                  </div>
-                ))}
-              </dl>
-            )}
-          </Panel>
-
-          {columns.length > 0 && (
-            <Panel
-              subtitle={`${columns.length} columns · ${
-                columns.filter((column) => column.facets.length > 0).length
-              } carrying a facet`}
-              title="Columns">
               <div className="tw:overflow-x-auto">
                 <table className="tw:w-full tw:text-sm">
                   <thead>
@@ -177,62 +274,77 @@ export default function AssetDetailPage() {
                   </tbody>
                 </table>
               </div>
-            </Panel>
-          )}
-        </section>
-
-        <aside className="tw:space-y-6">
-          <Panel title="Owners">
-            {data.owners.length === 0 ? (
-              // Worth saying rather than leaving blank: no owner means no one
-              // can author a local policy here (FR-3.1.2) and, in Phase 2, no
-              // one to route a request to.
-              <p className="tw:text-sm tw:text-warning-primary">
-                Nobody owns this asset in OpenMetadata, so no local policy can
-                be authored for it.
-              </p>
-            ) : (
-              <div className="tw:flex tw:flex-wrap tw:gap-1.5">
-                {data.owners.map((owner) => (
-                  <OwnerChip key={`${owner.type}:${owner.name}`} owner={owner} />
-                ))}
-              </div>
             )}
           </Panel>
+        )}
 
-          <Panel title="Location">
-            <dl className="tw:space-y-2 tw:text-sm">
-              <Field label="Source" value={asset.dataSource} />
-              <Field label="Parent" value={asset.parentFqn} />
-              <Field
-                label="Columns"
-                value={asset.columnCount > 0 ? String(asset.columnCount) : null}
-              />
-            </dl>
-          </Panel>
-
-          {properties.length > 0 && (
-            <Panel
-              subtitle="Asset-side attributes an ABAC rule can compare against"
-              title="Custom properties">
-              <dl className="tw:space-y-2 tw:text-sm">
-                {properties.map(([name, value]) => (
-                  <Field
-                    key={name}
-                    label={name}
-                    value={
-                      typeof value === 'object' && value !== null
-                        ? JSON.stringify(value)
-                        : String(value)
-                    }
-                  />
-                ))}
-              </dl>
-            </Panel>
-          )}
-        </aside>
+        {tab === 'audit' && <AuditTab fqn={asset.fqn} />}
       </div>
+
     </>
+  );
+}
+
+const TABS = [
+  { value: 'overview', label: 'Overview' },
+  { value: 'access', label: 'Access' },
+  { value: 'policies', label: 'Policies' },
+  { value: 'columns', label: 'Columns' },
+  { value: 'audit', label: 'Audit' },
+] as const;
+
+type TabId = (typeof TABS)[number]['value'];
+
+function isTab(value: string | null): value is TabId {
+  return TABS.some((tab) => tab.value === value);
+}
+
+/**
+ * The five tabs, underlined in the style of the catalog they mirror.
+ *
+ * <p>Only the column count is shown, because it is the only one already in
+ * hand. The others would each cost a request made solely to put a number on a
+ * tab nobody has opened, and a count that is sometimes a number and sometimes a
+ * spinner reads as broken. One count, always right, does not.
+ */
+function AssetTabs({
+  value,
+  onChange,
+  columnCount,
+}: {
+  value: TabId;
+  onChange: (next: TabId) => void;
+  columnCount: number;
+}) {
+  return (
+    <div
+      aria-label="Asset"
+      className="tw:mt-6 tw:flex tw:gap-1 tw:overflow-x-auto tw:border-b tw:border-secondary"
+      role="tablist">
+      {TABS.map((tab) => {
+        const active = tab.value === value;
+        return (
+          <button
+            aria-selected={active}
+            className={`tw:-mb-px tw:shrink-0 tw:border-b-2 tw:px-3 tw:py-2.5 tw:text-sm tw:font-medium ${
+              active
+                ? 'tw:border-brand tw:text-brand-secondary'
+                : 'tw:border-transparent tw:text-tertiary tw:hover:text-primary'
+            }`}
+            key={tab.value}
+            onClick={() => onChange(tab.value)}
+            role="tab"
+            type="button">
+            {tab.label}
+            {tab.value === 'columns' && columnCount > 0 && (
+              <span className="tw:ml-1.5 tw:rounded tw:bg-secondary tw:px-1.5 tw:py-0.5 tw:text-xs tw:text-tertiary">
+                {columnCount}
+              </span>
+            )}
+          </button>
+        );
+      })}
+    </div>
   );
 }
 
@@ -407,36 +519,6 @@ function ColumnRow({ column }: { column: ColumnDetail }) {
         )}
       </td>
     </tr>
-  );
-}
-
-function Panel({
-  title,
-  subtitle,
-  children,
-}: {
-  title: string;
-  subtitle?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <section className="tw:rounded-xl tw:border tw:border-secondary tw:bg-primary tw:p-4">
-      <h2 className="tw:text-sm tw:font-semibold tw:text-primary">{title}</h2>
-      {subtitle && <p className="tw:mt-0.5 tw:text-xs tw:text-tertiary">{subtitle}</p>}
-      <div className="tw:mt-3">{children}</div>
-    </section>
-  );
-}
-
-function Field({ label, value }: { label: string; value: string | null }) {
-  if (!value) {
-    return null;
-  }
-  return (
-    <div className="tw:flex tw:gap-2">
-      <dt className="tw:w-28 tw:shrink-0 tw:text-xs tw:text-tertiary">{label}</dt>
-      <dd className="tw:min-w-0 tw:break-all tw:text-sm tw:text-primary">{value}</dd>
-    </div>
   );
 }
 

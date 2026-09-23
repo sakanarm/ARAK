@@ -47,4 +47,9 @@ public class DacConfiguration extends Configuration {
   @NotNull
   @JsonProperty("decisionCache")
   private DecisionCacheConfiguration decisionCache = new DecisionCacheConfiguration();
+
+  @Valid
+  @NotNull
+  @JsonProperty("web")
+  private WebConfiguration web = new WebConfiguration();
 }
