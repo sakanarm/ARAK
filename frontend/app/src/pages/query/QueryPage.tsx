@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { Button } from '@openmetadata/ui-core-components/components/base/buttons/button';
-import { Badge } from '@openmetadata/ui-core-components/components/base/badges/badges';
+import { Chip as Badge } from '../../components/chips';
 import {
   AlertTriangle,
   Copy01,

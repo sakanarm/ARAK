@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useParams } from 'react-router-dom';
 import { AlertCircle, ArrowLeft, ShieldTick, Users01 } from '@untitledui/icons';
-import { Badge } from '@openmetadata/ui-core-components/components/base/badges/badges';
+import { Chip as Badge } from '../../components/chips';
 import { apiErrorMessage } from '../../api/client';
 import {
   fetchPrincipalDetail,

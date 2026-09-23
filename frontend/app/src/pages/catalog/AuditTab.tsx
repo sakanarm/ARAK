@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { Badge } from '@openmetadata/ui-core-components/components/base/badges/badges';
+import { Chip as Badge } from '../../components/chips';
 import { fetchGrantHistory, type GrantHistoryEntry } from '../../api/access';
 import { apiErrorMessage } from '../../api/client';
 import { Panel } from './panels';

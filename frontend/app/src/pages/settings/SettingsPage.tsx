@@ -12,7 +12,7 @@ import {
   User03,
   Users01,
 } from '@untitledui/icons';
-import { Badge } from '@openmetadata/ui-core-components/components/base/badges/badges';
+import { Chip as Badge } from '../../components/chips';
 import { useAuthStore } from '../../auth/authStore';
 
 /**

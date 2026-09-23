@@ -7,7 +7,7 @@ import {
   Plus,
   Server01,
 } from '@untitledui/icons';
-import { Badge } from '@openmetadata/ui-core-components/components/base/badges/badges';
+import { Chip as Badge } from '../components/chips';
 import { Button } from '@openmetadata/ui-core-components/components/base/buttons/button';
 import { apiErrorMessage } from '../api/client';
 import {

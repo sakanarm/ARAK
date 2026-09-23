@@ -15,11 +15,19 @@ import type { NewGrant } from '../../api/access';
  * Giving one person or group access to one table (FR-7.1).
  *
  * <p>Four things are asked for and three of them are mandatory: who, why, and
- * from when. The fourth, until when, is the one the form is opinionated about —
- * it is offered as a countdown rather than a date, because "30 days" is how
- * people actually think about temporary access, and it is pre-filled, because
- * the open-ended grant is the one that is still there two years later and the
- * default should not be the one nobody reviews.
+ * when it runs from and to. The window is the part the form is opinionated
+ * about. It opens on a countdown, because "30 days" is how people actually
+ * think about temporary access, and it is pre-filled, because the open-ended
+ * grant is the one that is still there two years later and the default should
+ * not be the one nobody reviews.
+ *
+ * <p>But a countdown cannot say everything. A contractor starting on the first
+ * of next month, an audit window agreed with a customer, a migration that runs
+ * over one weekend — those are dates, and typing 30 into a box computes the
+ * wrong one. So the countdown has a box for any number of days, and beside it
+ * is a second mode that takes the two instants directly. Both produce the same
+ * two fields the API has always accepted; the form was simply never letting
+ * anybody reach them.
  *
  * <p>Groups come from every directory the platform knows — local, OpenMetadata
  * teams, and Entra when it arrives — for the same reason the engine resolves
@@ -43,7 +51,14 @@ export function GrantDialog({
 }) {
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState<Principal | null>(null);
+  const [mode, setMode] = useState<WindowMode>('duration');
   const [days, setDays] = useState<string>('30');
+  // Empty means "from now" and "no expiry" respectively, which is why they are
+  // strings rather than dates: a half-typed date is a string, and turning it
+  // into a Date on every keystroke would make the field fight the person
+  // filling it in.
+  const [startsAt, setStartsAt] = useState('');
+  const [endsAt, setEndsAt] = useState('');
   const [reason, setReason] = useState('');
 
   // Reopening is a new decision, not a continuation of the last one: leaving
@@ -53,7 +68,10 @@ export function GrantDialog({
     if (isOpen) {
       setSearch('');
       setSelected(null);
+      setMode('duration');
       setDays('30');
+      setStartsAt('');
+      setEndsAt('');
       setReason('');
     }
   }, [isOpen]);
@@ -73,8 +91,9 @@ export function GrantDialog({
   const groups = rows.filter((row) => row.principalType === 'GROUP');
   const users = rows.filter((row) => row.principalType !== 'GROUP');
 
-  const validUntil = expiryFrom(days);
-  const ready = selected != null && reason.trim().length > 0;
+  const grantWindow = windowFrom(mode, days, startsAt, endsAt);
+  const ready =
+    selected != null && reason.trim().length > 0 && grantWindow.problem == null;
 
   const submit = () => {
     if (!selected || !ready) {
@@ -83,8 +102,8 @@ export function GrantDialog({
     onSubmit({
       assetFqn,
       principalId: selected.id,
-      validFrom: null,
-      validUntil,
+      validFrom: grantWindow.validFrom,
+      validUntil: grantWindow.validUntil,
       reason: reason.trim(),
     });
   };
@@ -187,29 +206,98 @@ export function GrantDialog({
             </div>
 
             <div>
-              <span className="tw:text-xs tw:font-medium tw:text-secondary">
-                For how long
-              </span>
-              <div className="tw:mt-1 tw:flex tw:flex-wrap tw:gap-1.5">
-                {DURATIONS.map((option) => (
-                  <button
-                    aria-pressed={days === option.value}
-                    className={`tw:rounded-md tw:border tw:px-2.5 tw:py-1.5 tw:text-sm ${
-                      days === option.value
-                        ? 'tw:border-brand tw:bg-brand-primary tw:text-brand-secondary'
-                        : 'tw:border-secondary tw:text-tertiary tw:hover:text-primary'
-                    }`}
-                    key={option.value}
-                    onClick={() => setDays(option.value)}
-                    type="button">
-                    {option.label}
-                  </button>
-                ))}
+              <div className="tw:flex tw:items-baseline tw:justify-between tw:gap-3">
+                <span className="tw:text-xs tw:font-medium tw:text-secondary">
+                  {mode === 'duration' ? 'For how long' : 'Between'}
+                </span>
+                {/* One link, not a pair of tabs. The two modes describe the
+                    same window, so making them look like separate settings
+                    would invite somebody to fill in both and wonder which
+                    one won. */}
+                <button
+                  className="tw:text-xs tw:text-brand-secondary tw:underline"
+                  onClick={() =>
+                    setMode(mode === 'duration' ? 'dates' : 'duration')
+                  }
+                  type="button">
+                  {mode === 'duration'
+                    ? 'Set start and end dates'
+                    : 'Use a duration'}
+                </button>
               </div>
-              <p className="tw:mt-1.5 tw:text-xs tw:text-tertiary">
-                {validUntil
-                  ? `Expires ${new Date(validUntil).toLocaleString()} — the engine stops honouring it at that moment, not when a job next runs.`
-                  : 'No expiry. This grant stays until somebody revokes it.'}
+
+              {mode === 'duration' ? (
+                <>
+                  <div className="tw:mt-1 tw:flex tw:flex-wrap tw:gap-1.5">
+                    {DURATIONS.map((option) => (
+                      <button
+                        aria-pressed={days === option.value}
+                        className={chip(days === option.value)}
+                        key={option.value}
+                        onClick={() => setDays(option.value)}
+                        type="button">
+                        {option.label}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="tw:mt-2 tw:flex tw:items-center tw:gap-2">
+                    <label
+                      className="tw:text-xs tw:text-tertiary"
+                      htmlFor="grant-days">
+                      or
+                    </label>
+                    <input
+                      aria-label="Number of days"
+                      className="tw:w-20 tw:rounded-md tw:border tw:border-secondary tw:bg-primary tw:px-2 tw:py-1.5 tw:text-sm tw:text-primary"
+                      id="grant-days"
+                      inputMode="numeric"
+                      min={1}
+                      onChange={(event) => setDays(event.target.value)}
+                      placeholder="45"
+                      type="number"
+                      value={days}
+                    />
+                    <span className="tw:text-xs tw:text-tertiary">days</span>
+                  </div>
+                </>
+              ) : (
+                <div className="tw:mt-1 tw:grid tw:grid-cols-1 tw:gap-2 sm:tw:grid-cols-2">
+                  <div>
+                    <label
+                      className="tw:text-xs tw:text-tertiary"
+                      htmlFor="grant-starts">
+                      Starts
+                    </label>
+                    <input
+                      className="tw:mt-1 tw:w-full tw:rounded-md tw:border tw:border-secondary tw:bg-primary tw:px-2 tw:py-1.5 tw:text-sm tw:text-primary"
+                      id="grant-starts"
+                      onChange={(event) => setStartsAt(event.target.value)}
+                      type="datetime-local"
+                      value={startsAt}
+                    />
+                  </div>
+                  <div>
+                    <label
+                      className="tw:text-xs tw:text-tertiary"
+                      htmlFor="grant-ends">
+                      Ends
+                    </label>
+                    <input
+                      className="tw:mt-1 tw:w-full tw:rounded-md tw:border tw:border-secondary tw:bg-primary tw:px-2 tw:py-1.5 tw:text-sm tw:text-primary"
+                      id="grant-ends"
+                      onChange={(event) => setEndsAt(event.target.value)}
+                      type="datetime-local"
+                      value={endsAt}
+                    />
+                  </div>
+                </div>
+              )}
+
+              <p
+                className={`tw:mt-1.5 tw:text-xs ${
+                  grantWindow.problem ? 'tw:text-error-primary' : 'tw:text-tertiary'
+                }`}>
+                {grantWindow.problem ?? grantWindow.summary}
               </p>
             </div>
 
@@ -305,20 +393,97 @@ const DURATIONS = [
   { value: '', label: 'No expiry' },
 ];
 
+type WindowMode = 'duration' | 'dates';
+
+function chip(active: boolean) {
+  return `tw:rounded-md tw:border tw:px-2.5 tw:py-1.5 tw:text-sm ${
+    active
+      ? 'tw:border-brand tw:bg-brand-primary tw:text-brand-secondary'
+      : 'tw:border-secondary tw:text-tertiary tw:hover:text-primary'
+  }`;
+}
+
+/** The window the grant will carry, and what to tell the person about it. */
+interface GrantWindow {
+  validFrom: string | null;
+  validUntil: string | null;
+  /** Non-null blocks the submit, and is shown in place of the summary. */
+  problem: string | null;
+  summary: string;
+}
+
 /**
- * A countdown turned into the instant the engine will compare against.
+ * Both ways of describing the window, resolved to the two instants the API
+ * takes.
  *
- * <p>Sent as an absolute instant rather than a duration because the grant has
- * to mean the same thing after the row is written as it did in the form, and a
+ * <p>Absolute instants rather than a duration, because the grant has to mean
+ * the same thing after the row is written as it did in the form, and a
  * duration only means something relative to a clock that has already moved on.
+ *
+ * <p>The refusals here are the server's own rules restated, deliberately: the
+ * server checks them again and is the authority, but a person who has just
+ * typed an end date before the start date should be told so while their
+ * attention is still on the field, not after a round trip.
  */
-function expiryFrom(days: string): string | null {
-  if (!days) {
-    return null;
+function windowFrom(
+  mode: WindowMode,
+  days: string,
+  startsAt: string,
+  endsAt: string
+): GrantWindow {
+  if (mode === 'duration') {
+    if (!days.trim()) {
+      return {
+        validFrom: null,
+        validUntil: null,
+        problem: null,
+        summary: 'No expiry. This grant stays until somebody revokes it.',
+      };
+    }
+    const count = Number(days);
+    if (!Number.isFinite(count) || count <= 0) {
+      return {
+        validFrom: null,
+        validUntil: null,
+        problem: 'Give a number of days above zero, or pick No expiry.',
+        summary: '',
+      };
+    }
+    const until = new Date(Date.now() + count * 24 * 60 * 60 * 1000);
+    return {
+      validFrom: null,
+      validUntil: until.toISOString(),
+      problem: null,
+      summary: `Expires ${until.toLocaleString()} — the engine stops honouring it at that moment, not when a job next runs.`,
+    };
   }
-  const count = Number(days);
-  if (!Number.isFinite(count) || count <= 0) {
-    return null;
+
+  // A datetime-local value carries no zone, so it is read in the browser's own
+  // zone, which is the one the person typing it is thinking in.
+  const from = startsAt ? new Date(startsAt) : null;
+  const until = endsAt ? new Date(endsAt) : null;
+  if ((from && Number.isNaN(from.getTime())) || (until && Number.isNaN(until.getTime()))) {
+    return { validFrom: null, validUntil: null, problem: 'That is not a date.', summary: '' };
   }
-  return new Date(Date.now() + count * 24 * 60 * 60 * 1000).toISOString();
+  if (from && until && until <= from) {
+    return {
+      validFrom: null,
+      validUntil: null,
+      problem: 'The end has to come after the start.',
+      summary: '',
+    };
+  }
+
+  const opens = from
+    ? from > new Date()
+      ? `Opens ${from.toLocaleString()} — until then the grant exists and grants nothing`
+      : `Runs from ${from.toLocaleString()}`
+    : 'Starts immediately';
+  const closes = until ? `, expires ${until.toLocaleString()}.` : ', with no expiry.';
+  return {
+    validFrom: from ? from.toISOString() : null,
+    validUntil: until ? until.toISOString() : null,
+    problem: null,
+    summary: opens + closes,
+  };
 }

@@ -44,19 +44,107 @@ Phase 1 รองรับ SQL Server + PostgreSQL · identity หลักค�
 | App DB (docker `dac-appdb`, postgres:16-alpine) | `:5432` db/user `dac` |
 | OpenMetadata ของทีม | `2.0.1` — sync ผ่าน **ingestion-bot JWT** (ดู What Didn't Work) |
 
-เทสต์ทั้งหมดเขียว — **backend รันครบทั้ง unit + integration ในคำสั่งเดียวเมื่อ 2026-09-23** (`-Pintegration verify` → BUILD SUCCESS · unit **470** · integration **128**), frontend `npx jest` + `npx tsc --noEmit` รันใหม่ **2026-09-23** (92/92 เขียว · tsc exit 0)
+เทสต์ทั้งหมดเขียว — **backend รันครบทั้ง unit + integration ในคำสั่งเดียวเมื่อ 2026-09-23** (`-Pintegration verify` → BUILD SUCCESS · unit **470** · integration **128**), frontend `npx jest` + `npx tsc --noEmit` + `npx eslint src` + `vite build` รันใหม่ **2026-09-23** (**101/101** เขียว · tsc exit 0 · eslint สะอาด · build ผ่าน)
 
 | ชุด | จำนวน | คำสั่ง |
 |---|---|---|
 | Backend unit | dac-common 6 · dac-engine **267** · dac-compiler-sql 7 · dac-connector-openmetadata 88 · dac-proxy 16 · dac-service **86** = **470** | `./mvnw -am -pl backend/dac-service test` |
 | Backend integration (Testcontainers `postgres:16-alpine`) | **128 tests** — `AssetStoreIT` 6 · `CatalogQueryIT` 15 · `DataSourceStoreIT` 13 · `GovernanceStoreIT` 10 · `GrantCompositionIT` **17 (+4 รอบนี้: `AgainstDataPolicies` — grant ตรงต้องไม่ถอด mask)** · `IdentityAdminStoreIT` 15 · `ImpactAnalysisIT` 8 · `PolicyBindingMaterializerIT` 10 · `PolicyOverviewIT` 24 · `PolicyStoreIT` 10 | `./mvnw -am -pl backend/dac-service verify -Pintegration` |
-| Frontend | **17 suites / 92 tests** (+`ExpressionDocsPage.test.tsx` 5) | `npx jest` ใน `frontend/app` |
+| Frontend | **18 suites / 101 tests** (+`GrantDialog.test.tsx` 9) | `npx jest` ใน `frontend/app` |
 
 `yarn type-check` · `yarn lint` · `yarn build` ผ่านหมด → **BUILD SUCCESS** ทั้งสองฝั่ง
 
 ---
 
-## รอบนี้ — **พีชคณิตของ policy พิสูจน์เป็นชุด** · Doc syntax 1 หน้า · และ **ตัวอย่างทุกอันกลายเป็น policy จริงใน DB**
+## รอบนี้ — **Grant กำหนดวันเองได้ (พิมพ์จำนวนวัน / ตั้ง Start–End ล่วงหน้า)** · และ **ชิปทั้งแอปหนาขึ้นจากที่เดียว**
+
+> โจทย์รอบนี้มาสามอัน: *"For how long ตอน Direct access ต้องใส่เลขเองได้ไหม"* · *"แล้วกำหนดล่วงหน้า Start date end date ได้ไหม"* · *"ทำเสร็จแล้วทดสอบให้ดีด้วยนะ"* แล้วระหว่างทางมีอีกอัน: *"tag สีประมาณนี้มันดูบางๆ ไม่สวยอะ ลองปรับให้ดีกว่านี้หน่อย"*
+
+### AG.1 `GrantDialog` — ช่อง **For how long** พิมพ์เลขเองได้ และสลับเป็น **Between** ตั้งวันล่วงหน้าได้
+
+เดิมมีแต่ชิป 5 อัน (`7 / 30 / 90 / 180 วัน` และ `No expiry`) ซึ่งแปลว่า "45 วัน" เขียนไม่ได้เลย และ "เปิดให้ใช้วันที่ 1 เดือนหน้า" ก็เขียนไม่ได้ ทั้งที่ `GrantRequest` ฝั่ง backend รับ `validFrom` มาตั้งแต่แรกและ `NewGrant` ใน `src/api/access.ts` ก็ประกาศ `validFrom?: string | null` ไว้แล้ว — **ไม่ต้องแก้ API หรือ backend สักบรรทัด** ช่องกรอกอย่างเดียวที่หายไป
+
+| โหมด | หน้าตา | ส่งอะไรไป API |
+|---|---|---|
+| `duration` (ค่าเริ่มต้น) | ชิป 5 อันเดิม **+ ช่อง `or [__] days`** (`aria-label="Number of days"`) | `validFrom: null` · `validUntil = now + N วัน` |
+| `dates` | `Starts` / `Ends` แบบ `datetime-local` สองช่อง | ส่ง instant ทั้งสองตัวตามที่กรอก (ว่างได้ทั้งคู่) |
+
+สลับโหมดด้วยลิงก์ข้อความเดียว `Set start and end dates` ⇄ `Use a duration` และใต้ control มีบรรทัดสรุปที่เปลี่ยนตามสิ่งที่กรอกจริง — ถ้ากรอกผิดบรรทัดนี้กลายเป็นข้อความสีแดงและปุ่ม Grant ถูกปิด
+
+**สิ่งที่บรรทัดสรุปตั้งใจบอกให้ได้:** ถ้า `Starts` เป็นอนาคต มันเขียนว่า *"Opens … — until then the grant exists and grants nothing"* เพราะสิ่งเดียวที่คนตั้งเวลาล่วงหน้าพลาดได้โดยไม่รู้ตัวคือคิดว่ากดปุ่มแล้วสิทธิ์มีผลทันที
+
+**บั๊กที่เจอระหว่างทางและแก้ไปด้วย:** helper เดิม (`expiryFrom`) คืน `null` เมื่อจำนวนวันเป็น `0` ซึ่ง API อ่านว่า **"ไม่มีวันหมดอายุ"** — พิมพ์ผิดตัวเดียวได้ grant ที่กว้างที่สุดเท่าที่ระบบให้ได้ ตอนนี้ `0` เป็นข้อความปฏิเสธ (`Give a number of days above zero, or pick No expiry.`) และปุ่มถูกปิด
+
+### AG.2 ทดสอบ — 9 unit tests + **7 checks กับระบบที่รันอยู่จริง**
+
+`GrantDialog.test.tsx` (ใหม่, 9 tests) ใช้ `fireEvent` ล้วน เพราะ `@testing-library/user-event` ไม่ได้ติดตั้งในเรโปนี้ · mock เฉพาะ `fetchPrincipals` · fixture ใช้ `analyst_a@example.com` กับ UUID ปลอม ไม่มีอะไรที่ใช้ยิงของจริงได้
+
+เคสที่ควรรู้ว่าเขียนไว้ทำไม:
+- **พิมพ์ 45 วัน** — assert *ช่วงเวลา* (44.9–45.1 วัน) ไม่ใช่ instant เป๊ะๆ เพราะ assert instant คือการ assert นาฬิกา ไม่ใช่ assert สิ่งที่ช่องกรอกสัญญาไว้
+- **start = end** — ต้องถูกปฏิเสธ ให้ตรงกับ `GrantStore` ที่ใช้ `isAfter` ไม่ใช่ `!isBefore`
+- **ตั้ง start อนาคตโดยไม่ใส่ end** — ต้องยังเป็น open-ended (`validUntil: null`) ไม่ใช่ถูกเติมค่าให้เอง
+
+แล้วยิงกับ backend ที่รันอยู่จริง (`grant-schedule.mjs`, 7 checks ผ่านหมด) ซึ่งพิสูจน์สิ่งที่ unit test พิสูจน์ไม่ได้:
+
+| check | ผล |
+|---|---|
+| grant ที่เปิดเดือนหน้า **ถูกเก็บพร้อม instant ทั้งสองตัว** | ✅ |
+| **และวันนี้ยังไม่ให้สิทธิ์อะไรเลย** | ✅ |
+| **และตอนที่ยังไม่เปิด มันไม่ส่ง reason เข้า engine เลยแม้แต่อันเดียว** | ✅ (0 reasons) |
+| grant ที่ window เปิดอยู่ ยังถูก ORG gate ปฏิเสธ (FR-3.1.4) | ✅ |
+| **แต่มันเข้าถึง engine จริงในฐานะ `TABLE` reason** | ✅ |
+| end ก่อน start → server ตอบ **400** | ✅ |
+| window ยาวศูนย์ (start = end) → server ตอบ **400** | ✅ |
+
+> check ที่ 3 คือตัวที่สำคัญ และตอนแรก**ไม่ได้เขียนไว้** — เพราะ `analyst_b` ถูกปฏิเสธทั้งสองทางอยู่แล้ว การเทียบ decision เฉยๆ จึงไม่ได้พิสูจน์อะไรเลย สิ่งที่พิสูจน์ได้คือ engine **ไม่เคยพิจารณา grant นั้น** ซึ่งต้องดูที่ `reasons`
+
+### AG.3 ชิป — ย้ายน้ำหนักมาไว้ที่เดียว (`src/components/chips.tsx`) แล้วทั้งแอปได้พร้อมกัน
+
+ชิปเดิมบางจนแทบไม่เห็น และสาเหตุมีสามอย่าง ไม่ใช่อย่างเดียว:
+1. `tw:opacity-70` ครอบทั้งชิปสำหรับ facet ที่ **inherited** — ซึ่งจางทั้งพื้นและ**ตัวหนังสือ** และ inherited คือส่วนใหญ่ของแถว แปลว่าแถวส่วนใหญ่คือแบบที่จาง
+2. `pillSizes.sm` ของ design system **ไม่มี font-weight** เลย
+3. พื้นระดับ 50 คู่กับเส้นขอบระดับ 200 = เส้นขอบหายไปกับพื้นหลัง
+
+แก้เป็น: พื้น **100** · เส้นขอบ **300** · `font-medium` · และ inherited เปลี่ยนจาก opacity เป็น **พื้นระดับ 50 แต่ตัวหนังสือเต็มความเข้ม** (ลูกศร ↑ บอกความต่างอยู่แล้ว ไม่ต้องจ่ายด้วยความอ่านออก)
+
+**ไม่แตะ `ui-core-components` เลย** — `Badge` merge `props.className` **เป็นอันสุดท้าย** ผ่าน `cx` (`extendTailwindMerge`) คลาสของเราจึงชนะ `bg`/`text`/`outline` ของ design system ได้โดยไม่ต้อง fork (ทดลองยืนยันก่อนเขียนจริง ไม่ได้เดา)
+
+สเกล utility **กลับด้านใน dark mode** (`utility-blue-100` → `blue-900`) การขยับ 50→100 และ 200→300 จึงเป็นการขยับ**ทิศเดียวกัน**ทั้งสองธีม ไม่ใช่ขยับเข้าหาพื้นหลังในธีมใดธีมหนึ่ง
+
+**แล้วเจอปัญหาที่ตัวเองสร้าง:** พอชิป facet หนาขึ้น badge ที่อยู่ข้างๆ (`SERVICE`, `Tier2`, `draft`, `subscription`, …) กลายเป็นดูบางผิดที่ — แถวหนึ่งต้องอ่านเป็นแถวเดียว ไม่งั้นดูเหมือนทำพลาด แต่ badge พวกนี้มี **~60 จุดใน 17 ไฟล์** การไล่ใส่ `className` ทีละจุดคือหนี้ที่แตะไม่ได้
+
+ทางที่เลือก: `src/components/chips.tsx` ถือ `CHIP_WEIGHT` / `CHIP_INHERITED` / `badgeWeight()` และ component `Chip` ที่ห่อ `Badge` แล้วทุกหน้า import ว่า `import { Chip as Badge } from '…/components/chips'` — **call site ไม่ต้องแก้สักจุด** และน้ำหนักทั้งแอปเปลี่ยนหรือถอดได้จากไฟล์เดียว
+
+`type="modern"` **ถูกยกเว้นโดยตั้งใจ** — มันคือชิปขาวขอบบาง ที่ชื่อ owner ใช้อยู่ การใส่สีให้ชื่อคนคือการเอาชื่อคนไปแข่งกับ governance facet ที่อยู่ข้างๆ
+
+**พิสูจน์ด้วยตา** (Playwright, 2x) ไม่ใช่แค่เทสต์ผ่าน: หน้า asset ชิป domain มีพื้นและขอบจริงแล้ว · หน้า Policies ชิป `draft` / `subscription` / scope อ่านออกแล้ว · หน้า Governance ชิป `one value only` เหมือนกัน · และ probe computed style ยืนยันว่า facet ที่ `direct` ทุกตัวได้พื้น 100 เท่ากัน (ที่ตาเห็นว่าอันหนึ่งจางกว่าในภาพแรกคือ antialiasing ของข้อความที่ถูก truncate ไม่ใช่ของจริง)
+
+### AG.4 กับดักที่เสียเวลาไปรอบนี้ — เขียนไว้กันโดนซ้ำ
+
+- **`vite build` เปล่าๆ ทำ bundle ของ prod พัง** — ต้อง `MSYS_NO_PATHCONV=1 VITE_BASE=/Arak/ npx vite build` เสมอ ไม่งั้น `index.html` ชี้ `assets/…` แบบไม่มี prefix แล้วหน้าเว็บที่ `:8090/Arak/` ขึ้นขาวเปล่า (404 ทั้ง js และ css) — **อาการเหมือน backend ตาย แต่ backend ปกติดี**
+- jar ที่เสิร์ฟ `dist` **cache `index.html` ไว้** → build ใหม่แล้วต้อง restart backend ไม่งั้นได้ index เก่าที่ชี้ hash ที่ถูกลบไปแล้ว
+- script ที่ `import { chromium } from 'playwright'` **ต้องอยู่ใน `frontend/app`** เท่านั้น อยู่ที่ scratchpad หรือ repo root = `ERR_MODULE_NOT_FOUND`
+- heredoc ของ bash **ทำ `\n` ใน string literal ของ JS พัง** แม้จะ quote heredoc แล้วก็ตาม → script ที่มี escape ให้เขียนด้วย Write tool แล้วค่อยรัน
+
+### AG.5 สิ่งที่สังเกตเห็นแต่ **ยังไม่แก้** (ต้องยืนยันก่อน)
+
+หน้า `demo-pg.salesdb.sales.customer` แสดง domain สามชิป (`Finance`, `Finance / Risk`, `… / Risk / Credit`) และ probe แล้วพบว่า **ทั้งสามตัวมี `direct: true`** (tooltip เขียน "applied here" หมด) — ตาม FR-2A.2 ancestor ที่ถูกกางออกมาควรเป็น `is_direct = false` เหลือตัวล่างสุดตัวเดียวที่ `true`
+
+ยังไม่แก้เพราะเป็นเรื่องของ materializer ฝั่ง backend ไม่ใช่เรื่องสี และต้องไปดู `asset_facet` จริงก่อนว่าเป็นที่ข้อมูลหรือที่ mapper — **แต่ถ้าเป็นบั๊กจริง มันทำให้ "tag นี้มาจากไหน" ตอบผิด ซึ่งคือคำถามที่ FR-2A.1 มีอยู่เพื่อจะตอบ**
+
+### AG.6 ไฟล์ที่แตะรอบนี้
+
+| ไฟล์ | อะไร |
+|---|---|
+| `frontend/app/src/components/chips.tsx` | **ใหม่** — `CHIP_WEIGHT` / `CHIP_INHERITED` / `badgeWeight()` / `Chip` |
+| `frontend/app/src/pages/catalog/GrantDialog.tsx` | โหมด duration ⇄ dates, ช่องพิมพ์จำนวนวัน, `windowFrom()` |
+| `frontend/app/src/pages/catalog/GrantDialog.test.tsx` | **ใหม่** — 9 tests |
+| `frontend/app/src/pages/catalog/facets.tsx` | เอา `opacity-70` ออก, ใช้ `badgeWeight()` |
+| อีก 17 ไฟล์ใน `src/pages/**` | เปลี่ยนบรรทัด import เป็น `Chip as Badge` อย่างเดียว ไม่แตะ call site |
+
+---
+
+## รอบก่อนหน้า — **พีชคณิตของ policy พิสูจน์เป็นชุด** · Doc syntax 1 หน้า · และ **ตัวอย่างทุกอันกลายเป็น policy จริงใน DB**
 
 > โจทย์รอบนี้มาสามชั้น: *"ทดสอบให้ครบทุก Case · อย่าลืม and/or · หรือมีหลาย policy conflict กัน Union / Compliment / Intersection · ทั้ง Subscription, ให้ access ตรงใน UI, Data policy"* แล้วตามด้วย *"เขียนตัวอย่างการ Config กับ Syntax ที่รองรับใน Doc 1 หน้า เป็น link กดไปดูได้"* และปิดท้าย *"ทำตัวอย่างทุกแบบไปใน policy จริงเลยนะ จะเอาไป demo"*
 
@@ -2359,6 +2447,8 @@ estate ที่ใช้: `prod-mssql.SalesDB.dbo.{customer, order}` + **`prod-
 8a. **asset ที่ match data source ไม่ได้ ถูกเก็บเงียบๆ โดยที่ UI ไม่บอก** — `AssetStore` ใช้ `.orElse(null)` เมื่อหา `om_service_fqn` ไม่เจอ → ตอนนี้ **36 จาก 40 asset มี `data_source_id IS NULL`** เขียน policy ได้แต่ enforce ไม่ได้ · ต้องมี banner/badge บอก และควรมีหน้า "source ที่ยังไม่ผูก" (ดูข้อ AC.3)
 9. 🪤 **`PolicyStore.create` เติม `environment = 'dev'` ให้ policy ที่ไม่ได้ระบุ ขณะที่ทุก decision ตัดสินใน `prod`** — policy แบบนั้น **save ผ่าน bind ติด activate ได้ อ่านกลับมาครบ และไม่เคยถูกเรียกใช้** (ข้อ AE.3) · ยังไม่แก้เพราะการสลับ default แปลว่าแถวเก่าทุกแถวที่นอนอยู่ใน `dev` จะเริ่มบังคับใช้ทันทีที่ deploy — ต้องทำพร้อม migration ที่ตัดสินใจให้แต่ละแถวอย่างตั้งใจ
 10. **jar เปิดเดี่ยวๆ ที่ `/Arak/` ไม่ได้ ต้องมี nginx ตัด prefix ให้เสมอ** — `SpaServlet` ไม่รู้จัก `web.basePath` เลย มันเสิร์ฟจาก `/` ล้วน · ถ้าใครตั้ง `proxy_pass http://127.0.0.1:8090` **ลืม slash ท้าย** prefix จะไม่ถูกตัด → ทุก asset 404 → **หน้าขาว** โดยที่ log ของ service ไม่มีอะไรผิดเลย (ข้อ AE.7) · ตอน deploy ให้เช็คด้วย `curl -I http://127.0.0.1:8090/assets/<ชื่อไฟล์จริง>` ว่าต้องได้ 200
+
+11. **ancestor ของ domain ถูกทำเครื่องหมายว่า `direct`** — หน้า `demo-pg.salesdb.sales.customer` มีชิป domain สามตัว (`Finance`, `Finance / Risk`, `… / Risk / Credit`) และ probe แล้ว **ทั้งสามตัวเป็น `is_direct = true`** ทั้งที่ FR-2A.2 บอกว่า ancestor ที่กางออกมาควรเป็น `false` เหลือเฉพาะตัวล่างสุด · ยังไม่ได้แก้เพราะต้องดู `asset_facet` จริงก่อนว่าเป็นที่ข้อมูลหรือที่ materializer — **ถ้าเป็นบักจริง มันทำให้ "tag นี้มาจากไหน" ตอบผิด** (ดูข้อ AG.5)
 
 8. ~~**builder default `environment: 'dev'` ขณะที่ engine enforce `prod`**~~ — **ปิดแล้ว (ข้อ Y.2)** default เป็น `ENFORCED_ENVIRONMENT` ค่าเดียวที่ทุกฝั่งใช้ร่วมกัน + เตือนเมื่อเลือก environment ที่ไม่ถูก enforce
 

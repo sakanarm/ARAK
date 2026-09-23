@@ -12,7 +12,7 @@ import {
   Table,
   XClose,
 } from '@untitledui/icons';
-import { Badge } from '@openmetadata/ui-core-components/components/base/badges/badges';
+import { Chip as Badge } from '../../components/chips';
 import type { BadgeColors } from '@openmetadata/ui-core-components/components/base/badges/badge-types';
 import { Button } from '@openmetadata/ui-core-components/components/base/buttons/button';
 import { Checkbox } from '@openmetadata/ui-core-components/components/base/checkbox/checkbox';

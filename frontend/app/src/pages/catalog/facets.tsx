@@ -1,4 +1,5 @@
 import { Badge } from '@openmetadata/ui-core-components/components/base/badges/badges';
+import { badgeWeight } from '../../components/chips';
 import type { BadgeColors } from '@openmetadata/ui-core-components/components/base/badges/badge-types';
 import type { AssetOwner, FacetRow } from '../../api/client';
 import { isAncestor, shortFqn } from '../../lib/fqn';
@@ -51,14 +52,17 @@ export function facetLabel(facetType: string): string {
   return FACET_LABELS[facetType] ?? facetType;
 }
 
+
+
 /**
  * One facet, showing how it reached this asset.
  *
- * <p>An inherited facet is drawn faintly and says what it came from, because
- * "why is this column PII?" is the question an owner asks first and the answer
- * is usually a tag on something above it (FR-2A.1). A suggested label is marked
- * too: those are not enforced by default, and a screen that draws them like
- * confirmed ones teaches people the data is protected when it is not (FR-1.3a).
+ * <p>An inherited facet is drawn a shade lighter and says what it came from,
+ * because "why is this column PII?" is the question an owner asks first and the
+ * answer is usually a tag on something above it (FR-2A.1). A suggested label is
+ * marked too: those are not enforced by default, and a screen that draws them
+ * like confirmed ones teaches people the data is protected when it is not
+ * (FR-1.3a).
  */
 export function FacetChip({ facet }: { facet: FacetRow }) {
   const colour = FACET_COLOURS[facet.facetType] ?? 'gray';
@@ -79,17 +83,24 @@ export function FacetChip({ facet }: { facet: FacetRow }) {
     .filter(Boolean)
     .join(' · ');
 
+  const shade = suggested ? 'gray' : colour;
+  const weight = badgeWeight(shade, !facet.direct);
+
   return (
-    <span className={facet.direct ? undefined : 'tw:opacity-70'} title={why}>
+    <span title={why}>
       <Badge
-        className="tw:max-w-72"
-        color={suggested ? 'gray' : colour}
+        className={`tw:max-w-72 ${weight}`}
+        color={shade}
         size="sm"
         type="pill-color">
         {/* Truncated rather than wrapped: a chip that grows to fit a
             hundred-character sub-domain takes the whole row with it. */}
         <span className="tw:truncate">{label}</span>
-        {!facet.direct && <span className="tw:ml-1 tw:opacity-70">↑</span>}
+        {!facet.direct && (
+          <span aria-hidden className="tw:ml-1 tw:text-[10px] tw:opacity-80">
+            ↑
+          </span>
+        )}
         {suggested && <span className="tw:ml-1">?</span>}
       </Badge>
     </span>
@@ -100,15 +111,25 @@ export function FacetChip({ facet }: { facet: FacetRow }) {
 export function OwnerChip({ owner }: { owner: AssetOwner }) {
   return (
     <span
-      className={owner.direct ? undefined : 'tw:opacity-70'}
       title={
         owner.direct
           ? `${owner.type} · named on this asset`
           : `${owner.type} · inherited${owner.inheritedFrom ? ` from ${owner.inheritedFrom}` : ''}`
       }>
-      <Badge color="gray" size="sm" type="modern">
+      {/* An owner is a person, not a classification, so it stays the one white
+          chip in the row: colouring it would put it in competition with the
+          governance facets it sits beside. */}
+      <Badge
+        className={`tw:font-medium ${owner.direct ? '' : 'tw:text-tertiary'}`}
+        color="gray"
+        size="sm"
+        type="modern">
         {owner.name}
-        {!owner.direct && <span className="tw:ml-1 tw:opacity-70">↑</span>}
+        {!owner.direct && (
+          <span aria-hidden className="tw:ml-1 tw:text-[10px] tw:opacity-80">
+            ↑
+          </span>
+        )}
       </Badge>
     </span>
   );
