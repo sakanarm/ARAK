@@ -225,10 +225,12 @@ export function describePolicy(policy: Policy): string[] {
 
   if (policy.allowLocalOverride) {
     lines.push(
-      'A lower layer is permitted to relax this, which is recorded in the audit log when it happens.'
+      'A direct grant, or a policy on a single table, may let somebody in that this policy does not. Every time that happens it is recorded in the audit log.'
     );
   } else {
-    lines.push('Lower layers may add restrictions to this but never remove them.');
+    lines.push(
+      'Nobody reaches these assets without matching this policy. A direct grant on one table cannot get past it — it will show as in force and admit nobody.'
+    );
   }
   return lines;
 }

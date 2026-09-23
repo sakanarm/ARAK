@@ -6,6 +6,7 @@ import { Chip as Badge } from '../../components/chips';
 import {
   AlertTriangle,
   Copy01,
+  Download01,
   Expand01,
   Eye,
   EyeOff,
@@ -15,6 +16,7 @@ import {
   Shield01,
 } from '@untitledui/icons';
 import { apiErrorMessage } from '../../api/client';
+import { useAuthStore } from '../../auth/authStore';
 import { fetchPrincipals } from '../../api/governance';
 import { fetchSources } from '../../api/sources';
 import {
@@ -24,6 +26,7 @@ import {
   type Explanation,
   type QueryResult,
 } from '../../api/query';
+import { download, exportName, toCsv, toXlsx } from '../../lib/tabular';
 import { Select, TextField } from '../policies/controls';
 import SchemaExplorer from './SchemaExplorer';
 import SqlEditor from './SqlEditor';
@@ -42,8 +45,10 @@ import SqlEditor from './SqlEditor';
  *
  * <p>It is the same code path as a real query, not a preview of one. A
  * simulator that approximates enforcement is worse than no simulator, because
- * people trust it. Impersonating someone needs POLICY_AUTHOR, DATA_OWNER,
- * AUDITOR or PLATFORM_ADMIN, and the server — not this page — enforces that.
+ * people trust it. Running as somebody else is a platform administrator's
+ * power alone: the rows that come back are that person's rows, so it reads
+ * data on their behalf. The control below is hidden from everybody else, and
+ * the server — not this page — is what enforces that.
  */
 export default function QueryPage() {
   const [sourceId, setSourceId] = useState('');
@@ -88,6 +93,11 @@ export default function QueryPage() {
   // than a ratio we can pick for them.
   const [editorHeight, setEditorHeight] = useState(readEditorHeight);
 
+  // The same argument sideways. A schema three levels deep with long table
+  // names does not fit in 256px, and the fix for that was horizontal
+  // scrolling inside a panel nobody thought to scroll.
+  const [sidebarWidth, setSidebarWidth] = useState(readSidebarWidth);
+
   // A split remembered on a 27-inch monitor is taller than the whole pane on a
   // laptop. Clamped on the way out rather than on the way in, so the preference
   // survives and is merely not honoured where it would not fit.
@@ -106,10 +116,16 @@ export default function QueryPage() {
     staleTime: 60_000,
   });
 
+  const isAdmin = useAuthStore((state) => state.hasRole('PLATFORM_ADMIN'));
+
   const { data: principals } = useQuery({
     queryKey: ['principals', 'query-as'],
     queryFn: () => fetchPrincipals({ type: 'USER', limit: 200 }),
     staleTime: 5 * 60 * 1000,
+    // Not fetched for somebody who cannot use it. The list of every user on
+    // the platform is not secret, but asking for it to populate a control
+    // that is not drawn is a request nobody made.
+    enabled: isAdmin,
   });
 
   const usable = useMemo(
@@ -182,13 +198,14 @@ export default function QueryPage() {
       )}
 
       <div
-        className={`tw:flex tw:min-h-0 tw:flex-1 tw:gap-4 ${
-          fullscreen ? '' : 'tw:mt-4'
-        }`}>
+        className={`tw:flex tw:min-h-0 tw:flex-1 ${fullscreen ? '' : 'tw:mt-4'}`}>
         <SchemaExplorer
           onInsert={insert}
           serviceFqn={selected?.omServiceFqn ?? null}
+          width={sidebarWidth}
         />
+
+        <SideSplitter onChange={setSidebarWidth} width={sidebarWidth} />
 
         <div className="tw:flex tw:min-h-0 tw:min-w-0 tw:flex-1 tw:flex-col tw:gap-3">
           <div className="tw:flex tw:flex-wrap tw:items-center tw:gap-2">
@@ -216,23 +233,25 @@ export default function QueryPage() {
               value={effectiveSource}
             />
 
-            <Select
-              ariaLabel="Run as"
-              className="tw:w-52"
-              onChange={setAsPrincipal}
-              options={[
-                // Spelled out because the obvious reading of "as myself" is
-                // "unfiltered", and it is not: your own account is a principal
-                // like any other and is denied by default like any other.
-                { value: '', label: 'As myself (policies apply)' },
-                ...(principals ?? []).map((principal) => ({
-                  value: principal.username,
-                  label: principal.displayName ?? principal.username,
-                  hint: principal.username,
-                })),
-              ]}
-              value={asPrincipal}
-            />
+            {isAdmin && (
+              <Select
+                ariaLabel="Run as"
+                className="tw:w-52"
+                onChange={setAsPrincipal}
+                options={[
+                  // Spelled out because the obvious reading of "as myself" is
+                  // "unfiltered", and it is not: your own account is a principal
+                  // like any other and is denied by default like any other.
+                  { value: '', label: 'As myself (policies apply)' },
+                  ...(principals ?? []).map((principal) => ({
+                    value: principal.username,
+                    label: principal.displayName ?? principal.username,
+                    hint: principal.username,
+                  })),
+                ]}
+                value={asPrincipal}
+              />
+            )}
 
             {/* Typed, not picked from a list: a fixed set of four numbers is
                 never the number somebody wants, and the server clamps to
@@ -331,6 +350,12 @@ export default function QueryPage() {
   return fullscreen ? createPortal(consoleTree, document.body) : consoleTree;
 }
 
+const SIDEBAR_WIDTH_KEY = 'arak.query.sidebarWidth';
+const MIN_SIDEBAR_WIDTH = 160;
+// Past this the tree is wider than the statement it exists to help write.
+const MAX_SIDEBAR_WIDTH = 560;
+const DEFAULT_SIDEBAR_WIDTH = 256;
+
 const EDITOR_HEIGHT_KEY = 'arak.query.editorHeight';
 const MIN_EDITOR_HEIGHT = 72;
 // Tab bar, explanation strip and enough grid left over to read: a floor
@@ -356,6 +381,91 @@ function readEditorHeight() {
     // No stored preference is not an error; it is the first visit.
   }
   return DEFAULT_EDITOR_HEIGHT;
+}
+
+/** As {@link readEditorHeight}, for the width of the explorer column. */
+function readSidebarWidth() {
+  try {
+    const saved = Number(window.localStorage.getItem(SIDEBAR_WIDTH_KEY));
+    if (Number.isFinite(saved) && saved >= MIN_SIDEBAR_WIDTH) {
+      return Math.min(saved, MAX_SIDEBAR_WIDTH);
+    }
+  } catch {
+    // No stored preference is not an error; it is the first visit.
+  }
+  return DEFAULT_SIDEBAR_WIDTH;
+}
+
+/**
+ * Drag to decide how much of the row the schema tree gets.
+ *
+ * <p>The twin of {@link Splitter}, and deliberately drawn the same way: one
+ * grip that appears where the pointer is, so the two resizable edges of this
+ * screen look like one idea rather than two. It also supplies the gap between
+ * the panels, which is why removing it would close it.
+ */
+function SideSplitter({
+  width,
+  onChange,
+}: {
+  width: number;
+  onChange: (next: number) => void;
+}) {
+  function clamp(next: number) {
+    return Math.round(
+      Math.min(Math.max(next, MIN_SIDEBAR_WIDTH), MAX_SIDEBAR_WIDTH)
+    );
+  }
+
+  function remember(value: number) {
+    try {
+      window.localStorage.setItem(SIDEBAR_WIDTH_KEY, String(value));
+    } catch {
+      // The width still applies for this visit; only the memory of it is lost.
+    }
+  }
+
+  return (
+    <div
+      aria-label="Resize the explorer"
+      aria-orientation="vertical"
+      aria-valuenow={Math.round(width)}
+      className="tw:group tw:flex tw:w-4 tw:shrink-0 tw:cursor-col-resize tw:items-center tw:justify-center"
+      onKeyDown={(event) => {
+        const step = event.shiftKey ? 64 : 16;
+        const delta =
+          event.key === 'ArrowLeft' ? -step : event.key === 'ArrowRight' ? step : 0;
+        if (delta === 0) {
+          return;
+        }
+        event.preventDefault();
+        const next = clamp(width + delta);
+        onChange(next);
+        remember(next);
+      }}
+      onPointerDown={(event) => {
+        event.preventDefault();
+        const startX = event.clientX;
+        const startWidth = width;
+        let settled = startWidth;
+
+        const move = (moved: PointerEvent) => {
+          settled = clamp(startWidth + moved.clientX - startX);
+          onChange(settled);
+        };
+        const stop = () => {
+          window.removeEventListener('pointermove', move);
+          window.removeEventListener('pointerup', stop);
+          remember(settled);
+        };
+        window.addEventListener('pointermove', move);
+        window.addEventListener('pointerup', stop);
+      }}
+      role="separator"
+      tabIndex={0}>
+      <span className="tw:h-10 tw:w-0.5 tw:rounded-full tw:bg-border-secondary tw:transition tw:group-hover:bg-brand-solid tw:group-focus:bg-brand-solid" />
+    </div>
+  );
 }
 
 /**
@@ -433,6 +543,51 @@ function Splitter({
       role="separator"
       tabIndex={0}>
       <span className="tw:h-0.5 tw:w-10 tw:rounded-full tw:bg-border-secondary tw:transition tw:group-hover:bg-brand-solid tw:group-focus:bg-brand-solid" />
+    </div>
+  );
+}
+
+/**
+ * Take the rows away as a file.
+ *
+ * <p>What leaves is the grid, exactly: the rows the principal was entitled to,
+ * with the masks the decision applied already in them. There is no unmasked
+ * copy to export because the browser never received one -- the rewriting
+ * happened at the proxy. Both formats are offered rather than one, because the
+ * two are asked for by different people: CSV feeds a script, Excel gets opened
+ * and read.
+ *
+ * <p>A truncated result exports truncated and says so, since a file that
+ * silently holds the first two hundred of nine thousand rows is the kind of
+ * thing somebody later reconciles a report against.
+ */
+function Export({ result }: { result: QueryResult }) {
+  const grid = { columns: result.columns, rows: result.rows };
+  const caveat = result.truncated
+    ? ` Only the ${result.rows.length} rows shown, because the result was capped.`
+    : '';
+
+  return (
+    <div className="tw:flex tw:items-center tw:gap-1">
+      <Download01 className="tw:size-3.5 tw:text-quaternary" />
+      <button
+        className="tw:cursor-pointer tw:rounded tw:px-1.5 tw:py-0.5 tw:text-xs tw:font-semibold tw:text-tertiary tw:hover:bg-secondary tw:hover:text-primary"
+        onClick={() =>
+          download(toCsv(grid), exportName(result.assets, 'csv'))
+        }
+        title={`Download these rows as CSV.${caveat}`}
+        type="button">
+        CSV
+      </button>
+      <button
+        className="tw:cursor-pointer tw:rounded tw:px-1.5 tw:py-0.5 tw:text-xs tw:font-semibold tw:text-tertiary tw:hover:bg-secondary tw:hover:text-primary"
+        onClick={() =>
+          download(toXlsx(grid), exportName(result.assets, 'xlsx'))
+        }
+        title={`Download these rows as an Excel workbook.${caveat}`}
+        type="button">
+        Excel
+      </button>
     </div>
   );
 }
@@ -516,6 +671,7 @@ function ResultPanel({
           <span className="tw:text-xs tw:text-quaternary">
             {result.millis} ms · as {result.principal}
           </span>
+          <Export result={result} />
         </div>
       </div>
 

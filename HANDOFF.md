@@ -44,19 +44,158 @@ Phase 1 รองรับ SQL Server + PostgreSQL · identity หลักค�
 | App DB (docker `dac-appdb`, postgres:16-alpine) | `:5432` db/user `dac` |
 | OpenMetadata ของทีม | `2.0.1` — sync ผ่าน **ingestion-bot JWT** (ดู What Didn't Work) |
 
-เทสต์ทั้งหมดเขียว — **backend unit รันครบเมื่อ 2026-09-23 16:00 → exit 0 · unit 480** (integration **128** ครั้งล่าสุด `-Pintegration verify` → BUILD SUCCESS), frontend `npx jest` + `npx tsc --noEmit` + `npx eslint src` + `vite build` รันใหม่ **2026-09-23** (**109/109** เขียว · tsc exit 0 · eslint สะอาด · build ผ่าน)
+เทสต์ทั้งหมดเขียว — **backend unit รันครบเมื่อ 2026-09-23 16:00 → exit 0 · unit 480** (integration **128** ครั้งล่าสุด `-Pintegration verify` → BUILD SUCCESS), frontend `npx jest` + `npx tsc --noEmit` + `npx eslint src` + `vite build` รันใหม่ **2026-09-23** (**123/123** เขียว · tsc exit 0 · eslint สะอาด · build ผ่าน)
 
 | ชุด | จำนวน | คำสั่ง |
 |---|---|---|
 | Backend unit | dac-common 6 · dac-engine **277** · dac-compiler-sql 7 · dac-connector-openmetadata 88 · dac-proxy 16 · dac-service **86** = **480** | `./mvnw -am -pl backend/dac-service test` |
 | Backend integration (Testcontainers `postgres:16-alpine`) | **128 tests** — `AssetStoreIT` 6 · `CatalogQueryIT` 15 · `DataSourceStoreIT` 13 · `GovernanceStoreIT` 10 · `GrantCompositionIT` **17 (+4 รอบนี้: `AgainstDataPolicies` — grant ตรงต้องไม่ถอด mask)** · `IdentityAdminStoreIT` 15 · `ImpactAnalysisIT` 8 · `PolicyBindingMaterializerIT` 10 · `PolicyOverviewIT` 24 · `PolicyStoreIT` 10 | `./mvnw -am -pl backend/dac-service verify -Pintegration` |
-| Frontend | **19 suites / 109 tests** (+`SubjectBuilder.test.tsx` 8) | `npx jest` ใน `frontend/app` |
+| Frontend | **20 suites / 123 tests** (+`tabular.test.ts` 14 — CSV/Excel export) | `npx jest` ใน `frontend/app` |
 
 `yarn type-check` · `yarn lint` · `yarn build` ผ่านหมด → **BUILD SUCCESS** ทั้งสองฝั่ง
 
 ---
 
-## รอบนี้ — **ชิปเอาเส้นขอบออก** · **บอกให้ชัดว่าตรงไหน and ตรงไหน or** · และ **เทสต์ data policy ที่ชนกัน ซึ่งไปเจอบั๊กจริง**
+## รอบนี้ — **build ที่ผู้ใช้เห็นอยู่เก่าไป 1 ชั่วโมง** · ชิปบอกคำว่า inherited · **query แทนคนอื่นเหลือแค่ admin** · และ **subscription policy เลือกได้แค่ระดับ table**
+
+ผู้ใช้ส่งภาพหน้าจอมาบอกว่า "ไม่เห็นมีอะไรเปลี่ยนเลย" — ทั้งลูกศรขึ้นลงบนแถบแท็บที่บอกว่าแก้แล้ว และชิป Domain ที่ยังขึ้นชื่อจากกลาง FQN **คำตอบคือโค้ดถูก แต่ของที่เสิร์ฟอยู่เก่า** ส่วนที่เหลือเป็นคำสั่งใหม่สี่ข้อ
+
+### AI.1 🪤 ที่เสียเวลามากที่สุดรอบนี้ — **แก้โค้ดแล้วไม่ได้ build ใหม่**
+
+ผู้ใช้ดูที่ `http://localhost:8090/Arak/` ซึ่งคือ **jar เสิร์ฟ `frontend/app/dist`** ไม่ใช่ Vite dev ที่ `:3000`
+
+```
+dist/index.html                          16:06
+src/pages/catalog/AssetDetailPage.tsx    17:04   <- แก้หลัง build ไป 1 ชั่วโมง
+```
+
+ทุกอย่างที่รายงานว่า "เสร็จแล้ว" ในรอบก่อน — กรอบแท็บ, cursor pointer, ลูกศรขึ้นลงหาย, ชิปขึ้นต้นด้วยชื่อชนิด — **อยู่ในโค้ดจริงทั้งหมด แต่ไม่เคยถึงเบราว์เซอร์** ผู้ใช้จึงเห็นของเก่าและสรุปว่ายังไม่ได้แก้ ซึ่งถูกจากมุมของเขา
+
+**กฎที่ต้องทำทุกครั้งที่แตะ `frontend/app/src` แล้วจะให้ผู้ใช้ดู:**
+
+```bash
+cd frontend/app && MSYS_NO_PATHCONV=1 VITE_BASE=/Arak/ npx vite build
+# แล้ว restart backend เพราะ jar cache index.html ไว้
+```
+
+ทั้งสองบรรทัดจำเป็น — ข้ามข้อไหนข้อหนึ่งก็ได้ผลเหมือนไม่ได้แก้
+
+**หลัง build + restart แล้ว ตรวจจากเบราว์เซอร์จริง:**
+
+| | ผล |
+|---|---|
+| `[role=tablist]` `overflowY` | `hidden` |
+| แถบแท็บมี scrollbar แนวตั้งไหม | **ไม่มี** (`scrollHeight > clientHeight` = false) |
+| กรอบแท็บ | `1px` · แท็บที่เลือกเป็นสีน้ำเงิน |
+| cursor บนแท็บ | `pointer` |
+| ชิปบนหน้า `dtp-iprm.iprm.public.employees` | `Domain Premium Service Delivery - IOS Data/DTP - Sub Domain inherited` |
+
+ชิป Domain ขึ้นต้นด้วยคำว่า `Domain` แล้ว และชื่อเริ่มอ่านจากตัวแรกไม่ใช่กลาง FQN ตามที่ผู้ใช้ทัก
+
+### AI.2 ลูกศรขึ้นบนชิป → เขียนคำว่า `inherited` ไปเลย
+
+ผู้ใช้ถามว่า "เครื่องหมายนี้หมายถึงอะไรอะ แก้ได้ไหม ดูไม่สวย" — คำถามนี้คือคำตอบอยู่ในตัว สัญลักษณ์ที่ต้องมีคนอธิบายให้ฟังก่อนถึงจะอ่านออก ไม่ได้ทำหน้าที่อะไรเลย ที่แย่กว่านั้นคือมันมี `aria-hidden` ด้วย แปลว่าคนที่ใช้ screen reader ไม่ได้ข้อมูลนี้เลยตั้งแต่แรก
+
+`src/pages/catalog/facets.tsx` — ทั้ง `FacetChip` และ `OwnerChip`:
+
+```tsx
+{!facet.direct && (
+  <span className="tw:ml-1 tw:shrink-0 tw:text-[10px] tw:opacity-70">
+    inherited
+  </span>
+)}
+```
+
+ยาวขึ้น 9 ตัวอักษร แลกกับไม่ต้องมีคำอธิบายประกอบ และ screen reader อ่านได้ด้วย (ถอด `aria-hidden` ออก)
+
+### AI.3 หัวข้อหน้า Policies — ตัดบรรทัดตรงที่ประโยคจบ
+
+ผู้ใช้ระบุจุดตัดมาเอง: จบบรรทัดแรกที่ `...down to` แล้วขึ้นบรรทัดใหม่ที่ `a single column`
+
+ปล่อยให้ wrap เองแล้วบรรทัดสองเหลือสามคำโดดๆ และ `text-pretty` ก็แค่เปลี่ยนว่าสามคำไหน — จุดตัดที่อ่านแล้วเหมือนตั้งใจมีอยู่จุดเดียวคือตรงรอยต่อของประโยค `src/pages/policies/PolicyListPage.tsx` ใส่ `<br />` ตรงนั้นและเพิ่ม `tw:max-w-3xl`
+
+### AI.4 🔒 Query แทนคนอื่น — เหลือแค่ PLATFORM_ADMIN
+
+คำสั่งผู้ใช้: `Query as คนอื่น ให้ทำได้แค่ admin นะ คนอื่นต้องทำไม่ได้`
+
+เดิม `QueryResource.mayImpersonate()` ยอมให้ 4 role: `PLATFORM_ADMIN` · `POLICY_AUTHOR` · `DATA_OWNER` · `AUDITOR` เหตุผลเดิมคือ "คนเขียน policy ต้องทดสอบก่อน publish" แต่เหตุผลนั้นไม่ครอบคลุมสิ่งที่ฟีเจอร์นี้ทำจริง — **แถวที่ได้กลับมาคือแถวของคนนั้น** ฟีเจอร์นี้จึงอ่านข้อมูลแทนเขา และ policy author ที่ถือสิทธิ์นี้อ่าน table ไหนก็ได้ เพียงแค่ระบุชื่อคนที่เข้าถึง table นั้นได้
+
+```java
+private static boolean mayImpersonate(AuthenticatedUser user) {
+  return user.isPlatformAdmin();
+}
+```
+
+**สิ่งที่ policy author ยังทำได้เหมือนเดิม:** Simulator (FR-5.2) — ตอบคำถามเดียวกันว่า "คนนี้จะเห็นอะไร" โดยไม่ส่งข้อมูลจริงกลับมา
+
+**สิ่งที่ไม่เปลี่ยน:** การ impersonate ไม่เคยเป็นช่องผ่าน policy — query ถูก evaluate ในนามคนที่ถูกระบุ admin จึงเห็นเท่าที่คนนั้นเห็นพอดี และ audit บันทึกในชื่อ admin เอง
+
+ฝั่ง UI (`QueryPage.tsx`) ซ่อน Select `Run as` เมื่อไม่ใช่ admin และ **ไม่ยิง `fetchPrincipals` เลย** (`enabled: isAdmin`) — ตัวบังคับจริงอยู่ที่ server ตามเดิม
+
+### AI.5 Subscription policy — เลือกได้แค่ระดับ **Table**
+
+คำสั่งผู้ใช้: `ปรับ Subscription Policy ให้ มีให้เลือกแค่ระดับ table ก่อน ระดับอื่น hide ไปก่อน`
+
+`src/pages/policies/PolicyBuilderPage.tsx`:
+
+```ts
+const SUBSCRIPTION_LEVELS: Policy['scopeLevel'][] = ['TABLE'];
+
+function levelOptions(policy: Policy) {
+  if (policy.policyType !== 'SUBSCRIPTION') return SCOPE_LEVELS;
+  return SCOPE_LEVELS.filter(
+    (level) =>
+      SUBSCRIPTION_LEVELS.includes(level.value) || level.value === policy.scopeLevel
+  );
+}
+```
+
+**สามจุดที่ต้องระวังและจัดการไว้แล้ว:**
+
+1. **policy เดิมที่อยู่ชั้นอื่นต้องเก็บชั้นของตัวเองไว้ในเมนู** — ไม่งั้น `finance-subscription` (ORG) ที่เปิดมาแก้เรื่องอื่น จะโดน save ทับเป็น TABLE เงียบๆ ทั้งที่ไม่มีใครสั่ง → `levelOptions` จึงเติม `policy.scopeLevel` เข้าไปเสมอ
+2. **`EMPTY.scopeLevel` เปลี่ยนเป็น `TABLE`** ไม่งั้น draft ใหม่ถือค่าที่ไม่มีในเมนู
+3. **data policy ยังเปิดมาที่ ORG เหมือนเดิม** — mask ตาม tag เขียนครั้งเดียวคุมทั้งองค์กรคือจุดขายของมัน และ data policy ชั้นนอกไม่เคยล็อกใครออก มันแค่เพิ่ม mask
+
+**ตรวจจากเบราว์เซอร์จริง:**
+
+| หน้า | ตัวเลือกใน Level |
+|---|---|
+| `policies/new?kind=SUBSCRIPTION` | `["Table"]` |
+| `policies/new?kind=DATA` | `["Organisation","Domain or sub-domain","Service","Database","Schema","Table","Column"]` |
+| แก้ `finance-subscription` (ORG, subscription) | `["Organisation","Table"]` <- ชั้นของตัวเองยังอยู่ |
+
+> **เหตุผลที่ซ่อน ไม่ใช่ลบ:** engine ยัง compose ครบเจ็ดชั้นและ document ที่เก็บไว้ยังถือครบเจ็ดชั้น — subscription ที่เขียนไว้ชั้นนอกเป็น gate ของทุกอย่างใต้มัน ซึ่งเป็นทั้งประโยชน์ของมันและเป็นเหตุผลที่ grant ตรงบน table เดียวออกมาเป็น "In force · lets nobody in" ได้ ตราบใดที่หน้าจอยังไม่อธิบายเรื่องนี้ตรงจุดที่คนไปเจอ การเปิดชั้นนอกให้เลือกในฟอร์มคือการยื่นปืนให้ยิงเท้าตัวเอง
+
+### AI.6 ผลรันจริงรอบนี้
+
+| | |
+|---|---|
+| `npx tsc --noEmit` | exit 0 |
+| `npx eslint` 4 ไฟล์ที่แก้ | สะอาด |
+| `npx jest` | **20 suites / 123 tests** เขียวหมด |
+| `./mvnw -o -pl backend/dac-engine -am test` | **277 tests** เขียวหมด · BUILD SUCCESS |
+| `vite build` | ผ่าน · restart backend แล้ว `http://localhost:8090/Arak/` ตอบ 200 |
+
+### AI.7 ไฟล์ที่แตะรอบนี้
+
+| ไฟล์ | ทำอะไร |
+|---|---|
+| `frontend/app/src/pages/catalog/facets.tsx` | ลูกศรขึ้น -> คำว่า `inherited` (ทั้ง `FacetChip` และ `OwnerChip`) · ถอด `aria-hidden` |
+| `frontend/app/src/pages/policies/PolicyListPage.tsx` | `<br />` ตรงรอยต่อประโยค + `tw:max-w-3xl` |
+| `frontend/app/src/pages/policies/PolicyBuilderPage.tsx` | `SCOPE_LEVELS` · `SUBSCRIPTION_LEVELS` · `levelOptions()` · `EMPTY.scopeLevel = 'TABLE'` · placeholder ของ Anchor ตามชั้น |
+| `frontend/app/src/pages/query/QueryPage.tsx` | ซ่อน `Run as` เมื่อไม่ใช่ admin · `fetchPrincipals` `enabled: isAdmin` |
+| `backend/.../resources/QueryResource.java` | `mayImpersonate()` -> `isPlatformAdmin()` เท่านั้น (⚠️ ไฟล์เป็น **CRLF**) |
+
+### AI.8 ยังค้าง
+
+- **Save query / share query** (ข้อสุดท้ายของคิว UI) — ยังไม่เริ่ม · recon แล้ว: ต้องมี `V12__saved_query.sql` + store + Jersey resource + tests + UI บน `QueryPage.tsx` · **ข้อควรระวังด้านความปลอดภัย: สิ่งที่แชร์คือ *ประโยค SQL* ไม่ใช่ผลลัพธ์ — คนเปิดต้องถูก evaluate ใหม่ในนามตัวเอง** และยังมีความเสี่ยงตกค้างว่า literal ใน `WHERE` เองก็เป็นข้อมูลได้
+- **ชื่อ policy ที่บล็อก grant อยู่ ยังไม่ทะลุถึงหน้า Access** — `PolicyEngine.decideSubscription()` ยิง `DecisionReason` ที่ระบุชื่อ policy ของ gate แล้ว (รอบนี้ compile + 277 tests ผ่าน) แต่ `AccessQuery.onAsset()` ยัง `continue` ทิ้ง `decision.getReasons()` บนขา `!allowed` และ `AccessTab.tsx` ยังเขียนลอยๆ ว่า "A policy on an outer layer is refusing them"
+- **ยังไม่ได้ตอบ**: จะเปิด `allowLocalOverride` ให้ `finance-subscription` (`b594579f-a825-42bc-9dac-64de9b279d03`) หรือไม่ — **ไม่แตะข้อมูลผู้ใช้โดยไม่ได้สั่ง**
+- **คำถามที่ผู้ใช้ถามค้างไว้**: พื้นที่ใต้แถบแท็บควรอยู่ในกรอบเดียวกับแท็บและเป็นพื้นขาวด้วยหรือไม่ — ตอนนี้แท็บมีกรอบของตัวเอง ส่วนเนื้อหาเป็นการ์ดขาวบนพื้นเทาของหน้า
+
+---
+
+## รอบก่อนหน้า — **ชิปเอาเส้นขอบออก** · **บอกให้ชัดว่าตรงไหน and ตรงไหน or** · และ **เทสต์ data policy ที่ชนกัน ซึ่งไปเจอบั๊กจริง**
 
 สามเรื่อง มาจากคำสั่งผู้ใช้สามข้อในรอบเดียว: `Tag ลองแบบไม่มีเส้นขอบแทน`, `ทำให้ชัดสิ ว่าตรงไหน เป็น and ตรงไหน เป็น or`, `ทดสอบทุก Case ให้ครบนะ อย่าลืม Case Datapolicy Conflict กันด้วย`
 

@@ -283,7 +283,7 @@ function Header() {
       <h1 className="tw:text-display-xs tw:font-semibold tw:text-primary">
         OpenMetadata connection
       </h1>
-      <p className="tw:mt-1 tw:max-w-3xl tw:text-balance tw:text-sm tw:text-tertiary">
+      <p className="tw:mt-1 tw:max-w-3xl tw:text-pretty tw:text-sm tw:text-tertiary">
         Where this platform reads its metadata from. Assets, tags, glossary terms
         and domains are a cache of that instance — policies are ours, the
         vocabulary they are written in is theirs.

@@ -13,7 +13,7 @@ import {
   fetchPoliciesForAsset,
   type AppliedPolicy,
 } from '../../api/policies';
-import { FacetChip, OwnerChip, facetLabel, groupFacets } from './facets';
+import { FacetChip, OwnerChip, groupFacets } from './facets';
 import { AccessTab } from './AccessTab';
 import { AuditTab } from './AuditTab';
 import { Field, Panel } from './panels';
@@ -169,20 +169,17 @@ export default function AssetDetailPage() {
                     policy written against facets will not select it.
                   </p>
                 ) : (
-                  <dl className="tw:space-y-3">
-                    {grouped.map(([type, facets]) => (
-                      <div className="tw:flex tw:flex-wrap tw:gap-2" key={type}>
-                        <dt className="tw:w-40 tw:shrink-0 tw:text-xs tw:text-tertiary">
-                          {facetLabel(type)}
-                        </dt>
-                        <dd className="tw:flex tw:flex-wrap tw:gap-1.5">
-                          {facets.map((facet) => (
-                            <FacetChip facet={facet} key={facetKey(facet)} />
-                          ))}
-                        </dd>
-                      </div>
-                    ))}
-                  </dl>
+                  // Grouped in order but not under headings: every chip
+                  // names its own kind now, and the heading column was taking
+                  // a sixth of the panel to repeat it -- width a long
+                  // sub-domain needed more.
+                  <div className="tw:flex tw:flex-wrap tw:gap-1.5">
+                    {grouped.map(([type, facets]) =>
+                      facets.map((facet) => (
+                        <FacetChip facet={facet} key={`${type}:${facetKey(facet)}`} />
+                      ))
+                    )}
+                  </div>
                 )}
               </Panel>
             </section>
@@ -300,7 +297,13 @@ function isTab(value: string | null): value is TabId {
 }
 
 /**
- * The five tabs, underlined in the style of the catalog they mirror.
+ * The five tabs, as a segmented control.
+ *
+ * <p>An underline is the lightest way to mark a selection and it was too
+ * light here: the strip sat between a heading and a card with nothing of its
+ * own, so the one blue word had to carry both "this is a control" and "this
+ * is where you are". A track with a filled selection says the first before
+ * anybody reads the second.
  *
  * <p>Only the column count is shown, because it is the only one already in
  * hand. The others would each cost a request made solely to put a number on a
@@ -317,19 +320,26 @@ function AssetTabs({
   columnCount: number;
 }) {
   return (
+    // `overflow-y-hidden` is not decoration. Setting only `overflow-x`
+    // leaves the other axis computing to `auto`, and the half-pixel the
+    // buttons overhang by was enough for Windows to park a full vertical
+    // scrollbar -- arrows and all -- on the right of the strip.
     <div
       aria-label="Asset"
-      className="tw:mt-6 tw:flex tw:gap-1 tw:overflow-x-auto tw:border-b tw:border-secondary"
+      className="tw:mt-6 tw:flex tw:w-fit tw:max-w-full tw:gap-1 tw:overflow-x-auto tw:overflow-y-hidden tw:rounded-lg tw:border tw:border-secondary tw:bg-primary tw:p-1"
       role="tablist">
       {TABS.map((tab) => {
         const active = tab.value === value;
         return (
           <button
             aria-selected={active}
-            className={`tw:-mb-px tw:shrink-0 tw:border-b-2 tw:px-3 tw:py-2.5 tw:text-sm tw:font-medium ${
+            // Tailwind's reset gives a button `cursor: default`, which reads
+            // as "not clickable" on everything that is not obviously a form
+            // control. These are the page's main navigation.
+            className={`tw:shrink-0 tw:cursor-pointer tw:rounded-md tw:px-3 tw:py-2 tw:text-sm tw:font-semibold tw:transition-colors tw:focus-visible:outline-2 tw:focus-visible:outline-offset-2 tw:focus-visible:outline-brand ${
               active
-                ? 'tw:border-brand tw:text-brand-secondary'
-                : 'tw:border-transparent tw:text-tertiary tw:hover:text-primary'
+                ? 'tw:bg-utility-blue-50 tw:text-utility-blue-700'
+                : 'tw:text-tertiary tw:hover:bg-secondary tw:hover:text-primary'
             }`}
             key={tab.value}
             onClick={() => onChange(tab.value)}
@@ -337,7 +347,12 @@ function AssetTabs({
             type="button">
             {tab.label}
             {tab.value === 'columns' && columnCount > 0 && (
-              <span className="tw:ml-1.5 tw:rounded tw:bg-secondary tw:px-1.5 tw:py-0.5 tw:text-xs tw:text-tertiary">
+              <span
+                className={`tw:ml-1.5 tw:rounded tw:px-1.5 tw:py-0.5 tw:text-xs ${
+                  active
+                    ? 'tw:bg-utility-blue-100 tw:text-utility-blue-700'
+                    : 'tw:bg-secondary tw:text-tertiary'
+                }`}>
                 {columnCount}
               </span>
             )}
@@ -458,7 +473,7 @@ function AppliedRow({ row }: { row: AppliedPolicy }) {
           </Badge>
         )}
         {!policy.allowLocalOverride && (
-          <span className="tw:text-xs tw:text-quaternary">cannot be relaxed below</span>
+          <span className="tw:text-xs tw:text-quaternary">a grant cannot get past this</span>
         )}
       </div>
 

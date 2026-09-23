@@ -11,3 +11,30 @@ import '@testing-library/jest-dom';
  * element that never arrives still fails, just later.
  */
 configure({ asyncUtilTimeout: 15000 });
+
+/*
+ * jsdom ships neither `TextEncoder`/`TextDecoder` nor a `Blob` that can be
+ * read back, though every browser has had all three for years. Code that
+ * writes a file -- the CSV and Excel export -- is otherwise untestable here,
+ * and moving it to Playwright would test the download dialog rather than the
+ * bytes. Node's own implementations are the same ones the browser exposes.
+ */
+import { TextDecoder, TextEncoder } from 'node:util';
+
+Object.assign(globalThis, {
+  TextEncoder: globalThis.TextEncoder ?? TextEncoder,
+  TextDecoder: globalThis.TextDecoder ?? TextDecoder,
+});
+
+if (typeof Blob !== 'undefined' && !Blob.prototype.arrayBuffer) {
+  // Through FileReader rather than `new Response(blob)`: jsdom has the former
+  // and not the latter.
+  Blob.prototype.arrayBuffer = function arrayBuffer(this: Blob) {
+    return new Promise<ArrayBuffer>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as ArrayBuffer);
+      reader.onerror = () => reject(reader.error);
+      reader.readAsArrayBuffer(this);
+    });
+  };
+}

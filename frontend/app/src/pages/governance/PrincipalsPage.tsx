@@ -118,7 +118,7 @@ export default function PrincipalsPage() {
           <h1 className="tw:text-display-sm tw:font-semibold tw:text-primary">
             People &amp; attributes
           </h1>
-          <p className="tw:mt-2 tw:max-w-3xl tw:text-balance tw:text-md tw:text-tertiary">
+          <p className="tw:mt-2 tw:max-w-3xl tw:text-pretty tw:text-md tw:text-tertiary">
             The identity cache a subject rule is written against. Synced from
             Entra and OpenMetadata, and read-only here — an edit would be
             reverted by the next sync.

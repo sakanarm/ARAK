@@ -53,11 +53,51 @@ import { describePolicy } from './policyLanguage';
 const EMPTY: Policy = {
   name: '',
   policyType: 'SUBSCRIPTION',
-  scopeLevel: 'ORG',
+  scopeLevel: 'TABLE',
   selector: {},
   effect: 'ALLOW',
   environment: ENFORCED_ENVIRONMENT,
 };
+
+/** Every layer the engine composes, in the order it composes them. */
+const SCOPE_LEVELS: { value: Policy['scopeLevel']; label: string }[] = [
+  { value: 'ORG', label: 'Organisation' },
+  { value: 'DOMAIN', label: 'Domain or sub-domain' },
+  { value: 'SERVICE', label: 'Service' },
+  { value: 'DATABASE', label: 'Database' },
+  { value: 'SCHEMA', label: 'Schema' },
+  { value: 'TABLE', label: 'Table' },
+  { value: 'COLUMN', label: 'Column' },
+];
+
+/**
+ * The layers a subscription policy may currently be written at.
+ *
+ * <p>One, for now. The engine composes all seven and the stored documents
+ * carry all seven, but a subscription written at an outer layer gates
+ * everything beneath it -- which is the point of it and also the reason a
+ * direct grant on one table can come out in force and admitting nobody. Until
+ * the screens explain that where somebody meets it, offering the outer layers
+ * in a form is offering a foot-gun. Data policies keep the full set: those
+ * only ever add masking, so an outer one cannot lock anybody out.
+ */
+const SUBSCRIPTION_LEVELS: Policy['scopeLevel'][] = ['TABLE'];
+
+/**
+ * What the Level menu offers.
+ *
+ * <p>A policy already stored at a hidden layer keeps its own level in the
+ * list. Dropping it would leave the control showing a value it does not have,
+ * and the first save of an unrelated edit would quietly move an
+ * organisation-wide policy onto one table.
+ */
+function levelOptions(policy: Policy) {
+  if (policy.policyType !== 'SUBSCRIPTION') return SCOPE_LEVELS;
+  return SCOPE_LEVELS.filter(
+    (level) =>
+      SUBSCRIPTION_LEVELS.includes(level.value) || level.value === policy.scopeLevel
+  );
+}
 
 export default function PolicyBuilderPage() {
   const { id } = useParams();
@@ -70,11 +110,14 @@ export default function PolicyBuilderPage() {
   // opens. Subscription and data policies are different jobs; choosing between
   // them inside step one of a form is where that distinction goes to be missed.
   const kind = params.get('kind');
-  const [draft, setDraft] = useState<Policy>(() =>
-    kind === 'DATA' || kind === 'SUBSCRIPTION'
-      ? { ...EMPTY, policyType: kind }
-      : EMPTY
-  );
+  const [draft, setDraft] = useState<Policy>(() => {
+    // A data policy still opens on the organisation, where masking by tag is
+    // written once and covers everything. Only the subscription default moved
+    // down to the table.
+    if (kind === 'DATA') return { ...EMPTY, policyType: 'DATA', scopeLevel: 'ORG' };
+    if (kind === 'SUBSCRIPTION') return { ...EMPTY, policyType: 'SUBSCRIPTION' };
+    return EMPTY;
+  });
   const [loaded, setLoaded] = useState<StoredPolicy | null>(null);
   const [engine, setEngine] = useState<Engine>('POSTGRES');
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -246,9 +289,18 @@ export default function PolicyBuilderPage() {
                 hint="Subscription decides who reaches the table at all. Data decides what they see inside it. They are authored by different people at different times, which is why they are separate documents."
                 label="Kind">
                 <Select
-                  onChange={(next) =>
-                    patch({ policyType: next as Policy['policyType'] })
-                  }
+                  onChange={(next) => {
+                    const policyType = next as Policy['policyType'];
+                    // Switching to a subscription lands on a layer it is
+                    // allowed to be written at, rather than leaving the menu
+                    // displaying a level the draft no longer offers.
+                    patch(
+                      policyType === 'SUBSCRIPTION' &&
+                        !SUBSCRIPTION_LEVELS.includes(draft.scopeLevel)
+                        ? { policyType, scopeLevel: 'TABLE' }
+                        : { policyType }
+                    );
+                  }}
                   options={[
                     { value: 'SUBSCRIPTION', label: 'Subscription — who gets in' },
                     { value: 'DATA', label: 'Data — what they see' },
@@ -315,15 +367,7 @@ export default function PolicyBuilderPage() {
                   onChange={(next) =>
                     patch({ scopeLevel: next as Policy['scopeLevel'] })
                   }
-                  options={[
-                    { value: 'ORG', label: 'Organisation' },
-                    { value: 'DOMAIN', label: 'Domain or sub-domain' },
-                    { value: 'SERVICE', label: 'Service' },
-                    { value: 'DATABASE', label: 'Database' },
-                    { value: 'SCHEMA', label: 'Schema' },
-                    { value: 'TABLE', label: 'Table' },
-                    { value: 'COLUMN', label: 'Column' },
-                  ]}
+                  options={levelOptions(draft)}
                   value={draft.scopeLevel}
                 />
               </Field>
@@ -333,22 +377,29 @@ export default function PolicyBuilderPage() {
                   label="Anchor">
                   <TextField
                     onChange={(next) => patch({ scopeFqn: next || undefined })}
-                    placeholder="prod-mssql.SalesDB.dbo"
+                    placeholder={
+                      draft.scopeLevel === 'TABLE'
+                        ? 'demo-pg.salesdb.sales.customer'
+                        : 'prod-mssql.SalesDB.dbo'
+                    }
                     value={draft.scopeFqn ?? ''}
                   />
                 </Field>
               )}
               <Field
                 className="tw:sm:col-span-2"
-                hint="Off by default. Turning it on is an audited decision: it lets someone below you widen what this policy restricted."
-                label="May a lower layer relax this?">
+                hint="Off by default. While it is off, nobody reaches these assets without matching this policy — a direct grant on a single table will show as in force and still admit nobody, which is usually the point of a global policy and occasionally the thing that looks like a bug. Every time this is used it is recorded in the audit log."
+                label="Can a grant let somebody past this policy?">
                 <Select
                   onChange={(next) =>
                     patch({ allowLocalOverride: next === 'yes' })
                   }
                   options={[
-                    { value: 'no', label: 'No — lower layers may only add' },
-                    { value: 'yes', label: 'Yes — and every use is recorded' },
+                    { value: 'no', label: 'No — everybody must match this policy' },
+                    {
+                      value: 'yes',
+                      label: 'Yes — a grant or a table policy may let somebody in',
+                    },
                   ]}
                   value={draft.allowLocalOverride ? 'yes' : 'no'}
                 />

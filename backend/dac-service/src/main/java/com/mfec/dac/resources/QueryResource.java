@@ -79,8 +79,7 @@ public class QueryResource {
       String other = ask.asPrincipal().trim();
       if (!other.equalsIgnoreCase(principal) && !mayImpersonate(caller)) {
         throw new ForbiddenException(
-            "Running a query as another principal is how a policy gets verified before it is "
-                + "published, so it needs POLICY_AUTHOR, DATA_OWNER, AUDITOR or PLATFORM_ADMIN");
+            "Running a query as another principal is reserved for PLATFORM_ADMIN");
       }
       principal = other;
     }
@@ -121,9 +120,24 @@ public class QueryResource {
     }
   }
 
+  /**
+   * Who may run a statement under somebody else's name.
+   *
+   * <p>Platform administrators only. It was four roles, on the argument that
+   * verifying a policy before publishing it is the author's job -- but the
+   * rows that come back are that principal's rows, so the feature reads data
+   * on their behalf, and a policy author holding it can read any table by
+   * naming somebody who can. Narrowing it costs an author the shortcut and
+   * leaves them the simulator, which answers the same question without
+   * returning the data.
+   *
+   * <p>It is still not a way past a policy: the query is evaluated as the
+   * named principal, so an administrator impersonating somebody sees exactly
+   * what that person sees and nothing more, and the attempt is audited under
+   * the administrator's own name.
+   */
   private static boolean mayImpersonate(AuthenticatedUser user) {
-    return user.isPlatformAdmin()
-        || user.hasAnyRole("POLICY_AUTHOR", "DATA_OWNER", "AUDITOR");
+    return user.isPlatformAdmin();
   }
 
   /**

@@ -296,11 +296,11 @@ export default function PolicyDetailPage() {
                 <Row label="Effect" value={document.effect ?? 'ALLOW'} />
               )}
               <Row
-                label="Lower layers"
+                label="A grant may pass this"
                 value={
                   document.allowLocalOverride
-                    ? 'May relax this (audited)'
-                    : 'May only add restrictions'
+                    ? 'Yes — recorded in the audit log'
+                    : 'No — everybody must match this policy'
                 }
               />
               <Row label="Environment" value={policy.environment} />

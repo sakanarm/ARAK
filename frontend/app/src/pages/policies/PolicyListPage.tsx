@@ -51,10 +51,15 @@ export default function PolicyListPage() {
           <h1 className="tw:text-display-sm tw:font-semibold tw:text-primary">
             Policies
           </h1>
-          <p className="tw:mt-2 tw:text-md tw:text-tertiary">
+          {/* Broken where the sentence breaks, not where the box runs out.
+              Left to wrap on its own the second line came out as a three-word
+              orphan, and `text-pretty` only moved which three words they were.
+              The clause boundary is the one place a break reads as intended. */}
+          <p className="tw:mt-2 tw:max-w-3xl tw:text-md tw:text-tertiary">
             Who may reach an asset, and what they see inside it. Layers compose
-            from the organisation down to a single column — a lower layer adds
-            restrictions and never removes them.
+            from the organisation down to
+            <br />a single column — a lower layer adds restrictions and never
+            removes them.
           </p>
         </div>
         <Button

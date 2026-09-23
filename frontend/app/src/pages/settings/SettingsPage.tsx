@@ -150,7 +150,7 @@ export default function SettingsPage() {
         <h1 className="tw:text-display-sm tw:font-semibold tw:text-primary">
           Settings
         </h1>
-        <p className="tw:mt-2 tw:max-w-3xl tw:text-balance tw:text-md tw:text-tertiary">
+        <p className="tw:mt-2 tw:max-w-3xl tw:text-pretty tw:text-md tw:text-tertiary">
           Configure the platform: where its metadata comes from, who may operate
           it, and which databases it enforces policy in.
         </p>
@@ -169,7 +169,7 @@ export default function SettingsPage() {
               <h2 className="tw:text-lg tw:font-semibold tw:text-primary">
                 {group.heading}
               </h2>
-              <p className="tw:mt-1 tw:max-w-3xl tw:text-balance tw:text-sm tw:text-tertiary">
+              <p className="tw:mt-1 tw:max-w-3xl tw:text-pretty tw:text-sm tw:text-tertiary">
                 {group.blurb}
               </p>
               <div className="tw:mt-4 tw:grid tw:gap-4 tw:sm:grid-cols-2 tw:xl:grid-cols-3">

@@ -58,11 +58,14 @@ export interface SchemaExplorerProps {
   serviceFqn?: string | null;
   /** Inserted at the caret when a table is clicked. */
   onInsert: (text: string) => void;
+  /** How wide the column is, in pixels. The reader drags this. */
+  width?: number;
 }
 
 export default function SchemaExplorer({
   serviceFqn,
   onInsert,
+  width,
 }: SchemaExplorerProps) {
   const [search, setSearch] = useState('');
 
@@ -82,7 +85,9 @@ export default function SchemaExplorer({
   const roots = [...tree.children.values()];
 
   return (
-    <aside className="tw:flex tw:w-64 tw:shrink-0 tw:flex-col tw:overflow-hidden tw:rounded-lg tw:border tw:border-secondary tw:bg-primary">
+    <aside
+      className="tw:flex tw:shrink-0 tw:flex-col tw:overflow-hidden tw:rounded-lg tw:border tw:border-secondary tw:bg-primary"
+      style={{ width: width ?? 256 }}>
       <div className="tw:border-b tw:border-secondary tw:p-3">
         <h2 className="tw:flex tw:items-center tw:gap-2 tw:text-sm tw:font-semibold tw:text-primary">
           <Database01 className="tw:size-4 tw:text-tertiary" />

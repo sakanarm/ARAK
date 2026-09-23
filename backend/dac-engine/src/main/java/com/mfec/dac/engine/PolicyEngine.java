@@ -403,6 +403,29 @@ public final class PolicyEngine {
                     + "more specific layer allows"));
         continue;
       }
+      // Name the policies standing in the gate before summarising it. A refusal
+      // that says only "a layer refused" leaves the reader to go and find which
+      // of forty policies it was, and the commonest reader of this is somebody
+      // looking at a direct grant that is in force and admitting nobody -- for
+      // whom the answer is one policy's name and whether it consented to being
+      // passed.
+      boolean relaxable = overridable(subscriptions, gate);
+      for (Candidate c : subscriptions) {
+        if (c.layer() != gate || !c.allows() || c.applies() || c.additive()) {
+          continue;
+        }
+        reasons.add(
+            reason(
+                c.policy(),
+                false,
+                relaxable
+                    ? "holds the gate at this layer and does not grant this principal access; it "
+                        + "allows a lower layer to relax it, but nothing below has granted access "
+                        + "either"
+                    : "holds the gate at this layer and does not grant this principal access; it "
+                        + "does not allow a lower layer to relax it, so no direct grant can pass "
+                        + "it either"));
+      }
       reasons.add(
           bareReason(
               false,
