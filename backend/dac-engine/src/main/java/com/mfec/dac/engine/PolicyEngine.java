@@ -678,8 +678,33 @@ public final class PolicyEngine {
     if (incumbent.condition() != null && candidate.condition() == null) {
       return candidate;
     }
-    // Ties keep the incumbent, so composition is order-independent.
-    return incumbent;
+    // A genuine tie: same function, and both unconditional or both
+    // conditional. Keeping the incumbent here is not order-independence, it
+    // only looks like it. The mask itself comes out the same either way, so
+    // the generated SQL is safe; what moves is the policy named on it, and
+    // that is what the explanation screen shows an owner who asks why a
+    // column is blank. Getting a different policy on a refresh sends them to
+    // edit whichever rule happened to load first.
+    //
+    // The broader layer wins, because it is the one that would still impose
+    // the mask if the other were deleted, and the id settles whatever is
+    // left so that the order is total rather than merely usually stable.
+    int byBreadth = breadth(incumbent) - breadth(candidate);
+    if (byBreadth != 0) {
+      return byBreadth > 0 ? candidate : incumbent;
+    }
+    return maskId(candidate).compareTo(maskId(incumbent)) < 0 ? candidate : incumbent;
+  }
+
+  /** How wide a candidate's layer is. ORG is 0; an absent level never wins a tie. */
+  private static int breadth(MaskCandidate candidate) {
+    ResolvedColumnMask.ScopeLevel level = candidate.source().policy().getScopeLevel();
+    return level == null ? Integer.MAX_VALUE : level.ordinal();
+  }
+
+  /** A candidate's policy id as a comparable string, never null. */
+  private static String maskId(MaskCandidate candidate) {
+    return nullSafe(String.valueOf(candidate.source().policy().getId()));
   }
 
   /**

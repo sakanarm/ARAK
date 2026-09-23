@@ -444,6 +444,173 @@ class DataPolicyCompositionTest {
     }
   }
 
+  // ------------------------------------------------------- mask conflicts
+
+  @Nested
+  @DisplayName("two policies masking the same column")
+  class MaskConflicts {
+
+    /**
+     * The ranking from FR-5.1, strictest first.
+     *
+     * <p>Held here as a list rather than read back from {@link MaskStrength} so
+     * that the test states the requirement independently. A ranking test that
+     * asks the ranking what it thinks passes whatever the ranking says.
+     */
+    private final List<MaskingFunction> byStrength =
+        List.of(
+            MaskingFunction.NULLIFY,
+            MaskingFunction.CONSTANT,
+            MaskingFunction.HASH,
+            MaskingFunction.REGEX_REPLACE,
+            MaskingFunction.PARTIAL,
+            MaskingFunction.ROUNDING,
+            MaskingFunction.CONDITIONAL);
+
+    /** What survives when the two layers disagree about one column. */
+    private MaskingFunction winner(MaskingFunction org, MaskingFunction table) {
+      PolicyDecision decision =
+          decide(
+              data("org-rule", ScopeLevel.ORG, maskRule("salary", org)),
+              data("table-rule", ScopeLevel.TABLE, maskRule("salary", table)));
+      ResolvedColumnMask mask = maskOn(decision, "salary");
+      assertThat(mask).as("a column both policies masked must still be masked").isNotNull();
+      return mask.getMasking().getFunction();
+    }
+
+    @Test
+    @DisplayName("the stricter function wins when the deeper layer is the strict one")
+    void deeperLayerMayTighten() {
+      assertThat(winner(MaskingFunction.PARTIAL, MaskingFunction.NULLIFY))
+          .isEqualTo(MaskingFunction.NULLIFY);
+    }
+
+    @Test
+    @DisplayName("and the stricter function still wins when the deeper layer is the loose one")
+    void deeperLayerMayNotWeaken() {
+      // The incident case. FR-3.1.4: a local policy adds strictness and never
+      // removes it. If this fails, anyone able to write a table-scoped policy
+      // can downgrade an organisation-wide NULLIFY to a partial reveal -- and
+      // the query still succeeds, so nothing on any screen says it happened.
+      assertThat(winner(MaskingFunction.NULLIFY, MaskingFunction.PARTIAL))
+          .isEqualTo(MaskingFunction.NULLIFY);
+    }
+
+    @Test
+    @DisplayName("every neighbouring pair in the ranking resolves the same way from either side")
+    void theWholeRankingHolds() {
+      for (int i = 0; i < byStrength.size() - 1; i++) {
+        MaskingFunction stronger = byStrength.get(i);
+        MaskingFunction weaker = byStrength.get(i + 1);
+
+        assertThat(winner(stronger, weaker))
+            .as("%s at ORG against %s at TABLE", stronger, weaker)
+            .isEqualTo(stronger);
+        assertThat(winner(weaker, stronger))
+            .as("%s at ORG against %s at TABLE", weaker, stronger)
+            .isEqualTo(stronger);
+      }
+    }
+
+    @Test
+    @DisplayName("the conditional wrapper never displaces a real function, even the weakest one")
+    void conditionalNeverDisplacesAFunction() {
+      // CONDITIONAL may decide not to mask at all. Ranking it above anything
+      // real would let a rule that sometimes reveals displace one that always
+      // conceals.
+      assertThat(winner(MaskingFunction.ROUNDING, MaskingFunction.CONDITIONAL))
+          .isEqualTo(MaskingFunction.ROUNDING);
+      assertThat(winner(MaskingFunction.CONDITIONAL, MaskingFunction.ROUNDING))
+          .isEqualTo(MaskingFunction.ROUNDING);
+    }
+
+    @Test
+    @DisplayName("three policies on one column leave exactly one mask, the strictest")
+    void threeWayCollisionLeavesOne() {
+      PolicyDecision decision =
+          decide(
+              data("loose", ScopeLevel.ORG, maskRule("salary", MaskingFunction.ROUNDING)),
+              data("middle", ScopeLevel.SCHEMA, maskRule("salary", MaskingFunction.HASH)),
+              data("strict", ScopeLevel.TABLE, maskRule("salary", MaskingFunction.CONSTANT)));
+
+      assertThat(maskedColumns(decision)).containsExactly("salary");
+      assertThat(maskOn(decision, "salary").getMasking().getFunction())
+          .isEqualTo(MaskingFunction.CONSTANT);
+    }
+
+    @Test
+    @DisplayName("the policy named on the mask is the one that won, not the one that lost")
+    void theWinnerIsTheOneOnTheRecord() {
+      // Explainability (FR-5.4) is what an owner uses to answer "why is this
+      // column blanked". Naming the losing policy sends them off to edit a rule
+      // that is having no effect.
+      PolicyDecision decision =
+          decide(
+              data("org-rule", ScopeLevel.ORG, maskRule("salary", MaskingFunction.NULLIFY)),
+              data("table-rule", ScopeLevel.TABLE, maskRule("salary", MaskingFunction.PARTIAL)));
+
+      ResolvedColumnMask mask = maskOn(decision, "salary");
+      assertThat(mask.getSourceScopeLevel()).isEqualTo(ScopeLevel.ORG);
+      assertThat(mask.getSourcePolicyId())
+          .isEqualTo(UUID.nameUUIDFromBytes("org-rule".getBytes(StandardCharsets.UTF_8)));
+    }
+
+    @Test
+    @DisplayName("equally strict masks resolve the same way whichever order they arrive in")
+    void tiesAreOrderIndependent() {
+      // FR-6.0c compares the three compilers' SQL byte for byte. A tie broken
+      // by load order would make that comparison fail intermittently, which is
+      // worse than failing outright because it gets retried until it passes.
+      Policy a = data("a-rule", ScopeLevel.TABLE, maskRule("salary", MaskingFunction.HASH));
+      Policy b = data("b-rule", ScopeLevel.TABLE, maskRule("salary", MaskingFunction.HASH));
+
+      ResolvedColumnMask first = maskOn(decide(a, b), "salary");
+      ResolvedColumnMask second = maskOn(decide(b, a), "salary");
+
+      assertThat(first.getSourcePolicyId()).isEqualTo(second.getSourcePolicyId());
+    }
+
+    @Test
+    @DisplayName("a hide and a mask on one column leave it hidden, and not masked as well")
+    void hideBeatsMask() {
+      // Hiding removes the column from the projection, so a mask on it would
+      // compile to a reference to a column that is not there.
+      PolicyDecision decision =
+          decide(
+              data("mask", ScopeLevel.ORG, maskRule("salary", MaskingFunction.NULLIFY)),
+              data("hide", ScopeLevel.TABLE, hideRule("salary")));
+
+      assertThat(decision.getHiddenColumns()).containsExactly("salary");
+      assertThat(maskedColumns(decision)).doesNotContain("salary");
+    }
+
+    @Test
+    @DisplayName("and it stays hidden when the hide is the broader of the two")
+    void hideBeatsMaskFromEitherSide() {
+      PolicyDecision decision =
+          decide(
+              data("hide", ScopeLevel.ORG, hideRule("salary")),
+              data("mask", ScopeLevel.TABLE, maskRule("salary", MaskingFunction.PARTIAL)));
+
+      assertThat(decision.getHiddenColumns()).containsExactly("salary");
+      assertThat(maskedColumns(decision)).doesNotContain("salary");
+    }
+
+    @Test
+    @DisplayName("a collision on one column leaves the others alone")
+    void collisionIsScopedToItsColumn() {
+      PolicyDecision decision =
+          decide(
+              data("org-rule", ScopeLevel.ORG, maskRule("salary", MaskingFunction.NULLIFY)),
+              data("table-rule", ScopeLevel.TABLE, maskRule("salary", MaskingFunction.PARTIAL)),
+              data("email-rule", ScopeLevel.TABLE, maskRule("email", MaskingFunction.HASH)));
+
+      assertThat(maskedColumns(decision)).containsExactly("email", "salary");
+      assertThat(maskOn(decision, "email").getMasking().getFunction())
+          .isEqualTo(MaskingFunction.HASH);
+    }
+  }
+
   // --------------------------------------------------------------- release
 
   @Nested

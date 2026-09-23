@@ -89,6 +89,7 @@ export function FacetChip({ facet }: { facet: FacetRow }) {
   return (
     <span title={why}>
       <Badge
+        bordered={false}
         className={`tw:max-w-72 ${weight}`}
         color={shade}
         size="sm"

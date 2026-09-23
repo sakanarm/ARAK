@@ -27,7 +27,7 @@ Phase 1 รองรับ SQL Server + PostgreSQL · identity หลักค�
 | **M0 Foundation** | ✅ เสร็จ — Maven multi-module, Dropwizard 5, Vite+React+Tailwind shell, vendor `ui-core-components`, JSON Schema → Java/TS codegen, OM client จาก swagger ที่ pin ไว้, Flyway V1–V10, docker-compose, CI 4 jobs |
 | **M1 OM Connector** | 🚧 ~95% — full crawl + governance + effective facet + FR-1.5 webhook/poller/reconcile + catalog read API + Catalog UI + governance read API + Governance UI · **sync กับ OM จริงสำเร็จแล้ว** · เหลือ FR-1.6 (reconcile กับ JDBC จริง), FR-1.7 (local tag + push-back — **ผู้ใช้สั่ง read-only ตอนนี้**) |
 | **M2 Identity** | 🚧 ~50% — local sign-in ใช้ได้ · schema `principal`/`principal_attribute`/`group_member`/`app_role_assignment` มีตั้งแต่ V2 · read API + หน้า People & attributes (**filter ตาม attribute + กดเข้าไปดูสมาชิกใน group ได้ที่ `/principals/:id`**) + **หน้า Application roles (`/settings/roles`) อ่านอย่างเดียว** เสร็จ · **เพิ่ม local account + assign/withdraw app role ได้จาก UI แล้ว (V10 + `IdentityAdminStore` + audit)** · **ยังไม่มี write API สำหรับ *attribute* — ต้อง seed ด้วย SQL** · ยังไม่มีหน้าจอเปลี่ยน password (ทุก account ที่สร้างเป็น `must_change`) · ยังไม่มี Entra OIDC / Graph sync |
-| **M3 Policy Engine** | 🚧 ~97% — engine **267 tests** (+101 รอบนี้ — `PolicyAlgebraTest` 34 ที่ assert **เซตของคนที่ผ่าน** ไม่ใช่ทีละคน + `ExpressionReferenceTest` ที่รันทุก example ในหน้า doc ผ่าน evaluator จริง) · เดิม **166 tests** (+10 รอบนี้ · **เจอบั๊กจริงสองตัวที่ grant โดนเต็มๆ ดูข้อ AE.1/AE.2**) (data policy 26 + subscription 45 เพิ่มรอบนี้ · เจอบั๊กจริง 2 ตัว ดูข้อ P) · persistence (`PolicyStore`) + `policy_binding` materializer + REST · `PolicyBindingMaterializerIT` 10 tests บน Postgres จริง · **decision cache (FR-5.5) ปิดแล้วรอบนี้ — 25 tests ดูข้อ AB** · เหลือ ANTLR grammar ของ `expr` (FR-3.2) ข้อเดียว |
+| **M3 Policy Engine** | 🚧 ~97% — engine **277 tests** (+10 รอบนี้ — `DataPolicyCompositionTest.MaskConflicts` ที่ทำให้เจอบั๊กการให้เครดิต policy ดูข้อ AH.3) (+101 รอบนี้ — `PolicyAlgebraTest` 34 ที่ assert **เซตของคนที่ผ่าน** ไม่ใช่ทีละคน + `ExpressionReferenceTest` ที่รันทุก example ในหน้า doc ผ่าน evaluator จริง) · เดิม **166 tests** (+10 รอบนี้ · **เจอบั๊กจริงสองตัวที่ grant โดนเต็มๆ ดูข้อ AE.1/AE.2**) (data policy 26 + subscription 45 เพิ่มรอบนี้ · เจอบั๊กจริง 2 ตัว ดูข้อ P) · persistence (`PolicyStore`) + `policy_binding` materializer + REST · `PolicyBindingMaterializerIT` 10 tests บน Postgres จริง · **decision cache (FR-5.5) ปิดแล้วรอบนี้ — 25 tests ดูข้อ AB** · เหลือ ANTLR grammar ของ `expr` (FR-3.2) ข้อเดียว |
 | **M4 Policy Authoring UI** | ✅ **เสร็จ** — Policy list + Policy builder + readback + capability matrix + `/policies/:id` หน้าสรุปอ่านอย่างเดียว + panel Policies ในหน้า asset (FR-3.1.5) + View-as-user (FR-5.2, ข้อ Z) · **รอบนี้ปิดข้อสุดท้าย: impact analysis (FR-5.3) — `GET /v1/policies/{id}/impact` + panel “Who it changes things for” ดูข้อ AA** · **รอบนี้เพิ่มหน้า `/docs/expressions` — syntax reference ที่ backend ส่งมาจาก jar ของ engine กดจากช่อง expression ได้ พร้อม 11 policy ตัวอย่างจริงใน DB (ข้อ AF.3/AF.4)** |
 | **M5 Secure View (5.1.2)** | ⬜ — `DecisionSql` + dialect ทั้งสองตัวพร้อมแล้ว (ใช้ร่วมกับ 5.2) เหลือ ViewCompiler + `row_entitlement` maintainer + DDL apply/rollback |
 | **M6 Push Config (5.1.1)** | ⬜ **re-scope รอบนี้ · เลื่อนหลัง M5/M7 · opt-in ต่อ source** — ยิงเฉพาะ **policy object ที่แยกจาก table** (PG `CREATE POLICY` · MSSQL `CREATE SECURITY POLICY` · column GRANT) · **ตัด MSSQL DDM ออก** เพราะมัน `ALTER COLUMN` ทับนิยาม table — ดูข้อ AC.1 และ DESIGN FR-6.2a |
@@ -44,19 +44,155 @@ Phase 1 รองรับ SQL Server + PostgreSQL · identity หลักค�
 | App DB (docker `dac-appdb`, postgres:16-alpine) | `:5432` db/user `dac` |
 | OpenMetadata ของทีม | `2.0.1` — sync ผ่าน **ingestion-bot JWT** (ดู What Didn't Work) |
 
-เทสต์ทั้งหมดเขียว — **backend รันครบทั้ง unit + integration ในคำสั่งเดียวเมื่อ 2026-09-23** (`-Pintegration verify` → BUILD SUCCESS · unit **470** · integration **128**), frontend `npx jest` + `npx tsc --noEmit` + `npx eslint src` + `vite build` รันใหม่ **2026-09-23** (**101/101** เขียว · tsc exit 0 · eslint สะอาด · build ผ่าน)
+เทสต์ทั้งหมดเขียว — **backend unit รันครบเมื่อ 2026-09-23 16:00 → exit 0 · unit 480** (integration **128** ครั้งล่าสุด `-Pintegration verify` → BUILD SUCCESS), frontend `npx jest` + `npx tsc --noEmit` + `npx eslint src` + `vite build` รันใหม่ **2026-09-23** (**109/109** เขียว · tsc exit 0 · eslint สะอาด · build ผ่าน)
 
 | ชุด | จำนวน | คำสั่ง |
 |---|---|---|
-| Backend unit | dac-common 6 · dac-engine **267** · dac-compiler-sql 7 · dac-connector-openmetadata 88 · dac-proxy 16 · dac-service **86** = **470** | `./mvnw -am -pl backend/dac-service test` |
+| Backend unit | dac-common 6 · dac-engine **277** · dac-compiler-sql 7 · dac-connector-openmetadata 88 · dac-proxy 16 · dac-service **86** = **480** | `./mvnw -am -pl backend/dac-service test` |
 | Backend integration (Testcontainers `postgres:16-alpine`) | **128 tests** — `AssetStoreIT` 6 · `CatalogQueryIT` 15 · `DataSourceStoreIT` 13 · `GovernanceStoreIT` 10 · `GrantCompositionIT` **17 (+4 รอบนี้: `AgainstDataPolicies` — grant ตรงต้องไม่ถอด mask)** · `IdentityAdminStoreIT` 15 · `ImpactAnalysisIT` 8 · `PolicyBindingMaterializerIT` 10 · `PolicyOverviewIT` 24 · `PolicyStoreIT` 10 | `./mvnw -am -pl backend/dac-service verify -Pintegration` |
-| Frontend | **18 suites / 101 tests** (+`GrantDialog.test.tsx` 9) | `npx jest` ใน `frontend/app` |
+| Frontend | **19 suites / 109 tests** (+`SubjectBuilder.test.tsx` 8) | `npx jest` ใน `frontend/app` |
 
 `yarn type-check` · `yarn lint` · `yarn build` ผ่านหมด → **BUILD SUCCESS** ทั้งสองฝั่ง
 
 ---
 
-## รอบนี้ — **Grant กำหนดวันเองได้ (พิมพ์จำนวนวัน / ตั้ง Start–End ล่วงหน้า)** · และ **ชิปทั้งแอปหนาขึ้นจากที่เดียว**
+## รอบนี้ — **ชิปเอาเส้นขอบออก** · **บอกให้ชัดว่าตรงไหน and ตรงไหน or** · และ **เทสต์ data policy ที่ชนกัน ซึ่งไปเจอบั๊กจริง**
+
+สามเรื่อง มาจากคำสั่งผู้ใช้สามข้อในรอบเดียว: `Tag ลองแบบไม่มีเส้นขอบแทน`, `ทำให้ชัดสิ ว่าตรงไหน เป็น and ตรงไหน เป็น or`, `ทดสอบทุก Case ให้ครบนะ อย่าลืม Case Datapolicy Conflict กันด้วย`
+
+---
+
+### AH.1 ชิป — เอาเส้นขอบออก เหลือแค่พื้นกับตัวอักษร
+
+รอบที่แล้วเติมเส้นขอบให้ชิปเพื่อให้มันมีรูปร่าง ผู้ใช้ลองแล้วบอกให้เอาออก — **ซึ่งถูก** ที่ขนาด 12px เส้น 1px ที่สีใกล้กับพื้นมาก ๆ จะไม่ตกลงบนเส้น pixel พอดี เบราว์เซอร์เลย blend ออกมาเป็นรอยเปื้อนเทา ๆ รอบชิป ไม่ใช่ขอบ
+
+| | เดิม | ตอนนี้ |
+|---|---|---|
+| ชิปสี (`pill-color`) | พื้น `-100` + `outline-1` สี `-200` | พื้น `-100` ตัวอักษร `-700` **ไม่มี outline** |
+| ชิป facet ที่ตกทอดมา | พื้น `-50` + outline | พื้น `-50` ตัวอักษร `-700` **ไม่มี outline** |
+| ชิปขาว (`modern` — เช่น owner) | ขอบเทา | **ยังมีขอบเหมือนเดิม** |
+
+`modern` ยังมีขอบ เพราะพื้นมันขาวเท่าการ์ด ถ้าเอาขอบออกด้วยจะไม่เหลืออะไรบอกว่ามันเป็นชิป
+
+**🪤 กับดัก — เส้นขอบของ badge เป็น prop ไม่ใช่ class** `ui-core-components/src/.../badges.tsx` render `bordered && 'tw:outline-1 tw:-outline-offset-1'` โดย `bordered = true` เป็นค่า default ที่บรรทัด 168/223/283/390/449/525 → **ลบ class สี outline อย่างเดียวไม่พอ** จะเหลือเส้นเทาบาง ๆ ต้องส่ง `bordered={false}` เข้าไป
+
+แก้ที่เดียวได้ทั้งแอปเหมือนเดิม — `Chip` ใน `src/components/chips.tsx` ส่ง `bordered={bordered ?? modern}` (ค่าที่ caller ระบุเองยังชนะ) และ `facets.tsx` ที่เรียก `Badge` ดิบ ๆ ส่ง `bordered={false}` เพิ่มหนึ่งบรรทัด · 17 หน้าที่ `import { Chip as Badge }` ได้ตามทั้งหมดโดยไม่ต้องแก้
+
+**ยืนยันด้วยตาบนของจริง** (`http://localhost:8090/Arak/catalog`, build ด้วย `VITE_BASE=/Arak/` แล้ว restart backend):
+- ชิปสีตรง ๆ `rgb(254,228,226)` · ชิปที่ตกทอดมา `rgb(254,243,242)` · **ทั้งคู่ `outline-style: none`**
+- **ชั้น `-50` ยังเห็นเป็นรูปร่างอยู่** บนการ์ดสีขาว และยังอ่อนกว่าชั้น `-100` อย่างชัดเจน → **ไม่ต้องขยับสเกลขึ้นเป็น `-100`/`-200`** ตามที่เผื่อไว้
+- ชิปขาวของ owner ยังได้ `1px solid rgb(213,215,218)` ตามที่ตั้งใจ
+
+---
+
+### AH.2 ผู้ใช้ถามว่า "อันนี้คือ and หรือ or" — แปลว่าหน้าจอบอกไม่ชัดพอ
+
+คำถามเต็มคือ *"Anyone who is in group x **or** in group Y — หรือ — in group x **and** group Y"* พร้อมรูปที่วงกรอบแดงไว้ที่รายการ `in the group` สองแถว และ `branch is FINANCE` สองแถว
+
+**คำตอบ (ยืนยันกับ engine ไม่ใช่กับข้อความบนจอ):**
+
+| ช่องในฟอร์ม | field ใน `SubjectRule` | ต่อกันด้วย | ยืนยันจาก |
+|---|---|---|---|
+| **Anyone who is** | `principals` | **OR** | `SubjectMatcher` — แถวไหนแถวหนึ่งผ่านก็พอ |
+| **And who is also** | `requiredPrincipals` | **AND** | ต้องผ่านทุกแถว |
+| **And whose attributes say** | `attributes` | **AND** | ทุกเงื่อนไขต้องจริง |
+| **And this holds** (expression) | `expression` | **AND** กับที่เหลือ | |
+| **And only during** | `time.windows` | **OR** | `TimeMatcher.java:59-64` — `return true` ทันทีที่เจอ window แรกที่ครอบเวลานั้น |
+
+> window เป็น **OR** เป็นเรื่องที่ต้องอ่าน code ถึงจะรู้ ถ้าไปเขียนบนจอว่า "all of these" มันจะอธิบายกฎที่**เป็นจริงไม่ได้เลย** เพราะไม่มีวินาทีไหนอยู่ในสอง window ที่ไม่ทับกันพร้อมกัน
+
+**ที่ทำลงไป** — `SubjectBuilder.tsx` เพิ่มสามตัว:
+- `JoinTag` — ป้ายบนหัวข้อ: `ANY OF THESE` (ฟ้า) / `ALL OF THESE` (เทา)
+- `SectionHeading` — หัวข้อ + ป้าย
+- `JoinRow` — **คำว่า `or` / `and` คั่นอยู่ระหว่างแถว** พร้อมเส้นบาง ๆ · ขึ้นเฉพาะตั้งแต่แถวที่สองเป็นต้นไป
+
+เหตุผลที่เลือกวางคำไว้**ระหว่างแถว** ไม่ใช่เขียนอธิบายไว้ข้างบนอย่างเดียว: คำถามนี้เกิดขึ้นตอนที่คนกำลังกดเพิ่มแถวที่สอง ซึ่งเป็นตอนที่ข้อความข้างบนถูกอ่านผ่านไปแล้ว · และเป็น **ตัวอักษร ไม่ใช่สี** คนที่แยกฟ้ากับเทาไม่ออก หรือใช้ screen reader ก็ยังอ่านได้ว่า "or"
+
+**หน้าตาจริงหลัง build** (`/policies/new` กด Add สองครั้งทุกช่อง):
+```
+Anyone who is  [ANY OF THESE]
+  [ in the group ▾ ] [ name ]
+  OR ────────────────────────
+  [ in the group ▾ ] [ name ]
+
+And whose attributes say  [ALL OF THESE]
+  [ branch ] [ is ▾ ] [ FINANCE ]
+  AND ───────────────────────
+  [ branch ] [ is ▾ ] [ FINANCE ]
+
+And only during  [ANY OF THESE]
+  [ weekdays ▾ ] 08:00 to 18:00  Asia/Bangkok
+  OR ────────────────────────
+```
+
+`SubjectBuilder.test.tsx` — **8 tests ใหม่** ที่ assert ว่าคำบนจอตรงกับที่ engine หมายถึง: ป้ายของสองรายการต้องต่างกัน, สองแถวต้องมีคำคั่น **หนึ่งคำพอดี** (สองคำแปลว่ามีคำห้อยอยู่เหนือแถวแรก), แถวเดียวต้องไม่มีคำคั่น, คำต้องโผล่ **ทันทีที่กด Add who** ไม่ใช่ตัดสินตอนเปิดฟอร์ม, และตอนที่ทั้งสองรายการว่างก็ยังต้องแยกออกจากกันได้ด้วยป้าย
+
+**🪤 กับดัก — test ที่ render `SubjectBuilder` ต้องมี router ครอบ** ข้างในมี `ExpressionNote` ที่ render `<Link to="/docs/expressions">` → ถ้าไม่ครอบ `<MemoryRouter>` จะล้มทั้งไฟล์ด้วย `Cannot destructure property 'basename' of ... as it is null` (`PolicyBuilderPage.test.tsx` ครอบไว้อยู่แล้ว ลอกมาได้)
+
+---
+
+### AH.3 เทสต์ data policy ที่ชนกัน 10 ตัว — แล้วเจอบั๊กจริงที่ไม่ใช่เทสต์ผิด
+
+ก่อนเขียนได้ไล่ดูของเดิมก่อน `DataPolicyCompositionTest` มีเคสอยู่ 30+ แล้ว แต่**ไม่มีเคสที่ mask คนละ function ชนกันบน column เดียวผ่าน engine จริง** มีแต่เทียบ `MaskStrength.rank()` ตรง ๆ · nested class ใหม่ `MaskConflicts` เติมส่วนที่ขาด:
+
+| test | คุม |
+|---|---|
+| `deeperLayerMayTighten` / `deeperLayerMayNotWeaken` | **FR-3.1.4** — ชั้นล่างเพิ่มความเข้มได้ ผ่อนไม่ได้ · ตัวหลังคือเคสอุบัติเหตุ: ถ้าพัง คนที่เขียน policy ระดับ table ได้ จะลด `NULLIFY` ทั้งองค์กรให้เหลือ partial ได้ และ **query ยังสำเร็จ** ไม่มีจอไหนฟ้อง |
+| `theWholeRankingHolds` | ไล่ทุกคู่ที่ติดกันในลำดับ **ทั้งสองทิศ** |
+| `conditionalNeverDisplacesAFunction` | `CONDITIONAL` อาจเลือกไม่ mask เลย ห้ามให้มันเบียดของที่ mask เสมอ |
+| `threeWayCollisionLeavesOne` | สาม policy บน column เดียว เหลือ mask ใบเดียว |
+| `theWinnerIsTheOneOnTheRecord` | **FR-5.4** — ชื่อ policy ที่ติดมากับ mask ต้องเป็นใบที่ชนะ |
+| `tiesAreOrderIndependent` | เสมอกันแล้วต้องได้ผลเดิมไม่ว่ามาลำดับไหน |
+| `hideBeatsMask` / `hideBeatsMaskFromEitherSide` | hide ชนะ mask เสมอ และต้อง**ไม่**โผล่ใน `columnMasks` ด้วย (ไม่งั้น SQL จะอ้างถึง column ที่ไม่อยู่ใน projection) |
+| `collisionIsScopedToItsColumn` | ชนที่ column หนึ่ง ห้ามกระเทือน column อื่น |
+
+> ลำดับความเข้มใน test เขียนเป็น `List` ไว้เอง **ไม่ได้อ่านจาก `MaskStrength`** เพราะ test ที่ไปถามตัวที่มันกำลังตรวจว่าคิดยังไง จะผ่านทุกอย่างที่ตัวนั้นคิด
+
+#### 🐛 `tiesAreOrderIndependent` ล้ม — และมันคือบั๊กจริง
+
+```
+expected: ac0a2da2-be48-3a5e-8f44-2617ce58f753
+ but was: 475b2f89-6fcd-311c-acd1-3755e1736481
+```
+
+`PolicyEngine.stricter()` เขียน comment ไว้ว่า *"Ties keep the incumbent, so composition is order-independent"* แล้ว `return incumbent` — **ซึ่งไม่ใช่ order-independence มันแค่หน้าตาเหมือน** · ตัว mask ออกมาเหมือนกันจริง SQL เลยปลอดภัย แต่ **ชื่อ policy ที่ถูกบันทึกไว้บนนั้นเดินตามลำดับที่โหลดมา** → หน้าจออธิบาย (FR-5.4) จะบอกชื่อ policy คนละใบกันเมื่อ refresh และส่ง owner ไปแก้ใบที่โหลดมาก่อนโดยบังเอิญ
+
+แก้ให้ tie-break เป็น **total order**:
+1. ชั้นที่**กว้างกว่า**ชนะ — เพราะมันคือใบที่ยังบังคับ mask นี้อยู่ดีถ้าอีกใบถูกลบ (`ScopeLevel.ordinal()` · ORG = 0 = กว้างสุด · ชั้นที่ไม่มีค่าไม่มีวันชนะ)
+2. เสมออีกก็ตัดด้วย policy id
+
+ตรวจแล้วว่าไม่ไปกวน `maskNamesItsLayer` (policy ใบเดียว) และ `unconditionalBeatsConditionalOfEqualStrength` (กติกาเรื่อง condition ตัดสินไปก่อนถึงบรรทัดนี้)
+
+**ผลรัน:** `dac-engine` **267 → 277** · full unit suite **470 → 480** · `./mvnw -am -pl backend/dac-service test` → **exit 0 ทุกโมดูล** (`dac-compiler-sql` golden file ไม่กระเทือน)
+
+---
+
+### AH.4 🪤 กับดักที่เสียเวลาไปรอบนี้
+
+1. **Maven รันด้วย JDK ผิดเงียบ ๆ** — `JAVA_HOME` ที่ติดมากับเครื่องเป็น Java 11 ถ้าไม่ตั้งเอง build จะตายที่ `dac-spec` ด้วย `PluginContainerException` 60 บรรทัดที่บังสาเหตุจริงไว้ สาเหตุจริงคือ `jsonschema2pojo ... class file version 61.0, this version ... up to 55.0`
+   ```bash
+   export JAVA_HOME="/c/Users/Sakan P/Desktop/Data Access Control App/.tools/jdk-21.0.12.1+1"
+   ```
+   ⚠️ ต้องเป็น **path แบบ POSIX** · ถ้าใช้ `MSYS_NO_PATHCONV=1 JAVA_HOME="$(pwd -W)/..."` จะได้ `Could not find or load main class org.codehaus.plexus.classworlds.launcher.Launcher` แทน
+2. **`./mvnw` อยู่ที่ราก repo ไม่ใช่ใน `backend/`**
+3. **heredoc ของ bash พัง** เมื่อเนื้อหาข้างในยาวและมี quote (บล็อก Java 167 บรรทัดทำ `unexpected EOF while looking for matching ''`) → เขียนสคริปต์ลง scratchpad ด้วย Write แล้ว `python <path>` (กับดักเดิมที่บันทึกไว้แล้ว ยังโดนอยู่)
+
+---
+
+### AH.5 ไฟล์ที่แตะรอบนี้
+
+| ไฟล์ | อะไร |
+|---|---|
+| `frontend/app/src/components/chips.tsx` | เอา outline ออกจากทั้งสอง map · `bordered={bordered ?? modern}` |
+| `frontend/app/src/pages/catalog/facets.tsx` | `bordered={false}` หนึ่งบรรทัด |
+| `frontend/app/src/pages/policies/SubjectBuilder.tsx` | `JoinTag` / `SectionHeading` / `JoinRow` + เดินสาย or/and เข้าทั้งสี่รายการ |
+| `frontend/app/src/pages/policies/SubjectBuilder.test.tsx` | **ใหม่** — 8 tests |
+| `backend/dac-engine/src/test/.../DataPolicyCompositionTest.java` | **+167 บรรทัด** — nested class `MaskConflicts` 10 tests |
+| `backend/dac-engine/src/main/.../PolicyEngine.java` | tie-break ของ mask เป็น total order (breadth → policy id) |
+
+---
+
+## รอบก่อนหน้า — **Grant กำหนดวันเองได้ (พิมพ์จำนวนวัน / ตั้ง Start–End ล่วงหน้า)** · และ **ชิปทั้งแอปหนาขึ้นจากที่เดียว**
 
 > โจทย์รอบนี้มาสามอัน: *"For how long ตอน Direct access ต้องใส่เลขเองได้ไหม"* · *"แล้วกำหนดล่วงหน้า Start date end date ได้ไหม"* · *"ทำเสร็จแล้วทดสอบให้ดีด้วยนะ"* แล้วระหว่างทางมีอีกอัน: *"tag สีประมาณนี้มันดูบางๆ ไม่สวยอะ ลองปรับให้ดีกว่านี้หน่อย"*
 

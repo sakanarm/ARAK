@@ -1,15 +1,18 @@
-import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
-import { Plus, Trash01 } from '@untitledui/icons';
-import { Button } from '@openmetadata/ui-core-components/components/base/buttons/button';
+import { Fragment, useEffect, useState } from "react";
+import { Link } from "react-router-dom";
+import { Plus, Trash01 } from "@untitledui/icons";
+import { Button } from "@openmetadata/ui-core-components/components/base/buttons/button";
 import type {
   AttributeCondition,
   PrincipalMatch,
   SubjectRule,
-} from '../../generated/entity/policy/policy';
-import type { AttributeVocabulary, Principal } from '../../api/governance';
-import { validateExpression, type ExpressionVerdict } from '../../api/expressions';
-import { Field, Select, TextField } from './controls';
+} from "../../generated/entity/policy/policy";
+import type { AttributeVocabulary, Principal } from "../../api/governance";
+import {
+  validateExpression,
+  type ExpressionVerdict,
+} from "../../api/expressions";
+import { Field, Select, TextField } from "./controls";
 
 /**
  * Who a policy is about (FR-3.2).
@@ -23,27 +26,89 @@ import { Field, Select, TextField } from './controls';
  */
 
 const ATTRIBUTE_OPERATORS: {
-  value: AttributeCondition['operator'];
+  value: AttributeCondition["operator"];
   label: string;
 }[] = [
-  { value: 'eq', label: 'is' },
-  { value: 'ne', label: 'is not' },
-  { value: 'in', label: 'is one of' },
-  { value: 'notIn', label: 'is none of' },
-  { value: 'gte', label: 'is at least' },
-  { value: 'lte', label: 'is at most' },
-  { value: 'gt', label: 'is above' },
-  { value: 'lt', label: 'is below' },
-  { value: 'contains', label: 'is or is under' },
-  { value: 'exists', label: 'is set' },
-  { value: 'notExists', label: 'is not set' },
+  { value: "eq", label: "is" },
+  { value: "ne", label: "is not" },
+  { value: "in", label: "is one of" },
+  { value: "notIn", label: "is none of" },
+  { value: "gte", label: "is at least" },
+  { value: "lte", label: "is at most" },
+  { value: "gt", label: "is above" },
+  { value: "lt", label: "is below" },
+  { value: "contains", label: "is or is under" },
+  { value: "exists", label: "is set" },
+  { value: "notExists", label: "is not set" },
 ];
 
 const DAY_PRESETS = [
-  { value: '', label: 'every day' },
-  { value: 'MON-FRI', label: 'weekdays' },
-  { value: 'SAT,SUN', label: 'weekends' },
+  { value: "", label: "every day" },
+  { value: "MON-FRI", label: "weekdays" },
+  { value: "SAT,SUN", label: "weekends" },
 ];
+
+type Join = "and" | "or";
+
+/**
+ * How the rows inside one block are joined, said inside the block.
+ *
+ * <p>Two lists of identical-looking rows sit on this screen, one an or and one
+ * an and, and the difference decides whether a policy reaches everybody in
+ * either group or only the people in both. That is the most expensive thing to
+ * get wrong on this form, and a line of hint text above the rows is read once
+ * and then forgotten the moment somebody is looking at the rows themselves. So
+ * the word also sits between the rows it joins, in the eye line of whoever is
+ * adding the second one -- which is the moment the question first arises.
+ *
+ * <p>It is text, not a colour: an author who cannot tell the blue block from
+ * the grey one still reads "or" and "and".
+ */
+function JoinTag({ join }: { join: Join }) {
+  return (
+    <span
+      className={`tw:rounded tw:px-1.5 tw:py-0.5 tw:text-[10px] tw:font-bold tw:tracking-wider tw:uppercase ${
+        join === "or"
+          ? "tw:bg-utility-blue-100 tw:text-utility-blue-700"
+          : "tw:bg-utility-gray-100 tw:text-utility-gray-700"
+      }`}
+    >
+      {join === "or" ? "any of these" : "all of these"}
+    </span>
+  );
+}
+
+/** The heading of one block, carrying how its rows are joined. */
+function SectionHeading({ title, join }: { title: string; join: Join }) {
+  return (
+    <h3 className="tw:flex tw:items-center tw:gap-2 tw:text-sm tw:font-semibold tw:text-primary">
+      {title}
+      <JoinTag join={join} />
+    </h3>
+  );
+}
+
+/**
+ * The word between two rows.
+ *
+ * <p>Rendered as a real word rather than a rule with a gap, so it survives
+ * being read aloud: a screen reader moving down the list hears "or" between the
+ * entries, which is the whole meaning of the list.
+ */
+function JoinRow({ join }: { join: Join }) {
+  return (
+    <div className="tw:flex tw:items-center tw:gap-2">
+      <span
+        className={`tw:shrink-0 tw:text-[11px] tw:font-bold tw:tracking-wider tw:uppercase ${
+          join === "or" ? "tw:text-utility-blue-700" : "tw:text-quaternary"
+        }`}
+      >
+        {join}
+      </span>
+      <span aria-hidden className="tw:h-px tw:flex-1 tw:bg-border-secondary" />
+    </div>
+  );
+}
 
 export interface SubjectBuilderProps {
   value?: SubjectRule;
@@ -75,6 +140,7 @@ export default function SubjectBuilder({
       <PrincipalList
         addLabel="Add who"
         hint="Any one of these is enough. Two groups here mean somebody in either of them. Leave it empty to mean everyone, and narrow with the conditions below."
+        join="or"
         matches={matches}
         onChange={(next) => patch({ principals: next })}
         principals={principals}
@@ -101,6 +167,7 @@ export default function SubjectBuilder({
         <PrincipalList
           addLabel="Add requirement"
           hint="Every one of these must hold as well. Two groups here mean somebody in both of them."
+          join="and"
           matches={required}
           onChange={(next) => patch({ requiredPrincipals: next })}
           principals={principals}
@@ -111,9 +178,7 @@ export default function SubjectBuilder({
 
       {/* --------------------------------------------------- attributes */}
       <div>
-        <h3 className="tw:text-sm tw:font-semibold tw:text-primary">
-          And whose attributes say
-        </h3>
+        <SectionHeading join="and" title="And whose attributes say" />
         <p className="tw:mt-0.5 tw:text-xs tw:text-tertiary">
           All of these must hold. The keys and values come from the identity
           cache, so a condition on an attribute nobody carries is visible here
@@ -121,21 +186,23 @@ export default function SubjectBuilder({
         </p>
         <div className="tw:mt-3 tw:flex tw:flex-col tw:gap-2">
           {attributeRows.map((row, index) => (
-            <AttributeRow
-              attributes={attributes}
-              key={index}
-              onChange={(next) => {
-                const copy = [...attributeRows];
-                copy[index] = next;
-                patch({ attributes: copy });
-              }}
-              onRemove={() =>
-                patch({
-                  attributes: attributeRows.filter((_, i) => i !== index),
-                })
-              }
-              row={row}
-            />
+            <Fragment key={index}>
+              {index > 0 && <JoinRow join="and" />}
+              <AttributeRow
+                attributes={attributes}
+                onChange={(next) => {
+                  const copy = [...attributeRows];
+                  copy[index] = next;
+                  patch({ attributes: copy });
+                }}
+                onRemove={() =>
+                  patch({
+                    attributes: attributeRows.filter((_, i) => i !== index),
+                  })
+                }
+                row={row}
+              />
+            </Fragment>
           ))}
           <div>
             <Button
@@ -146,14 +213,15 @@ export default function SubjectBuilder({
                   attributes: [
                     ...attributeRows,
                     {
-                      key: attributes?.keys[0]?.key ?? 'department',
-                      operator: 'eq',
-                      value: '',
+                      key: attributes?.keys[0]?.key ?? "department",
+                      operator: "eq",
+                      value: "",
                     },
                   ],
                 })
               }
-              size="sm">
+              size="sm"
+            >
               Add attribute condition
             </Button>
           </div>
@@ -163,96 +231,98 @@ export default function SubjectBuilder({
       {/* --------------------------------------------------- expression */}
       <Field
         hint="For comparisons that need both sides at once — user.country == asset.prop('dataResidency'), user.department in asset.domains, user.email in asset.owners. This is what lets one policy cover the whole organisation instead of one per table."
-        label="And this holds (optional)">
+        label="And this holds (optional)"
+      >
         <TextField
           onChange={(next) => patch({ expression: next || undefined })}
           placeholder="user.country == asset.prop('dataResidency')"
-          value={subject.expression ?? ''}
+          value={subject.expression ?? ""}
         />
       </Field>
       <ExpressionNote expression={subject.expression} />
 
       {/* --------------------------------------------------------- time */}
       <div>
-        <h3 className="tw:text-sm tw:font-semibold tw:text-primary">
-          And only during
-        </h3>
+        <SectionHeading join="or" title="And only during" />
         <p className="tw:mt-0.5 tw:text-xs tw:text-tertiary">
-          The timezone is part of the rule and never taken from the server clock:
-          a policy meaning office hours in Bangkok must not change meaning when
-          the service moves region.
+          The timezone is part of the rule and never taken from the server
+          clock: a policy meaning office hours in Bangkok must not change
+          meaning when the service moves region.
         </p>
         <div className="tw:mt-3 tw:flex tw:flex-col tw:gap-2">
           {windows.map((window, index) => (
-            <div className="tw:flex tw:flex-wrap tw:items-center tw:gap-2" key={index}>
-              <Select
-                ariaLabel="Days"
-                className="tw:w-36"
-                onChange={(next) => {
-                  const copy = [...windows];
-                  copy[index] = {
-                    ...window,
-                    days: next ? next.split(',') : undefined,
-                  };
-                  patch({ time: { ...subject.time, windows: copy } });
-                }}
-                options={DAY_PRESETS}
-                value={window.days?.join(',') ?? ''}
-              />
-              <TextField
-                // Wide enough for the AM/PM segment the browser adds in a
-                // 12-hour locale. At w-24 that segment is clipped, so a window
-                // ending at 18:00 renders as `06:00` and reads as six in the
-                // morning -- a policy misread by twelve hours, in the one
-                // screen whose job is to say exactly when access holds.
-                ariaLabel="From"
-                className="tw:w-36"
-                onChange={(next) => {
-                  const copy = [...windows];
-                  copy[index] = { ...window, from: next };
-                  patch({ time: { ...subject.time, windows: copy } });
-                }}
-                type="time"
-                value={window.from}
-              />
-              <span className="tw:text-sm tw:text-tertiary">to</span>
-              <TextField
-                ariaLabel="To"
-                className="tw:w-36"
-                onChange={(next) => {
-                  const copy = [...windows];
-                  copy[index] = { ...window, to: next };
-                  patch({ time: { ...subject.time, windows: copy } });
-                }}
-                type="time"
-                value={window.to}
-              />
-              <TextField
-                ariaLabel="Timezone"
-                className="tw:w-48"
-                onChange={(next) => {
-                  const copy = [...windows];
-                  copy[index] = { ...window, timezone: next };
-                  patch({ time: { ...subject.time, windows: copy } });
-                }}
-                placeholder="Asia/Bangkok"
-                value={window.timezone}
-              />
-              <Button
-                aria-label="Remove this window"
-                color="tertiary"
-                iconLeading={Trash01}
-                onPress={() =>
-                  patch({
-                    time: {
-                      ...subject.time,
-                      windows: windows.filter((_, i) => i !== index),
-                    },
-                  })
-                }
-                size="sm"
-              />
-            </div>
+            <Fragment key={index}>
+              {index > 0 && <JoinRow join="or" />}
+              <div className="tw:flex tw:flex-wrap tw:items-center tw:gap-2">
+                <Select
+                  ariaLabel="Days"
+                  className="tw:w-36"
+                  onChange={(next) => {
+                    const copy = [...windows];
+                    copy[index] = {
+                      ...window,
+                      days: next ? next.split(",") : undefined,
+                    };
+                    patch({ time: { ...subject.time, windows: copy } });
+                  }}
+                  options={DAY_PRESETS}
+                  value={window.days?.join(",") ?? ""}
+                />
+                <TextField
+                  // Wide enough for the AM/PM segment the browser adds in a
+                  // 12-hour locale. At w-24 that segment is clipped, so a window
+                  // ending at 18:00 renders as `06:00` and reads as six in the
+                  // morning -- a policy misread by twelve hours, in the one
+                  // screen whose job is to say exactly when access holds.
+                  ariaLabel="From"
+                  className="tw:w-36"
+                  onChange={(next) => {
+                    const copy = [...windows];
+                    copy[index] = { ...window, from: next };
+                    patch({ time: { ...subject.time, windows: copy } });
+                  }}
+                  type="time"
+                  value={window.from}
+                />
+                <span className="tw:text-sm tw:text-tertiary">to</span>
+                <TextField
+                  ariaLabel="To"
+                  className="tw:w-36"
+                  onChange={(next) => {
+                    const copy = [...windows];
+                    copy[index] = { ...window, to: next };
+                    patch({ time: { ...subject.time, windows: copy } });
+                  }}
+                  type="time"
+                  value={window.to}
+                />
+                <TextField
+                  ariaLabel="Timezone"
+                  className="tw:w-48"
+                  onChange={(next) => {
+                    const copy = [...windows];
+                    copy[index] = { ...window, timezone: next };
+                    patch({ time: { ...subject.time, windows: copy } });
+                  }}
+                  placeholder="Asia/Bangkok"
+                  value={window.timezone}
+                />
+                <Button
+                  aria-label="Remove this window"
+                  color="tertiary"
+                  iconLeading={Trash01}
+                  onPress={() =>
+                    patch({
+                      time: {
+                        ...subject.time,
+                        windows: windows.filter((_, i) => i !== index),
+                      },
+                    })
+                  }
+                  size="sm"
+                />
+              </div>
+            </Fragment>
           ))}
           <div>
             <Button
@@ -265,16 +335,17 @@ export default function SubjectBuilder({
                     windows: [
                       ...windows,
                       {
-                        days: ['MON-FRI'],
-                        from: '08:00',
-                        to: '18:00',
-                        timezone: 'Asia/Bangkok',
+                        days: ["MON-FRI"],
+                        from: "08:00",
+                        to: "18:00",
+                        timezone: "Asia/Bangkok",
                       },
                     ],
                   },
                 })
               }
-              size="sm">
+              size="sm"
+            >
               Add time window
             </Button>
           </div>
@@ -285,7 +356,8 @@ export default function SubjectBuilder({
       <div className="tw:grid tw:gap-4 tw:sm:grid-cols-2">
         <Field
           hint="Comma separated. Only trustworthy when the connection reaches the source through us."
-          label="From these networks (optional)">
+          label="From these networks (optional)"
+        >
           <TextField
             onChange={(next) =>
               patch({
@@ -296,12 +368,13 @@ export default function SubjectBuilder({
               })
             }
             placeholder="10.0.0.0/8"
-            value={subject.context?.ipCidr?.join(', ') ?? ''}
+            value={subject.context?.ipCidr?.join(", ") ?? ""}
           />
         </Field>
         <Field
           hint="Declared by the caller and recorded in the audit log."
-          label="For these purposes (optional)">
+          label="For these purposes (optional)"
+        >
           <TextField
             onChange={(next) =>
               patch({
@@ -312,7 +385,7 @@ export default function SubjectBuilder({
               })
             }
             placeholder="fraud-analysis"
-            value={subject.context?.purpose?.join(', ') ?? ''}
+            value={subject.context?.purpose?.join(", ") ?? ""}
           />
         </Field>
       </div>
@@ -322,7 +395,7 @@ export default function SubjectBuilder({
 
 function splitList(value: string): string[] | undefined {
   const parts = value
-    .split(',')
+    .split(",")
     .map((part) => part.trim())
     .filter(Boolean);
   return parts.length ? parts : undefined;
@@ -341,6 +414,7 @@ function PrincipalList({
   title,
   hint,
   addLabel,
+  join,
   matches,
   onChange,
   roles,
@@ -349,6 +423,7 @@ function PrincipalList({
   title: string;
   hint: string;
   addLabel: string;
+  join: Join;
   matches: PrincipalMatch[];
   onChange: (next: PrincipalMatch[]) => void;
   roles: string[];
@@ -356,29 +431,32 @@ function PrincipalList({
 }) {
   return (
     <div>
-      <h3 className="tw:text-sm tw:font-semibold tw:text-primary">{title}</h3>
+      <SectionHeading join={join} title={title} />
       <p className="tw:mt-0.5 tw:text-xs tw:text-tertiary">{hint}</p>
       <div className="tw:mt-3 tw:flex tw:flex-col tw:gap-2">
         {matches.map((match, index) => (
-          <PrincipalRow
-            key={index}
-            match={match}
-            onChange={(next) => {
-              const copy = [...matches];
-              copy[index] = next;
-              onChange(copy);
-            }}
-            onRemove={() => onChange(matches.filter((_, i) => i !== index))}
-            principals={principals}
-            roles={roles}
-          />
+          <Fragment key={index}>
+            {index > 0 && <JoinRow join={join} />}
+            <PrincipalRow
+              match={match}
+              onChange={(next) => {
+                const copy = [...matches];
+                copy[index] = next;
+                onChange(copy);
+              }}
+              onRemove={() => onChange(matches.filter((_, i) => i !== index))}
+              principals={principals}
+              roles={roles}
+            />
+          </Fragment>
         ))}
         <div>
           <Button
             color="secondary"
             iconLeading={Plus}
-            onPress={() => onChange([...matches, { group: '' }])}
-            size="sm">
+            onPress={() => onChange([...matches, { group: "" }])}
+            size="sm"
+          >
             {addLabel}
           </Button>
         </div>
@@ -402,20 +480,20 @@ function PrincipalRow({
   principals?: Principal[];
 }) {
   const kind = match.assetOwner
-    ? 'assetOwner'
+    ? "assetOwner"
     : match.role !== undefined
-      ? 'role'
+      ? "role"
       : match.team !== undefined
-        ? 'team'
+        ? "team"
         : match.group !== undefined
-          ? 'group'
-          : 'user';
+          ? "group"
+          : "user";
 
   const groups = (principals ?? []).filter(
-    (principal) => principal.principalType === 'GROUP'
+    (principal) => principal.principalType === "GROUP",
   );
   const users = (principals ?? []).filter(
-    (principal) => principal.principalType === 'USER'
+    (principal) => principal.principalType === "USER",
   );
 
   return (
@@ -425,40 +503,40 @@ function PrincipalRow({
         className="tw:w-48"
         onChange={(next) => {
           switch (next) {
-            case 'assetOwner':
+            case "assetOwner":
               return onChange({ assetOwner: true });
-            case 'role':
-              return onChange({ role: roles[0] ?? '' });
-            case 'team':
-              return onChange({ team: '' });
-            case 'group':
-              return onChange({ group: '' });
+            case "role":
+              return onChange({ role: roles[0] ?? "" });
+            case "team":
+              return onChange({ team: "" });
+            case "group":
+              return onChange({ group: "" });
             default:
-              return onChange({ user: '' });
+              return onChange({ user: "" });
           }
         }}
         options={[
-          { value: 'role', label: 'in the platform role' },
-          { value: 'team', label: 'in the team' },
-          { value: 'group', label: 'in the group' },
-          { value: 'user', label: 'this person' },
-          { value: 'assetOwner', label: 'an owner of the asset' },
+          { value: "role", label: "in the platform role" },
+          { value: "team", label: "in the team" },
+          { value: "group", label: "in the group" },
+          { value: "user", label: "this person" },
+          { value: "assetOwner", label: "an owner of the asset" },
         ]}
         value={kind}
       />
 
-      {kind === 'assetOwner' ? (
+      {kind === "assetOwner" ? (
         <p className="tw:text-sm tw:text-tertiary">
-          Whoever OpenMetadata lists as an owner, followed as ownership changes —
-          no policy edit when the team does.
+          Whoever OpenMetadata lists as an owner, followed as ownership changes
+          — no policy edit when the team does.
         </p>
-      ) : kind === 'role' ? (
+      ) : kind === "role" ? (
         <Select
           ariaLabel="Role"
           className="tw:w-64"
           onChange={(next) => onChange({ role: next })}
           options={roles.map((role) => ({ value: role, label: role }))}
-          value={match.role ?? ''}
+          value={match.role ?? ""}
         />
       ) : (
         <>
@@ -468,18 +546,18 @@ function PrincipalRow({
             list={`principals-${kind}`}
             onChange={(next) =>
               onChange(
-                kind === 'team'
+                kind === "team"
                   ? { team: next }
-                  : kind === 'group'
+                  : kind === "group"
                     ? { group: next }
-                    : { user: next }
+                    : { user: next },
               )
             }
-            placeholder={kind === 'user' ? 'username or email' : 'name'}
-            value={match.team ?? match.group ?? match.user ?? ''}
+            placeholder={kind === "user" ? "username or email" : "name"}
+            value={match.team ?? match.group ?? match.user ?? ""}
           />
           <datalist id={`principals-${kind}`}>
-            {(kind === 'user' ? users : groups).map((principal) => (
+            {(kind === "user" ? users : groups).map((principal) => (
               <option key={principal.id} value={principal.username}>
                 {principal.displayName ?? principal.source}
               </option>
@@ -534,7 +612,7 @@ function AttributeRow({
         ariaLabel="Operator"
         className="tw:w-40"
         onChange={(next) =>
-          onChange({ ...row, operator: next as AttributeCondition['operator'] })
+          onChange({ ...row, operator: next as AttributeCondition["operator"] })
         }
         options={ATTRIBUTE_OPERATORS.map((operator) => ({
           value: operator.value,
@@ -543,7 +621,7 @@ function AttributeRow({
         value={row.operator}
       />
 
-      {row.operator !== 'exists' && row.operator !== 'notExists' && (
+      {row.operator !== "exists" && row.operator !== "notExists" && (
         <>
           <TextField
             ariaLabel="Value"
@@ -551,7 +629,7 @@ function AttributeRow({
             list={known ? `attribute-values-${known.key}` : undefined}
             onChange={(next) => onChange({ ...row, value: next })}
             placeholder="FINANCE"
-            value={String(row.value ?? '')}
+            value={String(row.value ?? "")}
           />
           {known && (
             <datalist id={`attribute-values-${known.key}`}>
@@ -634,25 +712,31 @@ function ExpressionNote({ expression }: { expression?: string }) {
       <Link
         className="tw:text-xs tw:text-brand-secondary tw:underline"
         target="_blank"
-        to="/docs/expressions">
+        to="/docs/expressions"
+      >
         Syntax and worked examples
       </Link>
       {verdict && !verdict.valid && (
-        <span className="tw:text-xs tw:text-error-primary">{verdict.message}</span>
+        <span className="tw:text-xs tw:text-error-primary">
+          {verdict.message}
+        </span>
       )}
       {verdict?.valid && verdict.rowDependent && (
         <span className="tw:text-xs tw:text-warning-primary">
-          This reads row data, which a subject rule cannot see — a subscription is decided
-          before there is a row. It belongs in a data policy row filter.
+          This reads row data, which a subject rule cannot see — a subscription
+          is decided before there is a row. It belongs in a data policy row
+          filter.
         </span>
       )}
-      {verdict?.valid && !verdict.rowDependent && verdict.unknownAttributes.length > 0 && (
-        <span className="tw:text-xs tw:text-warning-primary">
-          Nobody in the directory carries{' '}
-          {verdict.unknownAttributes.map((name) => `user.${name}`).join(', ')}. This will save,
-          and then grant nothing until somebody does.
-        </span>
-      )}
+      {verdict?.valid &&
+        !verdict.rowDependent &&
+        verdict.unknownAttributes.length > 0 && (
+          <span className="tw:text-xs tw:text-warning-primary">
+            Nobody in the directory carries{" "}
+            {verdict.unknownAttributes.map((name) => `user.${name}`).join(", ")}
+            . This will save, and then grant nothing until somebody does.
+          </span>
+        )}
     </div>
   );
 }
