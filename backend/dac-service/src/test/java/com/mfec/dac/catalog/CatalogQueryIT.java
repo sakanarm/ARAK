@@ -180,11 +180,36 @@ class CatalogQueryIT {
   }
 
   private CatalogQuery.AssetPage page(CatalogQuery.FacetFilter... filters) {
-    return catalog.assets(null, "TABLE", List.of(filters), null, 50, 0);
+    return catalog.assets(null, "TABLE", List.of(filters), null, null, 50, 0);
   }
 
   private static CatalogQuery.FacetFilter facet(String raw) {
     return CatalogQuery.FacetFilter.parse(raw).orElseThrow();
+  }
+
+  private UUID newSource(String name) {
+    return jdbi.withHandle(
+        handle ->
+            handle
+                .createQuery(
+                    """
+                    INSERT INTO data_source (name, engine, host, port, credential_ref)
+                    VALUES (:name, 'POSTGRES', 'localhost', 5432, 'env:DEMO_PG')
+                    RETURNING id
+                    """)
+                .bind("name", name)
+                .mapTo(UUID.class)
+                .one());
+  }
+
+  private UUID sourceId(String name) {
+    return jdbi.withHandle(
+        handle ->
+            handle
+                .createQuery("SELECT id FROM data_source WHERE name = :name")
+                .bind("name", name)
+                .mapTo(UUID.class)
+                .one());
   }
 
   // ------------------------------------------------------------------- list
@@ -192,7 +217,7 @@ class CatalogQueryIT {
   @Test
   @DisplayName("list every current asset, newest crawl only")
   void listsTheCache() {
-    CatalogQuery.AssetPage all = catalog.assets(null, null, List.of(), null, 50, 0);
+    CatalogQuery.AssetPage all = catalog.assets(null, null, List.of(), null, null, 50, 0);
 
     assertThat(all.total()).isEqualTo(5);
     assertThat(all.items()).extracting(CatalogQuery.AssetSummary::fqn)
@@ -227,10 +252,92 @@ class CatalogQueryIT {
   @Test
   @DisplayName("search on name and on FQN, not only on one of them")
   void searches() {
-    assertThat(catalog.assets("custom", null, List.of(), null, 50, 0).items())
+    assertThat(catalog.assets("custom", null, List.of(), null, null, 50, 0).items())
         .extracting(CatalogQuery.AssetSummary::fqn)
         .containsExactly(CUSTOMER);
-    assertThat(catalog.assets("SalesDB.dbo", null, List.of(), null, 50, 0).total()).isEqualTo(3);
+    assertThat(catalog.assets("SalesDB.dbo", null, List.of(), null, null, 50, 0).total())
+        .isEqualTo(3);
+  }
+
+  @Test
+  @DisplayName("offer only what a registered source can actually serve")
+  void narrowsToOneSource() {
+    // The query console picks a source and then asks what it holds. Before
+    // this filter it was asking what the catalog holds, which includes every
+    // database OpenMetadata has ever ingested -- including the ones ARAK has
+    // no connection to. Clicking one of those can only ever end in a refusal,
+    // so the tree was offering tables it could not deliver.
+    //
+    // Two shapes have to survive the filter, because two importers write
+    // assets: the crawl, which leaves the asset itself unattached and records
+    // the physical object in asset_fqn_map, and the JDBC importer, which sets
+    // data_source_id on the asset and has no service FQN at all.
+    UUID crawled = sourceId("prod-mssql");
+    UUID discovered = newSource("demo-pg");
+    jdbi.useHandle(
+        handle ->
+            handle
+                .createUpdate(
+                    """
+                    INSERT INTO asset (data_source_id, fqn, asset_type, name, provenance,
+                                       valid_from, is_current, last_seen_at)
+                    VALUES (:source, 'demo-pg.salesdb.sales.orders', 'TABLE', 'orders',
+                            'discovered', now(), true, now())
+                    """)
+                .bind("source", discovered)
+                .execute());
+
+    CatalogQuery.AssetPage page =
+        catalog.assets(null, null, List.of(), null, crawled, 50, 0);
+
+    // Everything the crawl mapped, and nothing belonging to the other source.
+    assertThat(page.items()).extracting(CatalogQuery.AssetSummary::fqn)
+        .containsExactly(SERVICE, DATABASE, SCHEMA, CUSTOMER, ORDER);
+
+    // And the mirror image: the JDBC importer's asset is reachable through
+    // the source that owns it, without any mapping row existing yet.
+    assertThat(catalog.assets(null, null, List.of(), null, discovered, 50, 0).items())
+        .extracting(CatalogQuery.AssetSummary::fqn)
+        .containsExactly("demo-pg.salesdb.sales.orders");
+  }
+
+  @Test
+  @DisplayName("show nothing for a source whose catalog has never been read")
+  void narrowsToNothingWhenTheSourceHasNoMapping() {
+    // Not a failure and not an empty catalog: this source has simply never
+    // been introspected. Showing another source's tables here would be worse
+    // than showing none, because every one of them would refuse.
+    assertThat(catalog.assets(null, null, List.of(), null, newSource("unread-pg"), 50, 0).items())
+        .isEmpty();
+  }
+
+  @Test
+  @DisplayName("hide a service nobody registered a source for")
+  void hidesServicesWithNoRegisteredSource() {
+    // The case that sent the user here: OpenMetadata had ingested a database
+    // ARAK has never been pointed at, so the console listed its tables and
+    // every click on one came back "not a governed asset on this source".
+    // Metadata about a database is not a connection to it.
+    crawl(
+        Instant.now().plusSeconds(60),
+        List.of(
+            container(SERVICE, "SERVICE", null, "prod-mssql"),
+            container(DATABASE, "DATABASE", SERVICE, "SalesDB"),
+            container(SCHEMA, "SCHEMA", DATABASE, "dbo"),
+            customer(),
+            order(),
+            container("dtp-iprm", "SERVICE", null, "dtp-iprm"),
+            container("dtp-iprm.iprm", "DATABASE", "dtp-iprm", "iprm"),
+            container("dtp-iprm.iprm.public", "SCHEMA", "dtp-iprm.iprm", "public")));
+
+    // Visible in the catalog, which is right -- a policy author may still
+    // want to see it, and the unfiltered list is what the Catalog page uses.
+    assertThat(catalog.assets(null, null, List.of(), null, null, 50, 0).total()).isEqualTo(8);
+
+    // Invisible to the one thing that promises to run a query.
+    assertThat(catalog.assets(null, null, List.of(), null, sourceId("prod-mssql"), 50, 0).items())
+        .extracting(CatalogQuery.AssetSummary::fqn)
+        .containsExactly(SERVICE, DATABASE, SCHEMA, CUSTOMER, ORDER);
   }
 
   @Test
@@ -268,11 +375,11 @@ class CatalogQueryIT {
   @Test
   @DisplayName("filter by owner, direct or inherited")
   void filtersByOwner() {
-    assertThat(catalog.assets(null, null, List.of(), "alice", 50, 0).items())
+    assertThat(catalog.assets(null, null, List.of(), "alice", null, 50, 0).items())
         .extracting(CatalogQuery.AssetSummary::fqn)
         .containsExactly(CUSTOMER);
-    assertThat(catalog.assets(null, null, List.of(), "Finance", 50, 0).items()).hasSize(1);
-    assertThat(catalog.assets(null, null, List.of(), "nobody", 50, 0).items()).isEmpty();
+    assertThat(catalog.assets(null, null, List.of(), "Finance", null, 50, 0).items()).hasSize(1);
+    assertThat(catalog.assets(null, null, List.of(), "nobody", null, 50, 0).items()).isEmpty();
   }
 
   @Test
@@ -295,17 +402,17 @@ class CatalogQueryIT {
   @Test
   @DisplayName("page without losing the total")
   void pages() {
-    CatalogQuery.AssetPage first = catalog.assets(null, null, List.of(), null, 2, 0);
+    CatalogQuery.AssetPage first = catalog.assets(null, null, List.of(), null, null, 2, 0);
 
     assertThat(first.items()).hasSize(2);
     assertThat(first.total()).isEqualTo(5);
-    assertThat(catalog.assets(null, null, List.of(), null, 2, 4).items()).hasSize(1);
+    assertThat(catalog.assets(null, null, List.of(), null, null, 2, 4).items()).hasSize(1);
   }
 
   @Test
   @DisplayName("cap an unreasonable page size instead of trying to serve it")
   void capsThePageSize() {
-    assertThat(catalog.assets(null, null, List.of(), null, 100_000, 0).limit())
+    assertThat(catalog.assets(null, null, List.of(), null, null, 100_000, 0).limit())
         .isEqualTo(CatalogQuery.MAX_LIMIT);
   }
 

@@ -220,6 +220,8 @@ export interface AssetQuery {
   /** Each entry is `<facetType>:<facetFqn>`; they are AND-ed by the backend. */
   facets?: string[];
   owner?: string;
+  /** Narrows to what one registered source can serve; its UUID, not its name. */
+  sourceId?: string;
   limit?: number;
   offset?: number;
 }
@@ -232,6 +234,7 @@ export async function fetchAssets(query: AssetQuery): Promise<AssetPage> {
   if (query.search) params.set('q', query.search);
   if (query.assetType) params.set('type', query.assetType);
   if (query.owner) params.set('owner', query.owner);
+  if (query.sourceId) params.set('sourceId', query.sourceId);
   for (const facet of query.facets ?? []) params.append('facet', facet);
   params.set('limit', String(query.limit ?? 50));
   params.set('offset', String(query.offset ?? 0));

@@ -112,6 +112,20 @@ public class AssetStore implements AssetSink {
    * read. They normally agree, and where they do not it is because assets were
    * counted but never handed over — which leaves nothing stamped, so sweeping
    * on the strength of the count would retire the entire cache.
+   *
+   * <p>Every statement here is scoped to {@code provenance = 'openmetadata'}.
+   * The catalog holds assets from three places — this crawl, the JDBC source
+   * importer ({@code discovered}) and hand-made ones ({@code local}) — and an
+   * unscoped sweep retires the other two, because OpenMetadata was never going
+   * to mention them. That is not a stale cache entry being cleaned up, it is
+   * one importer deleting another's work: the assets stop being current, their
+   * {@code asset_fqn_map} rows are deleted outright, and every policy bound to
+   * them goes quiet while the proxy refuses the table for not being governed.
+   * FR-1.7 says a sync must not overwrite what is local; it holds for the asset
+   * as much as for the tag on it.
+   *
+   * <p>The crawl walks every database service OpenMetadata has, so within this
+   * provenance an asset that went unstamped really is gone from the catalog.
    */
   @Override
   public void finished(AssetCrawler.Stats stats) {
@@ -131,7 +145,10 @@ public class AssetStore implements AssetSink {
                   """
                   DELETE FROM asset_facet WHERE column_id IN (
                       SELECT c.id FROM asset_column c
-                      WHERE c.is_current AND (c.last_seen_at IS NULL OR c.last_seen_at < :seen))
+                        JOIN asset a ON a.id = c.asset_id
+                       WHERE a.provenance = 'openmetadata'
+                         AND c.is_current
+                         AND (c.last_seen_at IS NULL OR c.last_seen_at < :seen))
                   """)
               .bind("seen", seenAt)
               .execute();
@@ -140,7 +157,8 @@ public class AssetStore implements AssetSink {
                   """
                   DELETE FROM asset_facet WHERE asset_id IN (
                       SELECT a.id FROM asset a
-                      WHERE a.is_current AND (a.last_seen_at IS NULL OR a.last_seen_at < :seen))
+                      WHERE a.provenance = 'openmetadata' AND a.is_current
+                        AND (a.last_seen_at IS NULL OR a.last_seen_at < :seen))
                   """)
               .bind("seen", seenAt)
               .execute();
@@ -149,7 +167,8 @@ public class AssetStore implements AssetSink {
                   """
                   DELETE FROM asset_owner WHERE target_fqn IN (
                       SELECT a.fqn FROM asset a
-                      WHERE a.is_current AND (a.last_seen_at IS NULL OR a.last_seen_at < :seen))
+                      WHERE a.provenance = 'openmetadata' AND a.is_current
+                        AND (a.last_seen_at IS NULL OR a.last_seen_at < :seen))
                   """)
               .bind("seen", seenAt)
               .execute();
@@ -158,7 +177,8 @@ public class AssetStore implements AssetSink {
                   """
                   DELETE FROM asset_fqn_map WHERE om_fqn IN (
                       SELECT a.fqn FROM asset a
-                      WHERE a.is_current AND (a.last_seen_at IS NULL OR a.last_seen_at < :seen))
+                      WHERE a.provenance = 'openmetadata' AND a.is_current
+                        AND (a.last_seen_at IS NULL OR a.last_seen_at < :seen))
                   """)
               .bind("seen", seenAt)
               .execute();
@@ -167,6 +187,8 @@ public class AssetStore implements AssetSink {
                   """
                   UPDATE asset_column SET is_current = false, valid_to = :seen
                   WHERE is_current AND (last_seen_at IS NULL OR last_seen_at < :seen)
+                    AND asset_id IN (
+                        SELECT id FROM asset WHERE provenance = 'openmetadata')
                   """)
               .bind("seen", seenAt)
               .execute();
@@ -175,7 +197,8 @@ public class AssetStore implements AssetSink {
                   .createUpdate(
                       """
                       UPDATE asset SET is_current = false, valid_to = :seen
-                      WHERE is_current AND (last_seen_at IS NULL OR last_seen_at < :seen)
+                      WHERE provenance = 'openmetadata' AND is_current
+                        AND (last_seen_at IS NULL OR last_seen_at < :seen)
                       """)
                   .bind("seen", seenAt)
                   .execute();

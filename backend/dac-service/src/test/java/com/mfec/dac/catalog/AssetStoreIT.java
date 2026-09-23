@@ -44,6 +44,13 @@ class AssetStoreIT {
   private static final String SCHEMA = "prod-mssql.SalesDB.dbo";
   private static final String TABLE = "prod-mssql.SalesDB.dbo.customer";
 
+  /** A table the JDBC importer found, on a source OpenMetadata does not know. */
+  private static final String DISCOVERED_FQN = "demo-pg.salesdb.sales.orders";
+  private static final UUID DISCOVERED_SOURCE =
+      UUID.fromString("11111111-1111-4111-8111-111111111111");
+  private static final UUID DISCOVERED_ASSET =
+      UUID.fromString("22222222-2222-4222-8222-222222222222");
+
   private static Jdbi jdbi;
   private final ObjectMapper json = new ObjectMapper();
 
@@ -286,6 +293,89 @@ class AssetStoreIT {
     assertThat(count("SELECT count(*)::int FROM asset_facet")).isZero();
     assertThat(count("SELECT count(*)::int FROM asset_owner")).isZero();
     assertThat(count("SELECT count(*)::int FROM asset_fqn_map")).isZero();
+  }
+
+  @Test
+  @DisplayName("leave the JDBC importer's assets alone \u2014 the crawl never spoke for them")
+  void sweepSparesOtherProvenances() {
+    // A table the source importer discovered over JDBC (FR-1.6), on a database
+    // OpenMetadata has never ingested. Written by hand because only the
+    // importer writes this provenance, and what is under test is the sweep.
+    Instant earlier = Instant.now().minus(2, ChronoUnit.HOURS);
+    jdbi.useHandle(
+        handle -> {
+          handle
+              .createUpdate(
+                  """
+                  INSERT INTO data_source (id, name, engine, host, port, default_database,
+                                           credential_ref)
+                  VALUES (CAST(:id AS uuid), 'demo-pg', 'POSTGRES', 'localhost', 5432, 'salesdb',
+                          'env:DEMO_PG')
+                  """)
+              .bind("id", DISCOVERED_SOURCE)
+              .execute();
+          handle
+              .createUpdate(
+                  """
+                  INSERT INTO asset (id, data_source_id, fqn, asset_type, parent_fqn, name,
+                                     provenance, valid_from, is_current, last_seen_at)
+                  VALUES (CAST(:id AS uuid), CAST(:source AS uuid), :fqn, 'TABLE', NULL, 'orders',
+                          'discovered', :at, true, :at)
+                  """)
+              .bind("id", DISCOVERED_ASSET)
+              .bind("source", DISCOVERED_SOURCE)
+              .bind("fqn", DISCOVERED_FQN)
+              .bind("at", earlier)
+              .execute();
+          handle
+              .createUpdate(
+                  """
+                  INSERT INTO asset_column (asset_id, fqn, name, ordinal, data_type, nullable,
+                                            valid_from, is_current, last_seen_at)
+                  VALUES (CAST(:id AS uuid), :fqn, 'total', 0, 'NUMERIC', false, :at, true, :at)
+                  """)
+              .bind("id", DISCOVERED_ASSET)
+              .bind("fqn", DISCOVERED_FQN + ".total")
+              .bind("at", earlier)
+              .execute();
+          handle
+              .createUpdate(
+                  """
+                  INSERT INTO asset_fqn_map (om_fqn, data_source_id, database_name, schema_name,
+                                             object_name, verification_status)
+                  VALUES (:fqn, CAST(:source AS uuid), 'salesdb', 'sales', 'orders', 'MATCHED')
+                  """)
+              .bind("fqn", DISCOVERED_FQN)
+              .bind("source", DISCOVERED_SOURCE)
+              .execute();
+        });
+
+    // A full, healthy crawl of OpenMetadata, which of course does not mention
+    // a table OpenMetadata has never seen.
+    crawl(Instant.now().minus(1, ChronoUnit.HOURS), tree("Customers"));
+    AssetStore second = crawl(Instant.now(), tree("Customers"));
+
+    // Nothing of OpenMetadata's own went missing either, so the sweep had
+    // nothing at all to do.
+    assertThat(second.retired()).isZero();
+
+    // The point of the test. An unscoped sweep retires this asset, deletes the
+    // physical mapping outright, and every policy bound to the table falls
+    // silent: the query proxy then refuses it for not being a governed asset,
+    // which reads like a policy decision and is really a deleted cache row.
+    assertThat(
+            count(
+                "SELECT count(*)::int FROM asset WHERE provenance = 'discovered' AND is_current"))
+        .isEqualTo(1);
+    assertThat(
+            count(
+                """
+                SELECT count(*)::int FROM asset_column c
+                  JOIN asset a ON a.id = c.asset_id
+                 WHERE a.provenance = 'discovered' AND c.is_current
+                """))
+        .isEqualTo(1);
+    assertThat(count("SELECT count(*)::int FROM asset_fqn_map")).isEqualTo(2);
   }
 
   @Test

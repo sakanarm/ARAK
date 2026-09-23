@@ -18,6 +18,11 @@ import { TextField } from '../policies/controls';
  * read, which means it shows what policy can be written against. A table the
  * crawl has not seen yet is a table the engine has no decision for, so leaving
  * it out of this tree is honest: clicking it would only produce a refusal.
+ *
+ * <p>Narrowed to the source the query will run on, by the same physical
+ * mapping the proxy resolves against. The catalog holds tables from databases
+ * ARAK has only read the metadata of and has no connection to; those cannot be
+ * queried from here whatever is typed, so offering them is a trap.
  */
 
 interface Node {
@@ -54,8 +59,8 @@ function buildTree(assets: AssetSummary[]): Node {
 }
 
 export interface SchemaExplorerProps {
-  /** Narrows the tree to one registered source, by its OM service FQN. */
-  serviceFqn?: string | null;
+  /** The registered source the query runs against, by id. */
+  sourceId?: string | null;
   /** Inserted at the caret when a table is clicked. */
   onInsert: (text: string) => void;
   /** How wide the column is, in pixels. The reader drags this. */
@@ -63,24 +68,24 @@ export interface SchemaExplorerProps {
 }
 
 export default function SchemaExplorer({
-  serviceFqn,
+  sourceId,
   onInsert,
   width,
 }: SchemaExplorerProps) {
   const [search, setSearch] = useState('');
 
   const { data, isLoading } = useQuery({
-    queryKey: ['query-explorer', search],
-    queryFn: () => fetchAssets({ search, limit: 500 }),
+    queryKey: ['query-explorer', search, sourceId ?? ''],
+    // Filtered in the query rather than after it: the page is capped at 500
+    // rows, and filtering the page would show an arbitrary slice of one source
+    // whenever the catalog holds more than that.
+    queryFn: () =>
+      fetchAssets({ search, sourceId: sourceId ?? undefined, limit: 500 }),
+    enabled: Boolean(sourceId),
     staleTime: 60_000,
   });
 
-  const tree = useMemo(() => {
-    const items = (data?.items ?? []).filter(
-      (asset) => !serviceFqn || asset.fqn.startsWith(`${serviceFqn}.`)
-    );
-    return buildTree(items);
-  }, [data, serviceFqn]);
+  const tree = useMemo(() => buildTree(data?.items ?? []), [data]);
 
   const roots = [...tree.children.values()];
 
@@ -109,10 +114,17 @@ export default function SchemaExplorer({
         {isLoading && (
           <p className="tw:px-2 tw:py-1 tw:text-xs tw:text-tertiary">Loading…</p>
         )}
-        {!isLoading && roots.length === 0 && (
+        {!sourceId && (
           <p className="tw:px-2 tw:py-1 tw:text-xs tw:text-tertiary">
-            Nothing in the catalog matches. Only crawled assets appear here,
-            because only those have a policy decision behind them.
+            Pick a source above to see what it holds.
+          </p>
+        )}
+        {sourceId && !isLoading && roots.length === 0 && (
+          <p className="tw:px-2 tw:py-1 tw:text-xs tw:text-tertiary">
+            {search.trim()
+              ? 'Nothing on this source matches.'
+              : 'ARAK has not read this source\u2019s catalog yet. Introspect it from ' +
+                'Settings \u203a Sources and its tables appear here.'}
           </p>
         )}
         {roots.map((node) => (

@@ -34,6 +34,7 @@ Phase 1 รองรับ SQL Server + PostgreSQL · identity หลักค�
 | **M7 Query API (5.2a)** | 🚧 ~80% — **`POST /v1/query` + Query console ใช้งานได้จริงรอบนี้** · rewrite → RLS + mask + hidden column → execute → audit ครบ · พิสูจน์กับ Postgres จริงแล้วทั้ง allow / RLS / mask / refuse · เหลือ direct-access detector (FR-6.3.1) และ result cache |
 | **M7b Cross-mode consistency** | ⬜ — ต้องมี M5/M6 ก่อน |
 | **M8 Audit + Ops** | 🚧 ~35% — **FR-7 ปิดครบวงรอบนี้ (grant ตรงระดับ table + auto-revoke + audit trail + หน้าจอ) ดูข้อ AD.1** · `audit_query` / `audit_decision` / `audit_policy_change` เขียนจริงแล้วและอ่านได้ · **`evaluation_ms` มีค่าแล้ว (ข้อ AE.5)** · **ยังไม่มี audit ของการ configure** (เปลี่ยน data source / OM settings ไม่ถูกบันทึกที่ไหนเลย) · ยังไม่มี compliance report / drift detector / auto-revoke / SIEM export |
+| **M9 Access Request Management** | ⬜ **Phase 2 — ยังไม่เริ่ม** · ขอสิทธิ์เองจาก catalog (duration + เหตุผล + purpose) · routing หา approver จาก `asset_owner` · approval chain หลายขั้น · access review / recertification ทุก 90 วัน · break-glass (TTL สั้น + alert) · inbox ของ approver + notification — **ทางเตรียมไว้แล้วตั้งแต่ Phase 1**: `grant.source` = `manual` \| `request` + `request_id` (V11) · `requiresApproval` / `approvers` / `validUntil` ใน policy model · auto-revoke + audit · `asset_owner` พร้อม route → **ต่อยอดได้เลยไม่ต้อง migrate** |
 
 **ที่รันอยู่ตอนนี้**
 | | |
@@ -56,7 +57,176 @@ Phase 1 รองรับ SQL Server + PostgreSQL · identity หลักค�
 
 ---
 
-## รอบนี้ — **M5 slice 1: `ViewCompiler` เสร็จ** · **เคอร์เซอร์เป็นรูปมือทั้งแอป (กวาดทีเดียว 20 ปุ่ม)** · และ **Analyst A/B/C ล็อกอินได้จริงแล้ว**
+## รอบนี้ — 🐛 **บั๊กจริงที่ลบข้อมูลทดสอบทิ้งทั้งชุด (`demo-pg` หาย + query ถูกปฏิเสธ)** · **Query Explorer เห็นเฉพาะ source ที่ต่อไว้จริง** · และ **Roadmap เพิ่ม M9 Access Request Management**
+
+### AL.1 🐛 บั๊กที่ทำให้ `demo-pg` หายและทุก query ขึ้น "is not a governed asset"
+
+ผู้ใช้รายงานสองเรื่องในนาทีเดียวกัน — query ขึ้น
+
+```
+Refused
+public.assignments is not a governed asset on this source, so no policy could be applied to it
+```
+
+และ "`demo-pg` ที่เอาไว้ทดสอบหายไปไหนหมดเลยอะ"
+
+**มันคือบั๊กตัวเดียวกัน** และเป็นบั๊กความถูกต้องจริง ไม่ใช่ config หาย
+
+`AssetStore.finished(stats)` คือ retirement sweep ที่ปิด asset ที่ crawl รอบนี้ไม่ได้แตะ โค้ดเดิมคิดเรื่อง **crawl ที่ไม่สมบูรณ์** มาอย่างดี (ถ้า crawl เขียนอะไรไม่ได้เลย จะไม่กวาด) แต่**ไม่ได้คิดเรื่องขอบเขตเลย** — ทั้ง 6 statement ใช้เงื่อนไขเดียว:
+
+```sql
+WHERE is_current AND (last_seen_at IS NULL OR last_seen_at < :seen)
+```
+
+catalog ของเราเก็บ asset จาก **3 ที่**: `openmetadata` (crawl), `discovered` (`SourceCatalogImporter` ที่ introspect JDBC เอง), `local` (ทำมือ)
+→ crawl OpenMetadata หนึ่งรอบจึง **ปิด asset ของอีกสองพวกทิ้งหมด** เพราะ OpenMetadata ไม่มีทางเอ่ยถึงมันอยู่แล้ว และที่หนักกว่าคือ **ลบแถว `asset_fqn_map` ทิ้งตรงๆ**
+
+ผลที่ตามมาเป็นลูกโซ่:
+
+| | |
+|---|---|
+| `asset_fqn_map` | เหลือ **0 แถว** |
+| `demo-pg.salesdb.sales.customer` | `is_current = f`, `valid_to = 2026-09-23 13:19:44+00` (ระหว่าง session นี้เอง) |
+| `provenance` | `discovered/f/4` · `openmetadata/t/36` |
+| policy 14 ตัว | ผูกกับ asset ที่ไม่ current แล้ว → เงียบหมด |
+| `QueryService` | resolve ไม่เจอ → คืน `null` |
+| `QueryRewriter` | โยน `RefusedException` "is not a governed asset on this source" |
+
+**ข้อความ error จึงอ่านเหมือนเป็นคำตัดสินของ policy แต่จริงๆ คือ cache row ที่ถูกลบไปแล้ว** — นี่คือส่วนที่อันตรายที่สุดของบั๊กตัวนี้
+
+**FR-1.7 เขียนไว้ว่า sync ห้ามทับของ local** ข้อนี้ต้องใช้กับตัว asset เองด้วย ไม่ใช่แค่ tag บนมัน และ `deploy/seed/app/02-demo-facets.sql` ก็เขียนคอมเมนต์ไว้เองว่า *"the next OpenMetadata sync must leave them alone rather than 'correct' them out of existence"* ซึ่งคือสิ่งที่ sweep ละเมิดพอดี
+
+**แก้:** ทั้ง 6 statement เติม scope `provenance = 'openmetadata'`
+
+```sql
+DELETE FROM asset_facet WHERE column_id IN (
+    SELECT c.id FROM asset_column c
+      JOIN asset a ON a.id = c.asset_id
+     WHERE a.provenance = 'openmetadata'
+       AND c.is_current
+       AND (c.last_seen_at IS NULL OR c.last_seen_at < :seen))
+```
+
+```sql
+UPDATE asset SET is_current = false, valid_to = :seen
+WHERE provenance = 'openmetadata' AND is_current
+  AND (last_seen_at IS NULL OR last_seen_at < :seen)
+```
+
+(รูปเดียวกันกับ `asset_owner`, `asset_fqn_map`, `asset_column`)
+
+**พิสูจน์ว่าเทสต์จับได้จริง ไม่ใช่เขียนตามโค้ด** — `AssetStoreIT.sweepSparesOtherProvenances()` มือเขียน `data_source` + asset `provenance='discovered'` + column + `asset_fqn_map` แล้วรัน OM crawl เต็มๆ สองรอบ จากนั้น:
+
+```bash
+git stash push backend/.../AssetStore.java   # เอาเฉพาะตัวแก้ออก
+# → Tests run: 1, Failures: 1 · expected: 1 but was: 0 · AssetStoreIT.java:369
+git stash pop
+# → Tests run: 7, Failures: 0
+```
+
+**กู้ข้อมูลคืนแล้ว** — build jar ใหม่ → restart → `POST /v1/sources/{id}/introspect` (1 table, 9 columns, `asset_fqn_map` กลับมาเป็น `MATCHED`) → รัน `02-demo-facets.sql` ซ้ำ (10 facets กลับมา)
+พิสูจน์ปลายทาง: query `SELECT * FROM sales.customer` ในนาม `analyst_a` ตอนนี้ได้
+
+```
+Access to demo-pg.salesdb.sales.customer is denied.
+finance-subscription did not apply: outside the policy's permitted time window
+```
+
+ซึ่งคือ **คำตัดสินของ policy จริง** (หน้าต่าง 08:00–18:00 Asia/Bangkok, ตอนนั้น 20:40) แปลว่า resolve + evaluate กลับมาทำงานครบวงแล้ว
+
+---
+
+### AL.2 Query Explorer — เห็นเฉพาะ source ที่ ARAK ต่อไว้จริง
+
+ผู้ใช้สั่ง: *"ใน Query Explorer ถ้า Arak ไม่ได้ต่อ Source นั้นไว้ ก็ไม่ต้องขึ้นให้เห็นสิ"*
+
+ของเดิมกรองด้วย **OM service FQN** (`asset.fqn.startsWith(serviceFqn + '.')`) ซึ่งพังสองชั้น:
+1. กรองที่ **หน้าจอ** หลังจากดึงมาแล้ว 500 แถว → ถ้า catalog ใหญ่กว่านั้น จะได้ slice มั่วๆ ของ source เดียว
+2. `demo-pg` ถูก discover ผ่าน JDBC ไม่มี `om_service_fqn` เลย → `serviceFqn` เป็นค่าว่าง → **ตัวกรองไม่ทำงานเลย** แล้วเสนอ table ของ `dtp-iprm` ครบ 36 ตัว ทั้งที่ ARAK ไม่มี connection ไปหามัน กดเมื่อไหร่ก็ได้ refusal เมื่อนั้น
+
+**เกณฑ์ที่ถูกคือแถวเดียวกับที่ query proxy ใช้ resolve** คือ `asset_fqn_map` → สิ่งที่ list เสนอ กับสิ่งที่ query เอื้อมถึง จะเป็นเซตเดียวกัน**โดยโครงสร้าง** ไม่ใช่โดยข้อตกลง
+
+```java
+ AND (a.data_source_id = :sourceId
+      OR EXISTS (SELECT 1 FROM asset_fqn_map m
+                 WHERE m.data_source_id = :sourceId
+                   AND m.verification_status <> 'ORPHANED'
+                   AND (m.om_fqn = a.fqn
+                        OR m.om_fqn LIKE a.fqn || '.%')))
+```
+
+สองแขนเพราะมีสอง importer: crawl เขียน `asset_fqn_map` (และตั้ง `data_source_id` ให้เมื่อ `om_service_fqn` ตรงกับ source ที่ register ไว้) ส่วน JDBC importer ตั้ง `data_source_id` บน asset ตรงๆ โดยไม่มี service FQN เลย
+แขนที่สอง (`LIKE a.fqn || '.%'`) คือสิ่งที่ทำให้แถว service / database / schema ยังอยู่ในต้นไม้ — มันไม่มี mapping ของตัวเอง และต้นไม้ที่มีแต่ใบไม่มีกิ่งก็ไม่ใช่ต้นไม้
+
+| ชั้น | ทำอะไร |
+|---|---|
+| `CatalogResource` | `@QueryParam("sourceId")` → parse เป็น UUID · **malformed = 400 ไม่ใช่เงียบ** (ต่างจาก facet ที่ ignore) เพราะค่านี้มาจาก picker ไม่ได้มาจากคนพิมพ์ และการ "ขยายรายการกลับไปเป็นทุก database" คือความล้มเหลวที่ตัวกรองนี้มีไว้กัน |
+| `CatalogQuery.assets(...)` | รับ `UUID sourceId` เพิ่ม |
+| `client.ts` | `AssetQuery.sourceId` + `params.set('sourceId', ...)` |
+| `SchemaExplorer` | รับ `sourceId` แทน `serviceFqn` · ใส่ใน `queryKey` · `enabled: Boolean(sourceId)` · **ตัดการกรองฝั่ง client ทิ้ง** |
+| `QueryPage:204` | ส่ง `sourceId={effectiveSource || null}` |
+
+**empty state พูดความจริงแยกเป็น 3 แบบ** — ยังไม่เลือก source / เลือกแล้วแต่ค้นไม่เจอ / **เลือกแล้วแต่ ARAK ยังไม่เคยอ่าน catalog ของ source นี้ → บอกให้ไป introspect** (ของเดิมเขียนรวมว่า "Nothing in the catalog matches" ซึ่งโยนความผิดให้ผู้ใช้ทั้งที่เป็นงานที่ระบบยังไม่ได้ทำ)
+
+**เทสต์ 3 ตัวใหม่ใน `CatalogQueryIT` (18/18 เขียว):**
+- `narrowsToOneSource` — ครอบทั้งสองแขน: asset ที่ crawl map ไว้ กับ asset ที่ JDBC importer เป็นเจ้าของ และต้องไม่ปนกัน
+- `narrowsToNothingWhenTheSourceHasNoMapping` — source ที่ยังไม่เคย introspect ต้องว่าง **ไม่ใช่โชว์ของ source อื่น**
+- `hidesServicesWithNoRegisteredSource` — **เคสที่ผู้ใช้เจอจริง**: `dtp-iprm` ยังอยู่ในหน้า Catalog (ถูกแล้ว — policy author ควรเห็น) แต่ต้องหายจากตัวที่สัญญาว่าจะรัน query ให้
+
+**พิสูจน์กับระบบจริง:** catalog มี **40** asset · กรองด้วย `sourceId` ของ `demo-pg` เหลือ **4** (`demo-pg` → `salesdb` → `sales` → `customer`) — `dtp-iprm` หายจาก explorer หมดแล้ว
+
+> ⚠️ **หมายเหตุที่จงใจไม่ทำ:** ไม่ได้ซ่อน asset ที่ mapping เป็น `ORPHANED` ออกจาก list ทั้งที่ proxy จะ refuse มัน — `ORPHANED` แปลว่า "เจอ drift" ไม่ใช่ "ไม่ได้ต่ออยู่" การซ่อน table เงียบๆ ตอน drift แย่กว่าการโชว์แล้วให้ refusal อธิบายตัวเอง (แขน mapping ยังเช็ค `<> 'ORPHANED'` อยู่ เพราะ mapping ที่ orphan ไม่ใช่หลักฐานว่าเอื้อมถึง แต่แขน `data_source_id` เป็นหลักฐานตรงว่าสังกัด)
+
+---
+
+### AL.3 Roadmap — เพิ่ม **M9 Access Request Management** ให้เห็นชัด
+
+ผู้ใช้ถามว่า *"ขาด Request Access Workflow หรือเปล่านะ / Access Request Management / ใส่ไปใน Roadmap ด้วยนะ"*
+
+**ไม่ได้ขาดโดยอุบัติเหตุ** — แผนที่อนุมัติไว้ (FR-7) เลื่อนไป Phase 2 ตั้งแต่ต้น และ **Phase 1 วาง schema รอไว้แล้วจริง** เพื่อไม่ต้อง migrate ทีหลัง:
+
+| ที่เตรียมไว้แล้ว | อยู่ตรงไหน |
+|---|---|
+| `grant.source` = `manual` \| `request` + `request_id` (nullable) | `V11__access_grant.sql` |
+| `requiresApproval` · `approvers` · `validUntil` ใน policy model | Policy IR (JSON Schema) ตั้งแต่ M3 |
+| auto-revoke เมื่อหมดอายุ + audit trail | ปิดไปแล้วรอบ AD.1 |
+| `asset_owner` (user/team + `is_direct` + `inherited_from`) | ใช้ route หา approver ได้ทันที |
+
+→ ใส่เป็น **M9** ในตาราง Current Progress แล้ว เพื่อให้มันอยู่ใน roadmap ไม่ใช่อยู่แต่ในไฟล์แผน
+
+---
+
+### AL.4 ไฟล์ที่แตะรอบนี้
+
+| ไฟล์ | ทำอะไร |
+|---|---|
+| `backend/.../catalog/AssetStore.java` | **scope sweep เป็น `provenance = 'openmetadata'` ทั้ง 6 statement** + javadoc อธิบายว่าทำไม |
+| `backend/.../catalog/CatalogQuery.java` | `assets(...)` รับ `UUID sourceId` + ตัวกรองสองแขน |
+| `backend/.../resources/CatalogResource.java` | `@QueryParam("sourceId")` + 400 เมื่อ malformed |
+| `backend/.../test/.../AssetStoreIT.java` | `sweepSparesOtherProvenances()` (7/7) |
+| `backend/.../test/.../CatalogQueryIT.java` | 3 เทสต์ source filter + อัปเดต call site (18/18) |
+| `frontend/app/src/api/client.ts` | `AssetQuery.sourceId` |
+| `frontend/app/src/pages/query/SchemaExplorer.tsx` | กรองที่ server · empty state 3 แบบ |
+| `frontend/app/src/pages/query/QueryPage.tsx` | ส่ง `sourceId` |
+
+### AL.5 ผลรันจริงรอบนี้
+
+| ชุด | ผล |
+|---|---|
+| `AssetStoreIT` | **7/7** (+1) · และพิสูจน์ว่าแดงเมื่อถอดตัวแก้ออก |
+| `CatalogQueryIT` | **18/18** (+3) |
+| `npx tsc --noEmit` | exit 0 |
+| `npx jest` | **21 suites / 126 tests** เขียว |
+| `VITE_BASE=/Arak/ npx vite build` | ✓ built in 8.08s |
+| ยิง API จริง | catalog 40 asset → กรอง `demo-pg` เหลือ 4 |
+
+### AL.6 ต่อจากนี้
+
+คิวที่ผู้ใช้สั่งไว้และยังไม่ได้ทำ — จัดกลุ่มชิป Governance ตาม type · ปุ่ม Query ในหน้า asset · **หน้า Catalog แสดงเป็นกล่องความสูงเท่ากันแบบ OpenMetadata + paging (แต่เก็บ filter เดิมไว้)** · ดูด `description` เข้า search + เพิ่ม field `experts` / `reviewers` / `retentionPeriod` / `sourceUrl` / `tableType` · แล้วค่อยกลับไป M5 slice 2 (`V12__row_entitlement.sql`)
+
+---
+
+## รอบก่อนหน้า — **M5 slice 1: `ViewCompiler` เสร็จ** · **เคอร์เซอร์เป็นรูปมือทั้งแอป (กวาดทีเดียว 20 ปุ่ม)** · และ **Analyst A/B/C ล็อกอินได้จริงแล้ว**
 
 ### AK.1 `ViewCompiler` — โจทย์คือ "view ใบเดียว แต่ `PolicyDecision` เป็นของรายคน"
 

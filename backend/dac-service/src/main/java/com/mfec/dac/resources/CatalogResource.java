@@ -2,6 +2,7 @@ package com.mfec.dac.resources;
 
 import com.mfec.dac.auth.Secured;
 import com.mfec.dac.catalog.CatalogQuery;
+import jakarta.ws.rs.BadRequestException;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.NotFoundException;
 import jakarta.ws.rs.Path;
@@ -12,6 +13,7 @@ import jakarta.ws.rs.core.MediaType;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 /**
  * Reading the metadata cache (FR-1.2, FR-3.1.5).
@@ -48,6 +50,14 @@ public class CatalogResource {
    * <p>A malformed facet is ignored rather than rejected: the alternative is a
    * 400 on a filter the caller can see they typed, and silently returning
    * everything is worse than returning the page the rest of the filters select.
+   *
+   * <p>{@code sourceId} narrows to the assets a registered source can actually
+   * serve, which is a stricter question than which OpenMetadata service they
+   * came from: a source ARAK discovered over JDBC has no service FQN at all,
+   * and a service ARAK has never been pointed at has no connection behind it.
+   * A malformed one is a 400, unlike a facet, because the caller did not type
+   * it -- it came from a picker, and quietly widening the list to every
+   * database in the catalog is the failure this filter exists to prevent.
    */
   @GET
   @Path("/assets")
@@ -56,6 +66,7 @@ public class CatalogResource {
       @QueryParam("type") String assetType,
       @QueryParam("facet") List<String> facets,
       @QueryParam("owner") String owner,
+      @QueryParam("sourceId") String sourceId,
       @QueryParam("limit") @jakarta.ws.rs.DefaultValue("50") int limit,
       @QueryParam("offset") @jakarta.ws.rs.DefaultValue("0") int offset) {
 
@@ -65,7 +76,15 @@ public class CatalogResource {
         CatalogQuery.FacetFilter.parse(facet).ifPresent(parsed::add);
       }
     }
-    return catalog.assets(search, assetType, parsed, owner, limit, offset);
+    UUID source = null;
+    if (sourceId != null && !sourceId.isBlank()) {
+      try {
+        source = UUID.fromString(sourceId.trim());
+      } catch (IllegalArgumentException e) {
+        throw new BadRequestException("sourceId must be the UUID of a registered source");
+      }
+    }
+    return catalog.assets(search, assetType, parsed, owner, source, limit, offset);
   }
 
   /**

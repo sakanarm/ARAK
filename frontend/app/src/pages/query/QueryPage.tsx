@@ -136,7 +136,7 @@ export default function QueryPage() {
   // One source, so there is nothing to choose: pick it rather than making the
   // first query fail on an empty select.
   const effectiveSource = sourceId || (usable.length === 1 ? usable[0].id : '');
-  const selected = usable.find((source) => source.id === effectiveSource);
+
 
   const run = useMutation({
     mutationFn: () => {
@@ -201,7 +201,7 @@ export default function QueryPage() {
         className={`tw:flex tw:min-h-0 tw:flex-1 ${fullscreen ? '' : 'tw:mt-4'}`}>
         <SchemaExplorer
           onInsert={insert}
-          serviceFqn={selected?.omServiceFqn ?? null}
+          sourceId={effectiveSource || null}
           width={sidebarWidth}
         />
 

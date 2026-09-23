@@ -157,6 +157,7 @@ public class CatalogQuery {
       String assetType,
       List<FacetFilter> facets,
       String owner,
+      UUID sourceId,
       int limit,
       int offset) {
 
@@ -177,6 +178,28 @@ public class CatalogQuery {
           if (assetType != null && !assetType.isBlank()) {
             where.append(" AND a.asset_type = :assetType");
             binds.put("assetType", assetType.trim().toUpperCase());
+          }
+          if (sourceId != null) {
+            // Either the asset belongs to this source outright -- which is how
+            // the JDBC importer writes it -- or the source has a physical
+            // mapping for it or for something under it. The second arm is what
+            // keeps the service, database and schema rows in the tree: they
+            // carry no mapping of their own, and a tree of tables with no
+            // branches above them is not a tree.
+            //
+            // The mapping is the same row the query proxy resolves against, so
+            // what this list offers and what a query can reach are the same
+            // set by construction rather than by agreement.
+            where.append(
+                """
+                 AND (a.data_source_id = :sourceId
+                      OR EXISTS (SELECT 1 FROM asset_fqn_map m
+                                 WHERE m.data_source_id = :sourceId
+                                   AND m.verification_status <> 'ORPHANED'
+                                   AND (m.om_fqn = a.fqn
+                                        OR m.om_fqn LIKE a.fqn || '.%')))
+                """);
+            binds.put("sourceId", sourceId);
           }
           if (owner != null && !owner.isBlank()) {
             where.append(
