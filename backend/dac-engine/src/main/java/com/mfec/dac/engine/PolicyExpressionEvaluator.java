@@ -92,6 +92,71 @@ public final class PolicyExpressionEvaluator implements ExpressionEvaluator {
     };
   }
 
+  // ------------------------------------------------------------ validation
+
+  /**
+   * What an author is told about an expression before the policy is saved.
+   *
+   * @param message why it was rejected, or null when it was not
+   * @param position the offset the parser had reached, for underlining the word
+   * @param rowDependent true when it mentions {@code row.}, which a subject
+   *     rule cannot use but a data policy can
+   * @param userAttributes the {@code user.} names that fell through to an
+   *     attribute lookup. The language is open there on purpose, so these are
+   *     not errors; they are the only place a typo can still hide, and the
+   *     caller is the one that knows which attribute names exist.
+   */
+  public record Validation(
+      boolean valid,
+      String message,
+      int position,
+      boolean rowDependent,
+      List<String> userAttributes) {
+
+    public Validation {
+      userAttributes = userAttributes == null ? List.of() : List.copyOf(userAttributes);
+    }
+  }
+
+  /**
+   * Parses an expression without needing anybody to evaluate it against.
+   *
+   * <p>Deliberately the same parser the engine runs, driven over operands that
+   * hold nothing. A separate validator would be a second opinion about the
+   * language, and the two would drift the first time either changed; the value
+   * of this one is that it cannot disagree with the engine about what parses.
+   *
+   * <p>It reports what is wrong with the text, never what is missing from the
+   * data: an operand with no value is the normal state of an expression nobody
+   * has run yet, and rejecting on it would refuse every policy written before
+   * the user it is about has been onboarded.
+   */
+  public static Validation validate(String expression) {
+    if (expression == null || expression.isBlank()) {
+      return new Validation(false, "the expression is empty", -1, false, List.of());
+    }
+    List<Token> tokens;
+    try {
+      tokens = lex(expression);
+    } catch (SyntaxException e) {
+      return new Validation(false, e.getMessage(), -1, false, List.of());
+    }
+    Parser parser = new Parser(tokens, PROBE_PRINCIPAL, PROBE_ASSET, PROBE_CONTEXT);
+    try {
+      Truth truth = parser.parseAll();
+      return new Validation(true, null, -1, truth == Truth.ROW, parser.userAttributes);
+    } catch (SyntaxException e) {
+      return new Validation(false, e.getMessage(), parser.position(), false, parser.userAttributes);
+    }
+  }
+
+  /** Operands that hold nothing, so only the shape of the text can fail. */
+  private static final Principal PROBE_PRINCIPAL = Principal.withId("").build();
+
+  private static final AssetContext PROBE_ASSET = AssetContext.of("").build();
+
+  private static final RequestContext PROBE_CONTEXT = RequestContext.at(java.time.Instant.EPOCH);
+
   // --------------------------------------------------------------- truth
 
   /** Kleene logic plus the row-dependent outcome the compilers can still use. */
@@ -272,6 +337,7 @@ public final class PolicyExpressionEvaluator implements ExpressionEvaluator {
     private final Principal principal;
     private final AssetContext asset;
     private final RequestContext context;
+    private final List<String> userAttributes = new ArrayList<>();
     private int at;
 
     Parser(List<Token> tokens, Principal principal, AssetContext asset, RequestContext context) {
@@ -544,8 +610,15 @@ public final class PolicyExpressionEvaluator implements ExpressionEvaluator {
         case "teams", "team" -> Operand.of(List.copyOf(principal.teams()));
         case "groups", "group" -> Operand.of(List.copyOf(principal.groups()));
         // Anything else is an attribute, which is what makes the language open
-        // to whatever the directory carries without a change here.
-        default -> Operand.of(principal.attributeValues(member, null));
+        // to whatever the directory carries without a change here. Recorded so
+        // that validation can ask whether anybody actually has one by that
+        // name -- the one shape of mistake the grammar cannot catch.
+        default -> {
+          if (!userAttributes.contains(member)) {
+            userAttributes.add(member);
+          }
+          yield Operand.of(principal.attributeValues(member, null));
+        }
       };
     }
 
@@ -613,6 +686,11 @@ public final class PolicyExpressionEvaluator implements ExpressionEvaluator {
     }
 
     // -------------------------------------------------------------- tokens
+
+    /** Where the parser had reached, so a message can point at the word. */
+    int position() {
+      return tokens.get(Math.min(at, tokens.size() - 1)).position();
+    }
 
     private Token peek() {
       return tokens.get(at);

@@ -27,8 +27,8 @@ Phase 1 รองรับ SQL Server + PostgreSQL · identity หลักค�
 | **M0 Foundation** | ✅ เสร็จ — Maven multi-module, Dropwizard 5, Vite+React+Tailwind shell, vendor `ui-core-components`, JSON Schema → Java/TS codegen, OM client จาก swagger ที่ pin ไว้, Flyway V1–V10, docker-compose, CI 4 jobs |
 | **M1 OM Connector** | 🚧 ~95% — full crawl + governance + effective facet + FR-1.5 webhook/poller/reconcile + catalog read API + Catalog UI + governance read API + Governance UI · **sync กับ OM จริงสำเร็จแล้ว** · เหลือ FR-1.6 (reconcile กับ JDBC จริง), FR-1.7 (local tag + push-back — **ผู้ใช้สั่ง read-only ตอนนี้**) |
 | **M2 Identity** | 🚧 ~50% — local sign-in ใช้ได้ · schema `principal`/`principal_attribute`/`group_member`/`app_role_assignment` มีตั้งแต่ V2 · read API + หน้า People & attributes (**filter ตาม attribute + กดเข้าไปดูสมาชิกใน group ได้ที่ `/principals/:id`**) + **หน้า Application roles (`/settings/roles`) อ่านอย่างเดียว** เสร็จ · **เพิ่ม local account + assign/withdraw app role ได้จาก UI แล้ว (V10 + `IdentityAdminStore` + audit)** · **ยังไม่มี write API สำหรับ *attribute* — ต้อง seed ด้วย SQL** · ยังไม่มีหน้าจอเปลี่ยน password (ทุก account ที่สร้างเป็น `must_change`) · ยังไม่มี Entra OIDC / Graph sync |
-| **M3 Policy Engine** | 🚧 ~97% — engine **166 tests** (+10 รอบนี้ · **เจอบั๊กจริงสองตัวที่ grant โดนเต็มๆ ดูข้อ AE.1/AE.2**) (data policy 26 + subscription 45 เพิ่มรอบนี้ · เจอบั๊กจริง 2 ตัว ดูข้อ P) · persistence (`PolicyStore`) + `policy_binding` materializer + REST · `PolicyBindingMaterializerIT` 10 tests บน Postgres จริง · **decision cache (FR-5.5) ปิดแล้วรอบนี้ — 25 tests ดูข้อ AB** · เหลือ ANTLR grammar ของ `expr` (FR-3.2) ข้อเดียว |
-| **M4 Policy Authoring UI** | ✅ **เสร็จ** — Policy list + Policy builder + readback + capability matrix + `/policies/:id` หน้าสรุปอ่านอย่างเดียว + panel Policies ในหน้า asset (FR-3.1.5) + View-as-user (FR-5.2, ข้อ Z) · **รอบนี้ปิดข้อสุดท้าย: impact analysis (FR-5.3) — `GET /v1/policies/{id}/impact` + panel “Who it changes things for” ดูข้อ AA** |
+| **M3 Policy Engine** | 🚧 ~97% — engine **267 tests** (+101 รอบนี้ — `PolicyAlgebraTest` 34 ที่ assert **เซตของคนที่ผ่าน** ไม่ใช่ทีละคน + `ExpressionReferenceTest` ที่รันทุก example ในหน้า doc ผ่าน evaluator จริง) · เดิม **166 tests** (+10 รอบนี้ · **เจอบั๊กจริงสองตัวที่ grant โดนเต็มๆ ดูข้อ AE.1/AE.2**) (data policy 26 + subscription 45 เพิ่มรอบนี้ · เจอบั๊กจริง 2 ตัว ดูข้อ P) · persistence (`PolicyStore`) + `policy_binding` materializer + REST · `PolicyBindingMaterializerIT` 10 tests บน Postgres จริง · **decision cache (FR-5.5) ปิดแล้วรอบนี้ — 25 tests ดูข้อ AB** · เหลือ ANTLR grammar ของ `expr` (FR-3.2) ข้อเดียว |
+| **M4 Policy Authoring UI** | ✅ **เสร็จ** — Policy list + Policy builder + readback + capability matrix + `/policies/:id` หน้าสรุปอ่านอย่างเดียว + panel Policies ในหน้า asset (FR-3.1.5) + View-as-user (FR-5.2, ข้อ Z) · **รอบนี้ปิดข้อสุดท้าย: impact analysis (FR-5.3) — `GET /v1/policies/{id}/impact` + panel “Who it changes things for” ดูข้อ AA** · **รอบนี้เพิ่มหน้า `/docs/expressions` — syntax reference ที่ backend ส่งมาจาก jar ของ engine กดจากช่อง expression ได้ พร้อม 11 policy ตัวอย่างจริงใน DB (ข้อ AF.3/AF.4)** |
 | **M5 Secure View (5.1.2)** | ⬜ — `DecisionSql` + dialect ทั้งสองตัวพร้อมแล้ว (ใช้ร่วมกับ 5.2) เหลือ ViewCompiler + `row_entitlement` maintainer + DDL apply/rollback |
 | **M6 Push Config (5.1.1)** | ⬜ **re-scope รอบนี้ · เลื่อนหลัง M5/M7 · opt-in ต่อ source** — ยิงเฉพาะ **policy object ที่แยกจาก table** (PG `CREATE POLICY` · MSSQL `CREATE SECURITY POLICY` · column GRANT) · **ตัด MSSQL DDM ออก** เพราะมัน `ALTER COLUMN` ทับนิยาม table — ดูข้อ AC.1 และ DESIGN FR-6.2a |
 | **M7 Query API (5.2a)** | 🚧 ~80% — **`POST /v1/query` + Query console ใช้งานได้จริงรอบนี้** · rewrite → RLS + mask + hidden column → execute → audit ครบ · พิสูจน์กับ Postgres จริงแล้วทั้ง allow / RLS / mask / refuse · เหลือ direct-access detector (FR-6.3.1) และ result cache |
@@ -39,23 +39,121 @@ Phase 1 รองรับ SQL Server + PostgreSQL · identity หลักค�
 | | |
 |---|---|
 | Backend (Dropwizard) | `:8080` (API อยู่ใต้ `/api`), admin `:8081/ping` |
-| Frontend (Vite) | `http://127.0.0.1:5274/` |
+| Frontend (Vite dev) | `http://localhost:3000/` |
+| **รูปแบบ prod (jar เสิร์ฟ `dist` + nginx path prefix)** | `http://localhost:8090/Arak/` — ตัวที่ใช้ demo |
 | App DB (docker `dac-appdb`, postgres:16-alpine) | `:5432` db/user `dac` |
 | OpenMetadata ของทีม | `2.0.1` — sync ผ่าน **ingestion-bot JWT** (ดู What Didn't Work) |
 
-เทสต์ทั้งหมดเขียว — **backend รันครบทั้ง unit + integration ในคำสั่งเดียวเมื่อ 2026-09-23** (`-Pintegration verify` → BUILD SUCCESS · unit **369** · integration **124** · `AssetStoreIT`/`CatalogQueryIT`/`DataSourceStoreIT` ที่เคยล้มเพราะ Testcontainers เขียวหมดรอบนี้), frontend `npx jest` + `npx tsc --noEmit` + `npx eslint` รันใหม่ **2026-09-23** (87/87 เขียว · tsc exit 0)
+เทสต์ทั้งหมดเขียว — **backend รันครบทั้ง unit + integration ในคำสั่งเดียวเมื่อ 2026-09-23** (`-Pintegration verify` → BUILD SUCCESS · unit **470** · integration **128**), frontend `npx jest` + `npx tsc --noEmit` รันใหม่ **2026-09-23** (92/92 เขียว · tsc exit 0)
 
 | ชุด | จำนวน | คำสั่ง |
 |---|---|---|
-| Backend unit | dac-common 6 · dac-engine **166** · dac-compiler-sql 7 · dac-connector-openmetadata 88 · dac-proxy 16 · dac-service **86** = **369** | `./mvnw -am -pl backend/dac-service test` |
-| Backend integration (Testcontainers `postgres:16-alpine`) | **124 tests** — `AssetStoreIT` 6 · `CatalogQueryIT` 15 · `DataSourceStoreIT` 13 · `GovernanceStoreIT` 10 · `GrantCompositionIT` **13 (ใหม่รอบนี้)** · `IdentityAdminStoreIT` 15 · `ImpactAnalysisIT` 8 · `PolicyBindingMaterializerIT` 10 · `PolicyOverviewIT` 24 · `PolicyStoreIT` 10 | `./mvnw -am -pl backend/dac-service verify -Pintegration` |
-| Frontend | **16 suites / 87 tests** | `npx jest` ใน `frontend/app` |
+| Backend unit | dac-common 6 · dac-engine **267** · dac-compiler-sql 7 · dac-connector-openmetadata 88 · dac-proxy 16 · dac-service **86** = **470** | `./mvnw -am -pl backend/dac-service test` |
+| Backend integration (Testcontainers `postgres:16-alpine`) | **128 tests** — `AssetStoreIT` 6 · `CatalogQueryIT` 15 · `DataSourceStoreIT` 13 · `GovernanceStoreIT` 10 · `GrantCompositionIT` **17 (+4 รอบนี้: `AgainstDataPolicies` — grant ตรงต้องไม่ถอด mask)** · `IdentityAdminStoreIT` 15 · `ImpactAnalysisIT` 8 · `PolicyBindingMaterializerIT` 10 · `PolicyOverviewIT` 24 · `PolicyStoreIT` 10 | `./mvnw -am -pl backend/dac-service verify -Pintegration` |
+| Frontend | **17 suites / 92 tests** (+`ExpressionDocsPage.test.tsx` 5) | `npx jest` ใน `frontend/app` |
 
 `yarn type-check` · `yarn lint` · `yarn build` ผ่านหมด → **BUILD SUCCESS** ทั้งสองฝั่ง
 
 ---
 
-## รอบนี้ — เขียน IT ให้ FR-7 แล้วพบว่า **grant ไม่เคยถึง engine เลยสักใบ** กับอีกสองบั๊กที่ซ่อนอยู่ใต้มัน
+## รอบนี้ — **พีชคณิตของ policy พิสูจน์เป็นชุด** · Doc syntax 1 หน้า · และ **ตัวอย่างทุกอันกลายเป็น policy จริงใน DB**
+
+> โจทย์รอบนี้มาสามชั้น: *"ทดสอบให้ครบทุก Case · อย่าลืม and/or · หรือมีหลาย policy conflict กัน Union / Compliment / Intersection · ทั้ง Subscription, ให้ access ตรงใน UI, Data policy"* แล้วตามด้วย *"เขียนตัวอย่างการ Config กับ Syntax ที่รองรับใน Doc 1 หน้า เป็น link กดไปดูได้"* และปิดท้าย *"ทำตัวอย่างทุกแบบไปใน policy จริงเลยนะ จะเอาไป demo"*
+
+### AF.1 `PolicyAlgebraTest` — 34 tests ที่เขียนคำตอบเป็น **เซต** ไม่ใช่ boolean
+
+ชุดเดิมพิสูจน์ทีละคน (`analyst_a` ได้ / ไม่ได้) ซึ่งจับบั๊กประเภท "union กลายเป็น intersection" **ไม่ได้** เพราะทั้งสองแบบก็ตอบว่าคนคนนี้ผ่านเหมือนกัน รอบนี้เปลี่ยนวิธี: ทุกเคสยิง **ประชากร 5 คน** ผ่าน engine แล้ว assert **เซตของคนที่ผ่านทั้งเซต** ด้วย `containsExactlyInAnyOrder` — บั๊กที่พลาดไปคนเดียวไม่มีที่ซ่อน
+
+ประชากรจงใจจัดให้ team / role / clearance / country **ตัดเซตคนละแบบ** ทั้งสี่แกน ถ้าไม่จัดแบบนี้ union กับ intersection อาจให้คำตอบเดียวกันโดยบังเอิญ แล้วเทสต์จะเขียวไม่ว่า engine ทำอันไหน
+
+| nested class | พิสูจน์อะไร | tests |
+|---|---|---|
+| `Union` | policy ชั้นเดียวกัน = **OR** · idempotent (A∪A=A) · **commutative** (policy มาจาก query ที่ไม่การันตีลำดับ — ถ้าข้อนี้พังเมื่อไหร่ สิทธิ์จะขึ้นกับอารมณ์ของ database) · `principals` list ในใบเดียว = union เท่ากับแยกสองใบ · union ว่าง = ปิด | 5 |
+| `Intersection` | policy ต่างชั้น = **AND** · **`localCannotWiden`** (ORG=Finance ∩ TABLE=analyst ทุกคน → `{fin_l1, fin_l2}` **ไม่ใช่** `{…, eng_sg}`) · intersection ว่าง = ไม่ให้ใครเลย ไม่ตกกลับไปข้างใดข้างหนึ่ง · ORG∩SCHEMA∩TABLE (ชั้นกลางคือชั้นที่ implementation แบบ "global vs local" มักข้าม) · ชั้นที่ไม่มี policy = **งดออกเสียง ไม่ใช่ปิด** | 7 |
+| `Complement` | DENY = **ลบออก** · DENY ที่ COLUMN ลบ ALLOW ที่ ORG ได้ (deny ชนะทุกชั้น) · **`exemptionIsComplementOfComplement`** — `(A \ D) ∪ (A ∩ E)` และ exemption ที่ชี้คนที่ ALLOW ไม่เคยถึง **ไม่ทำให้เขาเข้าได้** (exemption ปลดจาก DENY ไม่ใช่ตัวให้สิทธิ์) · DENY ลอยๆ ไม่เปิดประตู (complement ของศูนย์คือศูนย์ ไม่ใช่ทุกอย่าง) · **`orderOfOperations`** — `(A1 ∪ A2) \ D` ไม่ใช่ `(A1 \ D) ∪ A2` | 6 |
+| `Selectors` | ฝั่ง asset: `or` / `and` / `not` · **De Morgan** `not(A or B) == (not A) and (not B)` (+ assert ว่าทั้งสองข้างไม่ว่าง ไม่งั้น "เท่ากันเพราะพังเหมือนกันทั้งคู่" ก็ผ่าน) · **distributivity** · `contains` ครอบลูกหลาน / `eq` ไม่ครอบ (แผนข้อ 4a) | 6 |
+| `DataAlgebra` | เซต column ที่ถูก mask = **union** ข้าม policy · mask สองอันบน column เดียว **join ที่อันเข้มกว่า** ไม่ว่าอยู่ชั้นไหน (NULLIFY ชนะ PARTIAL ที่ลึกกว่า) · row filter **intersect** (ทั้งสอง predicate ต้องรอด — ถ้า filter ที่ลึกกว่าแทนที่อันตื้นได้ ทุก row set ในระบบจะกว้างขึ้นเงียบๆ) · hidden column union · **monotone**: เพิ่ม data policy แล้วต้องไม่เห็นมากขึ้น | 6 |
+| `Mixed` | decision ที่ถูกปฏิเสธ **ไม่พก mask/filter/hide ติดมา** (ถ้าพกมา = บอกคนที่เข้าไม่ได้ว่ามี column อะไรและอันไหน sensitive) · data policy 3 ใบโดยไม่มี subscription = ยังปฏิเสธ · mask เป็นรายคน ไม่ใช่รายตาราง · **`orderIndependent`** — 7 policy เรียงหน้า/เรียงหลัง ให้ allowed, masks, functions, hidden **และ cache key เดียวกัน** | 4 |
+
+รันแรกล้มจริง 5 เคส — 4 เคสเป็นบั๊กของเทสต์เอง (เทียบชื่อ table สั้นกับ FQN เต็ม) และ **1 เคสเป็นความคาดหวังของผมที่ผิด ไม่ใช่ engine ผิด**: `localCannotWiden` เดิมตั้ง ORG=Finance ∩ TABLE=Engineering แล้วคาด `{fin_l1, fin_l2}` ทั้งที่ intersection มันว่างจริงๆ · แก้โดยให้ local เป็น **superset** (`role=analyst`) เพื่อให้คำตอบไม่ว่าง — จงใจ เพราะคำตอบว่างมันสอดคล้องกับกรณีที่ engine **โยน local policy ทิ้ง** ด้วย ซึ่งเป็นบั๊กคนละตัวที่อาการเหมือนกันเป๊ะ
+
+### AF.2 `GrantCompositionIT.AgainstDataPolicies` — ขา "ให้ access ตรงใน UI" ตัดกับ data policy
+
+4 tests · เคสที่ห้ามพลาดที่สุดคือ **`grantIsNotAnUnmask`**: activate data policy ที่ nullify `email` → grant CUSTOMER ให้ `analyst_a` ตรงๆ → ต้องเข้าได้ **และ `email` ต้องยัง `NULLIFY` อยู่**
+
+ที่ต้องมีเทสต์ข้อนี้เพราะ UI เรียกทั้งสองอย่างว่า "access" เหมือนกัน และถ้าพลาดคือ **ปุ่มคลิกเดียวที่คนกดบ่อยที่สุด ถอด masking ออกจาก PII เงียบๆ โดย query สำเร็จและไม่มี error ที่ไหนเลย** · อีกสามข้อ: grant รับ row filter ที่มีอยู่แล้วมาด้วย · grant ตรง + grant ผ่านทีม = union (access เดียว mask เดียว ไม่ใช่สองชุด) · revoke ใบหนึ่งแล้วอีกใบยังอยู่ (ขา complement และเป็นข้อที่ owner พลาดบ่อย)
+
+### AF.3 Doc syntax 1 หน้า — `/docs/expressions` (กดจากช่อง expression ได้)
+
+- `ExpressionReference` + `reference.json` อยู่ใน **jar ของ engine** — หน้าเว็บ render สิ่งที่ backend ส่งมาล้วนๆ **ไม่มี example / operator / ชื่อ facet ตัวไหนเขียนซ้ำในฝั่ง front end** แปลว่าหน้านี้อธิบายภาษาที่ deployment นี้รันอยู่จริงเสมอ
+- `ExpressionResource` ใหม่: `GET /v1/expressions/reference` (เอกสาร) · `POST /v1/expressions/validate` (parser ตัวเดียวกับตอน save)
+- `ExpressionReferenceTest` **รันเอกสาร**: ทุก example × ทุก case ยิงผ่าน evaluator จริง, ทุกอันต้องผ่าน `validate`, ทุกชื่อใน root ที่เป็น closed list ต้องเป็นชื่อที่ parser resolve ได้, และทุกอันใน `rejected` ต้องถูกปฏิเสธจริง → **example ที่เลิกเป็นจริง CI ล้มก่อนผู้ใช้อ่าน**
+- ในหน้า: กล่อง **Try one** พิมพ์ทดสอบกับ parser จริงได้ · ทุก example มีปุ่ม *Check against the engine* · แยก **error (save ไม่ผ่าน)** ออกจาก **warning (save ผ่าน แล้วไม่ให้สิทธิ์ใคร)** ให้เห็นชัด — สองเรื่องนี้คนละเรื่องกันสำหรับคนอ่าน
+- ช่อง expression ใน builder: ลิงก์ *Syntax and worked examples* + validate สดแบบ debounce 400ms · ลิงก์และ verdict อยู่ **นอก** `<label>` เพื่อไม่ให้คลิกเดียวมีสองความหมาย และเพื่อให้ verdict โผล่/หายโดยไม่ดันช่องพิมพ์ใต้เคอร์เซอร์ · ตัว `Field` ไม่ถูกแตะเลย หน้าตาเดิมทุกพิกเซล
+
+### AF.4 **ตัวอย่างทุกอัน = policy จริงใน DB** (`scripts/seed-example-policies.mjs`)
+
+ตามที่สั่งว่าจะเอาไป demo · script อ่าน example **จาก service ที่รันอยู่** ไม่ใช่จากสำเนาในไฟล์ → seed ภาษาที่ engine ไม่ได้รันไม่ได้ และ example ที่เพิ่มใน reference จะโผล่มาเองรอบหน้าโดยไม่ต้องแก้ script · **idempotent** (รันซ้ำ = update ไม่ชนกับ unique key `(name, environment)`)
+
+| ผล | |
+|---|---|
+| seed แล้ว | **11 ใบ** ชื่อ `example-<id>` บน `demo-pg.salesdb.sales.customer` · binding ใบละ 1 target |
+| `example-row` | กลายเป็น **DATA policy + row filter** อัตโนมัติ เพราะ `POST /validate` ตอบ `rowDependent: true` และ subject rule ใช้ row ไม่ได้ (PolicyStore ปฏิเสธ) — script ทำตามที่หน้า doc แนะนำเป๊ะ |
+| state | **DRAFT ทุกใบ — จงใจ** · 11 policy ACTIVE บน table เดียวกัน compose แบบ intersection (FR-5.1) → ทุกคนโดนปฏิเสธหมด แล้ว demo จะไม่เหลืออะไรให้ดู · เป็น draft มันก็ยังเป็น row จริงที่อ่านได้ / มี version / มี binding และ **impact analysis รันทีละใบผ่าน engine จริง** ซึ่งคือสิ่งที่ทำให้ demo ทีละ example ได้ · จะ activate = กดเดียวที่ lifecycle |
+
+พิสูจน์ว่า demo เดินจริงผ่าน `GET /v1/policies/{id}/impact` — ตัวเลขตรงกับที่หน้า doc เขียนไว้:
+
+| example | expression | ใครเปลี่ยน |
+|---|---|---|
+| `residency` | `user.country == asset.prop('dataResidency')` (table = TH) | `analyst_a`, `steward_c` **GAINS** · `analyst_b` (SG) ไม่ขยับ |
+| `list` | `user.department in ['FINANCE','RISK']` | ทั้งสามคน GAINS |
+| `grouping` | `(team=='Finance' \|\| 'auditor' in roles) && country=='TH'` | `analyst_a`, `steward_c` · `analyst_b` ไม่ขยับ |
+| `typo` | `user.contry == 'TH'` | **ไม่มีใครเลย** — บทเรียน silent failure ที่ demo ให้ดูได้จริงว่า policy ที่ save ผ่าน อ่านกลับมาเหมือนที่พิมพ์ทุกตัวอักษร แล้วไม่ให้สิทธิ์ใครสักคน |
+
+หน้า doc ลิงก์ example → policy โดย **match จากชื่อ** ไม่ได้ฝัง id ไว้ → deployment ที่ยังไม่เคยรัน seeder ก็แสดง example ตามปกติ แค่ไม่มีลิงก์ (ซึ่งเป็นความจริง) แทนที่จะลิงก์ไปหา policy ที่ไม่มีอยู่ — มีเทสต์คุมข้อนี้ข้อหนึ่ง
+
+**วิธีรัน**
+```bash
+set -a && . ./.env && set +a
+node scripts/seed-example-policies.mjs                                    # localhost:8080/api
+ARAK_URL=http://localhost:8090/Arak/api node scripts/seed-example-policies.mjs
+```
+
+### AF.5 ไฟล์ที่เพิ่ม/แก้รอบนี้
+
+| ไฟล์ | |
+|---|---|
+| `backend/dac-engine/.../ExpressionReference.java` + `resources/expressions/reference.json` | เอกสารเป็นข้อมูล อยู่ใน jar ของ engine |
+| `backend/dac-engine/.../PolicyExpressionEvaluator.java` | เปิด `analyse()` ให้ตอบ rowDependent + รายชื่อ user attribute ที่อ้างถึง |
+| `backend/dac-service/.../resources/ExpressionResource.java` | `/v1/expressions/reference` · `/v1/expressions/validate` |
+| `backend/dac-engine/src/test/.../PolicyAlgebraTest.java` | 34 tests |
+| `backend/dac-engine/src/test/.../ExpressionReferenceTest.java` | `@TestFactory` รันทุก example ในเอกสาร |
+| `backend/dac-service/src/test/.../GrantCompositionIT.java` | + nested `AgainstDataPolicies` 4 tests |
+| `frontend/app/src/api/expressions.ts` | typed client |
+| `frontend/app/src/pages/docs/ExpressionDocsPage.tsx` (+ `.test.tsx` 5 tests) | หน้า doc |
+| `frontend/app/src/pages/policies/SubjectBuilder.tsx` | ลิงก์ + inline verdict (นอก Field) |
+| `frontend/app/src/App.tsx` | route `/docs/expressions` **อยู่ในกรอบ auth** — reference บอกชื่อ facet/attribute ที่องค์กรนี้ใช้จริง ไม่ใช่ของแจกคนนอก |
+| `scripts/seed-example-policies.mjs` | seeder |
+
+### AF.6 ผลรันจริงรอบนี้
+
+| ชุด | ผล |
+|---|---|
+| `./mvnw -q -am -pl backend/dac-engine test` | **exit 0** · PolicyAlgebra 34 · PolicyEngine 32 · Evaluator 13 · SelectorMatcher 10 · SubjectMatcher 13 · SubscriptionPolicy 35 · TimeMatcher 12 · + ExpressionReference (dynamic) |
+| `./mvnw -am -pl backend/dac-service verify -Pintegration` | `GrantCompositionIT$AgainstDataPolicies` **4/4 ผ่าน** (ขา grant × data policy) |
+| `npx tsc --noEmit` | **exit 0** |
+| `npx jest --silent` | **17 suites / 92 tests ผ่าน** |
+| `vite build` (base `/Arak/`) | **exit 0** — 866.27 kB JS / 223.87 kB CSS |
+| seeder | รันสองรอบ: created 11 → updated 11 (idempotent จริง) |
+
+> ⚠️ **กับดักที่เสียเวลาไปรอบนี้ บันทึกไว้กันพลาดซ้ำ**
+> 1. `-DfailIfNoTests=false` **ไม่ได้** ทำให้ failsafe ยอมผ่าน parent pom — ตัวที่ใช่คือ `-Dfailsafe.failIfNoSpecifiedTests=false` · ถ้าไม่ใส่ `./mvnw -am -pl … verify -Dit.test=X` จะ BUILD FAILURE ที่ `dac-parent` ใน 1 วินาที โดยทุก module SKIPPED
+> 2. **รายงาน failsafe/surefire เก่าค้าง** — รันที่ล้มก่อนถึง test phase ทิ้งรายงานรอบก่อนไว้ ซึ่งดู "เขียว" ทั้งที่ไม่ได้รันอะไรเลย → `rm -rf target/failsafe-reports` ก่อนรันแบบเจาะจงเสมอ แล้วดู exit code จริง
+> 3. คำสั่ง background ที่ลงท้ายด้วย `echo` จะรายงาน **exit 0 เสมอ** ใน notification → ต่อท้ายด้วย `; echo "exit=$?" >> log` แล้วอ่านจาก log
+
+---
+
+## รอบก่อนหน้า — เขียน IT ให้ FR-7 แล้วพบว่า **grant ไม่เคยถึง engine เลยสักใบ** กับอีกสองบั๊กที่ซ่อนอยู่ใต้มัน
 
 > รอบที่แล้วปิด FR-7 ด้วยการพิสูจน์ด้วยมือ (ตาราง 6 แถวในข้อ AD.1) แล้วจดค้างไว้ว่า *"property ข้อที่สามพิสูจน์ด้วยมือแล้ว แต่ยังไม่มีใน CI"* · รอบนี้เขียน IT ให้มัน แล้ว **ล้ม 5 จาก 12 ตั้งแต่รันแรก — ไม่ใช่เพราะเทสต์ผิด** · ทั้งสามบั๊กข้างล่างนี้ไม่มีตัวไหนมองเห็นได้จากหน้าจอ
 

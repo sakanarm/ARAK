@@ -3,6 +3,7 @@ package com.mfec.dac.policy;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mfec.dac.common.ChangeNotifier;
 import com.mfec.dac.common.Fqns;
+import com.mfec.dac.engine.PolicyExpressionEvaluator;
 import com.mfec.dac.schema.api.ResolvedColumnMask;
 import com.mfec.dac.schema.entity.policy.Policy;
 import java.util.ArrayList;
@@ -489,6 +490,48 @@ public class PolicyStore {
             && selector.getNot() == null)) {
       throw new IllegalArgumentException(
           "A policy needs a selector; an empty one binds to nothing and protects nobody");
+    }
+    validateExpression(document);
+  }
+
+  /**
+   * Refuses a subject expression the engine could not read.
+   *
+   * <p>Without this the failure is silent and one-sided. An unparseable
+   * expression is undecidable at evaluation time, an ALLOW carrying one never
+   * grants, and nothing anywhere says so: the policy saves, activates, and
+   * reads back exactly as it was typed. The owner sees a policy that is
+   * plainly there and a colleague who still cannot open the table.
+   *
+   * <p>What it cannot catch is a misspelt {@code user.} attribute, because
+   * {@code user.} is open on purpose so the directory can grow without a code
+   * change, and a name nobody has today is a name somebody may have tomorrow.
+   * That one is surfaced as a warning while the policy is being written rather
+   * than as a refusal here.
+   */
+  private void validateExpression(Policy document) {
+    var subject = document.getSubject();
+    if (subject == null) {
+      return;
+    }
+    String expression = subject.getExpression();
+    if (expression == null || expression.isBlank()) {
+      return;
+    }
+    PolicyExpressionEvaluator.Validation check =
+        PolicyExpressionEvaluator.validate(expression);
+    if (!check.valid()) {
+      throw new IllegalArgumentException(
+          "The policy's expression cannot be read: " + check.message());
+    }
+    if (check.rowDependent()) {
+      // A subject rule decides who reaches the table at all, before a row
+      // exists, so the engine throws on this at evaluation time. Saying so
+      // here points at the fix -- a row filter in a data policy -- instead of
+      // leaving a rule that denies everybody for reasons nobody can see.
+      throw new IllegalArgumentException(
+          "The policy's expression refers to row data, which a subject rule cannot use. "
+              + "Move it to a data policy row filter.");
     }
   }
 

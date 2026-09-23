@@ -36,6 +36,7 @@ import com.mfec.dac.policy.DecisionService;
 import com.mfec.dac.policy.ImpactAnalysis;
 import com.mfec.dac.policy.PrincipalLoader;
 import com.mfec.dac.policy.QueryService;
+import com.mfec.dac.resources.ExpressionResource;
 import com.mfec.dac.resources.DecisionResource;
 import com.mfec.dac.resources.QueryResource;
 import com.mfec.dac.source.jdbc.JdbcIntrospector;
@@ -222,8 +223,14 @@ public class DacApplication extends Application<DacConfiguration> {
     environment.jersey().register(new GovernanceResource(new GovernanceQuery(jdbi)));
     environment.jersey().register(new SearchResource(new SearchQuery(jdbi)));
     IdentityAdminStore identityAdmin = new IdentityAdminStore(jdbi, identities);
-    environment.jersey().register(
-        new PrincipalResource(new PrincipalQuery(jdbi), identityAdmin));
+    PrincipalQuery principalQuery = new PrincipalQuery(jdbi);
+    environment.jersey().register(new PrincipalResource(principalQuery, identityAdmin));
+
+    // The grammar a subject expression is written in, served from the engine's
+    // own jar. It reads the directory only to warn that `user.contry` is a name
+    // nobody carries -- the parser cannot tell, because `user.` is open on
+    // purpose, and an ALLOW nobody can decide grants nothing very quietly.
+    environment.jersey().register(new ExpressionResource(principalQuery));
 
     // The source registry (FR-6.0a). The probe is constructed here, with the
     // process environment behind it, so that the only component able to turn a

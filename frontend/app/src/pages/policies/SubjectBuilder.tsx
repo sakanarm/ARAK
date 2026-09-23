@@ -1,3 +1,5 @@
+import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { Plus, Trash01 } from '@untitledui/icons';
 import { Button } from '@openmetadata/ui-core-components/components/base/buttons/button';
 import type {
@@ -6,6 +8,7 @@ import type {
   SubjectRule,
 } from '../../generated/entity/policy/policy';
 import type { AttributeVocabulary, Principal } from '../../api/governance';
+import { validateExpression, type ExpressionVerdict } from '../../api/expressions';
 import { Field, Select, TextField } from './controls';
 
 /**
@@ -167,6 +170,7 @@ export default function SubjectBuilder({
           value={subject.expression ?? ''}
         />
       </Field>
+      <ExpressionNote expression={subject.expression} />
 
       {/* --------------------------------------------------------- time */}
       <div>
@@ -577,6 +581,78 @@ function AttributeRow({
         onPress={onRemove}
         size="sm"
       />
+    </div>
+  );
+}
+
+/**
+ * The link to the grammar, and what the parser makes of what was typed.
+ *
+ * Outside the {@link Field} rather than in its hint, for two reasons: an anchor
+ * nested in a `<label>` gives a click two meanings, and the verdict has to be
+ * able to appear and disappear without the field's spacing moving under the
+ * author's cursor.
+ *
+ * The check is the engine's own, reached over the network, so what it says here
+ * is what will happen on save. It is debounced because it runs on a keystroke
+ * and half-typed expressions are wrong by definition -- reporting that would be
+ * nagging rather than helping.
+ */
+function ExpressionNote({ expression }: { expression?: string }) {
+  const [verdict, setVerdict] = useState<ExpressionVerdict | null>(null);
+
+  useEffect(() => {
+    const text = expression?.trim();
+    if (!text) {
+      setVerdict(null);
+      return;
+    }
+    let live = true;
+    const timer = setTimeout(() => {
+      validateExpression(text)
+        .then((next) => {
+          if (live) {
+            setVerdict(next);
+          }
+        })
+        .catch(() => {
+          // A validation that cannot be reached must not look like a verdict.
+          // The save will still be checked by the same parser on the server.
+          if (live) {
+            setVerdict(null);
+          }
+        });
+    }, 400);
+    return () => {
+      live = false;
+      clearTimeout(timer);
+    };
+  }, [expression]);
+
+  return (
+    <div className="tw:-mt-1 tw:flex tw:flex-col tw:gap-1">
+      <Link
+        className="tw:text-xs tw:text-brand-secondary tw:underline"
+        target="_blank"
+        to="/docs/expressions">
+        Syntax and worked examples
+      </Link>
+      {verdict && !verdict.valid && (
+        <span className="tw:text-xs tw:text-error-primary">{verdict.message}</span>
+      )}
+      {verdict?.valid && verdict.rowDependent && (
+        <span className="tw:text-xs tw:text-warning-primary">
+          This reads row data, which a subject rule cannot see — a subscription is decided
+          before there is a row. It belongs in a data policy row filter.
+        </span>
+      )}
+      {verdict?.valid && !verdict.rowDependent && verdict.unknownAttributes.length > 0 && (
+        <span className="tw:text-xs tw:text-warning-primary">
+          Nobody in the directory carries{' '}
+          {verdict.unknownAttributes.map((name) => `user.${name}`).join(', ')}. This will save,
+          and then grant nothing until somebody does.
+        </span>
+      )}
     </div>
   );
 }

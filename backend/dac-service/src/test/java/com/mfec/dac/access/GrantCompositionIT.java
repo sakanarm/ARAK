@@ -17,13 +17,17 @@ import com.mfec.dac.policy.DecisionService;
 import com.mfec.dac.policy.PolicyBindingMaterializer;
 import com.mfec.dac.policy.PolicyStore;
 import com.mfec.dac.policy.PrincipalLoader;
+import com.mfec.dac.schema.api.MaskingSpec;
 import com.mfec.dac.schema.api.PolicyDecision;
 import com.mfec.dac.schema.api.ResolvedColumnMask;
 import com.mfec.dac.schema.api.ResolvedRowPredicate;
 import com.mfec.dac.schema.entity.policy.AssetSelector;
 import com.mfec.dac.schema.entity.policy.AttributeCondition;
+import com.mfec.dac.schema.entity.policy.ColumnRule;
+import com.mfec.dac.schema.entity.policy.DataPolicy;
 import com.mfec.dac.schema.entity.policy.FacetCondition;
 import com.mfec.dac.schema.entity.policy.Policy;
+import com.mfec.dac.schema.entity.policy.RowFilter;
 import com.mfec.dac.schema.entity.policy.SubjectRule;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
@@ -453,7 +457,152 @@ class GrantCompositionIT {
     }
   }
 
+  // ------------------------------------- 5. against the other half of the model
+
+  @Nested
+  @DisplayName("a grant meeting a data policy")
+  class AgainstDataPolicies {
+
+    @Test
+    @DisplayName("opens the table without unmasking anything inside it")
+    void grantIsNotAnUnmask() {
+      // The confusion this guards against is a natural one, because the UI
+      // calls both of them "access": an owner clicks Grant on a table and
+      // reasonably expects the person to see the table. They do -- and the
+      // columns an ORG data policy masks stay masked, because a grant is a
+      // subscription and subscriptions have nothing to say about columns.
+      //
+      // Getting this wrong would be the worst failure in the platform: an
+      // ordinary, frequent, one-click action that silently strips masking from
+      // PII, with a successful query and no error anywhere.
+      activate(orgMaskEmail("mask-pii"));
+      grants.grant(
+          new GrantStore.NewGrant(
+              CUSTOMER, idOf("analyst_a"), null, null, "Quarter-end reconciliation", "owner_o"));
+
+      PolicyDecision decision = decisions.decide(DecisionService.Ask.of("analyst_a", CUSTOMER));
+      assertThat(decision.getAllowed()).isTrue();
+      assertThat(decision.getColumnMasks())
+          .singleElement()
+          .satisfies(
+              mask -> {
+                assertThat(mask.getColumn()).isEqualTo("email");
+                assertThat(mask.getMasking().getFunction())
+                    .isEqualTo(MaskingSpec.MaskingFunction.NULLIFY);
+              });
+    }
+
+    @Test
+    @DisplayName("carries the row filter that was already on the table")
+    void grantInheritsRowFilters() {
+      // Same principle one level down. A grant says who may reach the table; it
+      // never says which rows, so a row filter written for everybody still
+      // applies to the person who arrived through a grant.
+      activate(orgRowFilter("branch-rows"));
+      grants.grant(
+          new GrantStore.NewGrant(
+              CUSTOMER, idOf("analyst_a"), null, null, "Quarter-end reconciliation", "owner_o"));
+
+      PolicyDecision decision = decisions.decide(DecisionService.Ask.of("analyst_a", CUSTOMER));
+      assertThat(decision.getAllowed()).isTrue();
+      assertThat(decision.getRowPredicates())
+          .singleElement()
+          .satisfies(predicate -> assertThat(predicate.getColumn()).isEqualTo("email"));
+    }
+
+    @Test
+    @DisplayName("two grants to the same person are one access, not two")
+    void grantsUnion() {
+      // A grant direct to the person and another to a team they are in. Union,
+      // and an idempotent one: the answer is the same allow, and the masks are
+      // not applied twice or dropped because two grants disagreed about
+      // nothing. Duplicate grants are ordinary -- an owner grants, forgets, and
+      // grants again -- so this is a case the system meets in its first week.
+      activate(orgMaskEmail("mask-pii"));
+      grants.grant(
+          new GrantStore.NewGrant(
+              CUSTOMER, idOf("analyst_a"), null, null, "Quarter-end reconciliation", "owner_o"));
+      grants.grant(
+          new GrantStore.NewGrant(
+              CUSTOMER, idOf("finance-team"), null, null, "The whole team is on this", "owner_o"));
+
+      PolicyDecision decision = decisions.decide(DecisionService.Ask.of("analyst_a", CUSTOMER));
+      assertThat(decision.getAllowed()).isTrue();
+      assertThat(decision.getColumnMasks()).hasSize(1);
+    }
+
+    @Test
+    @DisplayName("revoking one of two grants leaves the other standing")
+    void revokeIsNotUnion() {
+      // The complement half of the same case, and the one an owner gets wrong:
+      // they revoke the grant they remember making and assume access is gone.
+      // It is not, because the team grant is still there -- so the assertion is
+      // that the platform keeps the access, and the owner has to be shown both.
+      UUID direct =
+          grants
+              .grant(
+                  new GrantStore.NewGrant(
+                      CUSTOMER, idOf("analyst_a"), null, null, "Quarter-end", "owner_o"))
+              .id();
+      grants.grant(
+          new GrantStore.NewGrant(
+              CUSTOMER, idOf("finance-team"), null, null, "The whole team is on this", "owner_o"));
+
+      grants.revoke(direct, "owner_o", "Finished the reconciliation");
+
+      assertThat(decisions.decide(DecisionService.Ask.of("analyst_a", CUSTOMER)).getAllowed())
+          .isTrue();
+    }
+  }
+
   // ------------------------------------------------------------------ fixture
+
+  /** An ORG data policy that nullifies {@code email} wherever PII is tagged. */
+  private static Policy orgMaskEmail(String name) {
+    ColumnRule rule = new ColumnRule();
+    rule.setAction(ColumnRule.Action.MASK);
+    rule.setColumns(columnNamed("email"));
+    MaskingSpec masking = new MaskingSpec();
+    masking.setFunction(MaskingSpec.MaskingFunction.NULLIFY);
+    rule.setMasking(masking);
+
+    DataPolicy data = new DataPolicy();
+    data.setColumnRules(List.of(rule));
+    return dataPolicy(name, data);
+  }
+
+  /** An ORG data policy filtering rows by an attribute the principal carries. */
+  private static Policy orgRowFilter(String name) {
+    RowFilter filter = new RowFilter();
+    filter.setKind(RowFilter.Kind.ATTRIBUTE_COMPARE);
+    filter.setColumn("email");
+    filter.setUserAttribute("clearance");
+
+    DataPolicy data = new DataPolicy();
+    data.setRowFilters(List.of(filter));
+    return dataPolicy(name, data);
+  }
+
+  private static Policy dataPolicy(String name, DataPolicy data) {
+    Policy document = new Policy();
+    document.setName(name);
+    document.setPolicyType(Policy.PolicyType.DATA);
+    document.setEffect(Policy.Effect.ALLOW);
+    document.setScopeLevel(ResolvedColumnMask.ScopeLevel.ORG);
+    document.setSelector(piiSelector());
+    document.setData(data);
+    return document;
+  }
+
+  private static AssetSelector columnNamed(String name) {
+    FacetCondition condition = new FacetCondition();
+    condition.setFacet(FacetCondition.FacetType.COLUMN_NAME);
+    condition.setOperator(ResolvedRowPredicate.FacetOperator.EQ);
+    condition.setValue(name);
+    AssetSelector selector = new AssetSelector();
+    selector.setCondition(condition);
+    return selector;
+  }
 
   /**
    * Publishes a policy into the environment the engine actually enforces.

@@ -1,0 +1,201 @@
+{
+  "summary": "The expr half of a subject rule compares the person against the asset. Everything else in a rule can only talk about one side at a time; this is the part that puts them in the same sentence, which is what lets one policy cover an organisation instead of one policy per table.",
+
+  "roots": [
+    {
+      "root": "user",
+      "title": "The person asking",
+      "open": true,
+      "note": "Anything not in this list is read as a directory attribute, so a new attribute works without a code change. That openness is also why a misspelt attribute is not an error: user.contry is a legal reading of an attribute nobody has. It has no value, the expression becomes undecidable, and an ALLOW carrying it never grants. Check spelling against People & attributes.",
+      "members": [
+        { "name": "user.id", "aliases": ["user.name", "user.username"], "yields": "the username" },
+        { "name": "user.email", "aliases": [], "yields": "the address, plus any email attribute" },
+        { "name": "user.roles", "aliases": ["user.role"], "yields": "every app role held" },
+        { "name": "user.teams", "aliases": ["user.team"], "yields": "every team held" },
+        { "name": "user.groups", "aliases": ["user.group"], "yields": "every directory group held" },
+        { "name": "user.<attribute>", "aliases": [], "yields": "every value of that attribute, for example user.country or user.clearance" },
+        { "name": "user.attr('<name>')", "aliases": [], "yields": "the same, for names that are not plain words" }
+      ]
+    },
+    {
+      "root": "asset",
+      "title": "The table being reached for",
+      "open": false,
+      "note": "A closed list: a name that is not a facet is rejected when the policy is saved, because there is no reading of asset.contry that could ever be right.",
+      "members": [
+        { "name": "asset.fqn", "aliases": [], "yields": "the fully-qualified name" },
+        { "name": "asset.tags", "aliases": ["asset.tag"], "yields": "effective tags, direct and inherited" },
+        { "name": "asset.classifications", "aliases": ["asset.classification"], "yields": "the categories those tags sit in" },
+        { "name": "asset.terms", "aliases": ["asset.term"], "yields": "glossary terms" },
+        { "name": "asset.glossaries", "aliases": ["asset.glossary"], "yields": "the glossaries those terms sit in" },
+        { "name": "asset.domains", "aliases": ["asset.domain"], "yields": "the domain and every ancestor of it" },
+        { "name": "asset.dataProducts", "aliases": ["asset.dataproduct"], "yields": "data products the asset belongs to" },
+        { "name": "asset.owners", "aliases": ["asset.owner"], "yields": "owning users and teams" },
+        { "name": "asset.tier", "aliases": [], "yields": "for example Tier.Tier1" },
+        { "name": "asset.certification", "aliases": [], "yields": "the certification label" },
+        { "name": "asset.service", "aliases": ["asset.database", "asset.schema", "asset.table"], "yields": "the physical location" },
+        { "name": "asset.columnName", "aliases": ["asset.dataType"], "yields": "used by column rules" },
+        { "name": "asset.prop('<name>')", "aliases": [], "yields": "a custom property from OpenMetadata, for example asset.prop('dataResidency')" }
+      ]
+    },
+    {
+      "root": "context",
+      "title": "The request itself",
+      "open": false,
+      "note": "",
+      "members": [
+        { "name": "context.purpose", "aliases": [], "yields": "the purpose declared with the request" },
+        { "name": "context.ip", "aliases": [], "yields": "the caller's address" }
+      ]
+    },
+    {
+      "root": "row",
+      "title": "A column of the row being returned",
+      "open": true,
+      "note": "A subject rule decides who reaches the table at all, before any row exists, so row. is rejected there. It belongs in a data policy, where the compilers render it into the generated SQL as a per-row condition.",
+      "members": [
+        { "name": "row.<column>", "aliases": [], "yields": "the column's value in the row being returned" }
+      ]
+    }
+  ],
+
+  "operators": [
+    { "op": "==", "meaning": "equal", "note": "True when any value on the left equals any value on the right. Both sides can hold several values, and FQNs compare the way the rest of the engine compares them." },
+    { "op": "!=", "meaning": "not equal", "note": "The negation of ==, not a separate rule." },
+    { "op": ">  >=  <  <=", "meaning": "ordered comparison", "note": "Numbers compare as numbers, and text such as L1 against L2 compares in order." },
+    { "op": "in", "meaning": "is among", "note": "user.department in asset.domains, or against a written list." },
+    { "op": "not in", "meaning": "is not among", "note": "" },
+    { "op": "&&", "meaning": "and", "note": "The word and works too." },
+    { "op": "||", "meaning": "or", "note": "The word or works too." },
+    { "op": "!", "meaning": "not", "note": "The word not works too." },
+    { "op": "implies", "meaning": "if ... then", "note": "a implies b is false only when a holds and b does not. It reads the way a rule is spoken: being Tier1 implies needing clearance L2." },
+    { "op": "( )", "meaning": "grouping", "note": "" },
+    { "op": "[ ]", "meaning": "a written list", "note": "Quoted values and numbers only, for example ['FINANCE', 'RISK']." }
+  ],
+
+  "truth": "Evaluation has three answers, not two. An operand with no value at all is unknown, never false. A user whose directory record is missing an attribute makes the expression undecidable, and the rule carrying it fails in whichever direction is safe: an ALLOW does not grant, a DENY still denies. This is deliberate. Reading a missing attribute as false would make user.country != asset.prop('dataResidency') stop denying for precisely the user nobody has finished onboarding.",
+
+  "examples": [
+    {
+      "id": "residency",
+      "title": "Keep data in the country it is registered to",
+      "expression": "user.country == asset.prop('dataResidency')",
+      "explanation": "The single most useful shape: one policy, every table, no list of countries to maintain. The asset carries its own residency as a custom property in OpenMetadata, so a new table is covered the moment it is tagged.",
+      "cases": [
+        { "given": "a Thai analyst on a Thai table", "principal": { "id": "analyst_a", "attributes": { "country": ["TH"] } }, "asset": { "fqn": "prod-pg.SalesDB.dbo.customer", "properties": { "dataResidency": "TH" } }, "expect": "TRUE" },
+        { "given": "a Singapore analyst on the same table", "principal": { "id": "analyst_b", "attributes": { "country": ["SG"] } }, "asset": { "fqn": "prod-pg.SalesDB.dbo.customer", "properties": { "dataResidency": "TH" } }, "expect": "FALSE" },
+        { "given": "the table has no residency recorded", "principal": { "id": "analyst_a", "attributes": { "country": ["TH"] } }, "asset": { "fqn": "prod-pg.SalesDB.dbo.customer" }, "expect": "UNKNOWN" }
+      ]
+    },
+    {
+      "id": "domain",
+      "title": "Let a department reach its own domain",
+      "expression": "user.department in asset.domains",
+      "explanation": "asset.domains holds the domain and every ancestor of it, so a table in Finance.Risk.Credit also answers to Finance. One policy covers a sub-domain tree the stewards have not finished drawing yet.",
+      "cases": [
+        { "given": "Finance, on a table three levels down", "principal": { "id": "analyst_a", "attributes": { "department": ["Finance"] } }, "asset": { "fqn": "prod-pg.SalesDB.dbo.customer", "facets": { "domains": ["Finance", "Finance.Risk", "Finance.Risk.Credit"] } }, "expect": "TRUE" },
+        { "given": "Marketing, on the same table", "principal": { "id": "analyst_c", "attributes": { "department": ["Marketing"] } }, "asset": { "fqn": "prod-pg.SalesDB.dbo.customer", "facets": { "domains": ["Finance", "Finance.Risk", "Finance.Risk.Credit"] } }, "expect": "FALSE" }
+      ]
+    },
+    {
+      "id": "owner",
+      "title": "Give owners access without naming them",
+      "expression": "user.email in asset.owners",
+      "explanation": "Ownership already lives in OpenMetadata and changes when people move teams. Reading it here means the policy never has to be edited when they do.",
+      "cases": [
+        { "given": "the owner", "principal": { "id": "owner_o", "email": "owner@example.com" }, "asset": { "fqn": "prod-pg.SalesDB.dbo.customer", "facets": { "owners": ["owner@example.com", "Finance"] } }, "expect": "TRUE" },
+        { "given": "somebody else", "principal": { "id": "analyst_a", "email": "analyst@example.com" }, "asset": { "fqn": "prod-pg.SalesDB.dbo.customer", "facets": { "owners": ["owner@example.com", "Finance"] } }, "expect": "FALSE" }
+      ]
+    },
+    {
+      "id": "implies",
+      "title": "Demand clearance only where it matters",
+      "expression": "asset.tier == 'Tier.Tier1' implies user.clearance >= 'L2'",
+      "explanation": "implies is not the same as and. On a Tier3 table this expression is simply true and imposes nothing, so the policy can be written once for the whole estate rather than split into a tiered version and an untiered one.",
+      "cases": [
+        { "given": "Tier1 and cleared", "principal": { "id": "analyst_b", "attributes": { "clearance": ["L2"] } }, "asset": { "fqn": "prod-pg.SalesDB.dbo.customer", "facets": { "tier": ["Tier.Tier1"] } }, "expect": "TRUE" },
+        { "given": "Tier1 and not cleared", "principal": { "id": "analyst_a", "attributes": { "clearance": ["L1"] } }, "asset": { "fqn": "prod-pg.SalesDB.dbo.customer", "facets": { "tier": ["Tier.Tier1"] } }, "expect": "FALSE" },
+        { "given": "a lower tier, where clearance is beside the point", "principal": { "id": "analyst_a", "attributes": { "clearance": ["L1"] } }, "asset": { "fqn": "prod-pg.SalesDB.dbo.orders", "facets": { "tier": ["Tier.Tier3"] } }, "expect": "TRUE" }
+      ]
+    },
+    {
+      "id": "tag-and-clearance",
+      "title": "Guard a tag with an attribute",
+      "expression": "'PII.Sensitive' in asset.tags && user.clearance >= 'L2'",
+      "explanation": "A tag added by a steward tomorrow is covered by this today. Note in rather than contains: contains belongs to the selector language, which chooses the assets a policy binds to. Inside an expression the operator is in.",
+      "cases": [
+        { "given": "tagged, and cleared", "principal": { "id": "analyst_b", "attributes": { "clearance": ["L2"] } }, "asset": { "fqn": "prod-pg.SalesDB.dbo.customer", "facets": { "tags": ["PII.Sensitive"] } }, "expect": "TRUE" },
+        { "given": "tagged, not cleared", "principal": { "id": "analyst_a", "attributes": { "clearance": ["L1"] } }, "asset": { "fqn": "prod-pg.SalesDB.dbo.customer", "facets": { "tags": ["PII.Sensitive"] } }, "expect": "FALSE" }
+      ]
+    },
+    {
+      "id": "list",
+      "title": "Compare against a written list",
+      "expression": "user.department in ['FINANCE', 'RISK']",
+      "explanation": "Use this when the set is genuinely fixed. When it is not, prefer reading it off the asset, which is what the domain example does.",
+      "cases": [
+        { "given": "in the list", "principal": { "id": "analyst_a", "attributes": { "department": ["FINANCE"] } }, "asset": { "fqn": "prod-pg.SalesDB.dbo.customer" }, "expect": "TRUE" },
+        { "given": "not in the list", "principal": { "id": "analyst_c", "attributes": { "department": ["MARKETING"] } }, "asset": { "fqn": "prod-pg.SalesDB.dbo.customer" }, "expect": "FALSE" }
+      ]
+    },
+    {
+      "id": "not-in",
+      "title": "Exclude a classification",
+      "expression": "'Restricted' not in asset.classifications",
+      "explanation": "not in reads better than wrapping the whole comparison in !, and means the same.",
+      "cases": [
+        { "given": "an ordinary table", "principal": { "id": "analyst_a" }, "asset": { "fqn": "prod-pg.SalesDB.dbo.orders", "facets": { "classifications": ["PII"] } }, "expect": "TRUE" },
+        { "given": "a restricted table", "principal": { "id": "analyst_a" }, "asset": { "fqn": "prod-pg.SalesDB.dbo.customer", "facets": { "classifications": ["PII", "Restricted"] } }, "expect": "FALSE" }
+      ]
+    },
+    {
+      "id": "grouping",
+      "title": "Group alternatives, then narrow them",
+      "expression": "(user.team == 'Finance' || 'auditor' in user.roles) && user.country == 'TH'",
+      "explanation": "Brackets matter. Without them && binds tighter than ||, and the country check would apply to auditors only.",
+      "cases": [
+        { "given": "an auditor in Thailand", "principal": { "id": "auditor_a", "roles": ["auditor"], "attributes": { "country": ["TH"] } }, "asset": { "fqn": "prod-pg.SalesDB.dbo.customer" }, "expect": "TRUE" },
+        { "given": "a Finance member in Thailand", "principal": { "id": "analyst_a", "teams": ["Finance"], "attributes": { "country": ["TH"] } }, "asset": { "fqn": "prod-pg.SalesDB.dbo.customer" }, "expect": "TRUE" },
+        { "given": "an auditor abroad", "principal": { "id": "auditor_b", "roles": ["auditor"], "attributes": { "country": ["SG"] } }, "asset": { "fqn": "prod-pg.SalesDB.dbo.customer" }, "expect": "FALSE" }
+      ]
+    },
+    {
+      "id": "purpose",
+      "title": "Require a declared purpose",
+      "expression": "context.purpose == 'fraud-analysis'",
+      "explanation": "The purpose travels with the request. Pair it with a short-lived grant when access is for one investigation.",
+      "cases": [
+        { "given": "declared", "principal": { "id": "analyst_a" }, "asset": { "fqn": "prod-pg.SalesDB.dbo.customer" }, "context": { "purpose": "fraud-analysis" }, "expect": "TRUE" },
+        { "given": "nothing declared", "principal": { "id": "analyst_a" }, "asset": { "fqn": "prod-pg.SalesDB.dbo.customer" }, "expect": "UNKNOWN" }
+      ]
+    },
+    {
+      "id": "row",
+      "title": "A condition that needs the row",
+      "expression": "row.branch_code == user.branch",
+      "explanation": "This cannot be answered before a row exists, so it is rejected in a subject rule and belongs in a data policy, where it is compiled into the generated SQL.",
+      "cases": [
+        { "given": "any principal, because the row decides", "principal": { "id": "analyst_a", "attributes": { "branch": ["BKK-01"] } }, "asset": { "fqn": "prod-pg.SalesDB.dbo.customer" }, "expect": "ROW_DEPENDENT" }
+      ]
+    },
+    {
+      "id": "typo",
+      "title": "What a misspelt attribute does",
+      "expression": "user.contry == 'TH'",
+      "explanation": "Not an error, and this is the trap worth knowing about. user. is open so the directory can grow, which means contry is read as an attribute nobody has. The expression is undecidable and an ALLOW carrying it silently never grants. The policy still saves, still activates, and still reads back exactly as typed.",
+      "cases": [
+        { "given": "a user who does have country, spelt properly", "principal": { "id": "analyst_a", "attributes": { "country": ["TH"] } }, "asset": { "fqn": "prod-pg.SalesDB.dbo.customer" }, "expect": "UNKNOWN" }
+      ]
+    }
+  ],
+
+  "rejected": [
+    { "expression": "asset.contry == 'TH'", "why": "assets have a closed list of facets, so this is caught when the policy is saved" },
+    { "expression": "usr.country == 'TH'", "why": "only user, asset, row and context can be referred to" },
+    { "expression": "context.hostname == 'x'", "why": "the request context carries purpose and ip only" },
+    { "expression": "user.country ==", "why": "the comparison has nothing on its right" },
+    { "expression": "(user.country == 'TH'", "why": "a bracket is left open" },
+    { "expression": "user.country 'TH'", "why": "a value where a comparison was expected" },
+    { "expression": "user.department in ['FINANCE', asset.domains]", "why": "a written list holds quoted values and numbers only; to compare against a facet, name it directly" }
+  ]
+}

@@ -21,6 +21,7 @@ import AppRolesPage from './pages/settings/AppRolesPage';
 import OpenMetadataSettingsPage from './pages/settings/OpenMetadataSettingsPage';
 import SettingsPage from './pages/settings/SettingsPage';
 import SourcesPage from './pages/SourcesPage';
+import ExpressionDocsPage from './pages/docs/ExpressionDocsPage';
 import SystemStatusPage from './pages/SystemStatusPage';
 
 /**
@@ -82,6 +83,12 @@ export default function App() {
           <Route element={<AppRolesPage />} path="/settings/roles" />
           <Route element={<SettingsPage />} path="/settings" />
           <Route element={<SystemStatusPage />} path="/system" />
+          {/*
+            Inside the guard, not outside it. The reference names the facets
+            and attributes this deployment carries, which is a description of
+            the organisation's data and not something to hand to a stranger.
+          */}
+          <Route element={<ExpressionDocsPage />} path="/docs/expressions" />
           {placeholders.map((section) => (
             <Route
               element={<NotBuiltYetPage />}
