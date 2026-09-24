@@ -3,10 +3,14 @@ package com.mfec.dac.home;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mfec.dac.home.HomeLayout.Layout;
 import com.mfec.dac.home.HomeLayout.LayoutView;
+import com.mfec.dac.home.HomeLayout.Persona;
+import com.mfec.dac.home.HomeLayout.PersonaLayout;
 import com.mfec.dac.home.HomeLayout.Preset;
 import com.mfec.dac.home.HomeLayout.Widget;
 import com.mfec.dac.home.HomeLayout.WidgetType;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -81,44 +85,99 @@ public class HomeLayoutStore {
   }
 
   /**
-   * The account's page, or the default for its roles when it has none.
+   * The account's page: its own, else its role's, else the built-in one.
+   *
+   * <p>Three sources in that order, and the reply says which one it came from.
+   * A personal arrangement wins over anything an administrator set, always: the
+   * persona is where somebody starts, and an administrator retouching it must
+   * not rearrange the page of someone who already made it theirs. That is the
+   * difference between a default and a policy, and this one is a default.
    *
    * @param governanceReader whether this account is offered the widgets that
    *     report on policy, sources and coverage — see
    *     {@link WidgetType#governance()} for why this is a matter of what is
    *     worth showing rather than of what may be read
+   * @param personas the account's roles as personas, strongest first, from
+   *     {@link Persona#heldBy}. Passed in rather than looked up here because
+   *     the roles are already on the request and a second read of them could
+   *     disagree with the one authorisation used.
    */
-  public LayoutView forPrincipal(UUID principalId, boolean governanceReader) {
-    return jdbi.withHandle(
-        handle ->
-            handle
-                .createQuery(
-                    """
-                    SELECT layout::text AS layout, updated_at, updated_by
-                      FROM home_layout
-                     WHERE principal_id = :pid
-                    """)
-                .bind("pid", principalId)
-                .map(
-                    (rs, ctx) ->
-                        new LayoutView(
-                            // Cleaned on the way out as well as on the way in.
-                            // See HomeLayoutValidator for why that is not
-                            // belt-and-braces.
-                            forRole(
-                                validator.clean(parse(rs.getString("layout"))),
-                                governanceReader),
-                            false,
-                            rs.getTimestamp("updated_at").toInstant(),
-                            rs.getString("updated_by")))
-                .findOne()
-                .orElseGet(
-                    () ->
-                        new LayoutView(
-                            governanceReader ? DEFAULT : REQUESTER_DEFAULT,
-                            true,
-                            null,
-                            null)));
+  public LayoutView forPrincipal(
+      UUID principalId, boolean governanceReader, List<Persona> personas) {
+    Optional<LayoutView> own =
+        jdbi.withHandle(
+            handle ->
+                handle
+                    .createQuery(
+                        """
+                        SELECT layout::text AS layout, updated_at, updated_by
+                          FROM home_layout
+                         WHERE principal_id = :pid
+                        """)
+                    .bind("pid", principalId)
+                    .map(
+                        (rs, ctx) ->
+                            LayoutView.personal(
+                                // Cleaned on the way out as well as on the way
+                                // in. See HomeLayoutValidator for why that is
+                                // not belt-and-braces.
+                                forRole(
+                                    validator.clean(parse(rs.getString("layout"))),
+                                    governanceReader),
+                                rs.getTimestamp("updated_at").toInstant(),
+                                rs.getString("updated_by")))
+                    .findOne());
+    return own.orElseGet(() -> inheritedFor(governanceReader, personas));
+  }
+
+  /**
+   * The page for somebody who has never arranged one.
+   *
+   * <p>Split out because {@link #reset} has to answer the same question: after
+   * forgetting an arrangement, what a person sees is whatever they would have
+   * seen had they never made one, and working that out in two places is how the
+   * two answers drift.
+   */
+  private LayoutView inheritedFor(boolean governanceReader, List<Persona> personas) {
+    for (Persona persona : personas == null ? List.<Persona>of() : personas) {
+      Optional<LayoutView> arranged =
+          jdbi.withHandle(
+              handle ->
+                  handle
+                      .createQuery(
+                          """
+                          SELECT layout::text AS layout, updated_at, updated_by
+                            FROM home_role_layout
+                           WHERE app_role = :role
+                          """)
+                      .bind("role", persona.roleName())
+                      .map(
+                          (rs, ctx) ->
+                              LayoutView.ofRole(
+                                  forRole(
+                                      validator.clean(parse(rs.getString("layout"))),
+                                      governanceReader),
+                                  persona,
+                                  rs.getTimestamp("updated_at").toInstant(),
+                                  rs.getString("updated_by")))
+                      .findOne());
+      if (arranged.isPresent()) {
+        return arranged.get();
+      }
+    }
+    return LayoutView.builtIn(governanceReader ? DEFAULT : REQUESTER_DEFAULT);
+  }
+
+  /**
+   * The page this product ships with for one role.
+   *
+   * <p>What the persona editor opens on when nobody has arranged that role yet,
+   * so the administrator starts from the page those people actually see rather
+   * than from an empty canvas they would have to rebuild before they could
+   * change one thing about it.
+   */
+  public static Layout builtInFor(Persona persona) {
+    return persona == Persona.REQUESTER ? REQUESTER_DEFAULT : DEFAULT;
   }
 
   /**
@@ -179,19 +238,125 @@ public class HomeLayoutStore {
                     .bind("actor", actor)
                     .mapTo(Instant.class)
                     .one());
-    return new LayoutView(forRole(clean, governanceReader), false, now, actor);
+    return LayoutView.personal(forRole(clean, governanceReader), now, actor);
   }
 
-  /** Forgets the account's arrangement, which restores the default. */
-  public LayoutView reset(UUID principalId, boolean governanceReader) {
+  /**
+   * Forgets the account's arrangement, which restores whatever it inherits.
+   *
+   * <p>Which may be a persona rather than the built-in page, and the reply says
+   * so. Somebody pressing Reset after their administrator arranged the auditor
+   * page should land on that page, not on the one the product shipped with a
+   * year ago.
+   */
+  public LayoutView reset(UUID principalId, boolean governanceReader, List<Persona> personas) {
     jdbi.useHandle(
         handle ->
             handle
                 .createUpdate("DELETE FROM home_layout WHERE principal_id = :pid")
                 .bind("pid", principalId)
                 .execute());
-    return new LayoutView(
-        governanceReader ? DEFAULT : REQUESTER_DEFAULT, true, null, null);
+    return inheritedFor(governanceReader, personas);
+  }
+
+  // ------------------------------------------------------------- personas
+
+  /**
+   * Every persona, arranged or not, for the administrator's editor.
+   *
+   * <p>All five rather than the rows that exist, because the editor's job is to
+   * answer "what does a data owner see" and the answer is a page whether or not
+   * anybody has touched it. An unarranged persona comes back with
+   * {@code configured = false} and the built-in page, which is the honest
+   * answer to that question.
+   *
+   * <p>Not filtered by {@link #forRole}: this is the page as it will be stored,
+   * seen by an administrator who holds every role. Filtering it here would show
+   * them a page nobody will actually be served.
+   */
+  public List<PersonaLayout> personas() {
+    List<PersonaLayout> rows =
+        jdbi.withHandle(
+            handle ->
+                handle
+                    .createQuery(
+                        """
+                        SELECT app_role, layout::text AS layout, updated_at, updated_by
+                          FROM home_role_layout
+                        """)
+                    .map(
+                        (rs, ctx) ->
+                            new PersonaLayout(
+                                Persona.valueOf(rs.getString("app_role")),
+                                validator.clean(parse(rs.getString("layout"))),
+                                true,
+                                rs.getTimestamp("updated_at").toInstant(),
+                                rs.getString("updated_by")))
+                    .list());
+    Map<Persona, PersonaLayout> arranged = new EnumMap<>(Persona.class);
+    for (PersonaLayout row : rows) {
+      arranged.put(row.role(), row);
+    }
+    List<PersonaLayout> all = new ArrayList<>(Persona.values().length);
+    for (Persona persona : Persona.values()) {
+      PersonaLayout row = arranged.get(persona);
+      all.add(
+          row != null
+              ? row
+              : new PersonaLayout(persona, builtInFor(persona), false, null, null));
+    }
+    return all;
+  }
+
+  /**
+   * Arranges the page for one role.
+   *
+   * <p>Cleaned like any other layout, and for a sharper reason: this is the one
+   * layout written by one person and rendered to another. Nothing about the
+   * writer holding PLATFORM_ADMIN makes markup safe — an administrator's
+   * session is the most valuable one to steal, and a persona is the only way
+   * this product will put authored HTML in front of somebody who did not type
+   * it.
+   */
+  public PersonaLayout savePersona(Persona persona, Layout layout, String actor) {
+    Layout clean = validator.clean(layout);
+    String document = write(clean);
+    Instant now =
+        jdbi.withHandle(
+            handle ->
+                handle
+                    .createQuery(
+                        """
+                        INSERT INTO home_role_layout (app_role, layout, updated_by)
+                        VALUES (:role, CAST(:layout AS jsonb), :actor)
+                        ON CONFLICT (app_role) DO UPDATE
+                           SET layout     = EXCLUDED.layout,
+                               updated_at = now(),
+                               updated_by = EXCLUDED.updated_by
+                        RETURNING updated_at
+                        """)
+                    .bind("role", persona.roleName())
+                    .bind("layout", document)
+                    .bind("actor", actor)
+                    .mapTo(Instant.class)
+                    .one());
+    return new PersonaLayout(persona, clean, true, now, actor);
+  }
+
+  /**
+   * Forgets the arrangement for one role.
+   *
+   * <p>Which returns those people to the built-in page, and leaves everybody
+   * who arranged their own alone — they were never reading this row.
+   */
+  public PersonaLayout resetPersona(Persona persona) {
+    jdbi.useHandle(
+        handle ->
+            handle
+                .createUpdate("DELETE FROM home_role_layout WHERE app_role = :role")
+                .bind("role", persona.roleName())
+                .execute());
+    return new PersonaLayout(persona, builtInFor(persona), false, null, null);
   }
 
   /** Whether this account has arranged its own page. */

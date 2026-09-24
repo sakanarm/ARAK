@@ -60,13 +60,70 @@ export interface HomeLayout {
   widgets: HomeWidget[];
 }
 
+/**
+ * A platform role, seen as an audience for the home page (M12b).
+ *
+ * In the server's precedence order, strongest first. The order is part of the
+ * contract rather than a presentation detail: somebody holding several roles is
+ * served the first one of these that an administrator has arranged.
+ */
+export type HomePersonaRole =
+  | 'PLATFORM_ADMIN'
+  | 'POLICY_AUTHOR'
+  | 'DATA_OWNER'
+  | 'AUDITOR'
+  | 'REQUESTER';
+
+/** Where a served layout came from. */
+export type HomeLayoutSource = 'PERSONAL' | 'ROLE' | 'BUILT_IN';
+
 export interface HomeLayoutView {
   layout: HomeLayout;
   /** True when this account has never saved one, so the page can say so. */
   isDefault: boolean;
+  /**
+   * Which of the three sources it came from. `isDefault` stays because it is
+   * the question the editor asks -- may I offer Reset? -- and that is true of
+   * both kinds of default.
+   */
+  source: HomeLayoutSource;
+  /** The role it came from when `source` is `ROLE`; null otherwise. */
+  sourceRole: HomePersonaRole | null;
   updatedAt: string | null;
   updatedBy: string | null;
 }
+
+/** One persona as the administrator's editor sees it. */
+export interface HomePersonaLayout {
+  role: HomePersonaRole;
+  layout: HomeLayout;
+  /**
+   * False when nobody has arranged this role, in which case `layout` is the
+   * built-in page -- the editor opens on what those people see today rather
+   * than on an empty canvas.
+   */
+  configured: boolean;
+  updatedAt: string | null;
+  updatedBy: string | null;
+}
+
+/** The five roles in the server's precedence order. */
+export const HOME_PERSONA_ROLES: HomePersonaRole[] = [
+  'PLATFORM_ADMIN',
+  'POLICY_AUTHOR',
+  'DATA_OWNER',
+  'AUDITOR',
+  'REQUESTER',
+];
+
+/** What each role is called on screen. */
+export const HOME_PERSONA_LABELS: Record<HomePersonaRole, string> = {
+  PLATFORM_ADMIN: 'Platform admin',
+  POLICY_AUTHOR: 'Policy author',
+  DATA_OWNER: 'Data owner',
+  AUDITOR: 'Auditor',
+  REQUESTER: 'Requester',
+};
 
 /** How many columns each preset has, and how they are weighted. */
 export const PRESET_COLUMNS: Record<HomePreset, number> = {
@@ -90,8 +147,41 @@ export async function saveHomeLayout(
   return data;
 }
 
-/** Forgets my arrangement and restores the default. */
+/** Forgets my arrangement and restores whatever I inherit. */
 export async function resetHomeLayout(): Promise<HomeLayoutView> {
   const { data } = await apiClient.delete<HomeLayoutView>('/v1/home/layout');
+  return data;
+}
+
+/**
+ * Every persona, arranged or not. Platform admin only.
+ *
+ * All five come back always, because "what does a data owner see" has an answer
+ * whether or not anybody has touched it.
+ */
+export async function fetchHomePersonas(): Promise<HomePersonaLayout[]> {
+  const { data } = await apiClient.get<HomePersonaLayout[]>('/v1/home/personas');
+  return data;
+}
+
+/** Arranges the page for one role. Platform admin only. */
+export async function saveHomePersona(
+  role: HomePersonaRole,
+  layout: HomeLayout
+): Promise<HomePersonaLayout> {
+  const { data } = await apiClient.put<HomePersonaLayout>(
+    `/v1/home/personas/${role}`,
+    layout
+  );
+  return data;
+}
+
+/** Forgets the arrangement for one role, returning those people to the built-in page. */
+export async function resetHomePersona(
+  role: HomePersonaRole
+): Promise<HomePersonaLayout> {
+  const { data } = await apiClient.delete<HomePersonaLayout>(
+    `/v1/home/personas/${role}`
+  );
   return data;
 }

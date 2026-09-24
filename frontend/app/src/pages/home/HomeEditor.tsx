@@ -182,6 +182,9 @@ export function HomeEditor({
   saving,
   error,
   governanceReader,
+  heading = 'Editing your home page',
+  subheading = 'Only yours. Nothing here changes what anyone else sees, or what anyone is allowed to read.',
+  resetLabel = 'Reset to default',
 }: {
   draft: HomeLayout;
   onChange: (layout: HomeLayout) => void;
@@ -192,6 +195,15 @@ export function HomeEditor({
   error: string | null;
   /** Whether the governance widgets are offered — mirrors the server. */
   governanceReader: boolean;
+  /**
+   * What this editor says it is editing. The persona editor (M12b) is the same
+   * editor pointed at somebody else's starting page, and the one thing it must
+   * not reuse is the sentence promising that nothing here changes what anyone
+   * else sees — because there, it does.
+   */
+  heading?: string;
+  subheading?: string;
+  resetLabel?: string;
 }) {
   const [adding, setAdding] = useState<number | null>(null);
   const labels = columnLabels(draft.preset);
@@ -204,12 +216,9 @@ export function HomeEditor({
       <header className="tw:flex tw:flex-wrap tw:items-center tw:justify-between tw:gap-3 tw:border-b tw:border-secondary tw:px-5 tw:py-3.5">
         <div>
           <h2 className="tw:text-sm tw:font-semibold tw:text-primary">
-            Editing your home page
+            {heading}
           </h2>
-          <p className="tw:mt-0.5 tw:text-xs tw:text-tertiary">
-            Only yours. Nothing here changes what anyone else sees, or what
-            anyone is allowed to read.
-          </p>
+          <p className="tw:mt-0.5 tw:text-xs tw:text-tertiary">{subheading}</p>
         </div>
         <div className="tw:flex tw:items-center tw:gap-2">
           <Button
@@ -218,7 +227,7 @@ export function HomeEditor({
             isDisabled={saving}
             onPress={onReset}
             size="sm">
-            Reset to default
+            {resetLabel}
           </Button>
           <Button color="secondary" isDisabled={saving} onPress={onCancel} size="sm">
             Cancel

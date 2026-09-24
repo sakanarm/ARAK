@@ -4,6 +4,7 @@ import com.mfec.dac.auth.AuthenticatedUser;
 import com.mfec.dac.auth.Secured;
 import com.mfec.dac.home.HomeLayout.Layout;
 import com.mfec.dac.home.HomeLayout.LayoutView;
+import com.mfec.dac.home.HomeLayout.Persona;
 import com.mfec.dac.home.HomeLayoutStore;
 import com.mfec.dac.home.HomeLayoutValidator;
 import jakarta.ws.rs.BadRequestException;
@@ -17,6 +18,7 @@ import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.core.Context;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.SecurityContext;
+import java.util.List;
 
 /**
  * The home page, as arranged by the person reading it (M12).
@@ -26,9 +28,15 @@ import jakarta.ws.rs.core.SecurityContext;
  * endpoint that let one account write another's would be a way to put markup
  * into somebody else's session — which is precisely the thing
  * {@link HomeLayoutValidator} exists to make harmless, and not something to also
- * leave a door open for. There is deliberately no administrator override; an
- * administrator who wants a shared dashboard should get a shared dashboard,
- * which is a different feature with a different audit story.
+ * leave a door open for.
+ *
+ * <p>An administrator arranges a role's page instead, through
+ * {@link HomePersonaResource} (M12b). That is a starting point rather than an
+ * override: it is what somebody sees until they arrange their own, and the
+ * moment they do, nothing an administrator saves will move it again. So this
+ * class still has no endpoint that writes another account's page, and the
+ * reply here says which of the three sources the layout came from so the
+ * console can tell somebody whether the page they are looking at is theirs.
  */
 @Path("/v1/home/layout")
 @Produces(MediaType.APPLICATION_JSON)
@@ -53,11 +61,11 @@ public class HomeResource {
     "PLATFORM_ADMIN", "POLICY_AUTHOR", "DATA_OWNER", "AUDITOR"
   };
 
-  /** My page. The default arrangement if I have never saved one. */
+  /** My page: mine, else my role's, else the one this product ships with. */
   @GET
   public LayoutView layout(@Context SecurityContext security) {
     AuthenticatedUser actor = caller(security);
-    return store.forPrincipal(actor.id(), governs(actor));
+    return store.forPrincipal(actor.id(), governs(actor), personas(actor));
   }
 
   /**
@@ -80,15 +88,32 @@ public class HomeResource {
     }
   }
 
-  /** Forgets my arrangement and restores the default. */
+  /**
+   * Forgets my arrangement and restores whatever I inherit.
+   *
+   * <p>Which is my role's page if an administrator has arranged one, not
+   * necessarily the built-in one. Reset means "as if I had never touched it",
+   * and that is the page I would have been given.
+   */
   @DELETE
   public LayoutView reset(@Context SecurityContext security) {
     AuthenticatedUser actor = caller(security);
-    return store.reset(actor.id(), governs(actor));
+    return store.reset(actor.id(), governs(actor), personas(actor));
   }
 
   private static boolean governs(AuthenticatedUser actor) {
     return actor.hasAnyRole(GOVERNANCE_ROLES);
+  }
+
+  /**
+   * The personas this caller may inherit, from the roles on this request.
+   *
+   * <p>Read off the authenticated caller rather than looked up again, so the
+   * page somebody is served can never be decided by a different set of roles
+   * than the one that let them in.
+   */
+  private static List<Persona> personas(AuthenticatedUser actor) {
+    return Persona.heldBy(actor.appRoles());
   }
 
   private static AuthenticatedUser caller(SecurityContext security) {

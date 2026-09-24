@@ -39,7 +39,7 @@ Phase 1 รองรับ SQL Server + PostgreSQL · identity หลักค�
 | **M9 Access Request Management** | ⬜ **Phase 2 — ยังไม่เริ่ม** · ขอสิทธิ์เองจาก catalog (duration + เหตุผล + purpose) · routing หา approver จาก `asset_owner` · approval chain หลายขั้น · access review / recertification ทุก 90 วัน · break-glass (TTL สั้น + alert) · inbox ของ approver + notification — **ทางเตรียมไว้แล้วตั้งแต่ Phase 1**: `grant.source` = `manual` \| `request` + `request_id` (V11) · `requiresApproval` / `approvers` / `validUntil` ใน policy model · auto-revoke + audit · `asset_owner` พร้อม route → **ต่อยอดได้เลยไม่ต้อง migrate** |
 | **M10 Access Control Dashboard** | ⬜ **Phase 2 — ออกแบบแล้ว ยังไม่เริ่ม** · หน้าเดียวที่ตอบว่า "ตอนนี้องค์กรคุมข้อมูลได้ดีแค่ไหน" · 4 แถว: **Coverage** (asset ที่มี tag PII แต่ไม่มี policy คุ้มครอง / % ของ asset ที่ enforce แล้ว) · **Exposure** (ใครเข้าถึง PII ได้บ้าง · grant ที่ใกล้หมดอายุ · สิทธิ์ที่ไม่ได้ใช้เกิน 90 วัน) · **Activity** (query ต่อวัน แยก EXECUTED/REJECTED/FAILED · top principal · top asset · เหตุผลที่ถูกปฏิเสธบ่อยที่สุด) · **Health** (enforcement state ต่อ source · drift · รอบ sync ล่าสุด · p95 ของ decision) — **ข้อมูลมีอยู่ครบแล้วทั้งหมด** (`audit_query`, `audit_decision`, `asset_facet`, `policy_binding`, `access_grant`, `enforcement_state`) → งานคือ query + หน้าจอ ไม่ต้อง migrate — ดูแบบเต็มที่ข้อ AM.4 |
 | **M11 LLM Assist** | 🚧 **~60%** — ตารางนี้เคยเขียนว่า "ยังไม่เริ่ม" ซึ่งไม่จริงแล้ว · **per-user gateway ใช้งานได้จริง** — แต่ละคนใส่ base URL + key ของตัวเองในหน้า Settings และเลือกเองว่าจะเปิดใช้ไหม (`llm_user_setting.base_url` + `api_key_cipher` Fernet · key ไม่เคยถูกส่งกลับ ตอบแค่ `hasOwnKey`) · `llm_provider.allow_personal` เป็น kill switch · ⚠️ `LlmResource.putUser` ตัดสิทธิ์ admin ให้แก้ได้แค่ `enabled` — **ไม่มีใครเขียน gateway ของคนอื่นได้ ห้ามผ่อน** · ทดสอบสดผ่านแล้ว (21 models + completion ด้วย key ของ `analyst_a` เอง) · เหลือฟีเจอร์จริงสองตัว: **NL→SQL** และ **ร่าง policy** ที่ออกมาเป็น `DRAFT` เท่านั้น (FR-2.6 — LLM ไม่มีสิทธิ์ activate เอง) — ดูข้อ AO.8/AO.9 |
-| **M12 Home ที่จัดเอง** | 🚧 **~90% — milestone ใหม่ ไม่อยู่ในแผนเดิม** · หน้าแรกจัดวางเองได้ต่อ account · 5 preset · 14 widget type (กราฟวาดเป็น SVG มือ ไม่มี chart library) · วาง **HTML / Note / Link / Video** ได้ · `V13__home_layout.sql` — ไม่มีแถว = default (ลบแถว = reset) · **default คนละใบตาม role**: governance ได้หน้าเดิม · Requestor ได้หน้า Search · ⚠️ **HTML ที่คนพิมพ์เอง = stored XSS** → `HomeLayoutValidator` ล้างทั้ง**ตอนเขียนและตอนอ่าน** **ห้ามมีทางเขียน `home_layout` ที่ไม่ผ่านตัวนี้** · เหลือ **persona** (ให้ admin ตั้ง default ต่อ Platform Role) ซึ่งผู้ใช้ขอไว้ — ดูข้อ AN |
+| **M12 Home ที่จัดเอง** | ✅ **เสร็จ — milestone ใหม่ ไม่อยู่ในแผนเดิม** · หน้าแรกจัดวางเองได้ต่อ account · 5 preset · 14 widget type (กราฟวาดเป็น SVG มือ ไม่มี chart library) · วาง **HTML / Note / Link / Video** ได้ · `V13__home_layout.sql` — ไม่มีแถว = default (ลบแถว = reset) · **default คนละใบตาม role**: governance ได้หน้าเดิม · Requestor ได้หน้า Search · ⚠️ **HTML ที่คนพิมพ์เอง = stored XSS** → `HomeLayoutValidator` ล้างทั้ง**ตอนเขียนและตอนอ่าน** **ห้ามมีทางเขียน `home_layout` ที่ไม่ผ่านตัวนี้** · **M12b persona เสร็จแล้ว** (`V19__home_role_layout.sql`) — admin จัดหน้าแรกให้แต่ละ Platform Role ได้ที่ `/settings/home` · resolve แบบ **personal → role (แรงสุดที่ถือ) → built-in** · **persona ไม่เคยทับหน้าที่คนจัดเอง** · ⚠️ เป็น**ที่แรกที่ markup ของคนหนึ่งถูก render ใน session ของอีกคนโดยตั้งใจ** → `@Secured("PLATFORM_ADMIN")` + ล้างผ่าน `HomeLayoutValidator` ทั้งเขียนและอ่าน — ดูข้อ AN และ AS |
 | **M13 Request access จากจุดที่โดนปฏิเสธ** | ⬜ **Roadmap ใหม่ — ผู้ใช้ขอ 2026-09-24** · ตอนนี้ query ที่ติด policy ตอบแค่ *"Access to X is denied. finance-subscription did not apply: …"* แล้วจบ — คนอ่านรู้ว่าตัวเองไม่มีสิทธิ์ แต่ไม่รู้ว่า **ต้องไปขอใคร** · งานคือ: refusal ทุกใบต้องพก **asset FQN + policy ที่ปฏิเสธ + รายชื่อ approver ที่ resolve มาแล้ว** กลับมาด้วย แล้วหน้า Query ขึ้นปุ่ม **"ขอสิทธิ์กับเจ้าของ"** ที่เปิด request พร้อมกรอก asset / เหตุผล / SQL ที่พยายามรันไว้ให้แล้ว — ดูข้อ AP.1 |
 | **M14 Public API + Swagger + Org Key** | ⬜ **Roadmap ใหม่ — ผู้ใช้ขอ 2026-09-24** · เปิด ARAK ให้ระบบอื่นเรียกได้: **Swagger UI + OpenAPI spec** ที่ generate จาก resource จริง · **สร้าง policy** และ **query ตามสิทธิ์ที่ตัวเองมี** ผ่าน API ได้ · auth ด้วย **Org Key ที่มีวันหมดอายุบังคับ** — scope ต่อ key, ผูกกับ principal ที่ระบุ, สิทธิ์ของ key ไม่เกินสิทธิ์ของเจ้าของ — ดูข้อ AP.2 |
 | **M15 LLM อธิบาย policy และอธิบาย dashboard** | ⬜ **Roadmap ใหม่ — ผู้ใช้ขอ 2026-09-24** · ต่อยอดจาก M11 ที่ per-user gateway ใช้ได้จริงแล้ว · **(ก)** admin เปิด policy ตัวหนึ่งแล้วกด "อธิบายให้ฟัง" — LLM แปล selector + subject rule + row filter + mask ออกมาเป็นภาษาคน พร้อมบอกว่า **จะถูก policy ชั้นบนทับตรงไหน** · **(ข)** หน้า Dashboard (M10) กดที่กราฟแล้วให้ LLM อ่านตัวเลขให้ฟังว่ามันแปลว่าอะไรและควรไปดูอะไรต่อ — ⚠️ **ส่ง metadata + ตัวเลขสรุปเท่านั้น ห้ามส่งแถวข้อมูลจริง และ LLM ยังไม่มีสิทธิ์ activate อะไรทั้งสิ้น** (FR-2.6) — ดูข้อ AP.3 |
@@ -56,15 +56,15 @@ Phase 1 รองรับ SQL Server + PostgreSQL · identity หลักค�
 | App DB (docker `dac-appdb`, postgres:16-alpine) | `:5432` db/user `dac` |
 | OpenMetadata ของทีม | `2.0.1` — sync ผ่าน **ingestion-bot JWT** (ดู What Didn't Work) |
 
-เทสต์ทั้งหมดเขียว — **backend unit รันครบเมื่อ 2026-09-24 → exit 0 · unit 662 · Failures 0 Errors 0** (integration **152** — `-Pintegration verify` รันเต็มชุด **2026-09-24 15:30** → BUILD SUCCESS · `Failures 0 Errors 0` · **+5 จาก `SourceEngineRegistryIT` ซึ่งเป็นการรัน `V18__source_engine.sql` บน Postgres จริงครั้งแรก**), frontend `npx jest` + `npx tsc --noEmit` + `vite build` รันใหม่ **2026-09-24** (**24 suites / 162 tests** เขียว · tsc exit 0 · build 7.20s · `scripts/check-cursor-pointer.mjs` → *every &lt;button&gt; offers a hand*)
+เทสต์ทั้งหมดเขียว — **backend unit รันครบเมื่อ 2026-09-24 → exit 0 · unit 662 · Failures 0 Errors 0** (integration **160** — `-Pintegration verify` รันเต็มชุด **2026-09-24 16:00** → BUILD SUCCESS · `Failures 0 Errors 0` · **+8 จาก `HomeLayoutStoreIT` ซึ่งเป็นการรัน `V19__home_role_layout.sql` บน Postgres จริงครั้งแรก**), frontend `npx jest` + `npx tsc --noEmit` + `vite build` รันใหม่ **2026-09-24** (**25 suites / 166 tests** เขียว · tsc exit 0 · build 6.24s · `scripts/check-cursor-pointer.mjs` → *every &lt;button&gt; offers a hand*)
 
 > ⚠️ **`backend/dac-service/target/surefire-reports/com.mfec.dac.catalog.AssetStoreIT.txt` ยังแดงค้างอยู่ในโฟลเดอร์ — เป็นไฟล์เก่าจาก 2026-09-23 20:35 ก่อน commit `19b0503` ซึ่งคือ commit ที่แก้เคสนั้นพอดี** อย่าอ่านรายงานใน `target/` โดยไม่ดูเวลาไฟล์ — `mvn test` ไม่ล้างรายงานของคลาสที่รอบนี้ไม่ได้รัน
 
 | ชุด | จำนวน | คำสั่ง |
 |---|---|---|
 | Backend unit | **dac-common 31 (+25 — `SourceEngineConformanceTest`)** · dac-engine 277 · **dac-compiler-sql 34 (+9 — `SqlDialectsTest`)** · dac-connector-openmetadata 91 · **dac-connector-source 19 (+8 — `JdbcTargetsTest`)** · **dac-proxy 30 (+14 — `ProxyCapabilitiesTest`)** · **dac-service 180** = **662** | `./mvnw -o test` |
-| Backend integration (Testcontainers `postgres:16-alpine`) | **132 tests** — `AssetStoreIT` 7 · `CatalogQueryIT` 18 · `DataSourceStoreIT` 13 · `GovernanceStoreIT` 10 · `GrantCompositionIT` **17 (+4 รอบก่อน: `AgainstDataPolicies` — grant ตรงต้องไม่ถอด mask)** · `IdentityAdminStoreIT` 15 · `ImpactAnalysisIT` 8 · `PolicyBindingMaterializerIT` 10 · `PolicyOverviewIT` 24 · `PolicyStoreIT` 10 | `./mvnw -am -pl backend/dac-service verify -Pintegration` |
-| Frontend | **24 suites / 162 tests** (+1 ใน `policyLanguage.test.ts` — engine ที่ไม่มี note ต้องไม่ได้ประโยคของ SQL Server ไป) | `npx jest` ใน `frontend/app` |
+| Backend integration (Testcontainers `postgres:16-alpine`) | **160 tests** — `AssetStoreIT` 7 · `CatalogQueryIT` 18 · `DataSourceStoreIT` 13 · `GovernanceStoreIT` 10 · `GrantCompositionIT` 17 · **`HomeLayoutStoreIT` 14 (+8 รอบนี้ — persona)** · `IdentityAdminStoreIT` 24 · `ImpactAnalysisIT` 8 · `PolicyBindingMaterializerIT` 10 · `PolicyOverviewIT` 24 · `PolicyStoreIT` 10 · `SourceEngineRegistryIT` 5 | `./mvnw -am -pl backend/dac-service verify -Pintegration` |
+| Frontend | **25 suites / 166 tests** (+4 ใน `HomePersonasPage.test.tsx` — หน้าที่คนหนึ่งจัดหน้าจอให้อีกคน: admin เท่านั้นที่เห็น · ครบทั้ง 5 role ไม่ว่าจะตั้งไว้หรือยัง · ประโยค "starting point ไม่ใช่ override" · เซฟแล้วต้องลง role ที่เปิดอยู่เท่านั้น) | `npx jest` ใน `frontend/app` |
 
 `yarn type-check` · `yarn lint` · `yarn build` ผ่านหมด → **BUILD SUCCESS** ทั้งสองฝั่ง
 
@@ -381,7 +381,79 @@ M18 ก่อนเพิ่ม engine ตัวที่ 3 เสมอ
 
 ---
 
-## รอบนี้ — **M18 slice 1: ชื่อ engine หายไปจากโค้ดทั้ง 14 จุด** · และ **proxy หยุด query ที่มันบังคับ policy ไม่ได้ แทนที่จะปล่อยผ่าน**
+## รอบนี้ — **M12b Persona: หน้าแรกที่ admin จัดให้แต่ละ Platform Role** (ผู้ใช้ขอไว้ตั้งแต่รอบ M12)
+
+ผู้ใช้สั่งไว้ว่า
+
+> *"อันนี้ให้ Admin เป็นคน Confiure ให้ได้ ว่าแต่ละ Platform Role จะเห้นหน้าจอ Home ลักษณะแบบไหน เหมือนเป็น Persona ต่างๆ"*
+
+M12 ให้ทุกคนจัดหน้าแรกของตัวเองได้แล้ว แต่ **หน้าแรกของคนที่ยังไม่เคยเปิด editor ถูกตัดสินอยู่ในโค้ด** — อยากให้ auditor เห็นคนละหน้ากับ requester ทำได้ทางเดียวคือแก้โค้ดแล้ว deploy ใหม่ รอบนี้ย้ายการตัดสินใจนั้นขึ้นมาบนหน้าจอ
+
+### AS.1 ลำดับการ resolve — **personal → role → built-in** และทำไมต้องเรียงแบบนี้
+
+```
+GET /v1/home/layout
+      │
+      ├─ มีแถวใน home_layout ของ principal นี้ ?  ── ใช่ ──►  LayoutSource.PERSONAL
+      │                                             (ไม่สนว่า admin ตั้ง persona ไว้หรือไม่)
+      ├─ ไล่ persona ที่ถือ เรียงจากแรงสุด          ── เจอ ──►  LayoutSource.ROLE + sourceRole
+      │   PLATFORM_ADMIN > POLICY_AUTHOR >
+      │   DATA_OWNER > AUDITOR > REQUESTER
+      └─ ไม่เจอเลย                                        ►  LayoutSource.BUILT_IN
+```
+
+**สามข้อที่เป็นการตัดสินใจ ไม่ใช่รายละเอียด:**
+
+| การตัดสินใจ | เหตุผล |
+|---|---|
+| **personal ชนะ persona เสมอ** และ persona **ไม่ถูก copy ลง `home_layout`** | ถ้า copy ลงไปตอน admin กด Save คนที่จัดหน้าตัวเองไว้แล้วจะโดนรื้อ — persona คือ*จุดเริ่มต้น* ไม่ใช่*คำสั่ง* ถ้าอยากให้เป็นคำสั่งต้องเป็นฟีเจอร์คนละตัวที่มี audit คนละเรื่อง |
+| **precedence ไม่ใช่ merge** | หน้าจอสองหน้า average กันไม่ได้ — ครึ่งนึงของอันนึงบวกครึ่งนึงของอีกอัน = หน้าที่ไม่มีใครออกแบบ |
+| **ไล่ทั้งลิสต์ ไม่ใช่หยุดที่ role แรกที่ถือ** | ถ้าหยุดที่ตัวแรก การจัดหน้า AUDITOR จะไม่มีผลกับ auditor ที่เขียน policy ด้วย ซึ่งคือ auditor เกือบทั้งหมด |
+
+> **ทำไม REQUESTER อยู่ล่างสุด:** เพราะเป็น role ที่แทบทุกคนถือติดตัว ถ้าเอาไว้บนสุด การจัดหน้า requester จะไปรื้อหน้าแรกของทุกคนในระบบเงียบๆ
+
+### AS.2 ⚠️ ที่แรกในผลิตภัณฑ์ที่ **markup ของคนหนึ่ง ถูก render ใน session ของอีกคน โดยตั้งใจ**
+
+`home_layout` ของ M12 คนเขียนกับคนอ่านเป็นคนเดียวกันเสมอ — `HomeLayoutValidator` มีไว้กันคนทำร้ายตัวเอง
+`home_role_layout` **ไม่ใช่แบบนั้น** — note widget ที่ admin เซฟลง persona POLICY_AUTHOR จะถูก render ให้ policy author ทุกคนที่ยังไม่ได้จัดหน้าตัวเอง
+
+ฉะนั้น:
+- ล้างผ่าน `HomeLayoutValidator` **ทั้งตอนเขียนและตอนอ่าน** เหมือนเดิมทุกประการ — และคราวนี้ไม่ใช่ belt-and-braces แต่เป็นเส้นแบ่งจริง
+- เขียนได้เฉพาะ `@Secured("PLATFORM_ADMIN")` — การจัดหน้า POLICY_AUTHOR คือการจัดหน้าของ policy author ทุกคน มันเป็น**การกระทำระดับ platform** ไม่ใช่ระดับ authoring
+- `DacApplication` สร้าง `HomeLayoutStore` **ก้อนเดียว** แล้วส่งให้ทั้ง `HomeResource` และ `HomePersonaResource` → validator ตัวเดียวกัน ไม่มีทางเข้าที่สอง
+- มีเทสต์ยืนยันตรงๆ: `aPersonaIsCleanedLikeAnyOtherLayout` — เซฟ `<script>` ลง persona แล้วอ่านกลับ**ในฐานะคนอื่น**
+
+### AS.3 ของที่เพิ่ม
+
+| ชั้น | ของ |
+|---|---|
+| Migration | **`V19__home_role_layout.sql`** — PK เป็น `app_role` (CHECK 5 ค่าเดียวกับ `app_role_assignment`) · ไม่มีแถว = built-in |
+| Model | `HomeLayout.Persona` (enum เรียงตาม precedence + `heldBy(Set<String>)` คืน**ทั้งหมด**ที่ถือ เรียงแรงสุดก่อน) · `LayoutSource {PERSONAL, ROLE, BUILT_IN}` · `LayoutView` กว้างขึ้นจาก 4 → 6 field พร้อม factory 3 ตัว · `PersonaLayout` |
+| Store | `forPrincipal(id, governanceReader, personas)` · `inheritedFor(...)` (แยกออกมาเพราะ `reset` ต้องตอบคำถามเดียวกัน) · `builtInFor(persona)` · `personas()` · `savePersona(...)` · `resetPersona(...)` |
+| API | `GET/PUT/DELETE /v1/home/personas[/{role}]` — `HomePersonaResource`, admin-only, role ผิด = **404 ไม่ใช่ 400** (คนขอมาด้วย address ของหน้าที่ไม่มีอยู่) |
+| Frontend | `api/home.ts` (+`source`, `sourceRole`, `HomePersonaLayout`, 3 ฟังก์ชัน) · **`settings/HomePersonasPage.tsx`** (ใช้ `HomeEditor` ตัวเดิมซ้ำ) · การ์ดใน Settings · route `/settings/home` |
+
+### AS.4 `reset` เปลี่ยนความหมาย — และเปลี่ยนถูกแล้ว
+
+เดิม: กด Reset → ได้หน้า built-in
+ตอนนี้: กด Reset → ได้**หน้าที่ตัวเองจะได้ถ้าไม่เคยแตะเลย** ซึ่งคือ persona ของ role ถ้ามี
+
+ถ้าไม่แก้ตรงนี้ คนที่กด Reset หลัง admin จัดหน้า auditor ไว้ จะเด้งไปหน้าที่ product ship มาเมื่อปีที่แล้ว แทนที่จะเป็นหน้าที่ทีมเขาใช้กันอยู่ — เทสต์ `resetLandsOnTheRolePageWhenThereIsOne`
+
+### AS.5 `HomeEditor` ถูกใช้ซ้ำ — แต่**ประโยคเดียวที่ห้ามใช้ซ้ำ**
+
+`HomeEditor` เดิมเขียนหัวข้อไว้ว่า *"Only yours. Nothing here changes what anyone else sees"*
+ใน persona editor ประโยคนี้ **เป็นเท็จ** → เพิ่ม prop `heading` / `subheading` / `resetLabel` (มี default เท่าเดิมทุกตัว หน้าจอเดิมไม่ขยับสักพิกเซล) แล้ว persona editor ส่งประโยคของตัวเองเข้าไป:
+
+> *"Everyone with this role who has not arranged their own page will see this. Anyone who has arranged theirs keeps it."*
+
+และหน้า Home ของแต่ละคนก็บอกที่มาของหน้าที่กำลังจะแก้ด้วย (เฉพาะตอนกด Edit — หน้าอ่านปกติไม่เปลี่ยน):
+
+> *"You are starting from the page your administrator arranged for the auditor role. Saving makes it yours, and later changes to that page will no longer reach you."*
+
+> ⚠️ **`HomeResource` Javadoc ที่เขียนว่า "There is deliberately no administrator override" ถูกเขียนใหม่แล้ว** — ประโยคนั้นเป็นจริงตอน M12 และเป็นเท็จตอน M12b ถ้าปล่อยไว้คือ comment ที่โกหกคนอ่านคนถัดไป
+
+## รอบก่อนหน้า — **M18 slice 1: ชื่อ engine หายไปจากโค้ดทั้ง 14 จุด** · และ **proxy หยุด query ที่มันบังคับ policy ไม่ได้ แทนที่จะปล่อยผ่าน**
 
 > ผู้ใช้สั่งสลับลำดับให้ M18 ขึ้นก่อนทุกอย่าง (`ปรับมาทำส่วนนี้ก่อนเลย เพื่อสร้างฐานให้แข็งแรง`) และให้เริ่มที่ฝั่ง proxy
 > รอบนี้คือ slice 1 ของ M18 — **ปิดครบทั้ง 14 จุดที่ AP.7 นับไว้** บวกของที่เจอระหว่างทางอีกสองอย่าง
@@ -488,9 +560,9 @@ engine === 'POSTGRES' ? '<ข้อความ Postgres>' : '<ข้อคว�
 
 ### AR.7 การรันจริง — **V18 ถูกรันบน Postgres จริงครั้งแรก และชื่อ constraint ที่เดาไว้ถูก**
 
-`./mvnw -o -am -pl backend/dac-service verify -Pintegration` → **BUILD SUCCESS 05:13 น.** (2026-09-24 15:30)
+`./mvnw -o -am -pl backend/dac-service verify -Pintegration` → **BUILD SUCCESS 03:53 น.** (2026-09-24 16:00)
 · unit **662** (dac-common 31 · dac-engine 277 · dac-compiler-sql 34 · dac-connector-openmetadata 91 · dac-connector-source 19 · dac-proxy 30 · dac-service 180)
-· integration **152** · `Failures 0 Errors 0 Skipped 0` ทุกโมดูล · ไม่มีบรรทัด `[ERROR]` เลยทั้ง log
+· integration **160** · `Failures 0 Errors 0 Skipped 0` ทุกโมดูล · ไม่มีบรรทัด `[ERROR]` เลยทั้ง log
 
 **บรรทัดที่ต้องเห็นถึงจะพูดได้ว่าผ่าน** (ตามกับดักที่จดไว้ใน What Didn't Work):
 
@@ -4180,7 +4252,7 @@ estate ที่ใช้: `prod-mssql.SalesDB.dbo.{customer, order}` + **`prod-
 
 ## Next Steps
 
-1. **push ให้ขึ้น** — local นำหน้า remote อยู่ (remote main ยังอยู่ที่ `e3aaa52`) · แก้เรื่อง `git push` ค้างก่อน (ดู What Didn't Work) แล้วยืนยันด้วย `git ls-remote --heads origin` · **scan secret ก่อน push ทุกครั้ง**
+1. **push ให้ขึ้น** — local นำหน้า remote อยู่ (remote main ยังอยู่ที่ `0029375` — local นำอยู่ 7 commit) · แก้เรื่อง `git push` ค้างก่อน (ดู What Didn't Work) แล้วยืนยันด้วย `git ls-remote --heads origin` · **scan secret ก่อน push ทุกครั้ง**
 2. ~~**FR-7 Manual grant**~~ — **ปิดแล้วจริงรอบนี้** · รอบที่แล้วปิดด้วยการเช็คด้วยมือซึ่งแยกไม่ออกว่า grant ทำงานหรือไม่เคยถูกโหลด (ข้อ AE.4) · ตอนนี้มี `GrantCompositionIT` 13 tests บน Postgres จริงคุมอยู่ และการเขียนมันคือสิ่งที่ทำให้เจอบั๊กข้อ AE.1/AE.2 · *บันทึกเดิมของงานนี้:* · grant ระดับ table ให้ user/group ตรงๆ พร้อม start/end date · หน้า asset รื้อเป็น tab **Overview / Access / Policies / Columns / Audit** (อ้างอิง Immuta แต่ใช้ theme เรา) · tab Access ต้อง**แยกให้ชัดว่าสิทธิมาจาก direct grant หรือมาจาก policy** · group รองรับทุกแหล่ง (local + OM team + Entra ในอนาคต) · **grant ไม่ชนะ global policy** — compose แบบ intersection เหมือนเดิม
 2a. **ผูก `demo-pg` เข้ากับ service ของ OM** — *รอคำตอบผู้ใช้* ว่า `demo-pg` คือ `dtp-iprm` หรือคนละเครื่อง (ดูข้อ AC.3) · ตราบใดที่ยังไม่ผูก asset 36 ตัวจาก OM จริงยัง enforce ไม่ได้เลย
 2b. ~~**รันซ้ำ `AssetStoreIT` + `CatalogQueryIT`**~~ — **เขียวแล้วรอบนี้** ยืนยันว่าข้อ AC.4 เป็นเรื่อง Docker ไม่ใช่ regression จริง

@@ -5,6 +5,7 @@ import {
   CpuChip01,
   Database01,
   Key01,
+  LayoutAlt01,
   RefreshCcw01,
   Server01,
   Server02,
@@ -105,6 +106,14 @@ const GROUPS: SettingGroup[] = [
           'Whether an LLM may help draft SQL and policies, which model it uses, and -- for an administrator -- the gateway it is reached through and who it is switched on for.',
         to: '/settings/assistant',
         icon: CpuChip01,
+      },
+      {
+        title: 'Home page per role',
+        description:
+          'The page somebody lands on before they arrange their own, chosen by the role they hold. A starting point, never an override: anyone who arranges their own page keeps it.',
+        to: '/settings/home',
+        icon: LayoutAlt01,
+        adminOnly: true,
       },
       {
         title: 'Local groups',

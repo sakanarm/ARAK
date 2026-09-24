@@ -4,7 +4,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mfec.dac.home.HomeLayout.Layout;
+import com.mfec.dac.home.HomeLayout.LayoutSource;
 import com.mfec.dac.home.HomeLayout.LayoutView;
+import com.mfec.dac.home.HomeLayout.Persona;
 import com.mfec.dac.home.HomeLayout.Preset;
 import com.mfec.dac.home.HomeLayout.Widget;
 import com.mfec.dac.home.HomeLayout.WidgetType;
@@ -58,6 +60,10 @@ class HomeLayoutStoreIT {
   @BeforeEach
   void clean() {
     jdbi.useHandle(handle -> handle.execute("TRUNCATE principal CASCADE"));
+    // home_role_layout is keyed on a role name, not on a principal, so the
+    // CASCADE above does not reach it and a persona saved by one test would
+    // otherwise decide what the next test's caller is served.
+    jdbi.useHandle(handle -> handle.execute("TRUNCATE home_role_layout"));
     store = new HomeLayoutStore(jdbi, new ObjectMapper(), new HomeLayoutValidator());
     principal =
         jdbi.withHandle(
@@ -96,7 +102,7 @@ class HomeLayoutStoreIT {
     assertThat(ids(saved.layout())).containsExactly("mine");
     // ...and a second read agrees with what the save replied, which is the
     // whole point: no widget that appears and then disappears.
-    assertThat(ids(store.forPrincipal(principal, false).layout())).containsExactly("mine");
+    assertThat(ids(store.forPrincipal(principal, false, List.of()).layout())).containsExactly("mine");
   }
 
   @Test
@@ -112,7 +118,7 @@ class HomeLayoutStoreIT {
         "analyst",
         false);
 
-    LayoutView asAuditor = store.forPrincipal(principal, true);
+    LayoutView asAuditor = store.forPrincipal(principal, true, List.of());
 
     assertThat(ids(asAuditor.layout())).containsExactly("mine", "theirs");
   }
@@ -176,7 +182,7 @@ class HomeLayoutStoreIT {
         "analyst",
         false);
 
-    LayoutView afterReset = store.reset(principal, false);
+    LayoutView afterReset = store.reset(principal, false, List.of());
 
     assertThat(afterReset.isDefault()).isTrue();
     assertThat(afterReset.layout()).isEqualTo(HomeLayoutStore.REQUESTER_DEFAULT);
@@ -213,7 +219,145 @@ class HomeLayoutStoreIT {
         "analyst",
         false);
 
-    assertThat(store.forPrincipal(other, false).isDefault()).isTrue();
-    assertThat(ids(store.forPrincipal(other, false).layout())).doesNotContain("n");
+    assertThat(store.forPrincipal(other, false, List.of()).isDefault()).isTrue();
+    assertThat(ids(store.forPrincipal(other, false, List.of()).layout())).doesNotContain("n");
+  }
+
+  // ------------------------------------------------------------- personas
+
+  private static Layout page(String widgetId) {
+    return new Layout(
+        Preset.SINGLE, List.of(widget(widgetId, WidgetType.NOTE, 0, Map.of("text", "x"))));
+  }
+
+  @Test
+  @DisplayName("a role's page is served to somebody who has not arranged their own")
+  void aPersonaIsServedUntilSomebodyArrangesTheirOwn() {
+    store.savePersona(Persona.REQUESTER, page("from-persona"), "admin");
+
+    LayoutView served = store.forPrincipal(principal, false, List.of(Persona.REQUESTER));
+
+    assertThat(served.source()).isEqualTo(LayoutSource.ROLE);
+    assertThat(served.sourceRole()).isEqualTo(Persona.REQUESTER);
+    assertThat(served.isDefault()).isTrue();
+    assertThat(served.updatedBy()).isEqualTo("admin");
+    assertThat(ids(served.layout())).containsExactly("from-persona");
+  }
+
+  @Test
+  @DisplayName("a personal page beats the role's, and an administrator cannot take it back")
+  void aPersonalPageIsNeverOverwrittenByAPersona() {
+    store.save(principal, page("mine"), "analyst", false);
+
+    // The administrator arranges the role afterwards, which is the order that
+    // would break this if the persona were copied into home_layout instead of
+    // being consulted at read time.
+    store.savePersona(Persona.REQUESTER, page("from-persona"), "admin");
+
+    LayoutView served = store.forPrincipal(principal, false, List.of(Persona.REQUESTER));
+
+    assertThat(served.source()).isEqualTo(LayoutSource.PERSONAL);
+    assertThat(served.sourceRole()).isNull();
+    assertThat(ids(served.layout())).containsExactly("mine");
+  }
+
+  @Test
+  @DisplayName("the strongest arranged role wins, and an unarranged one is fallen through")
+  void theStrongestArrangedRoleWins() {
+    store.savePersona(Persona.AUDITOR, page("auditor-page"), "admin");
+    store.savePersona(Persona.REQUESTER, page("requester-page"), "admin");
+
+    // Holds both. AUDITOR is declared first, so it decides.
+    LayoutView both =
+        store.forPrincipal(principal, true, List.of(Persona.AUDITOR, Persona.REQUESTER));
+    assertThat(both.sourceRole()).isEqualTo(Persona.AUDITOR);
+    assertThat(ids(both.layout())).containsExactly("auditor-page");
+
+    // Holds a stronger role that nobody has arranged. Falling through matters:
+    // stopping at the strongest held role would mean arranging the requester
+    // page had no effect on the requesters who also audit.
+    LayoutView fellThrough =
+        store.forPrincipal(principal, true, List.of(Persona.PLATFORM_ADMIN, Persona.REQUESTER));
+    assertThat(fellThrough.sourceRole()).isEqualTo(Persona.REQUESTER);
+    assertThat(ids(fellThrough.layout())).containsExactly("requester-page");
+  }
+
+  @Test
+  @DisplayName("no arranged role leaves the built-in page")
+  void withoutAPersonaThePageIsTheBuiltInOne() {
+    LayoutView served = store.forPrincipal(principal, true, List.of(Persona.AUDITOR));
+
+    assertThat(served.source()).isEqualTo(LayoutSource.BUILT_IN);
+    assertThat(served.sourceRole()).isNull();
+    assertThat(served.layout()).isEqualTo(HomeLayoutStore.DEFAULT);
+  }
+
+  @Test
+  @DisplayName("resetting lands on the role's page, not on the built-in one")
+  void resetLandsOnTheRolePageWhenThereIsOne() {
+    store.savePersona(Persona.REQUESTER, page("from-persona"), "admin");
+    store.save(principal, page("mine"), "analyst", false);
+
+    LayoutView afterReset = store.reset(principal, false, List.of(Persona.REQUESTER));
+
+    assertThat(afterReset.source()).isEqualTo(LayoutSource.ROLE);
+    assertThat(ids(afterReset.layout())).containsExactly("from-persona");
+  }
+
+  @Test
+  @DisplayName("the editor is offered all five roles, arranged or not")
+  void everyPersonaComesBackArrangedOrNot() {
+    store.savePersona(Persona.AUDITOR, page("auditor-page"), "admin");
+
+    List<HomeLayout.PersonaLayout> all = store.personas();
+
+    assertThat(all).hasSize(Persona.values().length);
+    assertThat(all.stream().map(HomeLayout.PersonaLayout::role).toList())
+        .containsExactly(Persona.values());
+    assertThat(all.stream().filter(HomeLayout.PersonaLayout::configured).toList()).hasSize(1);
+
+    HomeLayout.PersonaLayout requester =
+        all.stream().filter(row -> row.role() == Persona.REQUESTER).findFirst().orElseThrow();
+    assertThat(requester.configured()).isFalse();
+    // Not an empty canvas: the built-in page those people see today.
+    assertThat(requester.layout()).isEqualTo(HomeLayoutStore.REQUESTER_DEFAULT);
+    assertThat(requester.updatedAt()).isNull();
+  }
+
+  @Test
+  @DisplayName("forgetting a persona returns those people to the built-in page")
+  void resettingAPersonaReturnsPeopleToTheBuiltIn() {
+    store.savePersona(Persona.REQUESTER, page("from-persona"), "admin");
+
+    HomeLayout.PersonaLayout forgotten = store.resetPersona(Persona.REQUESTER);
+
+    assertThat(forgotten.configured()).isFalse();
+    assertThat(forgotten.layout()).isEqualTo(HomeLayoutStore.REQUESTER_DEFAULT);
+    assertThat(store.forPrincipal(principal, false, List.of(Persona.REQUESTER)).source())
+        .isEqualTo(LayoutSource.BUILT_IN);
+  }
+
+  @Test
+  @DisplayName("an administrator's markup is cleaned before it reaches anybody else")
+  void aPersonaIsCleanedLikeAnyOtherLayout() {
+    store.savePersona(
+        Persona.AUDITOR,
+        new Layout(
+            Preset.SINGLE,
+            List.of(
+                widget(
+                    "h",
+                    WidgetType.HTML,
+                    0,
+                    Map.of("html", "<p>hello</p><script>steal()</script>")))),
+        "admin");
+
+    // Read back by somebody else, which is the path that matters: this is the
+    // one layout in the product written by one person and rendered to another.
+    LayoutView served = store.forPrincipal(principal, true, List.of(Persona.AUDITOR));
+    String html = (String) served.layout().widgets().get(0).config().get("html");
+
+    assertThat(html).contains("hello");
+    assertThat(html).doesNotContain("script");
   }
 }

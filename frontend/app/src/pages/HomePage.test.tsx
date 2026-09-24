@@ -79,7 +79,14 @@ function signedInAs(roles: string[]) {
 }
 
 function stored(layout: HomeLayout): HomeLayoutView {
-  return { layout, isDefault: true, updatedAt: null, updatedBy: null };
+  return {
+    layout,
+    isDefault: true,
+    source: 'BUILT_IN',
+    sourceRole: null,
+    updatedAt: null,
+    updatedBy: null,
+  };
 }
 
 /** The layout a requester gets when they have never saved one. */

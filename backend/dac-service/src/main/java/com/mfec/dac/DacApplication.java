@@ -36,6 +36,7 @@ import com.mfec.dac.policy.DecisionCache;
 import com.mfec.dac.identity.PrincipalQuery;
 import com.mfec.dac.om.OpenMetadataClient;
 import com.mfec.dac.resources.AccessResource;
+import com.mfec.dac.resources.HomePersonaResource;
 import com.mfec.dac.resources.HomeResource;
 import com.mfec.dac.resources.LlmAssistResource;
 import com.mfec.dac.resources.LlmResource;
@@ -362,10 +363,14 @@ public class DacApplication extends Application<DacConfiguration> {
     // standing between a widget somebody typed and a script running in the
     // next reader's session -- there must be exactly one of it, and every
     // path into the table must go through it.
-    environment.jersey().register(
-        new HomeResource(
-            new HomeLayoutStore(
-                jdbi, environment.getObjectMapper(), new HomeLayoutValidator())));
+    HomeLayoutStore homeLayouts =
+        new HomeLayoutStore(jdbi, environment.getObjectMapper(), new HomeLayoutValidator());
+    environment.jersey().register(new HomeResource(homeLayouts));
+    // And the page an administrator arranges for a role (M12b), sharing that
+    // one store and therefore that one validator. A persona is the only layout
+    // one person writes and another person renders, so it is the last place
+    // that should get a second way into the table.
+    environment.jersey().register(new HomePersonaResource(homeLayouts));
 
     // The assistant (M11). Each person points it at their own gateway with
     // their own key; the deployment may also run a shared one for anybody who

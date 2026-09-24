@@ -8,7 +8,9 @@ import {
   fetchHomeLayout,
   resetHomeLayout,
   saveHomeLayout,
+  HOME_PERSONA_LABELS,
   type HomeLayout,
+  type HomeLayoutView,
 } from '../api/home';
 import { useAuthStore } from '../auth/authStore';
 import { humaniseRole } from '../layout/AppShell';
@@ -44,6 +46,30 @@ const GOVERNANCE_ROLES = [
   'DATA_OWNER',
   'AUDITOR',
 ];
+
+/**
+ * What the editor says about the page somebody is about to change.
+ *
+ * Three different sentences for three different situations, because "this is
+ * not your arrangement" and "this is not anybody's arrangement" invite
+ * different things: the first invites keeping it, the second invites making
+ * one. Only shown while editing — the page itself is left alone.
+ */
+function provenance(view: HomeLayoutView | undefined): string | undefined {
+  if (!view) return undefined;
+  if (view.source === 'ROLE' && view.sourceRole) {
+    const who = HOME_PERSONA_LABELS[view.sourceRole].toLowerCase();
+    return (
+      `You are starting from the page your administrator arranged for the ${who}` +
+      ' role. Saving makes it yours, and later changes to that page will no' +
+      ' longer reach you.'
+    );
+  }
+  if (view.source === 'BUILT_IN') {
+    return 'You are starting from the page Arak ships with. Only yours. Nothing here changes what anyone else sees, or what anyone is allowed to read.';
+  }
+  return undefined;
+}
 
 export default function HomePage() {
   const user = useAuthStore((state) => state.user);
@@ -114,6 +140,7 @@ export default function HomePage() {
           onReset={() => reset.mutate()}
           onSave={() => save.mutate(layout)}
           saving={save.isPending || reset.isPending}
+          subheading={provenance(view)}
         />
       )}
 

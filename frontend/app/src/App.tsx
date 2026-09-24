@@ -19,6 +19,7 @@ import PolicyListPage from './pages/policies/PolicyListPage';
 import QueryPage from './pages/query/QueryPage';
 import SimulatorPage from './pages/simulator/SimulatorPage';
 import AppRolesPage from './pages/settings/AppRolesPage';
+import HomePersonasPage from './pages/settings/HomePersonasPage';
 import LlmSettingsPage from './pages/settings/LlmSettingsPage';
 import OpenMetadataSettingsPage from './pages/settings/OpenMetadataSettingsPage';
 import SettingsPage from './pages/settings/SettingsPage';
@@ -91,6 +92,7 @@ export default function App() {
             path="/settings/openmetadata"
           />
           <Route element={<AppRolesPage />} path="/settings/roles" />
+          <Route element={<HomePersonasPage />} path="/settings/home" />
           <Route element={<LlmSettingsPage />} path="/settings/assistant" />
           <Route element={<SettingsPage />} path="/settings" />
           <Route element={<SystemStatusPage />} path="/system" />
