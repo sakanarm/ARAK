@@ -52,6 +52,12 @@ import com.mfec.dac.policy.QueryService;
 import com.mfec.dac.resources.ExpressionResource;
 import com.mfec.dac.resources.DecisionResource;
 import com.mfec.dac.resources.QueryResource;
+import com.mfec.dac.resources.EnforcementResource;
+import com.mfec.dac.enforcement.AppDbEntitlementSource;
+import com.mfec.dac.enforcement.EnforcementStateStore;
+import com.mfec.dac.enforcement.ReviewedPlans;
+import com.mfec.dac.enforcement.SecureViewService;
+import com.mfec.dac.source.jdbc.SecureViewApplier;
 import com.mfec.dac.source.jdbc.JdbcIntrospector;
 import com.mfec.dac.source.jdbc.QueryExecutor;
 import com.mfec.dac.web.SpaServlet;
@@ -355,6 +361,21 @@ public class DacApplication extends Application<DacConfiguration> {
                 sources,
                 decisionService,
                 new QueryExecutor(credentials, 10))));
+    // Enforcement mode 5.1.2 (M5). The same resolver as every other source
+    // connection: a second one without the Fernet opener would read a stored
+    // credential as unresolvable. Reviews are held in this process, which is
+    // one PM2 process; a restart forgets them and the dry run is run again.
+    environment.jersey().register(
+        new EnforcementResource(
+            new SecureViewService(
+                jdbi,
+                sources,
+                credentials,
+                new SecureViewApplier(),
+                SecureViewService.everyone(jdbi, principalLoader, decisionService),
+                new AppDbEntitlementSource(jdbi),
+                new EnforcementStateStore(jdbi),
+                new ReviewedPlans())));
     // Registered before the auth filter for no reason other than reading order;
     // the filter is a @Secured name binding and this resource carries no
     // annotation, so it is never in its path. Its authentication is the HMAC.

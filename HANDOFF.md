@@ -1,6 +1,6 @@
 # HANDOFF — ARAK (Data Access Control Platform)
 
-> อัปเดต: 2026-09-24 · commit ล่าสุดที่ push สำเร็จ `e3aaa52` · **local นำหน้าอยู่หลาย commit — `git push` ยังค้าง ดู What Didn't Work** · repo https://github.com/sakanarm/ARAK (**public**)
+> อัปเดต: 2026-09-24 · commit ล่าสุดที่ push สำเร็จ `0029375` · **local นำหน้าอยู่หลาย commit — `git push` ยังค้าง ดู What Didn't Work** · repo https://github.com/sakanarm/ARAK (**public**)
 >
 > อ่านคู่กับ **[docs/DESIGN.md](docs/DESIGN.md)** — ไฟล์นั้นคือ requirement + feature catalogue + สถานะครบทุกข้อ
 > ไฟล์นี้บอกเฉพาะ "ทำถึงไหน จะไปต่อยังไง อะไรที่ลองแล้วไม่เวิร์ค"
@@ -31,7 +31,7 @@ Phase 1 รองรับ SQL Server + PostgreSQL · identity หลักค�
 | **M2 Identity** | 🚧 ~50% — local sign-in ใช้ได้ · schema `principal`/`principal_attribute`/`group_member`/`app_role_assignment` มีตั้งแต่ V2 · read API + หน้า People & attributes (**filter ตาม attribute + กดเข้าไปดูสมาชิกใน group ได้ที่ `/principals/:id`**) + **หน้า Application roles (`/settings/roles`) อ่านอย่างเดียว** เสร็จ · **เพิ่ม local account + assign/withdraw app role ได้จาก UI แล้ว (V10 + `IdentityAdminStore` + audit)** · **ยังไม่มี write API สำหรับ *attribute* — ต้อง seed ด้วย SQL** · ยังไม่มีหน้าจอเปลี่ยน password (ทุก account ที่สร้างเป็น `must_change`) · ยังไม่มี Entra OIDC / Graph sync |
 | **M3 Policy Engine** | 🚧 ~97% — engine **277 tests** (+10 รอบนี้ — `DataPolicyCompositionTest.MaskConflicts` ที่ทำให้เจอบั๊กการให้เครดิต policy ดูข้อ AH.3) (+101 รอบนี้ — `PolicyAlgebraTest` 34 ที่ assert **เซตของคนที่ผ่าน** ไม่ใช่ทีละคน + `ExpressionReferenceTest` ที่รันทุก example ในหน้า doc ผ่าน evaluator จริง) · เดิม **166 tests** (+10 รอบนี้ · **เจอบั๊กจริงสองตัวที่ grant โดนเต็มๆ ดูข้อ AE.1/AE.2**) (data policy 26 + subscription 45 เพิ่มรอบนี้ · เจอบั๊กจริง 2 ตัว ดูข้อ P) · persistence (`PolicyStore`) + `policy_binding` materializer + REST · `PolicyBindingMaterializerIT` 10 tests บน Postgres จริง · **decision cache (FR-5.5) ปิดแล้วรอบนี้ — 25 tests ดูข้อ AB** · เหลือ ANTLR grammar ของ `expr` (FR-3.2) ข้อเดียว |
 | **M4 Policy Authoring UI** | ✅ **เสร็จ** — Policy list + Policy builder + readback + capability matrix + `/policies/:id` หน้าสรุปอ่านอย่างเดียว + panel Policies ในหน้า asset (FR-3.1.5) + View-as-user (FR-5.2, ข้อ Z) · **รอบนี้ปิดข้อสุดท้าย: impact analysis (FR-5.3) — `GET /v1/policies/{id}/impact` + panel “Who it changes things for” ดูข้อ AA** · **รอบนี้เพิ่มหน้า `/docs/expressions` — syntax reference ที่ backend ส่งมาจาก jar ของ engine กดจากช่อง expression ได้ พร้อม 11 policy ตัวอย่างจริงใน DB (ข้อ AF.3/AF.4)** |
-| **M5 Secure View (5.1.2)** | 🚧 ~70% — **slice 1 จบ: `ViewCompiler` + golden-file test 2 dialect ดูข้อ AK.1** · **slice 2 จบ: `RowEntitlementMaintainer` (17 tests) — pure ทั้งคลาส · **refuse ไม่ใช่ skip** เมื่อ treatment/entitlement key ไม่ตรงกับ view ที่ติดตั้งอยู่ · ⚠️ **ไม่ต้องมี migration** (ตาราง `acl.*` อยู่ที่ source) — ดูข้อ AT** · `DecisionSql` + dialect ใช้ร่วมกับ 5.2 เหมือนเดิม · **slice 3 ครึ่งแรกจบ: `SecureViewApplier` — dry-run / apply / rollback ใน transaction เดียว · `StaleReviewException` เมื่อแถวเปลี่ยนหลังคนอนุมัติ · **11 tests บน Postgres จริง = ครั้งแรกที่ secure view ของ ARAK รันบนฐานข้อมูล** — ดูข้อ AU** · เหลือครึ่งหลัง (`EntitlementSource` จาก app DB + `enforcement_state` store + REST + UI + เอาเมนู Enforcement กลับมา · ⚠️ **ยังไม่ถูก wire เข้า `dac-service` เลย**) · slice 4 (MSSQL Testcontainers) |
+| **M5 Secure View (5.1.2)** | 🚧 ~85% — **slice 1 จบ: `ViewCompiler` + golden-file test 2 dialect ดูข้อ AK.1** · **slice 2 จบ: `RowEntitlementMaintainer` (17 tests) — pure ทั้งคลาส · **refuse ไม่ใช่ skip** เมื่อ treatment/entitlement key ไม่ตรงกับ view ที่ติดตั้งอยู่ · ⚠️ **ไม่ต้องมี migration** (ตาราง `acl.*` อยู่ที่ source) — ดูข้อ AT** · `DecisionSql` + dialect ใช้ร่วมกับ 5.2 เหมือนเดิม · **slice 3 ครึ่งแรกจบ: `SecureViewApplier` — dry-run / apply / rollback ใน transaction เดียว · `StaleReviewException` เมื่อแถวเปลี่ยนหลังคนอนุมัติ · **11 tests บน Postgres จริง = ครั้งแรกที่ secure view ของ ARAK รันบนฐานข้อมูล** — ดูข้อ AU** · **slice 3 ครึ่งหลังจบรอบนี้: `SecureViewService` + `EnforcementResource` (`/api/v1/enforcement/secure-views` dry-run / apply / rollback) + V20 (`audit_enforcement` + ชื่อ view ที่ apply) + หน้า `/enforcement` + เมนูกลับมาแล้ว · apply ส่งแค่ `reviewId` · ทดสอบสดครบวงบน Postgres dev — ดูข้อ AW** · เหลือ slice 4 (MSSQL Testcontainers) · credential แยกสำหรับ DDL · cutover (FR-6.1.1) · `DbPrincipalProvisioner` |
 | **M6 Push Config (5.1.1)** | ⬜ **re-scope รอบนี้ · เลื่อนหลัง M5/M7 · opt-in ต่อ source** — ยิงเฉพาะ **policy object ที่แยกจาก table** (PG `CREATE POLICY` · MSSQL `CREATE SECURITY POLICY` · column GRANT) · **ตัด MSSQL DDM ออก** เพราะมัน `ALTER COLUMN` ทับนิยาม table — ดูข้อ AC.1 และ DESIGN FR-6.2a |
 | **M7 Query API (5.2a)** | 🚧 ~80% — **`POST /v1/query` + Query console ใช้งานได้จริงรอบนี้** · rewrite → RLS + mask + hidden column → execute → audit ครบ · พิสูจน์กับ Postgres จริงแล้วทั้ง allow / RLS / mask / refuse · เหลือ direct-access detector (FR-6.3.1) และ result cache |
 | **M7b Cross-mode consistency** | ⬜ — ต้องมี M5/M6 ก่อน |
@@ -56,15 +56,15 @@ Phase 1 รองรับ SQL Server + PostgreSQL · identity หลักค�
 | App DB (docker `dac-appdb`, postgres:16-alpine) | `:5432` db/user `dac` |
 | OpenMetadata ของทีม | `2.0.1` — sync ผ่าน **ingestion-bot JWT** (ดู What Didn't Work) |
 
-เทสต์ทั้งหมดเขียว — **backend unit รันครบเมื่อ 2026-09-24 → exit 0 · unit 685 · Failures 0 Errors 0** (integration **171** — `-Pintegration verify` รันเต็มชุด **2026-09-24 17:10** → BUILD SUCCESS · `Failures 0 Errors 0` · **+11 จาก `SecureViewApplierIT` ซึ่งเป็นครั้งแรกที่ secure view ของ ARAK ถูกสร้างและ query บน Postgres จริง**), frontend `npx jest` + `npx tsc --noEmit` + `vite build` รันใหม่ **2026-09-24** (**27 suites / 178 tests** เขียว · tsc exit 0 · build 11.78s · `scripts/check-cursor-pointer.mjs` → *every &lt;button&gt; offers a hand*)
+เทสต์ทั้งหมดเขียว — **backend unit รันครบเมื่อ 2026-09-24 → exit 0 · unit 691 · Failures 0 Errors 0** (integration **186** — `-Pintegration verify` รันเต็มชุด **2026-09-24 23:09** → BUILD SUCCESS · `Failures 0 Errors 0` · **+15 จาก `SecureViewServiceIT` — dry-run / apply / rollback ผ่าน service ทั้งเส้นบน Postgres จริง**), frontend `npx jest` + `npx tsc --noEmit` + `vite build` รันใหม่ **2026-09-24** (**28 suites / 185 tests** เขียว — +7 `EnforcementPage.test.tsx` · tsc exit 0 · build 11.78s · `scripts/check-cursor-pointer.mjs` → *every &lt;button&gt; offers a hand*)
 
 > ⚠️ **`backend/dac-service/target/surefire-reports/com.mfec.dac.catalog.AssetStoreIT.txt` ยังแดงค้างอยู่ในโฟลเดอร์ — เป็นไฟล์เก่าจาก 2026-09-23 20:35 ก่อน commit `19b0503` ซึ่งคือ commit ที่แก้เคสนั้นพอดี** อย่าอ่านรายงานใน `target/` โดยไม่ดูเวลาไฟล์ — `mvn test` ไม่ล้างรายงานของคลาสที่รอบนี้ไม่ได้รัน
 
 | ชุด | จำนวน | คำสั่ง |
 |---|---|---|
-| Backend unit | dac-common 31 · dac-engine 277 · **dac-compiler-sql 51 (+17 — `RowEntitlementMaintainerTest`)** · dac-connector-openmetadata 91 · **dac-connector-source 25 (+6 — `SecureViewApplierTest`)** · dac-proxy 30 · **dac-service 180** = **685** | `./mvnw -o test` |
-| Backend integration (Testcontainers `postgres:16-alpine`) | **171 tests** — `AssetStoreIT` 7 · `CatalogQueryIT` 18 · `DataSourceStoreIT` 13 · `GovernanceStoreIT` 10 · `GrantCompositionIT` 17 · **`HomeLayoutStoreIT` 14 (+8 รอบนี้ — persona)** · `IdentityAdminStoreIT` 24 · `ImpactAnalysisIT` 8 · `PolicyBindingMaterializerIT` 10 · `PolicyOverviewIT` 24 · `PolicyStoreIT` 10 · **`SecureViewApplierIT` 11 (ใหม่รอบนี้ — อยู่ใน `dac-connector-source` ไม่ใช่ `dac-service`)** · `SourceEngineRegistryIT` 5 | `./mvnw verify -Pintegration` (ทั้ง reactor) |
-| Frontend | **27 suites / 178 tests** (+9 `policyFlow.test.ts` — ลำดับด่าน · selector ว่าง = 0 asset ไม่ใช่ทุก asset · subject ว่าง = `open` ไม่ใช่ `set` · "ไม่ผ่านด่าน" ต้องไม่อ่านว่า deny · +3 `PolicyFlowChart.test.tsx` — ไม่ส่ง `onEdit` ต้องไม่มีปุ่มใดๆ · ก่อนหน้านี้ +4 ใน `HomePersonasPage.test.tsx` — หน้าที่คนหนึ่งจัดหน้าจอให้อีกคน: admin เท่านั้นที่เห็น · ครบทั้ง 5 role ไม่ว่าจะตั้งไว้หรือยัง · ประโยค "starting point ไม่ใช่ override" · เซฟแล้วต้องลง role ที่เปิดอยู่เท่านั้น) | `npx jest` ใน `frontend/app` |
+| Backend unit | dac-common 31 · dac-engine 277 · **dac-compiler-sql 51 (+17 — `RowEntitlementMaintainerTest`)** · dac-connector-openmetadata 91 · **dac-connector-source 25 (+6 — `SecureViewApplierTest`)** · dac-proxy 30 · **dac-service 186 (+6 — `ReviewedPlansTest`)** = **691** | `./mvnw -o test` |
+| Backend integration (Testcontainers `postgres:16-alpine`) | **186 tests** — `AssetStoreIT` 7 · `CatalogQueryIT` 18 · `DataSourceStoreIT` 13 · `GovernanceStoreIT` 10 · `GrantCompositionIT` 17 · **`HomeLayoutStoreIT` 14 (+8 รอบนี้ — persona)** · `IdentityAdminStoreIT` 24 · `ImpactAnalysisIT` 8 · `PolicyBindingMaterializerIT` 10 · `PolicyOverviewIT` 24 · `PolicyStoreIT` 10 · **`SecureViewApplierIT` 11 (ใหม่รอบนี้ — อยู่ใน `dac-connector-source` ไม่ใช่ `dac-service`)** · **`SecureViewServiceIT` 15 (ใหม่รอบนี้)** · `SourceEngineRegistryIT` 5 | `./mvnw verify -Pintegration` (ทั้ง reactor) |
+| Frontend | **28 suites / 185 tests** (+7 `EnforcementPage.test.tsx` — dry run → apply ส่งแค่ reviewId · non-admin ไม่มีปุ่ม Apply / Roll back · apply ที่ถูกปฏิเสธล้าง review · rollback ต้องยืนยัน · +9 `policyFlow.test.ts` — ลำดับด่าน · selector ว่าง = 0 asset ไม่ใช่ทุก asset · subject ว่าง = `open` ไม่ใช่ `set` · "ไม่ผ่านด่าน" ต้องไม่อ่านว่า deny · +3 `PolicyFlowChart.test.tsx` — ไม่ส่ง `onEdit` ต้องไม่มีปุ่มใดๆ · ก่อนหน้านี้ +4 ใน `HomePersonasPage.test.tsx` — หน้าที่คนหนึ่งจัดหน้าจอให้อีกคน: admin เท่านั้นที่เห็น · ครบทั้ง 5 role ไม่ว่าจะตั้งไว้หรือยัง · ประโยค "starting point ไม่ใช่ override" · เซฟแล้วต้องลง role ที่เปิดอยู่เท่านั้น) | `npx jest` ใน `frontend/app` |
 
 `yarn type-check` · `yarn lint` · `yarn build` ผ่านหมด → **BUILD SUCCESS** ทั้งสองฝั่ง
 
@@ -381,7 +381,144 @@ M18 ก่อนเพิ่ม engine ตัวที่ 3 เสมอ
 
 ---
 
-## รอบนี้ — **Policy Flowchart** — โหมดที่สอง ของทั้งคนเขียนและคนอ่าน policy
+## รอบนี้ — **M5 slice 3 (ครึ่งหลัง): dry-run / apply / rollback ของ secure view ใช้ได้จากหน้าจอแล้ว** + เมนู Enforcement กลับมา
+
+> โจทย์: *"งั้นทำต่อครับ"* — งานที่ค้างจากข้อ AU.7: `enforcement_state` store + REST dry-run / apply / rollback + หน้าจอ + เอาแท็บ Enforcement กลับมา
+> ผลคือ chain 5.1.2 ต่อครบเป็นครั้งแรก: **กด Dry run บนหน้าจอ → อ่าน DDL → กด Apply → view ขึ้นที่ source จริง → คนสองคน select แล้วได้คำตอบคนละชุด → กด Roll back → view หายไป**
+
+### AW.1 chain เต็มตอนนี้
+
+```
+EnforcementPage (UI)
+  → EnforcementResource        /api/v1/enforcement/secure-views/*
+    → SecureViewService         ประกอบ input ทั้งหมดจากที่เดียวกัน
+      ├─ PolicyEngine           ตัดสินใจให้ "ทุกคน" (population) ไม่ใช่คนเดียว
+      ├─ AppDbEntitlementSource แถว row_entitlement ของ app DB (commit ebc399f)
+      ├─ SourceProbe            column list สด จาก source (ไม่ใช่จาก catalogue)
+      ├─ ViewCompiler           view หน้าตายังไง            (slice 1)
+      ├─ RowEntitlementMaintainer ใครได้แถวไหน              (slice 2)
+      ├─ SecureViewApplier      ตัวเดียวที่เขียนลง DB ลูกค้า (slice 3 ครึ่งแรก)
+      ├─ ReviewedPlans          dry run ที่มีคนอ่านแล้ว — ถือไว้ในหน่วยความจำ
+      └─ EnforcementStateStore  enforcement_state + audit_enforcement (V20)
+```
+
+### AW.2 `V20__enforcement_audit.sql`
+
+| อะไร | ทำไม |
+|---|---|
+| `enforcement_state` + `secure_object_schema` / `secure_object_name` | **rollback ต้อง drop object ที่สร้างไปจริง ไม่ใช่ชื่อที่ naming setting ของ source จะสร้างวันนี้** — ถ้ามีคนเปลี่ยน secure schema จาก `sec` เป็น `secure` หลัง apply แล้วกด rollback จะ drop view ที่ไม่เคยมี แล้ว **รายงานว่าสำเร็จ ทั้งที่ view จริงยังตั้งอยู่** |
+| ตารางใหม่ `audit_enforcement` (append-only เหมือน V5) | ทุก dry run / apply / rollback **ไม่ว่าผลจะออกมายังไง** · outcome ∈ `REVIEWED` `APPLIED` `ROLLED_BACK` `STALE` `FAILED` `REFUSED` · เก็บ `review_id` + `signature` เพื่อตอบได้ว่า *"คนที่กด apply อ่านอะไรไป"* · `client_ip` มาจาก `getRemoteAddr()` |
+| **dry run ก็ถูก audit** | มันไม่เขียนอะไร แต่มันเปิด connection เข้า DB ลูกค้าด้วย credential ของแพลตฟอร์มและอ่านว่าใครถืออะไรอยู่ — auditor ถามเรื่องนี้แน่ |
+
+### AW.3 `EnforcementStateStore`
+
+- `find` / `list` / `history(fqn, limit)` / `recordApplied` / `recordFailure` / `recordRolledBack` / `audit`
+- ⚠️ **`recordFailure` ไม่ทับ `APPLIED` เป็น `FAILED`** — apply ครั้งที่สองที่พังถูก rollback ทั้ง transaction แปลว่า source ยังถือ view ตัวเดิมอยู่เป๊ะ · ถ้าเขียนว่า `FAILED` คนจะไปซ่อม object ที่ไม่ได้เสีย → สถานะคงเป็น `APPLIED` แล้ววาง `last_error` ไว้ข้างๆ · `FAILED` เกิดได้เฉพาะตอนที่ก่อนหน้านี้ยังไม่มีอะไรติดตั้ง
+- `recordRolledBack` → `NOT_ENFORCED` + ล้างชื่อ object · **เก็บ script เดิมไว้** (สิ่งที่ apply ล่าสุดยังอ่านได้หลังถอดออกไปแล้ว)
+
+### AW.4 `ReviewedPlans` — dry run ที่มีคนอ่านแล้ว
+
+**apply ส่งมาแค่ `reviewId` ไม่มีอย่างอื่นเลย** — server เก็บสิ่งที่ตัวเองแสดงไว้เอง หน้าจอส่งแผนที่แก้เองกลับมาไม่ได้ และ**ไม่ควรจะทำได้**
+
+| กติกา | ค่า |
+|---|---|
+| ใช้ได้ครั้งเดียว | `take()` คือเอาออกเลย — apply ครั้งที่สองด้วย id เดิม → 409 audit เป็น `STALE` |
+| อายุ | 30 นาที |
+| ความจุ | 256 — เกินแล้วลืมตัวที่เก่าสุดก่อน |
+| ผูกกับ asset | id ของ asset อื่น → ไม่เจอ **และไม่ถูกเผาทิ้ง** (เจ้าของจริงยังใช้ได้) |
+
+⚠️ **อยู่ในหน่วยความจำ = สมมติว่ามี PM2 process เดียว** (ซึ่งตรงกับ deploy ปัจจุบัน) · restart แล้ว review ทุกใบหาย → คนแค่กด Dry run ใหม่ ไม่มีอะไรพัง · **ถ้าวันหนึ่งรัน cluster mode หลาย instance ต้องย้ายลงตาราง** ไม่งั้น apply จะสุ่ม 404/409
+
+### AW.5 `SecureViewService` — กติกาที่สำคัญ (อยู่ใน javadoc ของคลาสด้วย)
+
+| กติกา | ทำไม |
+|---|---|
+| **column มาจาก source สด ไม่ใช่ catalogue** | column ที่ crawl ยังไม่เห็น = column ที่ไม่มี policy คุ้ม · ใช้ list สดสร้าง view แล้ว **column ที่ catalogue ไม่รู้จักขึ้นเป็น warning ที่คน review ต้องอ่าน** |
+| **ตัดสินใจให้ทั้ง population** | maintainer revoke ทุกคนที่ไม่อยู่ใน input · population ที่โหลดไม่ครบ = revoke คนที่เกิน cut-off โดยไม่มีใครสั่ง → **เกิน `POPULATION_LIMIT` = 2000 ปฏิเสธ ไม่ตัด** · population ว่าง ก็ปฏิเสธ (ไม่งั้นคือ revoke ทุกคน) |
+| **apply compile แผนใหม่แล้วเทียบ** | applier เทียบ `signature` ของแถว · คลาสนี้เทียบ **DDL** · สองอย่างขยับแยกกันได้ (เพิ่ม column ที่ source → DDL เปลี่ยน แถวไม่เปลี่ยน) → ไม่ตรง = 409 ไม่ apply อะไรเลย |
+| **rollback ใช้ชื่อที่เก็บไว้ตอน apply** | ดู AW.2 |
+| **credential ผ่าน `CredentialResolver` ตัวที่ `DacApplication` ถือ** | ตัวใหม่ไม่มี Fernet opener → อ่าน credential ที่ seal ไว้ไม่ออก · wire แล้วใน `DacApplication.java` |
+| **ไม่ทำ cutover (FR-6.1.1)** | ไม่ GRANT SELECT บน view และไม่ REVOKE base table · view ที่ apply แล้ว**อ่านได้แค่เจ้าของ** จนกว่าจะมีคน grant = fail-closed · **dry run พูดเรื่องนี้ออกมาตรงๆ** ใน banner ของหน้าจอด้วย |
+| `readerRole` = `null` | ยังไม่มี `DbPrincipalProvisioner` · view ใช้ `DB_PRINCIPAL` (current_user) |
+| rollback | `DROP VIEW IF EXISTS` อย่างเดียว · **ไม่แตะ schema `acl`** (secure view ทุกตัวใน DB อ่านตาราง 3 ใบเดียวกัน และแถวพวกนั้นลำพังไม่ grant อะไร) |
+
+### AW.6 `EnforcementResource` — `/api/v1/enforcement/secure-views`
+
+| endpoint | ใคร | หมายเหตุ |
+|---|---|---|
+| `GET ?q=` | ADMIN · POLICY_AUTHOR · DATA_OWNER | candidate = table ที่ catalogue วางได้ บน source ที่เปิดอยู่ + สถานะ |
+| `GET /state?fqn=&limit=` | เหมือนบน | state + ประวัติ audit |
+| `POST /dry-run {assetFqn}` | เหมือนบน | คืน `reviewId` + `expiresAt` + DDL + rollback script + diff แถว + warning |
+| `POST /apply {assetFqn, reviewId}` | **PLATFORM_ADMIN เท่านั้น** (method-level `@Secured`) | reviewId ไม่ใช่ UUID → 400 |
+| `POST /rollback {assetFqn}` | **PLATFORM_ADMIN เท่านั้น** | ไม่มีอะไรติดตั้ง → 409 audit `REFUSED` |
+
+error mapping: `NotFound` → **404** · `Conflict` (review หาย/stale) → **409** · `Refused` (ทำไม่ได้ตามที่ขอ ไม่ได้แตะอะไร) → **422** · `SourceFailure` (source ปฏิเสธ transaction ถูก rollback) → **502** · body เป็น `{"message": …}` ทุกตัว
+
+### AW.7 หน้าจอ `/enforcement` + เมนูกลับมาแล้ว
+
+- `frontend/app/src/pages/enforcement/EnforcementPage.tsx` (ใหม่) + `api/secureViews.ts` (ใหม่) · route ใน `App.tsx` · `navigation.ts`: เอา `hidden: true` ออก · `milestone: null` · description ใหม่ *"Review, apply and roll back secure views on registered sources."* · `visibleTo` เดิม (`POLICY_AUTHOR`, `DATA_OWNER` + admin)
+- **Access ยังซ่อนอยู่** (รอหน้า overview ของ M8 — ดูข้อ AQ.9)
+- การ์ดต่อ table: สถานะ · source · FQN · base table / secure view (หรือ *Would create*) / last change · last error · ปุ่ม **History** · **Dry run** · **Roll back** (admin + APPLIED/DRIFTED เท่านั้น — ต้องกดยืนยัน *"Drop the view"* อีกครั้ง)
+- Review: *"Dry run — nothing has been written"* + เวลาหมดอายุ · 4 ตัวเลข (People decided / Allowed to read / Rows to write / Rows to remove) · warning สีเหลือง · live column (ตัวที่ไม่อยู่ใน catalogue เป็นสี warning) · script *Will run* / *Rollback, if needed* · **คนที่ไม่ใช่ admin เห็น review ได้แต่ไม่มีปุ่ม Apply** (*"Only a platform administrator can apply a review."*)
+- apply ที่ถูกปฏิเสธ → **ล้าง review ทิ้งทันที** (มันถูกใช้ไปแล้ว กดซ้ำก็ 409) แล้วแสดงเหตุผลจาก server
+- หน้าตาเป็นชุดเดียวกับหน้าอื่น (Button / Chip / TextField ตัวเดิม · ไม่มี style ใหม่) — ตรวจด้วย screenshot ผ่าน `:8090/Arak/` แล้ว · ช่องค้นหาเคยแคบเกิน → `tw:w-full`
+
+### AW.8 เทสต์ที่เพิ่ม
+
+| ไฟล์ | จำนวน | คุมอะไร |
+|---|---|---|
+| `ReviewedPlansTest` | 6 | ใช้ครั้งเดียว · asset อื่นไม่เผา review · หมดอายุตรงนาทีที่ 30 · นาทีที่ 29 ยังใช้ได้ · id ไม่รู้จัก/null · เกินความจุลืมตัวเก่าสุด |
+| `SecureViewServiceIT` (Testcontainers) | 15 | candidate · dry run ไม่เขียนอะไร + บอก column ที่ไม่อยู่ใน catalogue · apply แล้วคนอ่านเห็นตาม policy · review ใช้ครั้งเดียว (ครั้งที่สอง = STALE) · id ปลอม · **column ที่เพิ่มหลัง review ทำให้ stale** · **policy ที่เปลี่ยนหลัง review ทำให้ stale** · **login อ่านอย่างเดียว → FAILED** · rollback drop view เท่านั้น · **rollback ใช้ชื่อที่เก็บไว้ ไม่ใช่ pattern วันนี้** · table ไม่รู้จัก = 404 + audit · source ปิดอยู่ · **population ว่างถูกปฏิเสธ** · table ที่ถูก drop หลัง crawl · credential resolve ไม่ได้ |
+| `EnforcementPage.test.tsx` | 7 | แสดงสถานะ · dry run → apply ส่งแค่ fqn + reviewId · non-admin ไม่มี Apply / Roll back · apply ถูกปฏิเสธล้าง review · rollback ต้องยืนยัน Cancel ไม่ส่งอะไร · ไม่มีอะไรติดตั้งไม่มี Roll back · search ส่งไป server |
+
+### AW.9 ทดสอบสดผ่าน `:8090/Arak/` (รูปแบบ prod — jar เสิร์ฟ `dist`)
+
+ตัว candidate เดียวคือ `demo-pg.salesdb.sales.customer` → `sec.customer` (Postgres dev ใน `dac-srcpg`)
+
+| ขั้น | ผล |
+|---|---|
+| list | 200 · populationLimit 2000 |
+| dry run | 200 · 5 principal · 3 allowed · 9 live column · uncatalogued 0 · DDL ถูก |
+| analyst_a เรียก list / apply | **403** ทั้งคู่ |
+| reviewId มั่ว | 400 |
+| apply ด้วย `arak_reader` (read-only) | **502** *"permission denied for database salesdb"* → state `FAILED` + audit `FAILED` · ไม่มีอะไรค้างที่ source |
+| ใช้ review เดิมซ้ำ | **409** audit `STALE` |
+| (ให้ `CREATE ON DATABASE` ชั่วคราวใน container dev) dry run ใหม่ + apply | 200 · 6 statement · 7 แถว insert · `APPLIED` |
+| `SET ROLE analyst_a` → `SELECT * FROM sec.customer` | เห็น 2 จาก 4 แถว (BKK-01 เท่านั้น) · email `***@example.co.th` · citizen `********23456` |
+| `SET ROLE analyst_b` | 0 แถว |
+| rollback | 200 · 1 statement · `NOT_ENFORCED` · view หายจริง |
+| rollback ซ้ำ | **409** audit `REFUSED` |
+| เก็บกวาด | drop role analyst_a/b · `DROP SCHEMA acl CASCADE` · `DROP SCHEMA sec CASCADE` · `REVOKE CREATE` → schema เหลือ `public` + `sales` เหมือนเดิม · `has_database_privilege` = false |
+
+> ถ้า dry run ครั้งหลังเห็นว่า "allowed" เหลือ 1 — ไม่ใช่บั๊ก · `finance-subscription` มี time window และหลัง ~23:00 analyst_a ถูก deny (*"outside the policy's permitted time window"*)
+
+### AW.10 ⚠️ ของที่ต้องรู้ก่อนใช้กับ source จริง
+
+1. **credential ของ source ต้อง CREATE ได้** (schema `sec` + `acl` + view) · demo `arak_reader` เป็น read-only → apply ได้ `FAILED` ตามที่ควร · **follow-up: แยก credential สำหรับ DDL ออกจาก credential สำหรับ read** (ไม่อยากให้ credential ของ Query API ถือสิทธิ์ CREATE)
+2. **cutover ยังไม่มี** — หลัง apply ต้อง GRANT SELECT บน view + REVOKE base table เอง (FR-6.1.1 = งานถัดไป)
+3. review อยู่ในหน่วยความจำ (AW.4) — PM2 ต้อง `instances: 1`
+
+### AW.11 กับดักที่เจอรอบนี้
+
+| อาการ | สาเหตุ | แก้ |
+|---|---|---|
+| หน้าเว็บขาวหลัง restart · log บอก base path ผิด | **Git Bash แปลง `APP_WEB_BASE_PATH=/Arak/` เป็น `C:/Program Files/Git/Arak/`** (MSYS path conversion) | `export MSYS_NO_PATHCONV=1` ก่อน `set -a; . ./.env` ในสคริปต์ bring-up |
+| `TaskStop` แล้ว port 8080 ยังไม่ว่าง | `exec java` กลายเป็น orphan | `Get-NetTCPConnection -LocalPort 8080` → `Stop-Process -Id <pid>` |
+| heredoc ไม่เข้า `docker exec` | ไม่มี `-i` | `docker exec -i …` |
+| `DROP ROLE` พัง | role ยังมีสิทธิ์บน schema `sec` | drop schema ก่อน แล้วค่อย drop role |
+| JSON ของ `Rows` มี key `"empty"` เพิ่ม / `DryRun` มี `"satisfied"` | Jackson อ่าน `isEmpty()` / `isSatisfied()` เป็น property | ไม่มีผล — frontend `rowCount` อ่านแค่ 3 array · อย่าเอา `len()` ไปวนทุก key ใน script |
+| `/decisions/simulate` 404 | ไม่มี endpoint นี้ | `POST /api/v1/decisions {principal, assetFqn, environment:"prod"}` |
+
+### AW.12 ต่อจากนี้
+
+- **slice 4: MSSQL Testcontainers** (dialect มีแล้ว ยังไม่เคยรันบน SQL Server จริง)
+- credential แยกสำหรับ DDL (AW.10 ข้อ 1)
+- **cutover helper (FR-6.1.1)** — REVOKE base table + GRANT view + optional rename swap
+- `DbPrincipalProvisioner` → แล้ว `readerRole` จะไม่เป็น null
+- ย้าย `ReviewedPlans` ลงตาราง ถ้าจะรันหลาย instance
+- DriftDetector (M8) จะเป็นคนเขียน `DRIFTED` — ตอนนี้ยังไม่มีใครเขียนสถานะนี้
+
+## รอบก่อนหน้า — **Policy Flowchart** — โหมดที่สอง ของทั้งคนเขียนและคนอ่าน policy
 
 > โจทย์จากผู้ใช้: *"อันนี้คืออยากให้เปน feature เพิ่มนะ ไม่ใช่มาแทนที่หน้าเดิม แล้วแต่ว่าอยากให้มีทางเลือกให้ — คนสร้าง policy ว่าจะดูแบบ diagram flow หรือหน้า ui เดิม · คนอ่าน policy ก็ต้องมีโหมด text กับ diagram flowchart"* และ *"เปนภาพนะ / flow ที่พูดถึง"*
 
@@ -883,6 +1020,8 @@ engine === 'POSTGRES' ? '<ข้อความ Postgres>' : '<ข้อคว�
 `NavSection` ได้ field **`hidden?: boolean`** — ⚠️ **ไม่ใช่ permission** มันซ่อนจากทุกคนรวมทั้ง admin และไม่ได้ปิดกั้นอะไรที่ใครจะเข้าถึงได้อยู่แล้ว · **route ยังอยู่** bookmark หรือลิงก์จากเอกสารยังลงที่ placeholder ที่อธิบายตัวเองได้ ไม่เด้งกลับหน้าแรก
 
 **เอากลับเมื่อไหร่ (เขียนไว้ในโค้ดแล้ว):** Enforcement → พร้อมกับ M5 slice ที่มี apply/rollback · Access → พร้อมกับหน้า overview ของ M8
+
+> ✅ **อัปเดต (ข้อ AW.7): Enforcement กลับมาแล้ว** — มี dry-run / apply / rollback ครบ · **Access ยังซ่อนอยู่** รอ M8
 
 ### AQ.10 "Open in OpenMetadata" ต่อถึงของจริง
 
@@ -4456,7 +4595,7 @@ estate ที่ใช้: `prod-mssql.SalesDB.dbo.{customer, order}` + **`prod-
 
 ## Next Steps
 
-1. **push ให้ขึ้น** — local นำหน้า remote อยู่ (remote main ยังอยู่ที่ `0029375` — local นำอยู่ 7 commit) · แก้เรื่อง `git push` ค้างก่อน (ดู What Didn't Work) แล้วยืนยันด้วย `git ls-remote --heads origin` · **scan secret ก่อน push ทุกครั้ง**
+1. **push ให้ขึ้น** — local นำหน้า remote อยู่ (remote main ยังอยู่ที่ `0029375` — local นำอยู่ 11 commit หลัง commit รอบนี้) · แก้เรื่อง `git push` ค้างก่อน (ดู What Didn't Work) แล้วยืนยันด้วย `git ls-remote --heads origin` · **scan secret ก่อน push ทุกครั้ง**
 2. ~~**FR-7 Manual grant**~~ — **ปิดแล้วจริงรอบนี้** · รอบที่แล้วปิดด้วยการเช็คด้วยมือซึ่งแยกไม่ออกว่า grant ทำงานหรือไม่เคยถูกโหลด (ข้อ AE.4) · ตอนนี้มี `GrantCompositionIT` 13 tests บน Postgres จริงคุมอยู่ และการเขียนมันคือสิ่งที่ทำให้เจอบั๊กข้อ AE.1/AE.2 · *บันทึกเดิมของงานนี้:* · grant ระดับ table ให้ user/group ตรงๆ พร้อม start/end date · หน้า asset รื้อเป็น tab **Overview / Access / Policies / Columns / Audit** (อ้างอิง Immuta แต่ใช้ theme เรา) · tab Access ต้อง**แยกให้ชัดว่าสิทธิมาจาก direct grant หรือมาจาก policy** · group รองรับทุกแหล่ง (local + OM team + Entra ในอนาคต) · **grant ไม่ชนะ global policy** — compose แบบ intersection เหมือนเดิม
 2a. **ผูก `demo-pg` เข้ากับ service ของ OM** — *รอคำตอบผู้ใช้* ว่า `demo-pg` คือ `dtp-iprm` หรือคนละเครื่อง (ดูข้อ AC.3) · ตราบใดที่ยังไม่ผูก asset 36 ตัวจาก OM จริงยัง enforce ไม่ได้เลย
 2b. ~~**รันซ้ำ `AssetStoreIT` + `CatalogQueryIT`**~~ — **เขียวแล้วรอบนี้** ยืนยันว่าข้อ AC.4 เป็นเรื่อง Docker ไม่ใช่ regression จริง
@@ -4464,7 +4603,7 @@ estate ที่ใช้: `prod-mssql.SalesDB.dbo.{customer, order}` + **`prod-
 3. ~~**ปิด M4**~~ — **ปิดแล้ว** (FR-3.1.5 ข้อ X · FR-5.2 ข้อ Z · FR-5.3 ข้อ AA) · ของที่ค้างไว้จาก M4 ต่อได้ถ้าต้องการ: impact analysis ยังวัดเฉพาะ **table binding** (COLUMN binding ถูกครอบด้วย TABLE row ที่ materializer เขียนไว้อยู่แล้ว) และ cap 25×200 ยังเป็นค่าตายในโค้ด ไม่ได้ config
 4. **ปิดช่องว่างข้อ 1–5 ข้างบน** โดยเฉพาะ **ข้อ 4 (audit ของการ configure)** ซึ่งเป็นของที่ auditor จะถามหาแน่นอน
 5. **M2** — write API ของ principal/attribute แล้วต่อ (ก) การ assign application role จริงในหน้า `/settings/roles` (ข) หน้า local group ที่ `/settings/groups` ซึ่ง card ในหน้า Settings ลิงก์ไปรออยู่แล้ว · *(filter ตาม attribute ในหน้า People เสร็จแล้ว — ดูข้อ U)*
-6. **M5 (secure view)** — `DecisionSql` + dialect ทั้งสองตัวพร้อมแล้ว เหลือ ViewCompiler + `row_entitlement` maintainer + dry-run/apply/rollback + golden-file test
+6. **M5 (secure view)** — ~~ViewCompiler + maintainer + dry-run/apply/rollback + หน้าจอ~~ **เสร็จแล้ว (ข้อ AK · AT · AU · AW)** · เหลือ **slice 4 MSSQL Testcontainers** · credential แยกสำหรับ DDL · cutover helper (FR-6.1.1) · `DbPrincipalProvisioner` — ดูข้อ AW.12
 7. **FR-1.6** — reconcile cache กับ JDBC introspection จริง (**รอ connection database จริงจากผู้ใช้**)
 8. **หน้าเปลี่ยนรหัสผ่าน** — `mustChangePassword` ไหลถึง `auth/authStore.ts` แล้วแต่ไม่มีใครอ่าน
 9. **ก่อน M6** ต้องได้คำตอบ: SQL Server production เป็น **2022+** ไหม (ต้องการสำหรับ `GRANT UNMASK` ระดับ column) และลง extension `anon` บน PostgreSQL ได้ไหม

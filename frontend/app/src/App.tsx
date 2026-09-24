@@ -24,6 +24,7 @@ import LlmSettingsPage from './pages/settings/LlmSettingsPage';
 import OpenMetadataSettingsPage from './pages/settings/OpenMetadataSettingsPage';
 import SettingsPage from './pages/settings/SettingsPage';
 import SourcesPage from './pages/SourcesPage';
+import EnforcementPage from './pages/enforcement/EnforcementPage';
 import ExpressionDocsPage from './pages/docs/ExpressionDocsPage';
 import SystemStatusPage from './pages/SystemStatusPage';
 
@@ -79,6 +80,7 @@ export default function App() {
           <Route element={<QueryPage />} path="/query" />
           <Route element={<SimulatorPage />} path="/simulator" />
           <Route element={<SourcesPage />} path="/sources" />
+          <Route element={<EnforcementPage />} path="/enforcement" />
           {/*
             Not under /principals/:id, though it renders much the same facts.
             That route is the directory -- somebody else's record, reached by

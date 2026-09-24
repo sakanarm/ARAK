@@ -126,14 +126,9 @@ export const NAV_SECTIONS: NavSection[] = [
     visibleTo: ['POLICY_AUTHOR', 'DATA_OWNER'],
     href: '/enforcement',
     icon: FileShield02,
-    milestone: 'M5',
-    // Hidden at the user's request until it does something. M5 has shipped one
-    // slice -- a decision compiled into a secure view -- and none of it has a
-    // screen yet, so the link leads only to the placeholder. Put it back with
-    // the apply/rollback slice.
-    hidden: true,
+    milestone: null,
     description:
-      'Native source config, secure views and the query API, with drift detection.',
+      'Review, apply and roll back secure views on registered sources.',
   },
   {
     label: 'Access',
