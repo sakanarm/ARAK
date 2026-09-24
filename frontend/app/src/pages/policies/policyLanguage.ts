@@ -99,7 +99,7 @@ export function describeSelector(selector?: AssetSelector): string {
 }
 
 /** One identity entry. Fields within an entry are ANDed, so all of them show. */
-function describePrincipal(match: PrincipalMatch): string {
+export function describePrincipal(match: PrincipalMatch): string {
   const parts: string[] = [];
   if (match.role) parts.push(`anyone with the role ${match.role}`);
   if (match.team) parts.push(`in the team ${match.team}`);

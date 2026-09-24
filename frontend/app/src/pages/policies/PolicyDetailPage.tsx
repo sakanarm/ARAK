@@ -27,6 +27,8 @@ import {
   type PolicyTarget,
 } from '../../api/policies';
 import { describePolicy, describeSelector } from './policyLanguage';
+import { useViewMode, ViewToggle } from './controls';
+import PolicyFlowChart from './PolicyFlowChart';
 
 /**
  * One policy, read rather than edited.
@@ -101,6 +103,13 @@ export default function PolicyDetailPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [actionError, setActionError] = useState<string | null>(null);
+  // Two readings of the same document, remembered per browser. Text stays the
+  // default: the sentence is the one a reviewer can quote in an approval, and
+  // nobody should have to switch back to a page they already knew.
+  const [reading, setReading] = useViewMode<'text' | 'flow'>(
+    'arak.policy.reading',
+    'text',
+  );
 
   const { data: policy, error } = useQuery({
     queryKey: ['policy', id],
@@ -257,14 +266,30 @@ export default function PolicyDetailPage() {
 
       <div className="tw:mt-6 tw:grid tw:gap-6 tw:lg:grid-cols-3">
         <div className="tw:lg:col-span-2 tw:space-y-6">
-          <Panel title="In plain words">
-            <div className="tw:flex tw:flex-col tw:gap-1.5 tw:text-sm tw:text-secondary">
-              {describePolicy(document).map((line, index) => (
-                <p className="tw:text-pretty" key={index}>
-                  {line}
-                </p>
-              ))}
-            </div>
+          <Panel
+            action={
+              <ViewToggle
+                label="How to read this policy"
+                onChange={setReading}
+                options={[
+                  { value: 'text', label: 'Text' },
+                  { value: 'flow', label: 'Flowchart' },
+                ]}
+                value={reading}
+              />
+            }
+            title={reading === 'flow' ? 'How a request runs through it' : 'In plain words'}>
+            {reading === 'flow' ? (
+              <PolicyFlowChart policy={document} />
+            ) : (
+              <div className="tw:flex tw:flex-col tw:gap-1.5 tw:text-sm tw:text-secondary">
+                {describePolicy(document).map((line, index) => (
+                  <p className="tw:text-pretty" key={index}>
+                    {line}
+                  </p>
+                ))}
+              </div>
+            )}
           </Panel>
 
           <Coverage
@@ -776,13 +801,18 @@ function Conflicts({
 function Panel({
   title,
   children,
+  action,
 }: {
   title: string;
   children: React.ReactNode;
+  action?: React.ReactNode;
 }) {
   return (
     <section className="tw:rounded-xl tw:border tw:border-secondary tw:bg-primary tw:p-4">
-      <h2 className="tw:text-sm tw:font-semibold tw:text-primary">{title}</h2>
+      <div className="tw:flex tw:flex-wrap tw:items-center tw:justify-between tw:gap-3">
+        <h2 className="tw:text-sm tw:font-semibold tw:text-primary">{title}</h2>
+        {action}
+      </div>
       <div className="tw:mt-3">{children}</div>
     </section>
   );

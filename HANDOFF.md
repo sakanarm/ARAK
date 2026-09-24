@@ -56,7 +56,7 @@ Phase 1 รองรับ SQL Server + PostgreSQL · identity หลักค�
 | App DB (docker `dac-appdb`, postgres:16-alpine) | `:5432` db/user `dac` |
 | OpenMetadata ของทีม | `2.0.1` — sync ผ่าน **ingestion-bot JWT** (ดู What Didn't Work) |
 
-เทสต์ทั้งหมดเขียว — **backend unit รันครบเมื่อ 2026-09-24 → exit 0 · unit 685 · Failures 0 Errors 0** (integration **171** — `-Pintegration verify` รันเต็มชุด **2026-09-24 17:10** → BUILD SUCCESS · `Failures 0 Errors 0` · **+11 จาก `SecureViewApplierIT` ซึ่งเป็นครั้งแรกที่ secure view ของ ARAK ถูกสร้างและ query บน Postgres จริง**), frontend `npx jest` + `npx tsc --noEmit` + `vite build` รันใหม่ **2026-09-24** (**25 suites / 166 tests** เขียว · tsc exit 0 · build 6.24s · `scripts/check-cursor-pointer.mjs` → *every &lt;button&gt; offers a hand*)
+เทสต์ทั้งหมดเขียว — **backend unit รันครบเมื่อ 2026-09-24 → exit 0 · unit 685 · Failures 0 Errors 0** (integration **171** — `-Pintegration verify` รันเต็มชุด **2026-09-24 17:10** → BUILD SUCCESS · `Failures 0 Errors 0` · **+11 จาก `SecureViewApplierIT` ซึ่งเป็นครั้งแรกที่ secure view ของ ARAK ถูกสร้างและ query บน Postgres จริง**), frontend `npx jest` + `npx tsc --noEmit` + `vite build` รันใหม่ **2026-09-24** (**27 suites / 178 tests** เขียว · tsc exit 0 · build 11.78s · `scripts/check-cursor-pointer.mjs` → *every &lt;button&gt; offers a hand*)
 
 > ⚠️ **`backend/dac-service/target/surefire-reports/com.mfec.dac.catalog.AssetStoreIT.txt` ยังแดงค้างอยู่ในโฟลเดอร์ — เป็นไฟล์เก่าจาก 2026-09-23 20:35 ก่อน commit `19b0503` ซึ่งคือ commit ที่แก้เคสนั้นพอดี** อย่าอ่านรายงานใน `target/` โดยไม่ดูเวลาไฟล์ — `mvn test` ไม่ล้างรายงานของคลาสที่รอบนี้ไม่ได้รัน
 
@@ -64,7 +64,7 @@ Phase 1 รองรับ SQL Server + PostgreSQL · identity หลักค�
 |---|---|---|
 | Backend unit | dac-common 31 · dac-engine 277 · **dac-compiler-sql 51 (+17 — `RowEntitlementMaintainerTest`)** · dac-connector-openmetadata 91 · **dac-connector-source 25 (+6 — `SecureViewApplierTest`)** · dac-proxy 30 · **dac-service 180** = **685** | `./mvnw -o test` |
 | Backend integration (Testcontainers `postgres:16-alpine`) | **171 tests** — `AssetStoreIT` 7 · `CatalogQueryIT` 18 · `DataSourceStoreIT` 13 · `GovernanceStoreIT` 10 · `GrantCompositionIT` 17 · **`HomeLayoutStoreIT` 14 (+8 รอบนี้ — persona)** · `IdentityAdminStoreIT` 24 · `ImpactAnalysisIT` 8 · `PolicyBindingMaterializerIT` 10 · `PolicyOverviewIT` 24 · `PolicyStoreIT` 10 · **`SecureViewApplierIT` 11 (ใหม่รอบนี้ — อยู่ใน `dac-connector-source` ไม่ใช่ `dac-service`)** · `SourceEngineRegistryIT` 5 | `./mvnw verify -Pintegration` (ทั้ง reactor) |
-| Frontend | **25 suites / 166 tests** (+4 ใน `HomePersonasPage.test.tsx` — หน้าที่คนหนึ่งจัดหน้าจอให้อีกคน: admin เท่านั้นที่เห็น · ครบทั้ง 5 role ไม่ว่าจะตั้งไว้หรือยัง · ประโยค "starting point ไม่ใช่ override" · เซฟแล้วต้องลง role ที่เปิดอยู่เท่านั้น) | `npx jest` ใน `frontend/app` |
+| Frontend | **27 suites / 178 tests** (+9 `policyFlow.test.ts` — ลำดับด่าน · selector ว่าง = 0 asset ไม่ใช่ทุก asset · subject ว่าง = `open` ไม่ใช่ `set` · "ไม่ผ่านด่าน" ต้องไม่อ่านว่า deny · +3 `PolicyFlowChart.test.tsx` — ไม่ส่ง `onEdit` ต้องไม่มีปุ่มใดๆ · ก่อนหน้านี้ +4 ใน `HomePersonasPage.test.tsx` — หน้าที่คนหนึ่งจัดหน้าจอให้อีกคน: admin เท่านั้นที่เห็น · ครบทั้ง 5 role ไม่ว่าจะตั้งไว้หรือยัง · ประโยค "starting point ไม่ใช่ override" · เซฟแล้วต้องลง role ที่เปิดอยู่เท่านั้น) | `npx jest` ใน `frontend/app` |
 
 `yarn type-check` · `yarn lint` · `yarn build` ผ่านหมด → **BUILD SUCCESS** ทั้งสองฝั่ง
 
@@ -381,7 +381,77 @@ M18 ก่อนเพิ่ม engine ตัวที่ 3 เสมอ
 
 ---
 
-## รอบนี้ — **M5 slice 3 (ครึ่งแรก): `SecureViewApplier`** — ครั้งแรกที่ secure view ของ ARAK ทำงานบนฐานข้อมูลจริง
+## รอบนี้ — **Policy Flowchart** — โหมดที่สอง ของทั้งคนเขียนและคนอ่าน policy
+
+> โจทย์จากผู้ใช้: *"อันนี้คืออยากให้เปน feature เพิ่มนะ ไม่ใช่มาแทนที่หน้าเดิม แล้วแต่ว่าอยากให้มีทางเลือกให้ — คนสร้าง policy ว่าจะดูแบบ diagram flow หรือหน้า ui เดิม · คนอ่าน policy ก็ต้องมีโหมด text กับ diagram flowchart"* และ *"เปนภาพนะ / flow ที่พูดถึง"*
+
+### AV.1 กฎข้อเดียวที่คุมทุกการตัดสินใจในรอบนี้: **ของเดิมต้องไม่ขยับ**
+
+ทั้ง 2 หน้า **default เป็นของเดิมเป๊ะ** — คนที่ไม่กดสวิตช์จะไม่รู้เลยว่ามีอะไรเพิ่ม (นอกจากตัวสวิตช์เอง)
+ค่าที่จำไว้ใน `localStorage` เป็น **override เท่านั้น** ไม่มีค่า = หน้าเดิม · อ่าน/เขียนหุ้ม `try/catch` ทั้งคู่ (private window ที่บล็อก site data จะ throw ทันที และ "หน้าที่เรนเดอร์ไม่ได้เพราะจำ preference ไม่ได้" ไม่คุ้ม)
+
+| หน้า | สวิตช์ | default | คีย์ |
+|---|---|---|---|
+| `PolicyBuilderPage` (คนเขียน) | **Form / Flowchart** อยู่ใน header | `Form` | `arak.policy.view` |
+| `PolicyDetailPage` (คนอ่าน) | **Text / Flowchart** อยู่บนหัวการ์ด *In plain words* | `Text` | `arak.policy.reading` |
+
+### AV.2 ทำไมเป็น **model + renderer** ไม่ใช่ component เดียว
+
+`policyFlow.ts` = pure function `buildFlow(policy) → FlowModel` · `PolicyFlowChart.tsx` = วาดอย่างเดียว
+ข้อความในกล่องทุกบรรทัด**เรียกจาก `describe*` ตัวเดียวกับที่ประโยค "In plain words" ใช้** — diagram ที่มีความเข้าใจคำว่า `contains` เป็นของตัวเองจะแย่กว่าไม่มี diagram เลย เพราะมันคือ**คำอธิบายชุดที่สอง ที่สวยกว่า และผิด** ของเอกสารที่กำลังจะถูก publish
+
+### AV.3 ทำไมเรียง **asset → คน → ผล** ไม่ใช่ตามหน้าฟอร์ม
+
+เป็นลำดับที่ engine ใช้จริง: binding resolve กับ asset ก่อน → **policy ที่ selector ว่าง ตายตั้งแต่ด่านแรก ไม่ว่า subject จะเขียนดีแค่ไหน**
+นี่คือความผิดพลาดที่ flowchart ควรโชว์ที่**กล่องแรก** ไม่ใช่กล่องสุดท้าย
+
+**ทุกด่านต้องบอกทางออกของ "ไม่ผ่าน"** — เขียนไว้ว่า *"This policy is not bound to it"* / *"Another policy may still decide"* ไม่ใช่ปล่อยว่าง เพราะด่านที่ไม่บอกทางแยก คนอ่านจะเติมเองว่า "ไม่ผ่าน = ถูก deny" ซึ่ง**ไม่ใช่เรื่องเดียวกัน**
+
+### AV.4 tone 4 แบบ — `open` แยกจาก `set` โดยตั้งใจ
+
+| tone | เมื่อไหร่ | สี |
+|---|---|---|
+| `set` | เขียนครบ | เทา/ปกติ |
+| `empty` | ยังไม่ได้เขียน → **selector ว่าง = ผูกกับ 0 asset** (ไม่ใช่ "ทุก asset") | เส้นประ |
+| `open` | เขียนครบแล้ว **และผ่านทุกคน** (ไม่มี subject) | warning |
+| `deny` | subscription DENY | error |
+
+> กล่องที่ทุกคนผ่านได้คือกล่องที่ **authored ครบและ permissive เต็มที่** — ถ้าทาสีเหมือนกล่องที่แคบ นั่นคือวิธีที่ policy ถูก publish กว้างกว่าที่ตั้งใจ
+
+### AV.5 ⚠️ trap ที่เสียเวลาไปหนึ่งรอบ: ชื่อไฟล์ชนกันบน Windows
+
+`PolicyFlow.tsx` (component) กับ `policyFlow.ts` (model) — **filesystem ของ Windows ไม่แยกตัวพิมพ์** → `tsc` เด้ง `TS1261: file name differs only in casing` แล้ว import ไป resolve เข้าไฟล์ผิด (`has no default export`)
+→ เปลี่ยนชื่อ component เป็น **`PolicyFlowChart.tsx`** (model ยังชื่อ `policyFlow.ts` คู่กับ `policyLanguage.ts` เหมือนเดิม)
+
+### AV.6 ไม่ใช้ graph library
+
+`reactflow` / `@antv/g6` = bundle ใหญ่กว่าทั้งหน้ารวมกัน · ดึงกล่องออกจาก DOM (เสีย text selection, keyboard focus, ลำดับที่ screen reader อ่าน) · และ**วาดด้วยสีของตัวเอง** ซึ่งขัดกับคำสั่ง *"เอาให้ทุกอย่างเหมือนเดิมนะ ความสวยงาม"* ตรงๆ
+→ กล่อง = `div` + token เดิม · **เส้นเชื่อมกับหัวลูกศรเป็น SVG จริง** (ไม่ใช่ตัวอักษร `↓`) เพราะสิ่งที่ chart เพิ่มจาก list คือ "ลำดับ" และ "ด่านมีทางออกสองทาง" — ทั้งสองอย่างต้องเห็นเป็นเส้น
+
+### AV.7 คลิกกล่องแล้วกลับไปแก้ได้ (เฉพาะโหมดคนเขียน)
+
+`PolicyFlowChart` รับ `onEdit?` — **มีเมื่อแก้ได้เท่านั้น** ไม่ส่ง = กล่องเป็น text ธรรมดา ไม่มีปุ่ม (คนอ่านที่ไม่มีสิทธิ์แก้ต้องไม่เห็นปุ่มชวนแก้)
+`Step` ใน `controls.tsx` ได้ `id={\`policy-step-${step}\`}` → คลิกกล่อง = สลับกลับเป็น Form **แล้วค่อย** `scrollIntoView` (ต้อง defer ด้วย `setTimeout(…, 0)` ไม่งั้น scroll ไปหา element ที่ยังไม่ถูกเรนเดอร์ แล้วคนใช้ค้างอยู่หัวหน้า)
+
+### AV.8 ของที่เพิ่ม/แก้
+
+| ไฟล์ | อะไร |
+|---|---|
+| `pages/policies/policyFlow.ts` | **ใหม่** — model ล้วน `buildFlow()` → `FlowModel { entry, steps[], exit, gate }` |
+| `pages/policies/PolicyFlowChart.tsx` | **ใหม่** — renderer, SVG connector + branch arrow, responsive |
+| `pages/policies/policyFlow.test.ts` | **ใหม่ 9 tests** |
+| `pages/policies/PolicyFlowChart.test.tsx` | **ใหม่ 3 tests** |
+| `pages/policies/controls.tsx` | + `ViewToggle` · `useViewMode` · `Step` มี `id` |
+| `pages/policies/PolicyBuilderPage.tsx` | สวิตช์ใน header · คอลัมน์ฟอร์มสลับเป็น chart · `editStep()` |
+| `pages/policies/PolicyDetailPage.tsx` | `Panel` รับ `action` · สวิตช์ Text/Flowchart |
+| `pages/policies/policyLanguage.ts` | `describePrincipal` เป็น `export` (model เรียกใช้ซ้ำ) |
+
+### AV.9 ยังไม่ได้ทำ — view B "Layer Stack"
+
+diagram ที่โชว์ว่า policy ตัวนี้จะถูก **global ทับ** หรือไม่ (ตรงกับบรรทัดในแผน: *"UI ต้องเตือนตอนสร้าง local policy ว่ามันจะถูก global ทับ"*) ยังทำไม่ได้ตอน**สร้าง** เพราะ `PolicyOverview.overlaps()` ต้องมี policy id ที่เซฟแล้ว
+→ ต้องเพิ่ม **`POST /v1/policies/preview/conflicts`** ที่รับ draft ที่ยังไม่เซฟ แล้วคืน `Overlap[]` (ใช้ logic เดิม ไม่ต้องโหลดจาก DB)
+
+## รอบก่อนหน้า — **M5 slice 3 (ครึ่งแรก): `SecureViewApplier`** — ครั้งแรกที่ secure view ของ ARAK ทำงานบนฐานข้อมูลจริง
 
 slice 1 = view หน้าตายังไง · slice 2 = ใครได้อะไร · **ทั้งคู่เป็น pure function ไม่เคยแตะ database เลย**
 slice 3 คือรอบที่มันออกจากห้องทดลอง — คลาสเดียวใน chain 5.1.2 ที่เปิด JDBC connection

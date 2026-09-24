@@ -1,4 +1,4 @@
-import { createContext, useContext, type ReactNode } from 'react';
+import { createContext, useContext, useState, type ReactNode } from 'react';
 import { Select as DesignSelect } from '@openmetadata/ui-core-components/components/base/select/select';
 
 /**
@@ -145,7 +145,12 @@ export function Step({
   action?: ReactNode;
 }) {
   return (
-    <section className="tw:rounded-xl tw:border tw:border-secondary tw:bg-primary tw:p-5">
+    // The id is what the flowchart scrolls back to. A box in the chart names a
+    // step, and a reader who clicks it should land on the fields that write it
+    // rather than at the top of a form they then have to search.
+    <section
+      className="tw:rounded-xl tw:border tw:border-secondary tw:bg-primary tw:p-5"
+      id={`policy-step-${step}`}>
       <header className="tw:flex tw:items-start tw:justify-between tw:gap-4">
         <div className="tw:flex tw:items-start tw:gap-3">
           <span className="tw:mt-0.5 tw:flex tw:h-6 tw:w-6 tw:flex-none tw:items-center tw:justify-center tw:rounded-full tw:bg-brand-solid tw:text-xs tw:font-semibold tw:text-white">
@@ -161,4 +166,88 @@ export function Step({
       <div className="tw:mt-5">{children}</div>
     </section>
   );
+}
+/**
+ * A two-way switch between readings of the same thing.
+ *
+ * Every screen this appears on already worked before it was added, and the
+ * switch is there to offer a second reading, never to replace the first. So the
+ * stored value is only ever an override: nothing stored means the page renders
+ * exactly as it always did, and a viewer who never touches the switch cannot
+ * tell it is there beyond the control itself.
+ *
+ * It is a pair of buttons rather than a select because there are two of them
+ * and both fit on screen — a menu would hide half the answer behind a click and
+ * make a reader open it to find out what else there is.
+ */
+export function ViewToggle<T extends string>({
+  value,
+  onChange,
+  options,
+  label,
+}: {
+  value: T;
+  onChange: (next: T) => void;
+  options: { value: T; label: string }[];
+  label: string;
+}) {
+  return (
+    <div
+      aria-label={label}
+      className="tw:inline-flex tw:rounded-lg tw:border tw:border-secondary tw:bg-secondary tw:p-0.5"
+      role="group">
+      {options.map((option) => {
+        const active = option.value === value;
+
+        return (
+          <button
+            aria-pressed={active}
+            className={`tw:cursor-pointer tw:rounded-md tw:px-3 tw:py-1 tw:text-sm tw:font-medium tw:transition ${
+              active
+                ? 'tw:bg-primary tw:text-primary tw:shadow-xs'
+                : 'tw:text-tertiary tw:hover:text-primary'
+            }`}
+            key={option.value}
+            onClick={() => onChange(option.value)}
+            type="button">
+            {option.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/**
+ * Remembers one viewer's choice of reading, on this browser only.
+ *
+ * The choice is a preference about how to look at a page, not a fact about the
+ * policy, so it belongs to the person rather than to the document and never
+ * goes near the server. `localStorage` throws outright in a few
+ * configurations — private windows with site data blocked, most notably — and a
+ * page that reads a display preference is not a page worth failing to render,
+ * so both halves are guarded and a failure simply means the default.
+ */
+export function useViewMode<T extends string>(key: string, fallback: T) {
+  const [mode, setMode] = useState<T>(() => {
+    try {
+      const stored = window.localStorage.getItem(key);
+
+      return (stored as T | null) ?? fallback;
+    } catch {
+      return fallback;
+    }
+  });
+
+  return [
+    mode,
+    (next: T) => {
+      setMode(next);
+      try {
+        window.localStorage.setItem(key, next);
+      } catch {
+        // A preference that cannot be remembered is still worth honouring now.
+      }
+    },
+  ] as const;
 }

@@ -21,8 +21,9 @@ import {
   type StoredPolicy,
 } from '../../api/policies';
 import type { Policy } from '../../generated/entity/policy/policy';
-import { Field, Select, Step, TextField } from './controls';
+import { Field, Select, Step, TextField, useViewMode, ViewToggle } from './controls';
 import DataPolicyBuilder from './DataPolicyBuilder';
+import PolicyFlowChart from './PolicyFlowChart';
 import SelectorBuilder from './SelectorBuilder';
 import SubjectBuilder from './SubjectBuilder';
 import { capabilities, MODES, type Engine } from './enforcement';
@@ -121,6 +122,10 @@ export default function PolicyBuilderPage() {
     return EMPTY;
   });
   const [loaded, setLoaded] = useState<StoredPolicy | null>(null);
+  // Which reading of the draft the form column shows. It defaults to the form
+  // and is remembered per browser, so an author who never opens the chart sees
+  // the page exactly as it has always been.
+  const [view, setView] = useViewMode<'form' | 'flow'>('arak.policy.view', 'form');
   // Null until the engine list arrives, then the first one the server lists.
   // Naming one here would be this page keeping its own copy of a list that
   // exists precisely so it does not have to.
@@ -256,6 +261,25 @@ export default function PolicyBuilderPage() {
     );
   }
 
+  /**
+   * Take the author from a box in the chart to the fields that write it.
+   *
+   * The switch back to the form has to happen before the scroll, and the scroll
+   * has to wait for the form to exist — hence the deferral. Landing on a step
+   * that is not on screen yet would scroll to nothing and leave the author at
+   * the top of the page, which is the failure this is meant to avoid.
+   */
+  const editStep = (step: number) => {
+    setView('form');
+    window.setTimeout(
+      () =>
+        document
+          .getElementById(`policy-step-${step}`)
+          ?.scrollIntoView({ behavior: 'smooth', block: 'start' }),
+      0,
+    );
+  };
+
   return (
     <>
       <header className="tw:flex tw:flex-wrap tw:items-end tw:justify-between tw:gap-4">
@@ -269,6 +293,15 @@ export default function PolicyBuilderPage() {
           </p>
         </div>
         <div className="tw:flex tw:items-center tw:gap-2">
+          <ViewToggle
+            label="How to show this policy"
+            onChange={setView}
+            options={[
+              { value: 'form', label: 'Form' },
+              { value: 'flow', label: 'Flowchart' },
+            ]}
+            value={view}
+          />
           {loaded && (
             <Badge color="gray" size="sm" type="pill-color">
               v{loaded.version} · {loaded.lifecycleState.toLowerCase()}
@@ -324,6 +357,12 @@ export default function PolicyBuilderPage() {
       <div className="tw:mt-8 tw:grid tw:gap-6 tw:xl:grid-cols-[minmax(0,1fr)_380px]">
         {/* ------------------------------------------------------- the form */}
         <div className="tw:flex tw:flex-col tw:gap-5">
+          {view === 'flow' ? (
+            <section className="tw:rounded-xl tw:border tw:border-secondary tw:bg-primary tw:p-5">
+              <PolicyFlowChart onEdit={editStep} policy={draft} />
+            </section>
+          ) : (
+            <>
           <Step
             description="The name is what everyone else will search for when they hit something they cannot explain."
             step={1}
@@ -527,6 +566,8 @@ export default function PolicyBuilderPage() {
                   vocabulary={vocabulary}
                 />
               </Step>
+            </>
+          )}
             </>
           )}
         </div>
