@@ -2,6 +2,8 @@ package com.mfec.dac;
 
 import com.mfec.dac.access.AccessQuery;
 import com.mfec.dac.access.GrantExpiryJob;
+import com.mfec.dac.access.AccessEligibility;
+import com.mfec.dac.access.AccessRequestStore;
 import com.mfec.dac.access.GrantStore;
 import com.mfec.dac.home.HomeLayoutStore;
 import com.mfec.dac.home.HomeLayoutValidator;
@@ -35,6 +37,7 @@ import com.mfec.dac.identity.IdentityAdminStore;
 import com.mfec.dac.policy.DecisionCache;
 import com.mfec.dac.identity.PrincipalQuery;
 import com.mfec.dac.om.OpenMetadataClient;
+import com.mfec.dac.resources.AccessRequestResource;
 import com.mfec.dac.resources.AccessResource;
 import com.mfec.dac.resources.HomePersonaResource;
 import com.mfec.dac.resources.HomeResource;
@@ -353,6 +356,12 @@ public class DacApplication extends Application<DacConfiguration> {
     // every decision, so this only controls how soon the table and the audit
     // trail catch up with what the engine has been doing since the hour turned.
     environment.lifecycle().manage(new GrantExpiryJob(grants, Duration.ofHours(1)));
+    // Asking a table's owner for access (the first slice of the Phase 2
+    // workflow). Approval writes through the same GrantStore as a manual grant,
+    // so the decision cache hears about it on the listener registered above.
+    AccessRequestStore accessRequests = new AccessRequestStore(jdbi, grants, principalLoader);
+    AccessEligibility eligibility = new AccessEligibility(decisionService, accessRequests);
+    environment.jersey().register(new AccessRequestResource(accessRequests, eligibility));
     environment.jersey().register(
         new QueryResource(
             new QueryService(
@@ -360,7 +369,8 @@ public class DacApplication extends Application<DacConfiguration> {
                 environment.getObjectMapper(),
                 sources,
                 decisionService,
-                new QueryExecutor(credentials, 10))));
+                new QueryExecutor(credentials, 10)),
+            eligibility));
     // Enforcement mode 5.1.2 (M5). The same resolver as every other source
     // connection: a second one without the Fernet opener would read a stored
     // credential as unresolvable. Reviews are held in this process, which is

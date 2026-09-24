@@ -4,6 +4,7 @@ import {
   Database01,
   FileShield02,
   Home01,
+  Inbox01,
   SearchRefraction,
   Server01,
   Settings01,
@@ -111,6 +112,18 @@ export const NAV_SECTIONS: NavSection[] = [
     milestone: null,
     description:
       'Run SQL through the platform: the policy is compiled into the statement before it reaches the source.',
+  },
+  {
+    // Everyone: anybody can be refused and ask, and whether somebody may
+    // decide is the table's owner in OpenMetadata, not a console role. The
+    // server scopes the inbox; the rail does not need to guess at it.
+    label: 'Requests',
+    visibleTo: 'everyone',
+    href: '/requests',
+    icon: Inbox01,
+    milestone: null,
+    description:
+      'Ask a table owner for access, and decide what is asked of the tables you own.',
   },
   {
     label: 'Simulator',

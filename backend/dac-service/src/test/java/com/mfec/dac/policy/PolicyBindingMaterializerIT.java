@@ -86,7 +86,7 @@ class PolicyBindingMaterializerIT {
           // loudly instead of being emptied by a suite never meant to touch it.
           handle.execute(
               """
-              TRUNCATE policy_version, policy_binding, access_grant, row_entitlement,
+              TRUNCATE access_request, policy_version, policy_binding, access_grant, row_entitlement,
                        enforcement_state, asset_facet, asset_owner, asset_fqn_map,
                        asset_column, asset, policy
               """);

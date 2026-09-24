@@ -120,6 +120,7 @@ class QueryRewriterTest {
   void refusesWhatItCannotParse() {
     assertThatThrownBy(() -> rewriter.rewrite("SELEC * FROM x", governing(allowed())))
         .isInstanceOf(QueryRewriter.RefusedException.class)
+        .isNotInstanceOf(QueryRewriter.DeniedException.class)
         .hasMessageContaining("could not be parsed");
   }
 
@@ -154,7 +155,12 @@ class QueryRewriterTest {
     assertThatThrownBy(() -> rewriter.rewrite("SELECT * FROM sales.customer", governing(denied)))
         .isInstanceOf(QueryRewriter.RefusedException.class)
         .hasMessageContaining("finance-subscription did not apply")
-        .hasMessageContaining("time window");
+        .hasMessageContaining("time window")
+        // Names the table, which is what lets the query page offer to ask its
+        // owner; a refusal of the statement itself (unparsable, DML) does not.
+        .isInstanceOfSatisfying(
+            QueryRewriter.DeniedException.class,
+            e -> assertThat(e.assetFqn()).isEqualTo("demo-pg.salesdb.sales.customer"));
   }
 
   @Test

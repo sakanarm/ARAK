@@ -305,6 +305,40 @@ public class GrantStore {
   }
 
   /**
+   * The grant an owner could give this person, as the engine would read it --
+   * never stored, only evaluated (see {@code DecisionService#decideAsIfGranted}).
+   *
+   * <p>Built through {@link #asPolicy} rather than by hand so that the question
+   * "would a grant open this" is answered about the same document a real grant
+   * becomes. A hand-built look-alike that differed in scope level would give
+   * the button an answer the approval then contradicts.
+   */
+  public static Policy hypothetical(String username, String assetFqn, Instant at) {
+    return asPolicy(
+        new StoredGrant(
+            new UUID(0L, 0L),
+            assetFqn,
+            new UUID(0L, 0L),
+            username,
+            username,
+            "USER",
+            null,
+            "request",
+            null,
+            // Open from the beginning of time rather than from `at`: the
+            // question is whether a grant would let them in, not whether one
+            // written this exact millisecond has started yet.
+            null,
+            null,
+            "If the owner approved a request",
+            "(hypothetical)",
+            at,
+            null,
+            null,
+            null));
+  }
+
+  /**
    * One grant rendered as the policy the engine will evaluate.
    *
    * <p>The name is {@code grant:<uuid>} so that an explanation (FR-5.4) can be
@@ -362,6 +396,44 @@ public class GrantStore {
    * without a trail is exactly the row an access review cannot account for.
    */
   public StoredGrant grant(NewGrant request) {
+    StoredGrant created = jdbi.inTransaction(handle -> insert(handle, request, null));
+    announce(created);
+    return created;
+  }
+
+  /**
+   * Creates the grant an approved access request produces, inside the caller's
+   * transaction.
+   *
+   * <p>The caller's transaction rather than one of its own, because the request
+   * turning APPROVED and the grant existing are one fact: a grant whose request
+   * still reads PENDING would be approved a second time, and a request marked
+   * APPROVED with no grant behind it tells the requester they have access they
+   * do not. Nothing is announced here -- the caller does that with {@link
+   * #announce} once the transaction has committed, so the decision cache is
+   * never cleared for a grant that then rolls back.
+   */
+  public StoredGrant grantForRequest(Handle handle, NewGrant request, UUID requestId) {
+    if (requestId == null) {
+      throw new IllegalArgumentException("a grant from a request must name the request");
+    }
+    return insert(handle, request, requestId);
+  }
+
+  /** Tells every listener that a grant now exists; see {@link #grantForRequest}. */
+  public void announce(StoredGrant created) {
+    LOG.info(
+        "Grant {} on {} to {} until {} by {}{}",
+        created.id(),
+        created.assetFqn(),
+        created.username(),
+        created.validUntil() == null ? "(no expiry)" : created.validUntil(),
+        created.grantedBy(),
+        created.requestId() == null ? "" : " (request " + created.requestId() + ")");
+    changes.fire("grant " + created.id() + " on " + created.assetFqn());
+  }
+
+  private StoredGrant insert(Handle handle, NewGrant request, UUID requestId) {
     if (request.reason() == null || request.reason().isBlank()) {
       throw new IllegalArgumentException("a grant must say why it was given");
     }
@@ -370,56 +442,44 @@ public class GrantStore {
       throw new IllegalArgumentException("a grant must end after it starts");
     }
 
-    StoredGrant created =
-        jdbi.inTransaction(
-            handle -> {
-              UUID id =
-                  handle
-                      .createQuery(
-                          """
-                          INSERT INTO access_grant
-                            (asset_fqn, principal_id, source, valid_from, valid_until,
-                             reason, granted_by)
-                          VALUES
-                            (:fqn, :principal, 'manual', :from, :until, :reason, :by)
-                          RETURNING id
-                          """)
-                      .bind("fqn", request.assetFqn())
-                      .bind("principal", request.principalId())
-                      .bind("from", from)
-                      .bind("until", request.validUntil())
-                      .bind("reason", request.reason())
-                      .bind("by", request.grantedBy())
-                      .mapTo(UUID.class)
-                      .one();
+    UUID id =
+        handle
+            .createQuery(
+                """
+                INSERT INTO access_grant
+                  (asset_fqn, principal_id, source, request_id, valid_from,
+                   valid_until, reason, granted_by)
+                VALUES
+                  (:fqn, :principal, :source, :request, :from, :until, :reason, :by)
+                RETURNING id
+                """)
+            .bind("fqn", request.assetFqn())
+            .bind("source", requestId == null ? "manual" : "request")
+            .bind("request", requestId)
+            .bind("principal", request.principalId())
+            .bind("from", from)
+            .bind("until", request.validUntil())
+            .bind("reason", request.reason())
+            .bind("by", request.grantedBy())
+            .mapTo(UUID.class)
+            .one();
 
-              StoredGrant stored =
-                  handle
-                      .createQuery(
-                          """
-                          SELECT g.*, p.username, p.display_name, p.principal_type,
-                                 p.source AS principal_source
-                          FROM access_grant g
-                          JOIN principal p ON p.id = g.principal_id
-                          WHERE g.id = :id
-                          """)
-                      .bind("id", id)
-                      .map(GrantStore::map)
-                      .one();
+    StoredGrant stored =
+        handle
+            .createQuery(
+                """
+                SELECT g.*, p.username, p.display_name, p.principal_type,
+                       p.source AS principal_source
+                FROM access_grant g
+                JOIN principal p ON p.id = g.principal_id
+                WHERE g.id = :id
+                """)
+            .bind("id", id)
+            .map(GrantStore::map)
+            .one();
 
-              audit(handle, "GRANT", request.grantedBy(), stored, request.reason());
-              return stored;
-            });
-
-    LOG.info(
-        "Grant {} on {} to {} until {} by {}",
-        created.id(),
-        created.assetFqn(),
-        created.username(),
-        created.validUntil() == null ? "(no expiry)" : created.validUntil(),
-        request.grantedBy());
-    changes.fire("grant " + created.id() + " on " + created.assetFqn());
-    return created;
+    audit(handle, "GRANT", request.grantedBy(), stored, request.reason());
+    return stored;
   }
 
   /**

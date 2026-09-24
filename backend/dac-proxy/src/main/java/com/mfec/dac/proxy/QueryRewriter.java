@@ -96,6 +96,27 @@ public final class QueryRewriter {
     }
   }
 
+  /**
+   * Refused because the decision on one governed asset said no -- as opposed to
+   * a statement the proxy cannot read or a table it has never heard of.
+   *
+   * <p>Its own type because it is the one refusal somebody can do something
+   * about: the asset has an owner who might grant it, and the caller can only
+   * be pointed at them if the refusal says which asset it was.
+   */
+  public static final class DeniedException extends RefusedException {
+    private final String assetFqn;
+
+    public DeniedException(String assetFqn, String message) {
+      super(message);
+      this.assetFqn = assetFqn;
+    }
+
+    public String assetFqn() {
+      return assetFqn;
+    }
+  }
+
   private final SqlDialect dialect;
   private final String defaultSchema;
 
@@ -284,7 +305,7 @@ public final class QueryRewriter {
               + " is not a governed asset on this source, so no policy could be applied to it");
     }
     if (!Boolean.TRUE.equals(asset.decision().getAllowed())) {
-      throw new RefusedException(reasonFor(asset));
+      throw new DeniedException(asset.fqn(), reasonFor(asset));
     }
 
     DecisionSql compiler = new DecisionSql(dialect);

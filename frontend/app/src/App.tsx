@@ -17,6 +17,7 @@ import PolicyBuilderPage from './pages/policies/PolicyBuilderPage';
 import PolicyDetailPage from './pages/policies/PolicyDetailPage';
 import PolicyListPage from './pages/policies/PolicyListPage';
 import QueryPage from './pages/query/QueryPage';
+import AccessRequestsPage from './pages/requests/AccessRequestsPage';
 import SimulatorPage from './pages/simulator/SimulatorPage';
 import AppRolesPage from './pages/settings/AppRolesPage';
 import HomePersonasPage from './pages/settings/HomePersonasPage';
@@ -78,6 +79,7 @@ export default function App() {
           <Route element={<PolicyDetailPage />} path="/policies/:id" />
           <Route element={<PolicyBuilderPage />} path="/policies/:id/edit" />
           <Route element={<QueryPage />} path="/query" />
+          <Route element={<AccessRequestsPage />} path="/requests" />
           <Route element={<SimulatorPage />} path="/simulator" />
           <Route element={<SourcesPage />} path="/sources" />
           <Route element={<EnforcementPage />} path="/enforcement" />

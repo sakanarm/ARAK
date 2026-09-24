@@ -1,5 +1,6 @@
 package com.mfec.dac.resources;
 
+import com.mfec.dac.access.AccessEligibility;
 import com.mfec.dac.auth.AuthenticatedUser;
 import com.mfec.dac.auth.Secured;
 import com.mfec.dac.policy.QueryService;
@@ -48,9 +49,19 @@ public class QueryResource {
       String sourceId, String sql, String asPrincipal, Integer maxRows, String purpose) {}
 
   private final QueryService queries;
+  private final AccessEligibility eligibility;
 
   public QueryResource(QueryService queries) {
+    this(queries, null);
+  }
+
+  /**
+   * @param eligibility answers "would asking the owner help" for a refusal that
+   *     names a table; null leaves refusals as bare messages
+   */
+  public QueryResource(QueryService queries, AccessEligibility eligibility) {
     this.queries = queries;
+    this.eligibility = eligibility;
   }
 
   @POST
@@ -112,9 +123,29 @@ public class QueryResource {
       body.put("unenforceable", result.unenforceable());
       return body;
     } catch (QueryService.RejectedException e) {
+      Map<String, Object> refusal = new LinkedHashMap<>();
+      refusal.put("message", e.getMessage());
+      // A refusal that names a table is the one refusal with a way forward: the
+      // table has an owner, and the engine can say whether a grant from them
+      // would open it. Only for the caller's own identity -- an administrator
+      // running as somebody else is testing, and a button that files a request
+      // in their own name for a table they were never refused would be wrong
+      // twice over.
+      if (e.deniedAsset() != null && principal.equals(caller.getName()) && eligibility != null) {
+        AccessEligibility.Verdict verdict =
+            eligibility.check(principal, e.deniedAsset(), clientIp(request), ask.purpose());
+        refusal.put("assetFqn", verdict.assetFqn());
+        refusal.put("requestable", verdict.requestable());
+        refusal.put("blockedBy", verdict.blockedBy());
+        refusal.put("approvers", verdict.approvers());
+        refusal.put("openRequestId", verdict.openRequestId());
+      } else if (e.deniedAsset() != null) {
+        refusal.put("assetFqn", e.deniedAsset());
+        refusal.put("requestable", false);
+      }
       throw new WebApplicationException(
           Response.status(Response.Status.FORBIDDEN)
-              .entity(Map.of("message", e.getMessage()))
+              .entity(refusal)
               .type(MediaType.APPLICATION_JSON)
               .build());
     }

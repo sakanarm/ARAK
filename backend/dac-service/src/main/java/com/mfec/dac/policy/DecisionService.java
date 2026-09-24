@@ -203,20 +203,7 @@ public class DecisionService {
                 readAt);
           }
 
-          List<PolicyStore.StoredPolicy> stored =
-              policies.activeFor(ask.assetFqn(), ask.environment());
-          List<Policy> documents = new ArrayList<>(stored.size());
-          for (PolicyStore.StoredPolicy one : stored) {
-            documents.add(one.document());
-          }
-
-          // Appended rather than merged: the engine sorts by scope level, and a
-          // grant is a TABLE-layer policy like any other. Reading at `now`
-          // rather than filtering later means a simulation of next Tuesday sees
-          // the grants that will exist then, not the ones that exist today.
-          if (grants != null) {
-            documents.addAll(grants.policiesFor(handle, ask.assetFqn(), now));
-          }
+          List<Policy> documents = stack(handle, ask, now);
 
           RequestContext context =
               RequestContext.at(now).fromIp(ask.ip()).forPurpose(ask.purpose());
@@ -228,6 +215,65 @@ public class DecisionService {
           return hold(
               key, now, decision, DecisionValidity.until(documents, now).orElse(null), readAt);
         });
+  }
+
+  /**
+   * The decision this principal would get if the asset's owner granted them the
+   * asset directly -- the question behind the query page's "ask the owner"
+   * button.
+   *
+   * <p>Asked of the engine rather than guessed at from the refusal, because a
+   * grant can only do what a grant can do: it enters at the TABLE layer and
+   * composes by intersection, so it opens a table nothing else speaks to and
+   * never passes a DENY or a higher layer that refuses this person (V11,
+   * {@code GrantCompositionIT}). Offering to route a request that approval
+   * could not satisfy would send an owner a question whose "yes" changes
+   * nothing, and tell the requester they had been let in when they had not.
+   *
+   * <p>Never cached and never cacheable: it is a decision about a world that
+   * does not exist, and holding it next to real ones is how it would one day be
+   * served as one.
+   */
+  public PolicyDecision decideAsIfGranted(Ask ask) {
+    Instant now = ask.when();
+    return jdbi.withHandle(
+        handle -> {
+          Principal who = principals.find(handle, ask.principal()).orElse(null);
+          if (who == null) {
+            return denied(ask, now, "No principal named " + ask.principal() + " is known to the platform");
+          }
+          AssetContext asset = contexts.load(handle, ask.assetFqn()).orElse(null);
+          if (asset == null) {
+            return denied(
+                ask,
+                now,
+                "No asset " + ask.assetFqn() + " is in the metadata cache, so no policy governs it");
+          }
+          List<Policy> documents = stack(handle, ask, now);
+          documents.add(GrantStore.hypothetical(ask.principal(), ask.assetFqn(), now));
+          RequestContext context =
+              RequestContext.at(now).fromIp(ask.ip()).forPurpose(ask.purpose());
+          return engine.evaluate(who, asset, context, documents);
+        });
+  }
+
+  /** Every policy document that speaks to this asset at this moment, grants included. */
+  private List<Policy> stack(org.jdbi.v3.core.Handle handle, Ask ask, Instant now) {
+    List<PolicyStore.StoredPolicy> stored =
+        policies.activeFor(ask.assetFqn(), ask.environment());
+    List<Policy> documents = new ArrayList<>(stored.size() + 1);
+    for (PolicyStore.StoredPolicy one : stored) {
+      documents.add(one.document());
+    }
+
+    // Appended rather than merged: the engine sorts by scope level, and a
+    // grant is a TABLE-layer policy like any other. Reading at `now`
+    // rather than filtering later means a simulation of next Tuesday sees
+    // the grants that will exist then, not the ones that exist today.
+    if (grants != null) {
+      documents.addAll(grants.policiesFor(handle, ask.assetFqn(), now));
+    }
+    return documents;
   }
 
   /** Puts a freshly made decision in the cache, when there is a cache to put it in. */

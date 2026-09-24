@@ -94,8 +94,23 @@ public class QueryService {
 
   /** The statement was not run, and the message says why in the caller's terms. */
   public static class RejectedException extends RuntimeException {
+    private final String deniedAsset;
+
     public RejectedException(String message) {
+      this(message, null);
+    }
+
+    /**
+     * @param deniedAsset the asset whose decision said no, when that is why;
+     *     null for every other kind of refusal
+     */
+    public RejectedException(String message, String deniedAsset) {
       super(message);
+      this.deniedAsset = deniedAsset;
+    }
+
+    public String deniedAsset() {
+      return deniedAsset;
     }
   }
 
@@ -152,7 +167,9 @@ public class QueryService {
       rewritten = rewriter.rewrite(sql, (schema, table) -> govern(source, schema, table, principal, clientIp, purpose));
     } catch (QueryRewriter.RefusedException e) {
       audit(principal, source.id(), sql, null, "REJECTED", e.getMessage(), null, null, clientIp);
-      throw new RejectedException(e.getMessage());
+      throw new RejectedException(
+          e.getMessage(),
+          e instanceof QueryRewriter.DeniedException denied ? denied.assetFqn() : null);
     } catch (RuntimeException e) {
       // Governing a table reference reads the catalog and evaluates policy, so
       // it can fail for reasons the rewriter never names. Whatever the cause,

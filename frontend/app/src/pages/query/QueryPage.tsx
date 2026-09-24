@@ -1,6 +1,6 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useMutation, useQueries, useQuery } from '@tanstack/react-query';
 import { Button } from '@openmetadata/ui-core-components/components/base/buttons/button';
 import { Chip as Badge } from '../../components/chips';
 import {
@@ -15,7 +15,8 @@ import {
   Play,
   Shield01,
 } from '@untitledui/icons';
-import { apiErrorMessage } from '../../api/client';
+import { apiErrorMessage, fetchAsset, fetchAssets } from '../../api/client';
+import { checkReadable, refusalOf } from '../../api/accessRequests';
 import { useAssistStore } from '../../assist/assistStore';
 import { useAuthStore } from '../../auth/authStore';
 import { fetchPrincipals } from '../../api/governance';
@@ -29,8 +30,10 @@ import {
 } from '../../api/query';
 import { download, exportName, toCsv, toXlsx } from '../../lib/tabular';
 import { Select, TextField } from '../policies/controls';
+import RequestAccess from './RequestAccess';
 import SchemaExplorer from './SchemaExplorer';
-import SqlEditor from './SqlEditor';
+import SqlEditor, { type SqlCompletionSource } from './SqlEditor';
+import { asCompletionTable, type CompletionTable } from './sqlCompletion';
 
 /**
  * Enforcement mode 5.2, with a console in front of it (FR-6.3, 5.2a).
@@ -148,6 +151,70 @@ export default function QueryPage() {
   const takeSql = useAssistStore((state) => state.takeSql);
   const engine = usable.find((source) => source.id === effectiveSource)?.engine;
 
+  // What the editor suggests: the same catalog page the Explorer beside it
+  // shows, by the same key, so the two cannot offer different tables and the
+  // second one costs nothing.
+  const { data: explorerPage } = useQuery({
+    queryKey: ['query-explorer', '', effectiveSource],
+    queryFn: () => fetchAssets({ search: '', sourceId: effectiveSource, limit: 500 }),
+    enabled: Boolean(effectiveSource),
+    staleTime: 60_000,
+  });
+  const tables = useMemo(
+    () =>
+      (explorerPage?.items ?? [])
+        .filter((asset) => asset.assetType === 'TABLE' || asset.assetType === 'VIEW')
+        .map((asset) => asCompletionTable(asset.fqn))
+        .filter((table): table is CompletionTable => table !== null),
+    [explorerPage]
+  );
+
+  // Columns are fetched a table at a time, when a suggestion first needs them.
+  const [wantedColumns, setWantedColumns] = useState<string[]>([]);
+  const needColumns = useCallback((fqns: string[]) => {
+    setWantedColumns((current) => {
+      const added = fqns.filter((fqn) => !current.includes(fqn));
+      return added.length > 0 ? [...current, ...added] : current;
+    });
+  }, []);
+  const columnQueries = useQueries({
+    queries: wantedColumns.map((fqn) => ({
+      queryKey: ['query-columns', fqn],
+      queryFn: () => fetchAsset(fqn),
+      staleTime: 5 * 60_000,
+    })),
+  });
+  const columnsKey = columnQueries.map((query) => query.dataUpdatedAt).join(',');
+  const columns = useMemo(() => {
+    const out: Record<string, string[] | undefined> = {};
+    wantedColumns.forEach((fqn, index) => {
+      out[fqn] = columnQueries[index]?.data?.columns.map((column) => column.name);
+    });
+    return out;
+    // The key stands for the query results, which are a new array every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wantedColumns, columnsKey]);
+
+  // Whether the reader will be let in, beside each suggested table. Asked only
+  // about the reader: while running as somebody else, "readable" would describe
+  // the wrong person, so the badges are left off rather than shown wrong.
+  const { data: readable } = useQuery({
+    queryKey: ['query-readable', effectiveSource, purpose, explorerPage?.total ?? 0, tables.length],
+    queryFn: () => checkReadable(tables.map((table) => table.fqn), purpose || null),
+    enabled: tables.length > 0 && !asPrincipal,
+    staleTime: 60_000,
+  });
+
+  const completion: SqlCompletionSource = useMemo(
+    () => ({
+      tables,
+      columns,
+      readable: asPrincipal ? undefined : readable,
+      onNeedColumns: needColumns,
+    }),
+    [tables, columns, readable, asPrincipal, needColumns]
+  );
+
   useEffect(() => {
     offer('sql', effectiveSource || null, engine ?? null);
     return () => withdraw('sql');
@@ -164,10 +231,19 @@ export default function QueryPage() {
   }, [drafted, takeSql]);
 
 
+  // What the last run was, for a request made from its refusal: the editor may
+  // have moved on by the time somebody decides to ask.
+  const ran = useRef({ sql: '', purpose: '', sourceId: '' });
+
   const run = useMutation({
     mutationFn: () => {
       const now = latest.current;
       const rows = Number.parseInt(now.maxRows, 10);
+      ran.current = {
+        sql: now.sql,
+        purpose: now.purpose,
+        sourceId: now.sourceId || (usable.length === 1 ? usable[0].id : ''),
+      };
       return runQuery({
         sourceId: now.sourceId || (usable.length === 1 ? usable[0].id : ''),
         sql: now.sql,
@@ -346,6 +422,7 @@ export default function QueryPage() {
               className="tw:flex tw:shrink-0"
               style={{ height: shownEditorHeight }}>
               <SqlEditor
+                completion={effectiveSource ? completion : undefined}
                 disabled={run.isPending}
                 onChange={setSql}
                 onRun={() => run.mutate()}
@@ -358,6 +435,7 @@ export default function QueryPage() {
             <ResultPanel
               error={run.error}
               isPending={run.isPending}
+              ran={ran.current}
               result={result}
               setTab={setTab}
               tab={tab}
@@ -624,14 +702,18 @@ function ResultPanel({
   isPending,
   tab,
   setTab,
+  ran,
 }: {
   result: QueryResult | undefined;
   error: unknown;
   isPending: boolean;
+  /** The statement the error is about, for a request made from it. */
+  ran?: { sql: string; purpose: string; sourceId: string };
   tab: 'results' | 'sql' | 'details';
   setTab: (tab: 'results' | 'sql' | 'details') => void;
 }) {
   if (error) {
+    const refusal = refusalOf(error);
     return (
       <section className="tw:shrink-0 tw:rounded-lg tw:border tw:border-error tw:bg-error-primary tw:p-4">
         <h2 className="tw:flex tw:items-center tw:gap-2 tw:text-sm tw:font-semibold tw:text-error-primary">
@@ -644,6 +726,17 @@ function ResultPanel({
             'The statement was not run and the service did not say why.'
           )}
         </p>
+        {refusal && (
+          <RequestAccess
+            // A new refusal is a new question; a half-filled form from the last
+            // one would be about a different table.
+            key={`${refusal.assetFqn ?? ''}:${refusal.message}`}
+            purpose={ran?.purpose || null}
+            refusal={refusal}
+            sourceId={ran?.sourceId || null}
+            sql={ran?.sql ?? ''}
+          />
+        )}
       </section>
     );
   }
