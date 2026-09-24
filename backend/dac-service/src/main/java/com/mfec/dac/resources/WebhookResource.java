@@ -14,6 +14,7 @@ import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Supplier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -46,9 +47,16 @@ public class WebhookResource {
 
   private final ObjectMapper json;
   private final CatalogChangeApplier applier;
-  private final String secret;
+  /**
+   * Read per delivery rather than held, because the secret is a stored setting
+   * that an administrator can change while this is running. A captured value
+   * would keep rejecting deliveries signed with the new one until a restart --
+   * silently, since a rejected delivery looks exactly like a forged one.
+   */
+  private final Supplier<String> secret;
 
-  public WebhookResource(ObjectMapper json, CatalogChangeApplier applier, String secret) {
+  public WebhookResource(
+      ObjectMapper json, CatalogChangeApplier applier, Supplier<String> secret) {
     this.json = json;
     this.applier = applier;
     this.secret = secret;
@@ -70,17 +78,19 @@ public class WebhookResource {
       @jakarta.ws.rs.HeaderParam(HttpHeaders.USER_AGENT) String userAgent,
       String body) {
 
-    if (secret == null || secret.isBlank()) {
+    String inForce = secret.get();
+    if (inForce == null || inForce.isBlank()) {
       LOG.warn(
           "Rejected a webhook delivery from {}: no webhook secret is configured, so no delivery "
-              + "can be trusted. Set OM_WEBHOOK_SECRET to the value used on the subscription.",
+              + "can be trusted. Set one on Settings -> OpenMetadata, or through "
+              + "OM_WEBHOOK_SECRET, to the value used on the subscription.",
           userAgent);
       return error(
           Response.Status.SERVICE_UNAVAILABLE,
           "The webhook receiver is not configured on this deployment");
     }
 
-    if (!EventSignature.matches(secret, body, signature)) {
+    if (!EventSignature.matches(inForce, body, signature)) {
       // No detail in the response: the caller either holds the secret or is
       // guessing, and telling a guesser whether the header was missing, the
       // wrong encoding, or simply wrong is free help.

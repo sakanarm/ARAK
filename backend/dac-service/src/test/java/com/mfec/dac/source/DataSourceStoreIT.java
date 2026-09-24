@@ -102,11 +102,18 @@ class DataSourceStoreIT {
                           "s", "POSTGRES", null, "h", null, null, pasted, null, null, null, null,
                           null)))
           .isInstanceOf(DataSourceStore.InvalidSourceException.class)
-          .hasMessageContaining("never holds the secret");
+          // Not "never holds the secret" any more: since the console started
+          // accepting a typed password, this column does hold one -- sealed. What
+          // has to stay true is that an unsealed one is refused, so the assertion
+          // is on the refusal and on the schemes it names, not on the old promise.
+          .hasMessageContaining("must start with one of")
+          .hasMessageContaining("typed in plain");
     }
 
     // A blank field is not a bad scheme, it is an unanswered question, and it
-    // gets the sentence that asks it rather than the one about secrets.
+    // gets the sentence that asks it rather than the one about secrets. The
+    // question it asks changed with the feature: there are two good answers
+    // now, a typed password or a pointer, and the sentence offers both.
     assertThatThrownBy(
             () ->
                 store.create(
@@ -114,7 +121,8 @@ class DataSourceStoreIT {
                         "s", "POSTGRES", null, "h", null, null, "   ", null, null, null, null,
                         null)))
         .isInstanceOf(DataSourceStore.InvalidSourceException.class)
-        .hasMessageContaining("a credential reference, not a credential");
+        .hasMessageContaining("Give a username and password")
+        .hasMessageContaining("a pointer to where the secret is kept");
   }
 
   @Test

@@ -82,7 +82,17 @@ public class DataSourceStore {
       Instant updatedAt,
       long assetCount) {}
 
-  /** What a caller may send; the server owns everything else on the row. */
+  /**
+   * What a caller may send; the server owns everything else on the row.
+   *
+   * <p>{@code username} and {@code password} are the typed-in alternative to a
+   * pointer, and they are deliberately not columns. The resource seals them
+   * into {@code credentialRef} before this store ever sees them, so the rule
+   * that holds here is still the original one: this class handles a reference
+   * and never a secret. Anything that reaches the row is either a pointer or
+   * ciphertext, which is what makes a backup of this table safe to hand to
+   * somebody without also handing them the key.
+   */
   public record SourceInput(
       String name,
       String engine,
@@ -95,7 +105,41 @@ public class DataSourceStore {
       String omServiceFqn,
       String secureSchema,
       String secureObjectPattern,
-      Boolean enabled) {}
+      Boolean enabled,
+      String username,
+      String password) {
+
+    /** The shape every caller used before a credential could be typed in. */
+    public SourceInput(
+        String name,
+        String engine,
+        String engineVersion,
+        String host,
+        Integer port,
+        String defaultDatabase,
+        String credentialRef,
+        String defaultEnforcementMode,
+        String omServiceFqn,
+        String secureSchema,
+        String secureObjectPattern,
+        Boolean enabled) {
+      this(
+          name,
+          engine,
+          engineVersion,
+          host,
+          port,
+          defaultDatabase,
+          credentialRef,
+          defaultEnforcementMode,
+          omServiceFqn,
+          secureSchema,
+          secureObjectPattern,
+          enabled,
+          null,
+          null);
+    }
+  }
 
   /** A rejected input, with the reason in the words the form should show. */
   public static class InvalidSourceException extends RuntimeException {
@@ -124,7 +168,7 @@ public class DataSourceStore {
    * of a scheme.
    */
   private static final List<String> CREDENTIAL_SCHEMES =
-      List.of("vault://", "fernet://", "azurekeyvault://", "env:");
+      List.of("vault://", "fernet:", "azurekeyvault://", "env:");
 
   /** Unquoted identifier: what we are willing to paste into generated DDL. */
   private static final Pattern IDENTIFIER = Pattern.compile("[A-Za-z_][A-Za-z0-9_]{0,62}");
@@ -355,15 +399,17 @@ public class DataSourceStore {
     if (credentialRef == null) {
       if (requireCredential) {
         throw new InvalidSourceException(
-            "Give a credential reference, not a credential. Use one of "
-                + String.join(", ", CREDENTIAL_SCHEMES));
+            "Give a username and password, or a pointer to where the secret is kept ("
+                + String.join(", ", CREDENTIAL_SCHEMES)
+                + ")");
       }
     } else if (CREDENTIAL_SCHEMES.stream().noneMatch(s -> credentialRef.toLowerCase(Locale.ROOT).startsWith(s))) {
       throw new InvalidSourceException(
           "A credential reference must start with one of "
               + String.join(", ", CREDENTIAL_SCHEMES)
-              + ". This field points at where the secret is kept; it never holds the secret "
-              + "itself, because anything stored here is copied into backups and audit exports.");
+              + ". This field points at where the secret is kept, or holds one sealed with the "
+              + "deployment key; a password typed in plain would be copied into every backup "
+              + "and audit export of this table.");
     }
 
     String secureSchema = trimmed(in.secureSchema()) == null ? "sec" : trimmed(in.secureSchema());

@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, AlertCircle, Eye } from '@untitledui/icons';
+import { ArrowLeft, AlertCircle, Eye, LinkExternal01 } from '@untitledui/icons';
+import { lookFor } from './assetLook';
 import { Chip as Badge } from '../../components/chips';
 import { Button } from '@openmetadata/ui-core-components/components/base/buttons/button';
 import {
@@ -13,7 +14,13 @@ import {
   fetchPoliciesForAsset,
   type AppliedPolicy,
 } from '../../api/policies';
-import { FacetChip, OwnerChip, groupFacets } from './facets';
+import {
+  FacetChip,
+  FacetGroup,
+  OwnerChip,
+  columnFacets,
+  groupFacets,
+} from './facets';
 import { AccessTab } from './AccessTab';
 import { AuditTab } from './AuditTab';
 import { Field, Panel } from './panels';
@@ -103,6 +110,7 @@ export default function AssetDetailPage() {
   }
 
   const { asset, columns, customProperties } = data;
+  const look = lookFor(asset.assetType);
   const grouped = groupFacets(data.facets);
   const properties = Object.entries(customProperties ?? {});
 
@@ -112,6 +120,13 @@ export default function AssetDetailPage() {
 
       <header className="tw:mt-4">
         <div className="tw:flex tw:flex-wrap tw:items-center tw:gap-2">
+          {/* The same tile the catalog list draws, so arriving here confirms
+            * you opened what you clicked rather than asking you to re-read
+            * the FQN to be sure. */}
+          <span
+            className={`tw:flex tw:size-9 tw:shrink-0 tw:items-center tw:justify-center tw:rounded-lg ${look.tile}`}>
+            <look.Icon className="tw:size-4.5" />
+          </span>
           <h1 className="tw:text-display-xs tw:font-semibold tw:text-primary">
             {asset.displayName || asset.name}
           </h1>
@@ -122,16 +137,33 @@ export default function AssetDetailPage() {
             answer, because composing seven layers in your head is exactly
             what nobody can do reliably (FR-5.2).
           */}
-          <Button
-            className="tw:ml-auto"
-            color="secondary"
-            iconLeading={Eye}
-            onPress={() =>
-              navigate(`/simulator?asset=${encodeURIComponent(asset.fqn)}`)
-            }
-            size="sm">
-            View as someone
-          </Button>
+          <div className="tw:ml-auto tw:flex tw:items-center tw:gap-2">
+            {/* ARAK caches what OpenMetadata knows; it does not replace it.
+              * Everything this page cannot answer -- lineage, profiles, the
+              * conversation hanging off the description -- is one click away
+              * rather than a copied FQN in another tab. Absent for an asset
+              * that has no page over there. */}
+            {data.openMetadataUrl && (
+              <Button
+                color="secondary"
+                href={data.openMetadataUrl}
+                iconLeading={LinkExternal01}
+                rel="noreferrer"
+                size="sm"
+                target="_blank">
+                Open in OpenMetadata
+              </Button>
+            )}
+            <Button
+              color="secondary"
+              iconLeading={Eye}
+              onPress={() =>
+                navigate(`/simulator?asset=${encodeURIComponent(asset.fqn)}`)
+              }
+              size="sm">
+              View as someone
+            </Button>
+          </div>
           <Badge color="gray" size="sm" type="modern">
             {asset.assetType}
           </Badge>
@@ -169,16 +201,16 @@ export default function AssetDetailPage() {
                     policy written against facets will not select it.
                   </p>
                 ) : (
-                  // Grouped in order but not under headings: every chip
-                  // names its own kind now, and the heading column was taking
-                  // a sixth of the panel to repeat it -- width a long
-                  // sub-domain needed more.
-                  <div className="tw:flex tw:flex-wrap tw:gap-1.5">
-                    {grouped.map(([type, facets]) =>
-                      facets.map((facet) => (
-                        <FacetChip facet={facet} key={`${type}:${facetKey(facet)}`} />
-                      ))
-                    )}
+                  // A heading per kind, divided. The headings went away once
+                  // because they sat in a left-hand column that cost a sixth
+                  // of the panel; above the chips they cost one short line and
+                  // let the chips drop the prefix that was repeating them.
+                  <div className="tw:flex tw:flex-col tw:divide-y tw:divide-secondary">
+                    {grouped.map(([type, facets]) => (
+                      <div className="tw:py-3 tw:first:pt-0 tw:last:pb-0" key={type}>
+                        <FacetGroup facets={facets} type={type} />
+                      </div>
+                    ))}
                   </div>
                 )}
               </Panel>
@@ -247,8 +279,9 @@ export default function AssetDetailPage() {
         {tab === 'columns' && (
           <Panel
             subtitle={`${columns.length} columns · ${
-              columns.filter((column) => column.facets.length > 0).length
-            } carrying a facet`}
+              columns.filter((column) => columnFacets(column.facets).length > 0)
+                .length
+            } carrying governance of their own`}
             title="Columns">
             {columns.length === 0 ? (
               <p className="tw:text-sm tw:text-tertiary">
@@ -505,6 +538,8 @@ function AppliedRow({ row }: { row: AppliedPolicy }) {
 }
 
 function ColumnRow({ column }: { column: ColumnDetail }) {
+  const own = columnFacets(column.facets);
+
   return (
     <tr className="tw:border-b tw:border-secondary tw:last:border-0">
       <td className="tw:py-2 tw:pr-3 tw:align-top">
@@ -523,11 +558,11 @@ function ColumnRow({ column }: { column: ColumnDetail }) {
         )}
       </td>
       <td className="tw:py-2 tw:align-top">
-        {column.facets.length === 0 ? (
+        {own.length === 0 ? (
           <span className="tw:text-xs tw:text-quaternary">—</span>
         ) : (
           <div className="tw:flex tw:flex-wrap tw:gap-1.5">
-            {column.facets.map((facet) => (
+            {own.map((facet) => (
               <FacetChip facet={facet} key={facetKey(facet)} />
             ))}
           </div>

@@ -16,6 +16,7 @@ import {
   Shield01,
 } from '@untitledui/icons';
 import { apiErrorMessage } from '../../api/client';
+import { useAssistStore } from '../../assist/assistStore';
 import { useAuthStore } from '../../auth/authStore';
 import { fetchPrincipals } from '../../api/governance';
 import { fetchSources } from '../../api/sources';
@@ -136,6 +137,31 @@ export default function QueryPage() {
   // One source, so there is nothing to choose: pick it rather than making the
   // first query fail on an empty select.
   const effectiveSource = sourceId || (usable.length === 1 ? usable[0].id : '');
+
+  // Told to the assistant, so the schema it writes against is the schema on
+  // screen and the dialect is the one this source actually speaks. It is
+  // published rather than asked for: the assistant lives in the shell and has
+  // no way to know what this page is pointed at.
+  const offer = useAssistStore((state) => state.offer);
+  const withdraw = useAssistStore((state) => state.withdraw);
+  const drafted = useAssistStore((state) => state.sql);
+  const takeSql = useAssistStore((state) => state.takeSql);
+  const engine = usable.find((source) => source.id === effectiveSource)?.engine;
+
+  useEffect(() => {
+    offer('sql', effectiveSource || null, engine ?? null);
+    return () => withdraw('sql');
+  }, [effectiveSource, engine, offer, withdraw]);
+
+  // A draft replaces the editor rather than being appended to it. Appending
+  // produced two statements in one box and a syntax error on the first run,
+  // which read as the assistant being broken when it was the paste that was.
+  useEffect(() => {
+    if (drafted) {
+      setSql(drafted.text);
+      takeSql();
+    }
+  }, [drafted, takeSql]);
 
 
   const run = useMutation({

@@ -72,6 +72,32 @@ public class PolicyResource {
         lifecycleState, policyType, scopeLevel, search, Math.min(limit, 200), offset);
   }
 
+  /**
+   * How many policies the same filter matches, so the list can be paged.
+   *
+   * <p>Its own endpoint rather than a wrapper around the list, because every
+   * other caller of the list wants an array and would have had to learn about
+   * an envelope it has no use for. The total is asked once per filter and the
+   * page is asked once per click, which is also the rate each of them changes.
+   *
+   * <p>Declared before {@code /{id}} for the reader's sake only -- JAX-RS
+   * prefers a literal path over a template whatever the order -- but a reader
+   * who sees {@code /{id}} first spends a moment wondering whether "count"
+   * parses as a UUID.
+   */
+  @GET
+  @Path("/count")
+  public PolicyCount count(
+      @QueryParam("state") String lifecycleState,
+      @QueryParam("type") String policyType,
+      @QueryParam("scopeLevel") String scopeLevel,
+      @QueryParam("q") String search) {
+    return new PolicyCount(policies.count(lifecycleState, policyType, scopeLevel, search));
+  }
+
+  /** An object rather than a bare number, so a field can be added without a new shape. */
+  public record PolicyCount(int total) {}
+
   @GET
   @Path("/{id}")
   public PolicyStore.StoredPolicy get(@PathParam("id") UUID id) {

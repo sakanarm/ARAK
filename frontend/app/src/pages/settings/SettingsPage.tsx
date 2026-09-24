@@ -2,6 +2,7 @@ import type { FC } from 'react';
 import { Link } from 'react-router-dom';
 import {
   ArrowRight,
+  CpuChip01,
   Database01,
   Key01,
   RefreshCcw01,
@@ -97,6 +98,13 @@ const GROUPS: SettingGroup[] = [
           'The identity cache a subject rule is written against — users, groups and the attribute values they carry.',
         to: '/principals',
         icon: User03,
+      },
+      {
+        title: 'Assistant',
+        description:
+          'Whether an LLM may help draft SQL and policies, which model it uses, and -- for an administrator -- the gateway it is reached through and who it is switched on for.',
+        to: '/settings/assistant',
+        icon: CpuChip01,
       },
       {
         title: 'Local groups',

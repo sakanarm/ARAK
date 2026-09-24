@@ -17,13 +17,15 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 /**
- * The descent itself — that a column ends up holding what its table, schema and
- * database say about it, and that each row still names where it came from.
+ * The descent itself — that a column ends up in the domain its database is
+ * in, that each row still names the level it came from, and that a tag stays on
+ * whatever a steward attached it to.
  *
  * <p>Exercised through {@code crawlTable} with a hand-built ancestor chain
  * rather than through a live catalogue: the levels are the part that is easy to
- * get wrong, and a running OpenMetadata proves nothing about the one case that
- * matters most, which is a tag several levels up.
+ * get wrong, and a running OpenMetadata proves nothing about the two cases that
+ * matter most, which are a domain several levels up and a tag that must not move
+ * at all.
  */
 class AssetCrawlerTest {
 
@@ -65,6 +67,15 @@ class AssetCrawlerTest {
     return FacetExtractor.fromTagLabels(target, List.of(tag(value)));
   }
 
+  /** A level's domain, with the ancestor rows a sub-domain implies. */
+  private static List<ExtractedFacet> domainOn(String target, String value) {
+    ExtractedFacet own = ExtractedFacet.direct(target, FacetType.DOMAINS, value);
+    List<ExtractedFacet> out = new ArrayList<>();
+    out.add(own);
+    out.addAll(FacetExtractor.ancestorsOf(own));
+    return out;
+  }
+
   private static Table customer(Column... columns) {
     return new Table().name("customer").fullyQualifiedName(TABLE).columns(List.of(columns));
   }
@@ -97,15 +108,14 @@ class AssetCrawlerTest {
         crawl(
             customer(column("email")),
             List.of(
-                new Level(SCHEMA, (tagOn(SCHEMA, "Sensitivity.High"))),
-                new Level(DATABASE, (tagOn(DATABASE, "Retention.SevenYears"))),
-                new Level(SERVICE, (tagOn(SERVICE, "Environment.Production")))),
+                new Level(SCHEMA, domainOn(SCHEMA, "Finance.Risk.Credit")),
+                new Level(DATABASE, domainOn(DATABASE, "Finance.Ops")),
+                new Level(SERVICE, domainOn(SERVICE, "Platform"))),
             Set.of());
 
-    assertThat(facetsOf(asset, TABLE + ".email", FacetType.TAGS))
+    assertThat(facetsOf(asset, TABLE + ".email", FacetType.DOMAINS))
         .containsExactlyInAnyOrder(
-            "Sensitivity.High", "Sensitivity", "Retention.SevenYears", "Retention",
-            "Environment.Production", "Environment");
+            "Finance.Risk.Credit", "Finance.Risk", "Finance", "Finance.Ops", "Platform");
   }
 
   @Test
@@ -115,52 +125,66 @@ class AssetCrawlerTest {
         crawl(
             customer(column("email")),
             List.of(
-                new Level(SCHEMA, (tagOn(SCHEMA, "Sensitivity.High"))),
-                new Level(DATABASE, (tagOn(DATABASE, "Retention.SevenYears")))),
+                new Level(SCHEMA, domainOn(SCHEMA, "Finance.Risk")),
+                new Level(DATABASE, domainOn(DATABASE, "Platform.Shared"))),
             Set.of());
 
     // Passing each level its own facets rather than its effective ones is what
-    // keeps this honest: a database's tag arriving at a column must not be
+    // keeps this honest: a database's domain arriving at a column must not be
     // reported as having come from the schema it passed through.
     assertThat(asset.facets())
         .filteredOn(f -> f.targetFqn().equals(TABLE + ".email") && f.depth() == 0)
         .extracting(ExtractedFacet::facetFqn, ExtractedFacet::inheritedFrom)
-        .contains(
-            tuple("Sensitivity.High", SCHEMA), tuple("Retention.SevenYears", DATABASE));
+        .contains(tuple("Finance.Risk", SCHEMA), tuple("Platform.Shared", DATABASE));
   }
 
   @Test
-  @DisplayName("a column's own tag overrides an inherited one in an exclusive classification")
-  void columnOverridesInheritedTier() {
+  @DisplayName("a column keeps its own tag, and the database's tag never arrives")
+  void columnKeepsOnlyItsOwnTag() {
     Table table = customer(column("email").tags(List.of(tag("Tier.Tier3"))));
 
     CrawledAsset asset =
-        crawl(
-            table,
-            List.of(new Level(DATABASE, (tagOn(DATABASE, "Tier.Tier1")))),
-            Set.of("Tier"));
+        crawl(table, List.of(new Level(DATABASE, tagOn(DATABASE, "Tier.Tier1"))), Set.of("Tier"));
 
-    // Tier permits one tag per asset, so a column that states its own must not
-    // also count as the database's — a policy on Tier1 would otherwise reach a
-    // column somebody had deliberately marked Tier3.
+    // Tier is a statement about one asset. A column that states its own must not
+    // also count as the database's — and since no tag descends at all, the
+    // database's never reaches it, whether or not the column said anything.
     assertThat(facetsOf(asset, TABLE + ".email", FacetType.TAGS))
         .containsExactly("Tier.Tier3", "Tier");
     assertThat(facetsOf(asset, TABLE + ".email", FacetType.TIER)).containsExactly("Tier3");
   }
 
   @Test
-  @DisplayName("a column with no tags of its own still gets rows for what it inherits")
-  void untaggedColumnsAreStillCovered() {
+  @DisplayName("a column with no tags of its own is left with none")
+  void untaggedColumnsStayUntagged() {
     CrawledAsset asset =
         crawl(
             customer(column("id"), column("email")),
-            List.of(new Level(SCHEMA, (tagOn(SCHEMA, "PII.Sensitive")))),
+            List.of(new Level(SCHEMA, tagOn(SCHEMA, "PII.Sensitive"))),
             Set.of());
 
-    // A column that inherits nothing writes no row, and a selector that finds
-    // nothing denies by default — so silence here would read as "not sensitive".
-    assertThat(facetsOf(asset, TABLE + ".id", FacetType.TAGS)).contains("PII.Sensitive");
-    assertThat(facetsOf(asset, TABLE + ".email", FacetType.TAGS)).contains("PII.Sensitive");
+    // OpenMetadata shows these two columns with no tags, so this platform shows
+    // them with no tags. Tagging the schema is a statement about the schema; if a
+    // policy is meant to cover everything under it, that is a SCHEMA-scoped
+    // policy, not a copied row on every column (FR-3.1).
+    assertThat(facetsOf(asset, TABLE + ".id", FacetType.TAGS)).isEmpty();
+    assertThat(facetsOf(asset, TABLE + ".email", FacetType.TAGS)).isEmpty();
+  }
+
+  @Test
+  @DisplayName("a column still lands in its schema's domain while its tags stay put")
+  void domainDescendsWhereTagsDoNot() {
+    List<ExtractedFacet> schemaFacets = new ArrayList<>(tagOn(SCHEMA, "PII.Sensitive"));
+    schemaFacets.addAll(domainOn(SCHEMA, "Finance.Risk"));
+
+    CrawledAsset asset =
+        crawl(customer(column("id")), List.of(new Level(SCHEMA, schemaFacets)), Set.of());
+
+    // One level, two facet types, two different answers: the whole rule in a
+    // single crawl.
+    assertThat(facetsOf(asset, TABLE + ".id", FacetType.TAGS)).isEmpty();
+    assertThat(facetsOf(asset, TABLE + ".id", FacetType.DOMAINS))
+        .containsExactlyInAnyOrder("Finance.Risk", "Finance");
   }
 
   @Test

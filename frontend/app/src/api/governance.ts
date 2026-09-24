@@ -274,6 +274,59 @@ export async function setPrincipalEnabled(
   return data;
 }
 
+/**
+ * What an attribute write answers with.
+ *
+ * The whole principal, not an acknowledgement, because the question the screen
+ * has next is what they now carry — and that includes the rows this call did
+ * not write, from every directory they are in.
+ */
+export interface AttributeOutcome {
+  /** False when they already carried exactly this value. */
+  changed: boolean;
+  detail: PrincipalDetail;
+}
+
+/**
+ * Gives somebody an attribute from this console (FR-2.4).
+ *
+ * Stored as {@code source: 'local'} whoever they are, including somebody
+ * synced from a directory: a sync writes only its own rows, so the two cannot
+ * overwrite each other and the engine reads both.
+ */
+export async function addPrincipalAttribute(
+  principalId: string,
+  change: { key: string; value: string; reason?: string | null }
+): Promise<AttributeOutcome> {
+  const { data } = await apiClient.post<{
+    changed: boolean;
+    principal: PrincipalDetail;
+  }>(`/v1/principals/${encodeURIComponent(principalId)}/attributes`, change);
+  return { changed: data.changed, detail: data.principal };
+}
+
+/**
+ * Withdraws a locally entered attribute.
+ *
+ * Key and value both travel, because an attribute is multi-valued — asking to
+ * withdraw `clearance` without saying which one would be ambiguous. A value a
+ * directory owns is refused by the server with the reason.
+ */
+export async function removePrincipalAttribute(
+  principalId: string,
+  change: { key: string; value: string; reason?: string | null }
+): Promise<AttributeOutcome> {
+  const params = new URLSearchParams({ key: change.key, value: change.value });
+  if (change.reason) params.set('reason', change.reason);
+  const { data } = await apiClient.delete<{
+    changed: boolean;
+    principal: PrincipalDetail;
+  }>(
+    `/v1/principals/${encodeURIComponent(principalId)}/attributes?${params}`
+  );
+  return { changed: data.changed, detail: data.principal };
+}
+
 /** The holder must choose a new one at their next sign-in. */
 export async function resetPrincipalPassword(
   principalId: string,

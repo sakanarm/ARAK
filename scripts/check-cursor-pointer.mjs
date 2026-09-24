@@ -27,6 +27,13 @@ const ALLOWED = new Set([
   // The class is built by the chip() helper further down the same file, which
   // carries tw:cursor-pointer for every call site.
   'pages/catalog/GrantDialog.tsx:<button aria-pressed={days === option.value} className={chip(days === option.value)}',
+  // The home editor's four icon buttons take their class from ICON_BUTTON at
+  // the top of the same file, which carries tw:cursor-pointer and
+  // tw:disabled:cursor-not-allowed for every call site.
+  'pages/home/HomeEditor.tsx:<button aria-label="Move up" className={ICON_BUTTON}',
+  'pages/home/HomeEditor.tsx:<button aria-label="Move down" className={ICON_BUTTON}',
+  'pages/home/HomeEditor.tsx:<button aria-label={`Remove ${spec.label}`} className={ICON_BUTTON}',
+  'pages/home/HomeEditor.tsx:<button aria-label={`Remove link ${index + 1}`} className={ICON_BUTTON}',
 ]);
 
 function walk(dir) {

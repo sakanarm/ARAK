@@ -124,12 +124,22 @@ public class QueryService {
   public Result run(
       UUID sourceId, String sql, String principal, int maxRows, String clientIp, String purpose) {
 
-    DataSourceStore.Source source =
-        sources
-            .find(sourceId)
-            .orElseThrow(() -> new RejectedException("No data source " + sourceId));
+    // Audited before anything else can go right, because a query aimed at a
+    // source that is gone or switched off is still someone trying to read data
+    // and is exactly the attempt an auditor asks about later. Leaving these two
+    // to throw unrecorded meant the log answered "what did people run" with
+    // only the runs that got as far as a rewrite.
+    Optional<DataSourceStore.Source> found = sources.find(sourceId);
+    if (found.isEmpty()) {
+      String reason = "No data source " + sourceId;
+      audit(principal, null, sql, null, "REJECTED", reason, null, null, clientIp);
+      throw new RejectedException(reason);
+    }
+    DataSourceStore.Source source = found.get();
     if (!source.enabled()) {
-      throw new RejectedException(source.name() + " is disabled");
+      String reason = source.name() + " is disabled";
+      audit(principal, source.id(), sql, null, "REJECTED", reason, null, null, clientIp);
+      throw new RejectedException(reason);
     }
 
     int rows = maxRows <= 0 ? DEFAULT_ROWS : Math.min(maxRows, MAX_ROWS);
@@ -142,6 +152,21 @@ public class QueryService {
     } catch (QueryRewriter.RefusedException e) {
       audit(principal, source.id(), sql, null, "REJECTED", e.getMessage(), null, null, clientIp);
       throw new RejectedException(e.getMessage());
+    } catch (RuntimeException e) {
+      // Governing a table reference reads the catalog and evaluates policy, so
+      // it can fail for reasons the rewriter never names. Whatever the cause,
+      // the statement did not run and the attempt is on the record.
+      audit(
+          principal,
+          source.id(),
+          sql,
+          null,
+          "REJECTED",
+          String.valueOf(e.getMessage()),
+          null,
+          null,
+          clientIp);
+      throw e;
     }
 
     long started = System.nanoTime();

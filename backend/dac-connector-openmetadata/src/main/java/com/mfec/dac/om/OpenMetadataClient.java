@@ -30,33 +30,67 @@ import org.slf4j.LoggerFactory;
  * person's permissions and expires when they leave, which turns an offboarding
  * into a catalog outage and, through the cache, into a policy that cannot be
  * explained.
+ *
+ * <p>Where it points can be changed while the platform runs, because an estate
+ * moves its catalog and the alternative is a redeploy. The three fields that
+ * describe the connection are {@code volatile} and swapped together, and every
+ * API accessor reads the current one at the moment of the call rather than
+ * holding a reference. A crawl already in flight therefore finishes against the
+ * instance it started on, which is the behaviour that keeps a half-written
+ * generation from mixing two catalogs.
  */
 public class OpenMetadataClient {
 
   private static final Logger LOG = LoggerFactory.getLogger(OpenMetadataClient.class);
 
-  private final ApiClient apiClient;
-  private final String baseUrl;
-  private final String expectedVersion;
+  private volatile ApiClient apiClient;
+  private volatile String baseUrl;
+  private volatile String expectedVersion;
 
   public OpenMetadataClient(
       String baseUrl, String jwtToken, String expectedVersion, int connectTimeoutMs,
       int readTimeoutMs) {
-    this.baseUrl = trimTrailingSlash(baseUrl);
-    this.expectedVersion = expectedVersion;
-    this.apiClient =
+    apply(baseUrl, jwtToken, expectedVersion, connectTimeoutMs, readTimeoutMs);
+  }
+
+  /**
+   * Points this client at a different instance, or at the same one with a new
+   * credential.
+   *
+   * <p>Called from the settings screen. The swap is one assignment per field
+   * and the fields are read independently, so a call that lands between two
+   * reads can produce a request built from the old timeout and the new URL --
+   * which is harmless, and the alternative (locking every accessor) would put a
+   * monitor in the hot path of the crawl to protect against a reconfiguration
+   * that happens a few times a year.
+   */
+  public void reconfigure(
+      String baseUrl, String jwtToken, String expectedVersion, int connectTimeoutMs,
+      int readTimeoutMs) {
+    apply(baseUrl, jwtToken, expectedVersion, connectTimeoutMs, readTimeoutMs);
+    LOG.info("OpenMetadata connection now points at {}", this.baseUrl);
+  }
+
+  private void apply(
+      String baseUrl, String jwtToken, String expectedVersion, int connectTimeoutMs,
+      int readTimeoutMs) {
+    String trimmed = trimTrailingSlash(baseUrl);
+    ApiClient built =
         new ApiClient()
-            .setBasePath(this.baseUrl + "/api")
+            .setBasePath(trimmed + "/api")
             .setConnectTimeout(connectTimeoutMs)
             .setReadTimeout(readTimeoutMs);
     if (jwtToken != null && !jwtToken.isBlank()) {
-      apiClient.setBearerToken(jwtToken);
+      built.setBearerToken(jwtToken);
     } else {
       // Not fatal: a development instance may be open, and refusing to start
       // would make the catalog harder to try than it needs to be. Anything the
       // instance protects will fail with 401 at the call, which says more.
       LOG.warn("No OpenMetadata token configured; only unauthenticated endpoints will answer.");
     }
+    this.baseUrl = trimmed;
+    this.expectedVersion = expectedVersion;
+    this.apiClient = built;
   }
 
   public ApiClient apiClient() {
@@ -128,13 +162,14 @@ public class OpenMetadataClient {
    * is the kind of bug that surfaces as "why is this table not masked".
    */
   public String readVersion() {
+    String at = baseUrl;
     try {
       OpenMetadataServerVersion version = system().getCatalogVersion();
       return version == null ? null : version.getVersion();
     } catch (ApiException e) {
       // The instance answered, but not with a version: wrong path, an auth
       // failure, or an error page from something in front of it.
-      LOG.warn("Could not read the OpenMetadata version from {}: {}", baseUrl, e.getMessage());
+      LOG.warn("Could not read the OpenMetadata version from {}: {}", at, e.getMessage());
       return null;
     } catch (ProcessingException e) {
       // The request never completed at all -- connection refused, DNS failure,
@@ -142,7 +177,7 @@ public class OpenMetadataClient {
       // is exactly when the operator's failOnVersionMismatch choice applies,
       // and letting the transport exception through takes that choice away and
       // stops the platform from starting (NFR-3).
-      LOG.warn("Could not reach OpenMetadata at {}: {}", baseUrl, rootCauseOf(e));
+      LOG.warn("Could not reach OpenMetadata at {}: {}", at, rootCauseOf(e));
       return null;
     }
   }
@@ -168,25 +203,27 @@ public class OpenMetadataClient {
    * @return the version the instance reported, or null if it could not be read
    */
   public String checkVersion(boolean failOnMismatch) {
+    String at = baseUrl;
+    String expected = expectedVersion;
     String actual = readVersion();
     if (actual == null) {
-      String message = "OpenMetadata at " + baseUrl + " did not report a version";
+      String message = "OpenMetadata at " + at + " did not report a version";
       if (failOnMismatch) {
         throw new IllegalStateException(message);
       }
       LOG.warn("{}; continuing without a version check.", message);
       return null;
     }
-    if (expectedVersion != null && !expectedVersion.isBlank() && !expectedVersion.equals(actual)) {
+    if (expected != null && !expected.isBlank() && !expected.equals(actual)) {
       String message =
-          "OpenMetadata at " + baseUrl + " reports version " + actual + " but this client was "
-              + "generated from the " + expectedVersion + " spec";
+          "OpenMetadata at " + at + " reports version " + actual + " but this client was "
+              + "generated from the " + expected + " spec";
       if (failOnMismatch) {
         throw new IllegalStateException(message);
       }
       LOG.warn("{}. Fields the crawler reads may be missing or renamed.", message);
     } else {
-      LOG.info("Connected to OpenMetadata {} at {}", actual, baseUrl);
+      LOG.info("Connected to OpenMetadata {} at {}", actual, at);
     }
     return actual;
   }

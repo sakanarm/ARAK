@@ -1,5 +1,11 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import AssetDetailPage from './AssetDetailPage';
 import type { FacetRow } from '../../api/client';
@@ -88,7 +94,15 @@ const DETAIL = {
       dataLength: null,
       nullable: false,
       description: null,
-      facets: [],
+      facets: [
+        facet({
+          facetType: 'domains',
+          facetFqn: 'Finance',
+          direct: false,
+          depth: 2,
+          inheritedFrom: 'prod-pg.SalesDB.dbo.customer',
+        }),
+      ],
     },
     {
       id: 'c2',
@@ -99,7 +113,15 @@ const DETAIL = {
       dataLength: 255,
       nullable: true,
       description: null,
-      facets: [facet({})],
+      // What the crawl really stores for one tag: the tag itself, the
+      // ancestor row that makes `tags contains 'PII'` an index lookup
+      // (FR-2A.2), and the classification derived from the same label.
+      // OpenMetadata shows one chip here, and so must this.
+      facets: [
+        facet({}),
+        facet({ facetFqn: 'PII', depth: 1, direct: false }),
+        facet({ facetType: 'classifications', facetFqn: 'PII', direct: false }),
+      ],
     },
   ],
   facets: [
@@ -214,14 +236,55 @@ test('asks for the whole dotted FQN, not the first path segment', async () => {
   );
 });
 
-test('shows each column with the facets that reach it', async () => {
+test('shows each column with the governance it carries itself', async () => {
   renderPage(undefined, 'columns');
 
   expect(await screen.findByText('email')).toBeInTheDocument();
   expect(screen.getByText('id')).toBeInTheDocument();
   // Chips print the leaf with its parent, not the whole dotted path.
   expect(screen.getByText('PII / Sensitive')).toBeInTheDocument();
-  expect(screen.getByText('2 columns · 1 carrying a facet')).toBeInTheDocument();
+  expect(screen.getByText('2 columns · 1 carrying governance of their own')).toBeInTheDocument();
+});
+
+test('a column does not repeat what it inherited from its table', async () => {
+  renderPage(undefined, 'columns');
+
+  // `id` inherits the table's domain and nothing else. The table already
+  // draws that domain once; printing it again on every column row is how a
+  // three-column table came to show more governance than OpenMetadata does,
+  // and a three-hundred-column one became unreadable.
+  const row = (await screen.findByText('id')).closest('tr');
+
+  expect(row).not.toBeNull();
+  expect(within(row as HTMLElement).queryByText('Finance')).toBeNull();
+  expect(within(row as HTMLElement).getByText('—')).toBeInTheDocument();
+});
+
+test('reads a tagged column exactly as OpenMetadata does', async () => {
+  renderPage(undefined, 'columns');
+
+  // Three stored rows, one chip. The other two are ARAK's own index rows --
+  // real, needed by the selector, and nothing a reader of this table asked
+  // for. Printing them made a column look like it carried governance that
+  // OpenMetadata never showed, which is the wrong kind of surprise on a
+  // screen people use to decide what to lock down.
+  const row = (await screen.findByText('email')).closest('tr');
+
+  expect(row).not.toBeNull();
+  expect(within(row as HTMLElement).getByText('PII / Sensitive')).toBeInTheDocument();
+  expect(within(row as HTMLElement).queryAllByText('inherited')).toHaveLength(0);
+});
+
+test('a materialised ancestor is never called inherited', async () => {
+  renderPage(undefined, 'columns');
+
+  // `direct: false` alone does not mean the value came from somewhere else.
+  // The tooltip has to say which of the two it is, because the difference is
+  // the difference between "your steward tagged this" and "ARAK made it up".
+  const chip = await screen.findByTitle(/^Tags/);
+
+  expect(chip).toHaveAttribute('title', expect.stringContaining('applied here'));
+  expect(chip.getAttribute('title')).not.toContain('inherited');
 });
 
 test('says where an inherited facet came from', async () => {
@@ -276,7 +339,7 @@ test('moving between tabs changes what the page answers', async () => {
   ).toBeInTheDocument();
 
   fireEvent.click(screen.getByRole('tab', { name: /Columns/ }));
-  expect(await screen.findByText('2 columns \u00b7 1 carrying a facet')).toBeInTheDocument();
+  expect(await screen.findByText('2 columns \u00b7 1 carrying governance of their own')).toBeInTheDocument();
   expect(
     screen.queryByRole('heading', { name: 'Governance' })
   ).not.toBeInTheDocument();

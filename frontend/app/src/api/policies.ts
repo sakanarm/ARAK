@@ -107,6 +107,30 @@ export async function fetchPolicies(query: {
   return data;
 }
 
+/**
+ * How many policies that filter matches.
+ *
+ * Asked separately from the page, and cached separately: clicking through
+ * pages must not re-count, and a count is what lets the pager show numbered
+ * pages rather than a Next button that may or may not do anything.
+ */
+export async function countPolicies(query: {
+  state?: string;
+  type?: string;
+  scopeLevel?: string;
+  q?: string;
+} = {}): Promise<number> {
+  const params = new URLSearchParams();
+  if (query.state) params.set('state', query.state);
+  if (query.type) params.set('type', query.type);
+  if (query.scopeLevel) params.set('scopeLevel', query.scopeLevel);
+  if (query.q?.trim()) params.set('q', query.q.trim());
+  const { data } = await apiClient.get<{ total: number }>(
+    `/v1/policies/count?${params}`
+  );
+  return data.total;
+}
+
 export async function fetchPolicy(id: string): Promise<StoredPolicy> {
   const { data } = await apiClient.get<StoredPolicy>(`/v1/policies/${id}`);
   return data;

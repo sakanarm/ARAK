@@ -44,10 +44,17 @@ public class CatalogQuery {
 
   private final Jdbi jdbi;
   private final ObjectMapper json;
+  private final OpenMetadataLink omLinks;
 
+  /** For a deployment with no OpenMetadata configured, and for tests. */
   public CatalogQuery(Jdbi jdbi, ObjectMapper json) {
+    this(jdbi, json, new OpenMetadataLink(null));
+  }
+
+  public CatalogQuery(Jdbi jdbi, ObjectMapper json, OpenMetadataLink omLinks) {
     this.jdbi = jdbi;
     this.json = json;
+    this.omLinks = omLinks;
   }
 
   // ------------------------------------------------------------------ types
@@ -102,6 +109,8 @@ public class CatalogQuery {
   /** Everything one asset page needs in a single response. */
   public record AssetDetail(
       AssetSummary asset,
+      /** This asset's page in OpenMetadata, or null if it has none there. */
+      String openMetadataUrl,
       Map<String, Object> customProperties,
       List<ColumnDetail> columns,
       List<FacetRow> facets,
@@ -297,6 +306,7 @@ public class CatalogQuery {
                       """
                       SELECT a.id, a.fqn, a.name, a.display_name, a.asset_type, a.parent_fqn,
                              a.description, a.tier, a.certification, s.name AS data_source,
+                             a.om_id,
                              (SELECT count(*) FROM asset_column c
                               WHERE c.asset_id = a.id AND c.is_current) AS column_count,
                              (SELECT count(DISTINCT f.column_id) FROM asset_facet f
@@ -381,7 +391,25 @@ public class CatalogQuery {
             }
           }
 
-          return Optional.of(new AssetDetail(asset, properties, columns, assetFacets, owners));
+          // om_id is the only honest test of "is this in OpenMetadata": an
+          // asset the JDBC importer discovered has a perfectly good FQN and no
+          // page behind it.
+          String omId =
+              handle
+                  .createQuery("SELECT om_id FROM asset WHERE id = :id")
+                  .bind("id", asset.id())
+                  .mapTo(String.class)
+                  .findOne()
+                  .orElse(null);
+
+          return Optional.of(
+              new AssetDetail(
+                  asset,
+                  omLinks.forAsset(asset.assetType(), asset.fqn(), omId != null),
+                  properties,
+                  columns,
+                  assetFacets,
+                  owners));
         });
   }
 
@@ -445,12 +473,23 @@ public class CatalogQuery {
                   .createQuery("SELECT count(*) FROM asset_column WHERE is_current")
                   .mapTo(Integer.class)
                   .one();
+          // Counted over the same population it is shown against -- current
+          // tables and views. Counting every asset type here while the console
+          // divided by the table count produced "36 of 34", which reads as a
+          // broken page rather than as the two numbers answering different
+          // questions: a tag on a schema is real, but it is not a tagged table.
+          //
+          // The is_current join matters for the same reason. asset_facet rows
+          // outlive the version of the asset that carried them, so without it
+          // a table dropped upstream keeps contributing to coverage forever.
           int taggedAssets =
               handle
                   .createQuery(
                       """
-                      SELECT count(DISTINCT asset_id) FROM asset_facet
-                      WHERE asset_id IS NOT NULL AND facet_type IN ('tags', 'terms')
+                      SELECT count(DISTINCT f.asset_id) FROM asset_facet f
+                      JOIN asset a ON a.id = f.asset_id
+                      WHERE a.is_current AND a.asset_type IN ('TABLE', 'VIEW')
+                        AND f.facet_type IN ('tags', 'terms')
                       """)
                   .mapTo(Integer.class)
                   .one();
@@ -458,8 +497,9 @@ public class CatalogQuery {
               handle
                   .createQuery(
                       """
-                      SELECT count(DISTINCT column_id) FROM asset_facet
-                      WHERE column_id IS NOT NULL AND facet_type IN ('tags', 'terms')
+                      SELECT count(DISTINCT f.column_id) FROM asset_facet f
+                      JOIN asset_column c ON c.id = f.column_id
+                      WHERE c.is_current AND f.facet_type IN ('tags', 'terms')
                       """)
                   .mapTo(Integer.class)
                   .one();

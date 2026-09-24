@@ -59,6 +59,16 @@ export interface SourceInput {
   secureSchema: string;
   secureObjectPattern: string;
   enabled: boolean;
+  /**
+   * A username and password typed into the form rather than pointed at.
+   *
+   * Sent once and never read back: the server seals them into `credentialRef`
+   * and answers `fernet:stored` from then on, so there is no field here for
+   * receiving them again. A form that omits both leaves whatever is stored
+   * alone.
+   */
+  username?: string | null;
+  password?: string | null;
 }
 
 export interface ProbeResult {
@@ -69,13 +79,26 @@ export interface ProbeResult {
   millis: number;
 }
 
-/** The credential schemes the server will accept, in the words of its error. */
+/**
+ * The pointer schemes the server will accept.
+ *
+ * `fernet:` is missing on purpose. It is what a typed-in credential is stored
+ * as, not something anyone should be typing, and offering it here would invite
+ * somebody to paste a ciphertext they got from somewhere else.
+ */
 export const CREDENTIAL_SCHEMES = [
   'vault://',
   'azurekeyvault://',
-  'fernet://',
   'env:',
 ] as const;
+
+/** What the server serves in place of a stored credential. */
+export const SEALED_CREDENTIAL = 'fernet:stored';
+
+/** Whether this source's credential was typed in rather than pointed at. */
+export function isSealed(credentialRef: string): boolean {
+  return credentialRef.toLowerCase().startsWith('fernet:');
+}
 
 export const ENFORCEMENT_MODES: {
   value: EnforcementMode;
@@ -140,6 +163,21 @@ export async function setSourceEnabled(
 /** Opens one read-only connection and records the engine version it reports. */
 export async function testSource(id: string): Promise<ProbeResult> {
   const { data } = await apiClient.post<ProbeResult>(`/v1/sources/${id}/test`);
+  return data;
+}
+
+/**
+ * Tries a connection for a source that has not been saved.
+ *
+ * Takes the form as it stands, so the answer is about what is on screen rather
+ * than about what was stored the last time Save worked. `id` is optional and is
+ * how an edit reuses the saved password while changing a port: the server falls
+ * back to the stored credential when the form has not been given a new one.
+ */
+export async function testSourceTarget(
+  input: Partial<SourceInput> & { id?: string }
+): Promise<ProbeResult> {
+  const { data } = await apiClient.post<ProbeResult>('/v1/sources/test', input);
   return data;
 }
 

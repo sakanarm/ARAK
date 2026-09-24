@@ -3,6 +3,12 @@ package com.mfec.dac;
 import com.mfec.dac.access.AccessQuery;
 import com.mfec.dac.access.GrantExpiryJob;
 import com.mfec.dac.access.GrantStore;
+import com.mfec.dac.home.HomeLayoutStore;
+import com.mfec.dac.home.HomeLayoutValidator;
+import com.mfec.dac.crypto.SecretBox;
+import com.mfec.dac.llm.LlmClient;
+import com.mfec.dac.llm.LlmSecretRef;
+import com.mfec.dac.llm.LlmSettingStore;
 import com.mfec.dac.auth.AuthFilter;
 import com.mfec.dac.auth.JwtService;
 import com.mfec.dac.auth.LocalIdentityDao;
@@ -14,6 +20,9 @@ import com.mfec.dac.catalog.GovernanceQuery;
 import com.mfec.dac.catalog.SearchQuery;
 import com.mfec.dac.catalog.ChangeEventPoller;
 import com.mfec.dac.catalog.NightlyReconcile;
+import com.mfec.dac.catalog.SyncScheduleStore;
+import com.mfec.dac.catalog.OmConnectionStore;
+import com.mfec.dac.catalog.OpenMetadataLink;
 import com.mfec.dac.catalog.SyncStateDao;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.mfec.dac.config.DacConfiguration;
@@ -27,6 +36,9 @@ import com.mfec.dac.policy.DecisionCache;
 import com.mfec.dac.identity.PrincipalQuery;
 import com.mfec.dac.om.OpenMetadataClient;
 import com.mfec.dac.resources.AccessResource;
+import com.mfec.dac.resources.HomeResource;
+import com.mfec.dac.resources.LlmAssistResource;
+import com.mfec.dac.resources.LlmResource;
 import com.mfec.dac.resources.AuthResource;
 import com.mfec.dac.catalog.SourceCatalogImporter;
 import com.mfec.dac.engine.EngineConfig;
@@ -54,6 +66,7 @@ import com.mfec.dac.resources.PolicyResource;
 import com.mfec.dac.resources.PrincipalResource;
 import com.mfec.dac.resources.SourceResource;
 import com.mfec.dac.source.DataSourceStore;
+import com.mfec.dac.source.jdbc.CredentialResolver;
 import com.mfec.dac.source.jdbc.SourceProbe;
 import com.mfec.dac.resources.SyncResource;
 import com.mfec.dac.resources.SystemResource;
@@ -143,18 +156,38 @@ public class DacApplication extends Application<DacConfiguration> {
 
     bootstrapLocalAdmin(identity, identities);
 
+    // The one thing that can turn a stored secret back into a usable one. Made
+    // here rather than beside its first user because two features now need it
+    // -- a source credential and a personal LLM key -- and a second instance
+    // would be a second place for a key to be configured differently.
+    SecretBox secretBox = SecretBox.fromConfiguration(config.getSecrets());
+    if (!secretBox.available()) {
+      // Not a startup failure -- the rest of this product does not need it.
+      // Logged once so that "I cannot save my key" has an answer waiting in
+      // the log rather than needing to be reproduced.
+      LOG.warn("Typed-in credentials cannot be stored: {}", secretBox.problem());
+    }
+
     OpenMetadataConfiguration om = config.getOpenMetadata();
+    // Where the catalog lives is a stored setting, not a deployment constant.
+    // The file is still the fallback, so an estate that injects the token
+    // through its deployment keeps working untouched -- but an administrator
+    // can move the instance without a redeploy, which is what makes the
+    // "Open in OpenMetadata" link correctable from the screen it is missing on.
+    OmConnectionStore omConnection = new OmConnectionStore(jdbi, secretBox, om);
+    OmConnectionStore.Connection omSettings = omConnection.current();
+    OmConnectionStore.Credentials omCredentials = omConnection.credentials();
     OpenMetadataClient omClient =
         new OpenMetadataClient(
-            om.getBaseUrl(),
-            om.getJwtToken(),
-            om.getExpectedVersion(),
-            om.getConnectTimeoutMs(),
-            om.getReadTimeoutMs());
+            omSettings.baseUrl(),
+            omCredentials.jwtToken(),
+            omSettings.expectedVersion(),
+            omSettings.connectTimeoutMs(),
+            omSettings.readTimeoutMs());
     // Checked at startup rather than at the first crawl: the generated client is
     // built from a spec pinned at one version, and finding out it no longer fits
     // halfway through a crawl leaves the cache half rewritten.
-    omClient.checkVersion(om.isFailOnVersionMismatch());
+    omClient.checkVersion(omSettings.failOnVersionMismatch());
     CatalogSyncService sync =
         new CatalogSyncService(jdbi, environment.getObjectMapper(), omClient);
     SyncStateDao syncState = new SyncStateDao(jdbi);
@@ -175,13 +208,37 @@ public class DacApplication extends Application<DacConfiguration> {
     environment.healthChecks().register("app-db", new AppDatabaseHealthCheck(jdbi));
     environment.jersey().register(new SystemResource(config, decisionCache));
     environment.jersey().register(new AuthResource(identities, tokens, identity));
-    environment.jersey().register(new SyncResource(sync));
-    // The connection itself, read-only: the page it feeds exists to say what
-    // this deployment is pointed at and whether it answers, not to let a
-    // browser rewrite the credential it is pointed at with.
-    environment.jersey().register(new OpenMetadataSettingsResource(om, omClient, sync));
-    environment.jersey().register(
-        new CatalogResource(new CatalogQuery(jdbi, environment.getObjectMapper())));
+    // Built here rather than inside startCatalogSync, because the screen that
+    // moves the nightly crawl and the thread that runs it have to be holding
+    // the same object: a save that rebooked a different instance would look
+    // like it worked and change nothing.
+    SyncScheduleStore syncSchedule =
+        new SyncScheduleStore(
+            jdbi,
+            LocalTime.parse(om.getReconcileAt()),
+            ZoneId.of(om.getReconcileZone()),
+            om.isReconcileEnabled());
+    NightlyReconcile reconcile = new NightlyReconcile(sync, syncState, syncSchedule);
+    environment.jersey().register(new SyncResource(sync, syncSchedule, reconcile));
+    // The connection itself. The page it feeds says what this deployment is
+    // pointed at, whether it answers, and -- for a platform administrator --
+    // lets it be moved, because an instance that has moved otherwise needs a
+    // redeploy to follow.
+    environment
+        .jersey()
+        .register(new OpenMetadataSettingsResource(omConnection, om, omClient, sync));
+    // One read model, shared: the catalogue pages and the assistant's schema
+    // brief must describe the same asset the same way, or a suggestion would
+    // be written against columns the reader cannot see on the page.
+    CatalogQuery catalog =
+        new CatalogQuery(
+            jdbi,
+            environment.getObjectMapper(),
+            // Built from the same client the crawl reads through, so the
+            // link can never point at a console other than the one the
+            // asset was actually read from.
+            OpenMetadataLink.reading(omClient::baseUrl));
+    environment.jersey().register(new CatalogResource(catalog));
 
     // Policy authoring. The materialiser takes the loader rather than building
     // one so that the webhook path and the authoring path resolve bindings
@@ -243,9 +300,16 @@ public class DacApplication extends Application<DacConfiguration> {
     GrantStore grants = new GrantStore(jdbi);
 
     DataSourceStore sources = new DataSourceStore(jdbi);
+    // One resolver for everything that opens a connection to a source. Built
+    // once rather than defaulted per user, because a second one without the
+    // opener would read a sealed credential as unresolvable -- a source that
+    // tests green and then cannot be crawled or queried.
+    CredentialResolver credentials = new CredentialResolver(System::getenv, secretBox::open);
     SourceCatalogImporter importer =
-        new SourceCatalogImporter(jdbi, sources, new JdbcIntrospector());
-    environment.jersey().register(new SourceResource(sources, new SourceProbe(), importer));
+        new SourceCatalogImporter(jdbi, sources, new JdbcIntrospector(credentials, 15));
+    SourceProbe sourceProbe = new SourceProbe(credentials, 5);
+    environment.jersey()
+        .register(new SourceResource(sources, sourceProbe, importer, secretBox));
 
     // Runtime enforcement, mode 5.2. This is the first place the engine is
     // asked anything at request time rather than at authoring time, and the
@@ -289,19 +353,57 @@ public class DacApplication extends Application<DacConfiguration> {
                 environment.getObjectMapper(),
                 sources,
                 decisionService,
-                new QueryExecutor())));
+                new QueryExecutor(credentials, 10))));
     // Registered before the auth filter for no reason other than reading order;
     // the filter is a @Secured name binding and this resource carries no
     // annotation, so it is never in its path. Its authentication is the HMAC.
+    // The home page each person arranges for themselves (M12). The
+    // validator is constructed here and shared, because it is the only thing
+    // standing between a widget somebody typed and a script running in the
+    // next reader's session -- there must be exactly one of it, and every
+    // path into the table must go through it.
     environment.jersey().register(
-        new WebhookResource(environment.getObjectMapper(), applier, om.getWebhookSecret()));
+        new HomeResource(
+            new HomeLayoutStore(
+                jdbi, environment.getObjectMapper(), new HomeLayoutValidator())));
+
+    // The assistant (M11). Each person points it at their own gateway with
+    // their own key; the deployment may also run a shared one for anybody who
+    // has not. The two kinds of secret are held differently and deliberately:
+    // the shared key is a pointer into the environment, because one operator
+    // sets one value, and a personal key is encrypted at rest, because nobody
+    // is going to add an environment variable per analyst.
+    LlmSecretRef llmSecrets = new LlmSecretRef();
+    LlmSettingStore llmSettings = new LlmSettingStore(jdbi, secretBox);
+    LlmClient llmClient = new LlmClient(environment.getObjectMapper());
+    environment.jersey().register(new LlmResource(llmSettings, llmClient, llmSecrets));
+    // Where the setting earns its keep: a question becomes SQL on the console,
+    // a sentence becomes a draft policy in the builder. Given the catalogue
+    // and nothing else -- the assistant is shown metadata, never rows, and
+    // returns text that a person still has to run or save (FR-2.6).
+    environment.jersey().register(new LlmAssistResource(llmSettings, llmClient, catalog));
+
+    environment.jersey().register(
+        new WebhookResource(
+            environment.getObjectMapper(),
+            applier,
+            () -> omConnection.credentials().webhookSecret()));
     environment.jersey().register(new AuthFilter(tokens));
 
-    startCatalogSync(environment, om, omClient, sync, applier, syncState);
+    startCatalogSync(
+        environment,
+        om,
+        omClient,
+        applier,
+        syncState,
+        reconcile,
+        omSettings.hasWebhookSecret());
     serveWebApp(config.getWeb(), environment);
 
-    LOG.info("Data Access Control Platform started against OpenMetadata {}",
-        config.getOpenMetadata().getBaseUrl());
+    LOG.info(
+        "Data Access Control Platform started against OpenMetadata {} ({})",
+        omSettings.baseUrl(),
+        omSettings.source());
   }
 
   /**
@@ -317,14 +419,16 @@ public class DacApplication extends Application<DacConfiguration> {
       Environment environment,
       OpenMetadataConfiguration om,
       OpenMetadataClient omClient,
-      CatalogSyncService sync,
       CatalogChangeApplier applier,
-      SyncStateDao syncState) {
+      SyncStateDao syncState,
+      NightlyReconcile reconcile,
+      boolean hasWebhookSecret) {
 
-    if (om.getWebhookSecret() == null || om.getWebhookSecret().isBlank()) {
+    if (!hasWebhookSecret) {
       LOG.warn(
-          "No OM_WEBHOOK_SECRET is set: POST /v1/webhooks/openmetadata will refuse every "
-              + "delivery. Changes will still arrive, but only as fast as the poller reads them.");
+          "No OpenMetadata webhook secret is set: POST /v1/webhooks/openmetadata will refuse "
+              + "every delivery. Changes will still arrive, but only as fast as the poller "
+              + "reads them.");
     }
 
     if (om.isPollEnabled()) {
@@ -343,16 +447,11 @@ public class DacApplication extends Application<DacConfiguration> {
               + "nightly reconcile.");
     }
 
-    if (om.isReconcileEnabled()) {
-      environment
-          .lifecycle()
-          .manage(
-              new NightlyReconcile(
-                  sync,
-                  syncState,
-                  LocalTime.parse(om.getReconcileAt()),
-                  ZoneId.of(om.getReconcileZone())));
-    }
+    // Always managed, even where the configuration file switched it off. The
+    // hour and the on/off are a stored setting now, so an administrator can
+    // turn the backstop on from the screen -- and a backstop that needed a
+    // restart to start would be one nobody turns on.
+    environment.lifecycle().manage(reconcile);
   }
 
   /**

@@ -67,3 +67,177 @@
     display: inline;
   }
 }
+
+/*
+ * The home page's column grid (M12).
+ *
+ * The preset decides the weights, and the page hands them in as a custom
+ * property rather than as a class, because the weights are data: `WIDE_LEFT`
+ * is "2fr 1fr" wherever it is stored, and a Tailwind arbitrary value would
+ * have to exist as a literal in a source file for the utility to be generated
+ * at all. Below xl everything stacks, for the same reason the old fixed
+ * dashboard did: two columns of widgets on a phone is one column of very
+ * narrow widgets.
+ */
+.arak-home-grid {
+  display: grid;
+  gap: 1.25rem;
+  grid-template-columns: 1fr;
+}
+
+@media (min-width: 80rem) {
+  .arak-home-grid {
+    grid-template-columns: var(--arak-home-cols, 1fr);
+  }
+}
+
+/*
+ * Formatting for an HTML widget's content.
+ *
+ * Preflight flattens headings, lists and rules to look like body text, which
+ * is right for an application and wrong for a paragraph somebody wrote. These
+ * rules put the shape back, scoped to the one container that renders authored
+ * markup, and reach only the tags the server's allowlist can emit.
+ */
+.arak-prose > :first-child {
+  margin-top: 0;
+}
+
+.arak-prose > :last-child {
+  margin-bottom: 0;
+}
+
+.arak-prose h1,
+.arak-prose h2,
+.arak-prose h3,
+.arak-prose h4,
+.arak-prose h5,
+.arak-prose h6 {
+  margin: 1.25em 0 0.5em;
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--color-text-primary, #181d27);
+}
+
+.arak-prose h1 {
+  font-size: 1.25em;
+}
+
+.arak-prose h2 {
+  font-size: 1.125em;
+}
+
+.arak-prose h3,
+.arak-prose h4,
+.arak-prose h5,
+.arak-prose h6 {
+  font-size: 1em;
+}
+
+.arak-prose p,
+.arak-prose blockquote,
+.arak-prose ul,
+.arak-prose ol,
+.arak-prose table,
+.arak-prose figure,
+.arak-prose pre {
+  margin: 0.75em 0;
+}
+
+.arak-prose ul,
+.arak-prose ol {
+  padding-left: 1.5em;
+}
+
+.arak-prose ul {
+  list-style: disc;
+}
+
+.arak-prose ol {
+  list-style: decimal;
+}
+
+.arak-prose li {
+  margin: 0.25em 0;
+}
+
+.arak-prose a {
+  color: var(--color-text-brand-secondary, #175cd3);
+  text-decoration: underline;
+}
+
+.arak-prose strong,
+.arak-prose b {
+  font-weight: 600;
+  color: var(--color-text-primary, #181d27);
+}
+
+.arak-prose em,
+.arak-prose i {
+  font-style: italic;
+}
+
+.arak-prose code,
+.arak-prose pre {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.9em;
+}
+
+.arak-prose code {
+  border-radius: 0.25rem;
+  background: var(--color-bg-secondary, #f5f5f5);
+  padding: 0.1em 0.35em;
+}
+
+.arak-prose pre {
+  overflow-x: auto;
+  border-radius: 0.5rem;
+  background: var(--color-bg-secondary, #f5f5f5);
+  padding: 0.75em 1em;
+}
+
+.arak-prose pre code {
+  background: none;
+  padding: 0;
+}
+
+.arak-prose blockquote {
+  border-left: 3px solid var(--color-border-secondary, #e9eaeb);
+  padding-left: 1em;
+  color: var(--color-text-tertiary, #535862);
+}
+
+.arak-prose hr {
+  margin: 1.25em 0;
+  border: 0;
+  border-top: 1px solid var(--color-border-secondary, #e9eaeb);
+}
+
+.arak-prose table {
+  display: block;
+  width: 100%;
+  overflow-x: auto;
+  border-collapse: collapse;
+}
+
+.arak-prose th,
+.arak-prose td {
+  border: 1px solid var(--color-border-secondary, #e9eaeb);
+  padding: 0.4em 0.65em;
+  text-align: left;
+}
+
+.arak-prose th {
+  background: var(--color-bg-secondary, #f5f5f5);
+  font-weight: 600;
+  color: var(--color-text-primary, #181d27);
+}
+
+/* Preflight was undone for icons above, so an authored image has to be told
+   to behave like one again rather than like a letter in a line of text. */
+.arak-prose img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  border-radius: 0.5rem;
+}

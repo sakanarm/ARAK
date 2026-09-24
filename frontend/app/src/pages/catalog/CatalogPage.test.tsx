@@ -160,3 +160,28 @@ test('says the cache is empty rather than showing a bare list', async () => {
 
   expect(await screen.findByText('The cache is empty')).toBeInTheDocument();
 });
+
+test('pages by number, and keeps the page size the reader picked', async () => {
+  // Eighty assets at twenty-five to a page: four pages, which is few enough
+  // that every number is drawn and none of them is an ellipsis.
+  fetchAssets.mockResolvedValue({ items: [asset({})], total: 80, limit: 25, offset: 0 });
+  renderPage();
+
+  await screen.findByText('customer');
+  expect(screen.getByRole('button', { current: 'page' })).toHaveTextContent('1');
+
+  fireEvent.click(screen.getByRole('button', { name: '3' }));
+
+  await waitFor(() =>
+    expect(fetchAssets).toHaveBeenLastCalledWith(expect.objectContaining({ offset: 50 }))
+  );
+});
+
+test('asks for as many assets per page as the URL says', async () => {
+  fetchAssets.mockResolvedValue({ items: [asset({})], total: 80, limit: 50, offset: 0 });
+  renderPage('/catalog?size=50');
+
+  await waitFor(() =>
+    expect(fetchAssets).toHaveBeenLastCalledWith(expect.objectContaining({ limit: 50 }))
+  );
+});

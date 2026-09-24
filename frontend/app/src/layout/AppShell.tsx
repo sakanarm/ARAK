@@ -1,7 +1,9 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { Badge } from '@openmetadata/ui-core-components/components/base/badges/badges';
-import { NAV_SECTIONS, type NavSection } from './navigation';
+import AssistDock from '../assist/AssistDock';
+import { useAuthStore } from '../auth/authStore';
+import { sectionsFor, type NavSection } from './navigation';
 import TopNav from './TopNav';
 
 export { humaniseRole } from './TopNav';
@@ -69,6 +71,14 @@ export default function AppShell({ children }: { children: ReactNode }) {
           </div>
         </main>
       </div>
+
+      {/*
+        Outside the content column on purpose: it is docked to the window, not
+        to the page, so it stays put while a long list scrolls under it. It
+        draws nothing at all for an account that has not switched the
+        assistant on.
+      */}
+      <AssistDock />
     </div>
   );
 }
@@ -88,6 +98,12 @@ function Sidebar({
   activeUrl: string;
   collapsed: boolean;
 }) {
+  // The rail offers only what this account can actually open. It is not the
+  // boundary -- every one of these sections is refused at the API as well --
+  // it is what stops a requester being handed six links that can only 403.
+  const hasRole = useAuthStore((state) => state.hasRole);
+  const sections = sectionsFor(hasRole);
+
   return (
     /*
       The rail itself never scrolls. It used to: the whole column was one
@@ -107,7 +123,7 @@ function Sidebar({
       aria-label="Sections"
       className="tw:flex tw:h-full tw:flex-col tw:overflow-hidden tw:border-r tw:border-secondary tw:bg-primary tw:pt-3 tw:pb-4">
       <ul className="tw:flex tw:min-h-0 tw:flex-1 tw:flex-col tw:gap-0.5 tw:overflow-x-hidden tw:overflow-y-auto tw:px-3">
-        {NAV_SECTIONS.map((section) => (
+        {sections.map((section) => (
           <li key={section.href}>
             <NavItem
               collapsed={collapsed}

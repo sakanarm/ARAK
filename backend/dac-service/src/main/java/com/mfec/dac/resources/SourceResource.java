@@ -3,7 +3,9 @@ package com.mfec.dac.resources;
 import com.mfec.dac.auth.AuthenticatedUser;
 import com.mfec.dac.auth.Secured;
 import com.mfec.dac.catalog.SourceCatalogImporter;
+import com.mfec.dac.crypto.SecretBox;
 import com.mfec.dac.source.DataSourceStore;
+import com.mfec.dac.source.jdbc.CredentialResolver;
 import com.mfec.dac.source.jdbc.SourceProbe;
 import jakarta.ws.rs.BadRequestException;
 import jakarta.ws.rs.Consumes;
@@ -35,6 +37,16 @@ import java.util.UUID;
  * a policy becomes a security policy on a production table, a view beside it,
  * or nothing at all — that is an operational decision about a database, not a
  * governance decision about data, and the two are held by different people.
+ *
+ * <p>A credential may be given two ways. Pointing at a vault is better where
+ * there is a vault, so that stays. But a deployment without one was being told
+ * to put the password in an environment variable instead, which does not keep
+ * the password out of the product — it moves it somewhere with no audit trail
+ * and no way to change it without a restart. So a username and password may
+ * also be typed here, and are sealed with the deployment's Fernet key before
+ * they reach the row. What is served back is {@code fernet:stored}: the
+ * ciphertext is never in a response, which is what keeps it out of a browser
+ * cache, an API log and anything this console is screen-shared into.
  */
 @Path("/v1/sources")
 @Produces(MediaType.APPLICATION_JSON)
@@ -45,23 +57,128 @@ public class SourceResource {
   private final DataSourceStore sources;
   private final SourceProbe probe;
   private final SourceCatalogImporter importer;
+  private final SecretBox secretBox;
 
   public SourceResource(
-      DataSourceStore sources, SourceProbe probe, SourceCatalogImporter importer) {
+      DataSourceStore sources,
+      SourceProbe probe,
+      SourceCatalogImporter importer,
+      SecretBox secretBox) {
     this.sources = sources;
     this.probe = probe;
     this.importer = importer;
+    this.secretBox = secretBox;
+  }
+
+  /** The scheme a typed-in credential is stored under. */
+  private static final String SEALED = "fernet:";
+
+  /** What is served instead of the ciphertext. */
+  private static final String REDACTED = SEALED + CredentialResolver.STORED;
+
+  /**
+   * Replaces a sealed credential with a marker on the way out.
+   *
+   * <p>Applied to every response that carries a source, including the echo of a
+   * create, rather than only to the list — one endpoint that forgets is the
+   * same leak as none of them redacting. Pointer references are left alone:
+   * {@code vault://secret/data/prod} is not a secret, and hiding it would make
+   * the screen unable to say where the credential is kept.
+   */
+  private static DataSourceStore.Source redact(DataSourceStore.Source source) {
+    String ref = source.credentialRef();
+    if (ref == null || !ref.toLowerCase(java.util.Locale.ROOT).startsWith(SEALED)) {
+      return source;
+    }
+    return new DataSourceStore.Source(
+        source.id(),
+        source.name(),
+        source.engine(),
+        source.engineVersion(),
+        source.host(),
+        source.port(),
+        source.defaultDatabase(),
+        REDACTED,
+        source.defaultEnforcementMode(),
+        source.omServiceFqn(),
+        source.secureSchema(),
+        source.secureObjectPattern(),
+        source.enabled(),
+        source.createdAt(),
+        source.updatedAt(),
+        source.assetCount());
+  }
+
+  /**
+   * Turns whatever the form sent into the reference the row will hold.
+   *
+   * <p>Three cases, and the third is the one that matters. A typed username and
+   * password is sealed. A pointer is passed through. And a credential field
+   * that came back as the redaction marker means the form is echoing what it
+   * was served rather than carrying a new secret — so the stored reference is
+   * kept. Without that last case, opening a source to change its port and
+   * pressing Save would overwrite the password with the word "stored".
+   */
+  private DataSourceStore.SourceInput withCredential(
+      DataSourceStore.SourceInput input, String existingRef) {
+
+    String username = blankToNull(input == null ? null : input.username());
+    String password = input == null ? null : input.password();
+    String ref = blankToNull(input == null ? null : input.credentialRef());
+
+    boolean typedPassword = password != null && !password.isEmpty();
+    if ((username != null) != typedPassword) {
+      // Half a credential is the quiet failure worth refusing: a changed
+      // username with no password would otherwise fall through to the
+      // stored pointer and the source would keep connecting as the old
+      // login, with the console showing the new one.
+      throw new BadRequestException(
+          "A username and a password go together. Give both to set or replace the stored "
+              + "credential, or leave both blank to keep the one already stored.");
+    }
+
+    if (username != null) {
+      if (!secretBox.available()) {
+        throw new BadRequestException(
+            "This deployment cannot store a password: " + secretBox.problem()
+                + " Set FERNET_KEY, or point the credential at a secret store instead.");
+      }
+      if (username.indexOf(':') >= 0) {
+        // The sealed form is user:password split on the first colon, so a colon
+        // in the username would silently truncate it into a wrong login.
+        throw new BadRequestException("A username may not contain a colon");
+      }
+      ref = SEALED + secretBox.seal(username + ":" + password);
+    } else if (ref != null && ref.equalsIgnoreCase(REDACTED)) {
+      ref = existingRef;
+    }
+    return new DataSourceStore.SourceInput(
+        input.name(),
+        input.engine(),
+        input.engineVersion(),
+        input.host(),
+        input.port(),
+        input.defaultDatabase(),
+        ref,
+        input.defaultEnforcementMode(),
+        input.omServiceFqn(),
+        input.secureSchema(),
+        input.secureObjectPattern(),
+        input.enabled(),
+        null,
+        null);
   }
 
   @GET
   public List<DataSourceStore.Source> list() {
-    return sources.list();
+    return sources.list().stream().map(SourceResource::redact).toList();
   }
 
   @GET
   @Path("/{id}")
   public DataSourceStore.Source get(@PathParam("id") UUID id) {
-    return sources.find(id).orElseThrow(() -> new NotFoundException("No data source " + id));
+    return redact(
+        sources.find(id).orElseThrow(() -> new NotFoundException("No data source " + id)));
   }
 
   @POST
@@ -69,8 +186,8 @@ public class SourceResource {
       DataSourceStore.SourceInput input, @Context SecurityContext security) {
     requireAdmin(security);
     try {
-      DataSourceStore.Source created = sources.create(input);
-      return Response.status(Response.Status.CREATED).entity(created).build();
+      DataSourceStore.Source created = sources.create(withCredential(input, null));
+      return Response.status(Response.Status.CREATED).entity(redact(created)).build();
     } catch (DataSourceStore.InvalidSourceException e) {
       throw new BadRequestException(e.getMessage());
     } catch (DataSourceStore.SourceConflictException e) {
@@ -85,8 +202,9 @@ public class SourceResource {
       DataSourceStore.SourceInput input,
       @Context SecurityContext security) {
     requireAdmin(security);
+    String existing = sources.find(id).map(DataSourceStore.Source::credentialRef).orElse(null);
     try {
-      return sources.update(id, input);
+      return redact(sources.update(id, withCredential(input, existing)));
     } catch (DataSourceStore.NoSuchSourceException e) {
       throw new NotFoundException(e.getMessage());
     } catch (DataSourceStore.InvalidSourceException e) {
@@ -114,10 +232,107 @@ public class SourceResource {
       throw new BadRequestException("Send {\"enabled\": true} or {\"enabled\": false}");
     }
     try {
-      return sources.setEnabled(id, enabled);
+      return redact(sources.setEnabled(id, enabled));
     } catch (DataSourceStore.NoSuchSourceException e) {
       throw new NotFoundException(e.getMessage());
     }
+  }
+
+  /**
+   * Tries a connection that has not been saved yet (read-only).
+   *
+   * <p>The other test endpoint needs an id, which meant the only way to find
+   * out whether a host, port and password were right was to register the source
+   * first and correct it afterwards — so the registry filled up with rows that
+   * had never connected, and the screen could not tell them apart from the ones
+   * that had. This answers the same question before anything is written.
+   *
+   * <p>Nothing is stored and nothing is logged. The password is read off the
+   * request, handed to one connection attempt and dropped; the reply carries
+   * the server's version and a sentence, never the credential. An existing
+   * source's saved credential can be reused by sending its id instead, which is
+   * what lets somebody test a port change without re-typing a password they do
+   * not have.
+   */
+  @POST
+  @Path("/test")
+  public Map<String, Object> testTarget(Map<String, Object> body, @Context SecurityContext security) {
+    requireAdmin(security);
+    if (body == null) {
+      throw new BadRequestException("Send a source to test");
+    }
+    String engine = blankToNull(asText(body.get("engine")));
+    String host = blankToNull(asText(body.get("host")));
+    String database = blankToNull(asText(body.get("defaultDatabase")));
+    String username = blankToNull(asText(body.get("username")));
+    String password = asText(body.get("password"));
+    String ref = blankToNull(asText(body.get("credentialRef")));
+    UUID existingId = parseUuid(asText(body.get("id")));
+
+    DataSourceStore.Source existing =
+        existingId == null ? null : sources.find(existingId).orElse(null);
+
+    if (engine == null && existing != null) {
+      engine = existing.engine().name();
+    }
+    if (host == null && existing != null) {
+      host = existing.host();
+    }
+    if (engine == null || host == null) {
+      throw new BadRequestException("Give at least an engine and a host to test");
+    }
+
+    int port;
+    Object rawPort = body.get("port");
+    if (rawPort instanceof Number number) {
+      port = number.intValue();
+    } else if (rawPort != null && !String.valueOf(rawPort).isBlank()) {
+      try {
+        port = Integer.parseInt(String.valueOf(rawPort).trim());
+      } catch (NumberFormatException e) {
+        throw new BadRequestException("Port must be a number");
+      }
+    } else if (existing != null) {
+      port = existing.port();
+    } else {
+      port = "SQLSERVER".equalsIgnoreCase(engine) ? 1433 : 5432;
+    }
+    if (port < 1 || port > 65_535) {
+      throw new BadRequestException("Port must be between 1 and 65535");
+    }
+    if (database == null && existing != null) {
+      database = existing.defaultDatabase();
+    }
+
+    // Order matters: a credential typed into the form is what the operator is
+    // trying out, so it wins over whatever is already stored.
+    String credentialRef;
+    if (username != null && password != null && !password.isEmpty()) {
+      if (!secretBox.available()) {
+        throw new BadRequestException(
+            "This deployment cannot seal a password to test with: " + secretBox.problem());
+      }
+      if (username.indexOf(':') >= 0) {
+        throw new BadRequestException("A username may not contain a colon");
+      }
+      credentialRef = SEALED + secretBox.seal(username + ":" + password);
+    } else if (ref != null && !ref.equalsIgnoreCase(REDACTED)) {
+      credentialRef = ref;
+    } else if (existing != null) {
+      credentialRef = existing.credentialRef();
+    } else {
+      throw new BadRequestException(
+          "Give a username and password, or a credential reference, to test with");
+    }
+
+    SourceProbe.Result result =
+        probe.probe(new SourceProbe.Target(engine, host, port, database), credentialRef);
+    return Map.of(
+        "reachable", result.reachable(),
+        "engineVersion", result.engineVersion() == null ? "" : result.engineVersion(),
+        "productName", result.productName() == null ? "" : result.productName(),
+        "message", result.message(),
+        "millis", result.millis());
   }
 
   /**
@@ -217,6 +432,21 @@ public class SourceResource {
 
   private static String blankToNull(String value) {
     return value == null || value.isBlank() ? null : value.trim();
+  }
+
+  private static String asText(Object value) {
+    return value == null ? null : String.valueOf(value);
+  }
+
+  private static UUID parseUuid(String value) {
+    if (value == null || value.isBlank()) {
+      return null;
+    }
+    try {
+      return UUID.fromString(value.trim());
+    } catch (IllegalArgumentException e) {
+      throw new BadRequestException("That is not a source id");
+    }
   }
 
   private static WebApplicationException conflict(String message) {

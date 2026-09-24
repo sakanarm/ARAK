@@ -48,6 +48,20 @@ public class IdentityAdminStore {
   private static final Pattern USERNAME = Pattern.compile("[A-Za-z0-9][A-Za-z0-9._@-]{1,63}");
 
   /**
+   * What an attribute key may be called.
+   *
+   * <p>Identifier-shaped, because a key is not just a label: an expression
+   * reaches it as {@code user.clearance}, so a key containing a dot or a space
+   * is one that parses as something else or does not parse at all. Refusing it
+   * here means the rule that cannot be written is refused at the point somebody
+   * types the key, rather than at the point somebody writes the policy.
+   */
+  private static final Pattern ATTRIBUTE_KEY = Pattern.compile("[A-Za-z][A-Za-z0-9_]{0,63}");
+
+  /** Long enough for a department name or an FQN, short enough to index. */
+  private static final int MAX_ATTRIBUTE_VALUE = 200;
+
+  /**
    * Short enough to type, long enough to be worth 210k PBKDF2 rounds. The
    * upper bound is there because the whole string is hashed and an unbounded
    * one is an invitation to make the login endpoint do arbitrary work.
@@ -399,6 +413,198 @@ public class IdentityAdminStore {
     return revoked;
   }
 
+  /**
+   * Gives somebody an attribute, entered here rather than synced (FR-2.4).
+   *
+   * <p>This is the half of ABAC a directory usually cannot supply. Entra holds
+   * what the HR system happens to carry; it does not hold {@code clearance},
+   * and it will not hold the branch a person may see rows for. Without a way to
+   * enter those, an attribute rule matches nobody and the failure is silent --
+   * the policy saves, activates, and denies everybody.
+   *
+   * <p>Written as {@code source = 'local'} whoever the principal is, including
+   * one synced from Entra or OpenMetadata. That is deliberate and it is what
+   * makes it safe: a sync writes only its own rows, so a value entered here is
+   * never overwritten by one, and never overwrites one. Somebody may carry
+   * {@code department} from both, and both are true -- the engine reads every
+   * live row, so the union is what a rule is matched against.
+   *
+   * <p>Idempotent, and reopens a value that was withdrawn earlier rather than
+   * inserting a second row, because the withdrawn row is still there: closing
+   * keeps the history a decision made last month has to be explained against.
+   *
+   * @return false when the principal already carried exactly this value
+   */
+  public boolean addAttribute(
+      UUID principalId, String key, String value, String reason, String actor, String clientIp) {
+    Target target = require(principalId);
+    String attrKey = checkKey(key);
+    String attrValue = checkValue(value);
+    String ip = ClientAddress.normalise(clientIp);
+
+    boolean added =
+        jdbi.inTransaction(
+            handle -> {
+              // Three states, not two: absent, live, or withdrawn earlier. The
+              // unique constraint spans the closed row as well, so an insert
+              // over a withdrawn value would fail rather than restore it.
+              Optional<Boolean> live =
+                  handle
+                      .createQuery(
+                          """
+                          SELECT valid_to IS NULL FROM principal_attribute
+                          WHERE principal_id = :id
+                            AND attr_key = :key
+                            AND attr_value = :value
+                            AND source = 'local'
+                          """)
+                      .bind("id", principalId)
+                      .bind("key", attrKey)
+                      .bind("value", attrValue)
+                      .mapTo(Boolean.class)
+                      .findOne();
+              if (live.isPresent() && live.get()) {
+                return false;
+              }
+              if (live.isPresent()) {
+                handle
+                    .createUpdate(
+                        """
+                        UPDATE principal_attribute
+                           SET valid_to = NULL, valid_from = now()
+                         WHERE principal_id = :id
+                           AND attr_key = :key
+                           AND attr_value = :value
+                           AND source = 'local'
+                        """)
+                    .bind("id", principalId)
+                    .bind("key", attrKey)
+                    .bind("value", attrValue)
+                    .execute();
+              } else {
+                handle
+                    .createUpdate(
+                        """
+                        INSERT INTO principal_attribute
+                            (principal_id, attr_key, attr_value, source)
+                        VALUES (:id, :key, :value, 'local')
+                        """)
+                    .bind("id", principalId)
+                    .bind("key", attrKey)
+                    .bind("value", attrValue)
+                    .execute();
+              }
+              auditAttribute(
+                  handle,
+                  actor,
+                  "ADD_ATTRIBUTE",
+                  principalId,
+                  target.username(),
+                  target.source(),
+                  attrKey,
+                  attrValue,
+                  reason,
+                  ip);
+              return true;
+            });
+
+    if (added) {
+      // An attribute is an input to every cached decision about this person,
+      // and the one they are most likely to be waiting on.
+      changes.fire(attrKey + " " + attrValue + " added to " + target.username());
+    }
+    return added;
+  }
+
+  /**
+   * Withdraws an attribute entered here.
+   *
+   * <p>Closed with a {@code valid_to} rather than deleted. An access decision
+   * made in March was made against the attributes of March, and an audit that
+   * replayed it against today's rows would answer a question nobody asked.
+   *
+   * <p>Only a local row can be withdrawn. A value that arrived from Entra is
+   * Entra's to remove; closing it here would leave the next sync to bring it
+   * straight back, and the person doing the withdrawing would have no way of
+   * knowing that had happened.
+   *
+   * @return false when the principal was not carrying it
+   */
+  public boolean removeAttribute(
+      UUID principalId, String key, String value, String reason, String actor, String clientIp) {
+    Target target = require(principalId);
+    String attrKey = checkKey(key);
+    String attrValue = checkValue(value);
+    String ip = ClientAddress.normalise(clientIp);
+
+    boolean removed =
+        jdbi.inTransaction(
+            handle -> {
+              int closed =
+                  handle
+                      .createUpdate(
+                          """
+                          UPDATE principal_attribute
+                             SET valid_to = now()
+                           WHERE principal_id = :id
+                             AND attr_key = :key
+                             AND attr_value = :value
+                             AND source = 'local'
+                             AND valid_to IS NULL
+                          """)
+                      .bind("id", principalId)
+                      .bind("key", attrKey)
+                      .bind("value", attrValue)
+                      .execute();
+              if (closed == 0) {
+                // Distinguished from "not there at all", because the two have
+                // different remedies and only one of them is this screen's.
+                boolean elsewhere =
+                    handle
+                            .createQuery(
+                                """
+                                SELECT count(*) FROM principal_attribute
+                                WHERE principal_id = :id
+                                  AND attr_key = :key
+                                  AND attr_value = :value
+                                  AND valid_to IS NULL
+                                """)
+                            .bind("id", principalId)
+                            .bind("key", attrKey)
+                            .bind("value", attrValue)
+                            .mapTo(Long.class)
+                            .one()
+                        > 0;
+                if (elsewhere) {
+                  throw new InvalidPrincipalException(
+                      attrKey
+                          + " "
+                          + attrValue
+                          + " came from a directory, which owns it. Remove it there -- taking "
+                          + "it away here would last until the next sync.");
+                }
+                return false;
+              }
+              auditAttribute(
+                  handle,
+                  actor,
+                  "REMOVE_ATTRIBUTE",
+                  principalId,
+                  target.username(),
+                  target.source(),
+                  attrKey,
+                  attrValue,
+                  reason,
+                  ip);
+              return true;
+            });
+
+    if (removed) {
+      changes.fire(attrKey + " " + attrValue + " withdrawn from " + target.username());
+    }
+    return removed;
+  }
+
   // ------------------------------------------------------------------ reads
 
   /** Every grant in force, for the roles screen. */
@@ -614,6 +820,74 @@ public class IdentityAdminStore {
         .bind("source", source)
         .bind("role", appRole)
         .bind("scope", scopeFqn)
+        .bind("reason", blankToNull(reason))
+        .bind("ip", ip)
+        .execute();
+  }
+
+  private static String checkKey(String key) {
+    String trimmed = blankToNull(key);
+    if (trimmed == null) {
+      throw new InvalidPrincipalException("Name the attribute, like clearance or branch");
+    }
+    if (!ATTRIBUTE_KEY.matcher(trimmed).matches()) {
+      throw new InvalidPrincipalException(
+          "An attribute name starts with a letter and continues with letters, digits or "
+              + "underscores -- it is read in a rule as user."
+              + "<name>, so it cannot contain a space or a dot");
+    }
+    return trimmed;
+  }
+
+  private static String checkValue(String value) {
+    String trimmed = blankToNull(value);
+    if (trimmed == null) {
+      // An empty value is not "no attribute": it would be a row that a rule
+      // could match on, meaning something nobody intended.
+      throw new InvalidPrincipalException("Give the attribute a value, or take it away instead");
+    }
+    if (trimmed.length() > MAX_ATTRIBUTE_VALUE) {
+      throw new InvalidPrincipalException(
+          "That value is longer than " + MAX_ATTRIBUTE_VALUE + " characters");
+    }
+    for (int i = 0; i < trimmed.length(); i++) {
+      // A control character in a value is invisible in every screen that shows
+      // it, so two values that look identical would not compare equal and the
+      // rule that failed would be unreadable.
+      if (Character.isISOControl(trimmed.charAt(i))) {
+        throw new InvalidPrincipalException("That value contains a character that cannot be shown");
+      }
+    }
+    return trimmed;
+  }
+
+  private static void auditAttribute(
+      Handle handle,
+      String actor,
+      String action,
+      UUID principalId,
+      String username,
+      String source,
+      String key,
+      String value,
+      String reason,
+      String ip) {
+    handle
+        .createUpdate(
+            """
+            INSERT INTO audit_identity_change
+                (actor, action, target_principal_id, target_username, target_source,
+                 attr_key, attr_value, reason, client_ip)
+            VALUES (:actor, :action, :target, :username, :source, :key, :value, :reason,
+                    CAST(:ip AS inet))
+            """)
+        .bind("actor", actor == null ? "unknown" : actor)
+        .bind("action", action)
+        .bind("target", principalId)
+        .bind("username", username)
+        .bind("source", source)
+        .bind("key", key)
+        .bind("value", value)
         .bind("reason", blankToNull(reason))
         .bind("ip", ip)
         .execute();

@@ -41,6 +41,12 @@
     <jsonschema2pojo.version>1.3.1</jsonschema2pojo.version>
     <java-jwt.version>4.4.0</java-jwt.version>
     <fernet.version>1.5.0</fernet.version>
+    <!-- HTML sanitiser for the authored home-page widgets (M10). A
+         library rather than a hand-written allowlist: this is the one
+         place in the product where text a person typed is rendered as
+         markup into somebody else's session, and a parser that agrees
+         with the browser is the whole defence. -->
+    <jsoup.version>1.18.3</jsoup.version>
     <postgres.connector.version>42.7.12</postgres.connector.version>
     <org.junit.jupiter.version>5.11.4</org.junit.jupiter.version>
     <mockito.version>5.14.2</mockito.version>
@@ -149,6 +155,7 @@
       <dependency><groupId>org.projectlombok</groupId><artifactId>lombok</artifactId><version>${lombok.version}</version><scope>provided</scope></dependency>
       <dependency><groupId>org.antlr</groupId><artifactId>antlr4-runtime</artifactId><version>${antlr.version}</version></dependency>
       <dependency><groupId>com.auth0</groupId><artifactId>java-jwt</artifactId><version>${java-jwt.version}</version></dependency>
+      <dependency><groupId>org.jsoup</groupId><artifactId>jsoup</artifactId><version>${jsoup.version}</version></dependency>
       <dependency><groupId>com.macasaet.fernet</groupId><artifactId>fernet-java8</artifactId><version>${fernet.version}</version></dependency>
       <dependency><groupId>org.postgresql</groupId><artifactId>postgresql</artifactId><version>${postgres.connector.version}</version></dependency>
       <dependency><groupId>com.microsoft.sqlserver</groupId><artifactId>mssql-jdbc</artifactId><version>${mssql-jdbc.version}</version></dependency>

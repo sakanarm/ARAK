@@ -24,6 +24,26 @@ const FACET_COLOURS: Record<string, BadgeColors> = {
   customProperty: 'gray-blue',
 };
 
+/**
+ * The group heading's colour swatch, keyed the same way as the chips under it.
+ *
+ * <p>A 500-level dot rather than the chip's 100-level fill: at eight pixels a
+ * pale wash is invisible, and the dot's whole job is to tie the heading to the
+ * row of chips beneath it without repeating their shape.
+ */
+const FACET_DOTS: Record<string, string> = {
+  tags: 'tw:bg-utility-error-500',
+  classifications: 'tw:bg-utility-error-500',
+  terms: 'tw:bg-utility-purple-500',
+  glossaries: 'tw:bg-utility-purple-500',
+  domains: 'tw:bg-utility-blue-500',
+  dataProducts: 'tw:bg-utility-indigo-500',
+  tier: 'tw:bg-utility-warning-500',
+  certification: 'tw:bg-utility-success-500',
+  customProperty: 'tw:bg-utility-gray-blue-500',
+  owners: 'tw:bg-utility-gray-500',
+};
+
 /** Labels for the filter menus and the facet groups on an asset. */
 export const FACET_LABELS: Record<string, string> = {
   tags: 'Tags',
@@ -117,7 +137,21 @@ export function facetName(fqn: string): string {
  * like confirmed ones teaches people the data is protected when it is not
  * (FR-1.3a).
  */
-export function FacetChip({ facet }: { facet: FacetRow }) {
+export function FacetChip({
+  facet,
+  showKind = true,
+}: {
+  facet: FacetRow;
+  /**
+   * False under a heading that already names the kind.
+   *
+   * <p>The prefix earns its width on the catalog list, where chips of six
+   * kinds sit in one undifferentiated row. Under a heading reading "Tags" it
+   * only produces "Tag PII / Sensitive", which spends a third of the chip
+   * restating the line above it.
+   */
+  showKind?: boolean;
+}) {
   const colour = FACET_COLOURS[facet.facetType] ?? 'gray';
   const suggested = facet.omState === 'Suggested';
 
@@ -130,14 +164,41 @@ export function FacetChip({ facet }: { facet: FacetRow }) {
   // of its own kind the prefix adds nothing, so it is dropped rather than
   // stuttered.
   const named = custom || facetOne(facet.facetType);
-  const kind = label.toLowerCase().startsWith(named.toLowerCase()) ? null : named;
+  const kind =
+    !showKind || label.toLowerCase().startsWith(named.toLowerCase())
+      ? null
+      : named;
+
+  // `direct` is false for three different reasons, and only one of them is
+  // inheritance. A domain that arrived from the table above carries
+  // `inheritedFrom` and really did come from somewhere else. The bare `PII`
+  // sitting beside a `PII.NonSensitive` applied right here does not: it is the
+  // ancestor row the crawl materialises so that a selector stays an index
+  // lookup (FR-2A.2), and the `classifications` row beside it is derived from
+  // the same tag. Marking those two "inherited" told the reader ARAK had
+  // invented governance OpenMetadata never showed them -- which was the
+  // complaint, and it was a fair one.
+  const inherited = !facet.direct && Boolean(facet.inheritedFrom);
+  const broader = !facet.direct && !facet.inheritedFrom;
 
   const why = [
     facetLabel(facet.facetType),
     facet.facetFqn,
-    facet.direct ? 'applied here' : `inherited${facet.inheritedFrom ? ` from ${facet.inheritedFrom}` : ''}`,
+    inherited
+      ? `inherited from ${facet.inheritedFrom}`
+      : broader
+        ? 'implied by a more specific value applied here'
+        : 'applied here',
     facet.omLabelType ? `label ${facet.omLabelType}` : null,
-    facet.omState ? `state ${facet.omState}` : null,
+    // Spelled out rather than echoed. "state Suggested" is OpenMetadata's
+    // word for it, and it means nothing to somebody who has not read the
+    // spec. What the reader needs to know is whether this tag is protecting
+    // the column, and for a suggested one the answer is no.
+    suggested
+      ? 'suggested by OpenMetadata, not confirmed by anyone — no policy enforces on it unless one opts in'
+      : facet.omState
+        ? 'state ' + facet.omState
+        : null,
     facet.provenance !== 'openmetadata' ? `provenance ${facet.provenance}` : null,
   ]
     .filter(Boolean)
@@ -168,13 +229,24 @@ export function FacetChip({ facet }: { facet: FacetRow }) {
             reasonably took for a sort control or a link and which said
             nothing at all to anybody who did not already know the
             convention. "inherited" is four characters longer and needs no
-            key. */}
-        {!facet.direct && (
+            key -- and it is now printed only where something really was
+            inherited from another asset, never on a materialised ancestor. */}
+        {inherited && (
           <span className="tw:ml-1 tw:shrink-0 tw:text-[10px] tw:opacity-70">
             inherited
           </span>
         )}
-        {suggested && <span className="tw:ml-1">?</span>}
+        {/* The word, for the same reason the arrow became one. A bare "?"
+            was read as a help button -- somebody asked what it meant, which
+            is the whole answer about whether it was working. This label says
+            what ARAK actually does with the tag: OpenMetadata is only
+            guessing at it, nobody has confirmed it, and so no policy is
+            enforcing on it unless one opted in (FR-1.3a). */}
+        {suggested && (
+          <span className="tw:ml-1 tw:shrink-0 tw:text-[10px] tw:opacity-70">
+            unconfirmed
+          </span>
+        )}
       </Badge>
     </span>
   );
@@ -205,6 +277,49 @@ export function OwnerChip({ owner }: { owner: AssetOwner }) {
         )}
       </Badge>
     </span>
+  );
+}
+
+/**
+ * One kind of facet under its own heading.
+ *
+ * <p>The flat wrap this replaces put eleven chips of five kinds in one block
+ * and asked the reader to sort them by colour. A heading per kind is how
+ * OpenMetadata's own asset page reads, and it answers the question people
+ * actually arrive with -- "what domain is this in?" -- by letting them look in
+ * one place rather than scan the lot.
+ */
+export function FacetGroup({
+  facets,
+  type,
+}: {
+  facets: FacetRow[];
+  type: string;
+}) {
+  return (
+    <div>
+      <div className="tw:mb-2 tw:flex tw:items-center tw:gap-2">
+        <span
+          aria-hidden="true"
+          className={`tw:size-2 tw:shrink-0 tw:rounded-full ${FACET_DOTS[type] ?? 'tw:bg-utility-gray-500'}`}
+        />
+        <h3 className="tw:text-xs tw:font-semibold tw:uppercase tw:tracking-wide tw:text-tertiary">
+          {facetLabel(type)}
+        </h3>
+        <span className="tw:text-xs tw:tabular-nums tw:text-quaternary">
+          {facets.length}
+        </span>
+      </div>
+      <div className="tw:flex tw:flex-wrap tw:gap-1.5">
+        {facets.map((facet) => (
+          <FacetChip
+            facet={facet}
+            key={`${facet.facetFqn}:${facet.property ?? ''}:${facet.depth}`}
+            showKind={false}
+          />
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -249,6 +364,25 @@ const OFF_THE_LIST = ['classifications', 'tier'];
  * one before it. The deepest one implies its ancestors, and the tooltip on it
  * spells them out.
  */
+/**
+ * The facets shown on one column of the columns table.
+ *
+ * <p>Only what the column itself carries. A column inherits its domain,
+ * its owners and its custom properties from the table (FR-2A.1), and those
+ * are already drawn once on the table above — repeating them on every
+ * row of a three-hundred-column table buries the one chip that differs
+ * between rows under five that never do.
+ *
+ * <p>What remains is the column's own governance, matching what
+ * OpenMetadata prints in its own Columns tab, with the materialised
+ * ancestors rolled up by {@link listFacets}: a column tagged
+ * `PII.NonSensitive` reads as one chip, not as `PII.NonSensitive` beside a
+ * bare `PII` that says the same thing less precisely.
+ */
+export function columnFacets(facets: FacetRow[]): FacetRow[] {
+  return listFacets(facets.filter((facet) => !facet.inheritedFrom));
+}
+
 export function listFacets(facets: FacetRow[]): FacetRow[] {
   const shown = facets.filter(
     (facet) =>

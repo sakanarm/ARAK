@@ -5,6 +5,7 @@ import { AlertTriangle, CheckCircle, XCircle } from '@untitledui/icons';
 import { Chip as Badge } from '../../components/chips';
 import { Button } from '@openmetadata/ui-core-components/components/base/buttons/button';
 import { apiErrorMessage } from '../../api/client';
+import { useAssistStore } from '../../assist/assistStore';
 import {
   fetchAttributeVocabulary,
   fetchPrincipals,
@@ -121,6 +122,45 @@ export default function PolicyBuilderPage() {
   const [loaded, setLoaded] = useState<StoredPolicy | null>(null);
   const [engine, setEngine] = useState<Engine>('POSTGRES');
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [assistNote, setAssistNote] = useState<string | null>(null);
+
+  // The assistant drafts a whole document, so this page publishes that it is
+  // open and then waits. It never asks for one: a policy nobody asked for
+  // appearing in a half-filled form is how somebody saves a rule they did not
+  // write.
+  const offer = useAssistStore((state) => state.offer);
+  const withdraw = useAssistStore((state) => state.withdraw);
+  const drafted = useAssistStore((state) => state.policy);
+  const takePolicy = useAssistStore((state) => state.takePolicy);
+
+  useEffect(() => {
+    offer('policy', null, null);
+    return () => withdraw('policy');
+  }, [offer, withdraw]);
+
+  useEffect(() => {
+    if (!drafted) {
+      return;
+    }
+    takePolicy();
+    try {
+      const parsed = JSON.parse(drafted.text) as Partial<Policy>;
+      // Merged over the empty document rather than used as-is. A model that
+      // leaves a field out would otherwise hand the form an undefined where
+      // it expects a value, and the control bound to it would go uncontrolled
+      // mid-edit -- which looks like the form losing your typing.
+      setDraft((current) => ({ ...EMPTY, ...current, ...parsed }));
+      setAssistNote(
+        'Loaded a draft from the assistant. Read every step before you save it'
+          + ' — it is a suggestion, and it is your name on the policy.'
+      );
+    } catch {
+      setAssistNote(
+        'The assistant answered with something that was not a policy document,'
+          + ' so nothing was loaded. Try saying the rule a different way.'
+      );
+    }
+  }, [drafted, takePolicy]);
 
   const { data: existing, error: loadError } = useQuery({
     queryKey: ['policy', id],
@@ -256,6 +296,12 @@ export default function PolicyBuilderPage() {
           )}
         </div>
       </header>
+
+      {assistNote && (
+        <p className="tw:mt-4 tw:rounded-lg tw:border tw:border-secondary tw:bg-secondary tw:p-4 tw:text-sm tw:text-tertiary">
+          {assistNote}
+        </p>
+      )}
 
       {saveError && (
         <p className="tw:mt-4 tw:rounded-lg tw:border tw:border-error tw:bg-error-primary tw:p-4 tw:text-sm tw:text-error-primary">

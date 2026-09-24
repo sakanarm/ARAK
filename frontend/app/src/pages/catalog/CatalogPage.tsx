@@ -1,19 +1,15 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router-dom';
 import {
   ChevronDown,
   Database01,
-  Eye,
   FilterLines,
-  Folder,
   SearchLg,
-  Server01,
-  Table,
   XClose,
 } from '@untitledui/icons';
+import { lookFor } from './assetLook';
 import { Chip as Badge } from '../../components/chips';
-import type { BadgeColors } from '@openmetadata/ui-core-components/components/base/badges/badge-types';
 import { Button } from '@openmetadata/ui-core-components/components/base/buttons/button';
 import { Checkbox } from '@openmetadata/ui-core-components/components/base/checkbox/checkbox';
 import { Input } from '@openmetadata/ui-core-components/components/base/input/input';
@@ -32,61 +28,14 @@ import {
   listFacets,
 } from './facets';
 import { Select } from '../policies/controls';
+import { PAGE_SIZES, Pager } from '../../components/Pager';
 import { leaf, segments, shortFqn } from '../../lib/fqn';
 import { plainText } from '../../lib/text';
 
 const PAGE_SIZE = 25;
+
 const ASSET_TYPES = ['TABLE', 'VIEW', 'SCHEMA', 'DATABASE', 'SERVICE'];
 
-/**
- * How each kind of asset presents itself in a list.
- *
- * <p>A service, a database, a schema and a table are four different things and
- * a list that renders them identically makes the reader parse the FQN to tell
- * them apart. The icon carries that distinction before any text is read; the
- * hue is the same one the badge uses, so the two reinforce rather than compete.
- *
- * <p>Ordered here the way the hierarchy nests -- service contains database
- * contains schema contains table -- with the hues walking the same direction,
- * so depth reads as a gradient down the page rather than as noise.
- */
-const ASSET_LOOK: Record<
-  string,
-  { Icon: typeof Database01; badge: BadgeColors; tile: string }
-> = {
-  SERVICE: {
-    Icon: Server01,
-    badge: 'gray-blue',
-    tile: 'tw:bg-utility-gray-blue-50 tw:text-utility-gray-blue-700',
-  },
-  DATABASE: {
-    Icon: Database01,
-    badge: 'blue',
-    tile: 'tw:bg-utility-blue-50 tw:text-utility-blue-700',
-  },
-  SCHEMA: {
-    Icon: Folder,
-    badge: 'indigo',
-    tile: 'tw:bg-utility-indigo-50 tw:text-utility-indigo-700',
-  },
-  TABLE: {
-    Icon: Table,
-    badge: 'brand',
-    tile: 'tw:bg-utility-brand-50 tw:text-utility-brand-700',
-  },
-  VIEW: {
-    Icon: Eye,
-    badge: 'purple',
-    tile: 'tw:bg-utility-purple-50 tw:text-utility-purple-700',
-  },
-};
-
-/** Anything the crawl returns that this list was not told about. */
-const UNKNOWN_LOOK = {
-  Icon: Database01,
-  badge: 'gray' as BadgeColors,
-  tile: 'tw:bg-secondary tw:text-tertiary',
-};
 
 /**
  * The catalog: what the crawl has cached, and how it is governed (FR-1.2).
@@ -109,11 +58,15 @@ export default function CatalogPage() {
   const assetType = params.get('type') ?? '';
   const facets = useMemo(() => params.getAll('facet'), [params]);
   const offset = Number(params.get('offset') ?? 0);
+  // In the URL with everything else, so a link reopens the same page of the
+  // same list rather than the first 25 of it.
+  const sized = Number(params.get('size'));
+  const pageSize = PAGE_SIZES.includes(sized) ? sized : PAGE_SIZE;
 
   const { data, isLoading, error, isFetching } = useQuery({
-    queryKey: ['catalog-assets', search, assetType, facets, offset],
+    queryKey: ['catalog-assets', search, assetType, facets, offset, pageSize],
     queryFn: () =>
-      fetchAssets({ search, assetType, facets, limit: PAGE_SIZE, offset }),
+      fetchAssets({ search, assetType, facets, limit: pageSize, offset }),
     // Without this the table empties on every keystroke-driven refetch and the
     // page jumps; the stale rows are correct until the new ones arrive.
     placeholderData: keepPreviousData,
@@ -150,6 +103,44 @@ export default function CatalogPage() {
   }
 
   const total = data?.total ?? 0;
+
+  /*
+   * Ending the results where the filters end is a thing only the browser can
+   * work out: the rail is as tall as however many tags this deployment
+   * happens to have, which no constant here could know. So it is measured,
+   * and the results are capped to it -- the two columns then bottom out on
+   * the same line however the catalog is tagged.
+   *
+   * There is no feedback loop to worry about: the rail is `items-start`, so
+   * its height is its own content and never a reaction to this one's.
+   */
+  const [rail, setRail] = useState<HTMLElement | null>(null);
+  const [railHeight, setRailHeight] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (
+      rail === null ||
+      typeof ResizeObserver === 'undefined' ||
+      typeof window.matchMedia !== 'function'
+    ) {
+      return;
+    }
+    // Tailwind's `lg`. Below it the rail sits above the results rather than
+    // beside them, and matching heights would squash the list for no reason.
+    const beside = window.matchMedia('(min-width: 1024px)');
+    const measure = () =>
+      setRailHeight(beside.matches ? rail.offsetHeight : null);
+
+    const observer = new ResizeObserver(measure);
+    observer.observe(rail);
+    beside.addEventListener('change', measure);
+    measure();
+
+    return () => {
+      observer.disconnect();
+      beside.removeEventListener('change', measure);
+    };
+  }, [rail]);
   const filtered = Boolean(search || assetType || facets.length);
 
   return (
@@ -275,7 +266,7 @@ export default function CatalogPage() {
       )}
 
       <div className="tw:mt-6 tw:flex tw:flex-col tw:gap-6 tw:lg:flex-row tw:lg:items-start">
-        <FacetRail active={facets} onToggle={toggleFacet} />
+        <FacetRail active={facets} innerRef={setRail} onToggle={toggleFacet} />
 
         <section className="tw:min-w-0 tw:flex-1">
         <div className="tw:flex tw:items-center tw:justify-between">
@@ -285,52 +276,66 @@ export default function CatalogPage() {
               : `${total} ${total === 1 ? 'asset' : 'assets'}${filtered ? ' matching' : ' cached'}`}
             {isFetching && !isLoading && ' · refreshing'}
           </p>
-          {total > PAGE_SIZE && (
-            <div className="tw:flex tw:items-center tw:gap-2">
-              <Button
-                color="tertiary"
-                isDisabled={offset === 0}
-                onPress={() =>
-                  setParams((draft) => {
-                    draft.set('offset', String(Math.max(0, offset - PAGE_SIZE)));
-                    return draft;
-                  })
-                }
-                size="sm">
-                Previous
-              </Button>
-              <span className="tw:text-xs tw:text-tertiary">
-                {offset + 1}–{Math.min(offset + PAGE_SIZE, total)} of {total}
-              </span>
-              <Button
-                color="tertiary"
-                isDisabled={offset + PAGE_SIZE >= total}
-                onPress={() =>
-                  setParams((draft) => {
-                    draft.set('offset', String(offset + PAGE_SIZE));
-                    return draft;
-                  })
-                }
-                size="sm">
-                Next
-              </Button>
-            </div>
+          {total > 0 && (
+            <span className="tw:text-xs tw:text-tertiary">
+              Showing {offset + 1}–{Math.min(offset + pageSize, total)}
+            </span>
           )}
         </div>
 
         {!isLoading && data?.items.length === 0 && <Empty filtered={filtered} />}
 
         {/*
-          * One bordered list with dividers rather than a stack of separate
-          * cards. The cards spent a third of the column on the gaps between
-          * them, which is a third fewer rows on screen for a page that is
-          * expected to get long.
+          * Boxes of one height in a column that scrolls on its own, the way
+          * OpenMetadata's Explore lists what it found.
+          *
+          * The divided list this replaced let every row take the height its
+          * description happened to need, so the page rocked as it was scrolled
+          * -- three lines here, one there -- and the eye lost the column it was
+          * tracking. `auto-rows-fr` makes every box as tall as the tallest, and
+          * the footer of each sits on the same line as its neighbours', which
+          * is what makes a list of boxes scannable rather than merely pretty.
+          *
+          * The region scrolls rather than the page so the filters stay put: the
+          * rail beside it is how the list is narrowed, and having to scroll
+          * back up to reach it is the whole reason this page felt long.
           */}
-        <ul className="tw:mt-4 tw:divide-y tw:divide-secondary tw:overflow-hidden tw:rounded-xl tw:border tw:border-secondary tw:bg-primary">
-          {data?.items.map((asset) => (
-            <AssetRow asset={asset} key={asset.id} />
-          ))}
-        </ul>
+        {/* The measured height wins over the class when the rail is beside
+          * the results; the class is what runs before the first measurement
+          * and on a narrow window, where the rail is stacked above and its
+          * height has nothing to do with how tall this should be. */}
+        <div
+          className="tw:mt-4 tw:max-h-[calc(100vh_-_18rem)] tw:overflow-y-auto tw:pr-1"
+          style={railHeight === null ? undefined : { maxHeight: railHeight }}>
+          <ul className="tw:grid tw:auto-rows-fr tw:gap-3">
+            {data?.items.map((asset) => (
+              <AssetCard asset={asset} key={asset.id} />
+            ))}
+          </ul>
+        </div>
+
+        <Pager
+          label="Catalog pages"
+          noun="Assets"
+          offset={offset}
+          onOffset={(next) =>
+            setParams((draft) => {
+              draft.set('offset', String(next));
+              return draft;
+            })
+          }
+          onPageSize={(next) =>
+            setParams((draft) => {
+              draft.set('size', String(next));
+              // A different page size means different page boundaries, so the
+              // offset it was on no longer points at anything the reader chose.
+              draft.delete('offset');
+              return draft;
+            })
+          }
+          pageSize={pageSize}
+          total={total}
+        />
         </section>
       </div>
     </>
@@ -361,62 +366,73 @@ function Stat({
   );
 }
 
-function AssetRow({ asset }: { asset: AssetSummary }) {
+function AssetCard({ asset }: { asset: AssetSummary }) {
   const facets = listFacets(asset.facets);
-  const look = ASSET_LOOK[asset.assetType] ?? UNKNOWN_LOOK;
+  const look = lookFor(asset.assetType);
   const Icon = look.Icon;
+  const description = plainText(asset.description);
 
   return (
-    <li className="tw:group tw:relative tw:bg-primary tw:transition-colors tw:hover:bg-secondary_subtle">
+    <li className="tw:group tw:relative tw:flex tw:flex-col tw:rounded-xl tw:border tw:border-secondary tw:bg-primary tw:transition-colors tw:hover:bg-secondary_subtle">
       {/*
-        * The whole row is the link, not just the name. A list whose rows are
-        * navigable only through eighty pixels of text asks the reader to aim.
+        * The whole box is the link, not just the name. A box whose only
+        * navigable part is eighty pixels of text asks the reader to aim.
         */}
       {/* The name is the label, not a second copy of the text: a hidden
-        * duplicate would make the row's own name ambiguous to a screen reader
-        * and to any test that looks the row up by it. */}
+        * duplicate would make the box's own name ambiguous to a screen reader
+        * and to any test that looks the box up by it. */}
       <Link
         aria-label={asset.displayName || asset.name}
-        className="tw:absolute tw:inset-0 tw:z-0"
+        className="tw:absolute tw:inset-0 tw:z-0 tw:rounded-xl"
         to={`/catalog/${encodeURIComponent(asset.fqn)}`}
       />
 
-      <div className="tw:pointer-events-none tw:relative tw:z-10 tw:flex tw:gap-3.5 tw:px-4 tw:py-3.5">
-        <span
-          className={`tw:mt-0.5 tw:flex tw:size-9 tw:shrink-0 tw:items-center tw:justify-center tw:rounded-lg ${look.tile}`}>
-          <Icon className="tw:size-4.5" />
-        </span>
+      <div className="tw:pointer-events-none tw:relative tw:z-10 tw:flex tw:flex-1 tw:flex-col tw:px-4 tw:py-3.5">
+        {/* Where it lives, above what it is called -- the breadcrumb reads
+          * first because two tables named `customer` are told apart by it. */}
+        <p className="tw:truncate tw:font-mono tw:text-xs tw:text-quaternary">
+          {asset.fqn}
+        </p>
 
-        <div className="tw:min-w-0 tw:flex-1">
-          <div className="tw:flex tw:flex-wrap tw:items-center tw:gap-x-2 tw:gap-y-1">
-            <span className="tw:truncate tw:text-md tw:font-semibold tw:text-primary tw:group-hover:text-brand-secondary">
-              {asset.displayName || asset.name}
-            </span>
-            {/* "color", not "modern": the modern badge is gray only, and gray
-              * for every kind is the thing this row is trying to stop being. */}
-            <Badge color={look.badge} size="sm" type="color">
-              {asset.assetType}
-            </Badge>
-            {asset.tier && (
-              <Badge color="warning" size="sm" type="pill-color">
-                {asset.tier}
+        <div className="tw:mt-1.5 tw:flex tw:gap-3.5">
+          <span
+            className={`tw:mt-0.5 tw:flex tw:size-9 tw:shrink-0 tw:items-center tw:justify-center tw:rounded-lg ${look.tile}`}>
+            <Icon className="tw:size-4.5" />
+          </span>
+
+          <div className="tw:min-w-0 tw:flex-1">
+            <div className="tw:flex tw:flex-wrap tw:items-center tw:gap-x-2 tw:gap-y-1">
+              <span className="tw:truncate tw:text-md tw:font-semibold tw:text-primary tw:group-hover:text-brand-secondary">
+                {asset.displayName || asset.name}
+              </span>
+              {/* "color", not "modern": the modern badge is gray only, and gray
+                * for every kind is the thing this box is trying to stop being. */}
+              <Badge color={look.badge} size="sm" type="color">
+                {asset.assetType}
               </Badge>
-            )}
-          </div>
+              {asset.tier && (
+                <Badge color="warning" size="sm" type="pill-color">
+                  {asset.tier}
+                </Badge>
+              )}
+            </div>
 
-          <p className="tw:mt-0.5 tw:truncate tw:font-mono tw:text-xs tw:text-quaternary">
-            {asset.fqn}
-          </p>
-
-          {plainText(asset.description) && (
-            <p className="tw:mt-1.5 tw:line-clamp-2 tw:text-sm tw:text-tertiary">
-              {plainText(asset.description)}
+            {/* Kept even when empty, and said out loud. An absent description
+              * is a governance gap someone has to close, and a blank space
+              * where the next box has two lines would only look like a
+              * rendering fault. */}
+            <p
+              className={`tw:mt-1 tw:line-clamp-2 tw:text-sm ${description ? 'tw:text-tertiary' : 'tw:text-quaternary'}`}>
+              {description || 'No description'}
             </p>
-          )}
+          </div>
+        </div>
 
+        {/* Pushed to the bottom so that every box's footer sits on one line. */}
+        <div className="tw:mt-auto tw:pt-2.5">
           {(facets.length > 0 || asset.owners.length > 0) && (
-            // Chips are their own links, so this row gets its clicks back.
-            <div className="tw:pointer-events-auto tw:mt-2 tw:flex tw:flex-wrap tw:items-center tw:gap-1.5">
+            // Chips are their own links, so this box gets its clicks back.
+            <div className="tw:pointer-events-auto tw:flex tw:flex-wrap tw:items-center tw:gap-1.5">
               {facets.map((facet) => (
                 <FacetChip
                   facet={facet}
@@ -472,9 +488,12 @@ const FACET_SEARCHABLE = 10;
  */
 function FacetRail({
   active,
+  innerRef,
   onToggle,
 }: {
   active: string[];
+  /** Handed back so the results beside it can be capped to its height. */
+  innerRef: (node: HTMLElement | null) => void;
   onToggle: (value: string) => void;
 }) {
   const { data } = useQuery({
@@ -513,7 +532,9 @@ function FacetRail({
   // hidden: this is the only way to filter on a tag, and a narrow window is not
   // a reason to take that away.
   return (
-    <aside className="tw:w-full tw:shrink-0 tw:overflow-hidden tw:rounded-xl tw:border tw:border-secondary tw:bg-primary tw:lg:sticky tw:lg:top-4 tw:lg:w-64 tw:lg:self-start">
+    <aside
+      className="tw:w-full tw:shrink-0 tw:overflow-hidden tw:rounded-xl tw:border tw:border-secondary tw:bg-primary tw:lg:sticky tw:lg:top-4 tw:lg:w-64 tw:lg:self-start"
+      ref={innerRef}>
       <div className="tw:flex tw:items-center tw:gap-2 tw:border-b tw:border-secondary tw:px-4 tw:py-3">
         <FilterLines className="tw:size-4 tw:text-tertiary" />
         <h2 className="tw:text-sm tw:font-semibold tw:text-primary">Filters</h2>

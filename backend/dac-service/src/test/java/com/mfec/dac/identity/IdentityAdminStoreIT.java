@@ -325,6 +325,207 @@ class IdentityAdminStoreIT {
   }
 
   @Nested
+  @DisplayName("attributes entered here")
+  class LocalAttributes {
+
+    private UUID entraUser() {
+      return jdbi.withHandle(
+          handle ->
+              handle
+                  .createQuery(
+                      """
+                      INSERT INTO principal
+                          (principal_type, username, display_name, source, enabled)
+                      VALUES ('USER', 'entra_user', 'Entra User', 'entra', true)
+                      RETURNING id
+                      """)
+                  .mapTo(UUID.class)
+                  .one());
+    }
+
+    /** Every row for a value, open or closed, so a reopen can be told from a second insert. */
+    private List<Optional<java.time.Instant>> rows(UUID id, String key, String value) {
+      return jdbi.withHandle(
+          handle ->
+              handle
+                  .createQuery(
+                      """
+                      SELECT valid_to FROM principal_attribute
+                      WHERE principal_id = :id AND attr_key = :key AND attr_value = :value
+                      ORDER BY valid_from
+                      """)
+                  .bind("id", id)
+                  .bind("key", key)
+                  .bind("value", value)
+                  .mapTo(java.time.Instant.class)
+                  .list()
+                  .stream()
+                  .map(Optional::ofNullable)
+                  .toList());
+    }
+
+    @Test
+    @DisplayName("a value can be given, and giving it again changes nothing")
+    void idempotent() {
+      UUID id = create("analyst_a");
+
+      assertThat(store.addAttribute(id, "clearance", "L2", "cleared", "admin", "192.0.2.10"))
+          .isTrue();
+      assertThat(store.addAttribute(id, "clearance", "L2", "cleared", "admin", "192.0.2.10"))
+          .isFalse();
+      assertThat(rows(id, "clearance", "L2")).hasSize(1);
+    }
+
+    @Test
+    @DisplayName("an attribute holds several values at once")
+    void multiValued() {
+      UUID id = create("analyst_a");
+      store.addAttribute(id, "branch", "BKK-01", null, "admin", null);
+      store.addAttribute(id, "branch", "CNX-01", null, "admin", null);
+
+      List<String> held =
+          jdbi.withHandle(
+              handle ->
+                  handle
+                      .createQuery(
+                          """
+                          SELECT attr_value FROM principal_attribute
+                          WHERE principal_id = :id AND attr_key = 'branch' AND valid_to IS NULL
+                          """)
+                      .bind("id", id)
+                      .mapTo(String.class)
+                      .list());
+      assertThat(held).containsExactlyInAnyOrder("BKK-01", "CNX-01");
+    }
+
+    @Test
+    @DisplayName("withdrawing closes the row rather than deleting it")
+    void withdrawalKeepsTheHistory() {
+      // An access decision made in March was made against the attributes of
+      // March. Deleting the row would leave an audit replaying it against
+      // today's and answering a question nobody asked.
+      UUID id = create("analyst_a");
+      store.addAttribute(id, "clearance", "L2", null, "admin", null);
+
+      assertThat(store.removeAttribute(id, "clearance", "L2", "left the team", "admin", null))
+          .isTrue();
+      assertThat(rows(id, "clearance", "L2")).singleElement().matches(Optional::isPresent);
+    }
+
+    @Test
+    @DisplayName("giving back a withdrawn value reopens that row, it does not add a second")
+    void reopensRatherThanInserts() {
+      // The unique constraint spans the closed row too, so an insert over a
+      // withdrawn value would fail rather than restore it. This is the case
+      // that would have shipped broken and only shown up on somebody's second
+      // change of mind.
+      UUID id = create("analyst_a");
+      store.addAttribute(id, "clearance", "L2", null, "admin", null);
+      store.removeAttribute(id, "clearance", "L2", null, "admin", null);
+
+      assertThat(store.addAttribute(id, "clearance", "L2", "cleared again", "admin", null))
+          .isTrue();
+      assertThat(rows(id, "clearance", "L2")).singleElement().matches(Optional::isEmpty);
+    }
+
+    @Test
+    @DisplayName("withdrawing something they were not carrying is a no-op, not an error")
+    void withdrawingNothing() {
+      UUID id = create("analyst_a");
+      assertThat(store.removeAttribute(id, "clearance", "L2", null, "admin", null)).isFalse();
+    }
+
+    @Test
+    @DisplayName("a value a directory owns is refused, with the reason")
+    void aDirectoryOwnsItsOwn() {
+      // Closing an entra row here would hold exactly until the next sync put
+      // it back, and the person who did it would have no way of knowing.
+      UUID id = entraUser();
+      jdbi.useHandle(
+          handle ->
+              handle
+                  .createUpdate(
+                      """
+                      INSERT INTO principal_attribute (principal_id, attr_key, attr_value, source)
+                      VALUES (:id, 'department', 'FINANCE', 'entra')
+                      """)
+                  .bind("id", id)
+                  .execute());
+
+      assertThatThrownBy(
+              () -> store.removeAttribute(id, "department", "FINANCE", null, "admin", null))
+          .isInstanceOf(IdentityAdminStore.InvalidPrincipalException.class)
+          .hasMessageContaining("came from a directory");
+    }
+
+    @Test
+    @DisplayName("a synced principal can still be given one, because the two cannot collide")
+    void localOnTopOfSynced() {
+      // The whole point: entra carries a department because HR does, and
+      // carries no clearance because nobody in HR decides one. A sync writes
+      // only its own rows, so both live side by side and the engine reads
+      // both.
+      UUID id = entraUser();
+      assertThat(store.addAttribute(id, "clearance", "L3", "cleared", "admin", null)).isTrue();
+
+      String source =
+          jdbi.withHandle(
+              handle ->
+                  handle
+                      .createQuery(
+                          """
+                          SELECT source FROM principal_attribute
+                          WHERE principal_id = :id AND attr_key = 'clearance'
+                          """)
+                      .bind("id", id)
+                      .mapTo(String.class)
+                      .one());
+      assertThat(source).isEqualTo("local");
+    }
+
+    @Test
+    @DisplayName("a name a rule could not read is refused at the point it is typed")
+    void keyMustBeReadableInARule() {
+      UUID id = create("analyst_a");
+      // An expression reaches it as user.<name>. "cost centre" parses as
+      // something else; "user.dept" parses as nothing at all.
+      assertThatThrownBy(() -> store.addAttribute(id, "cost centre", "CC-1", null, "admin", null))
+          .isInstanceOf(IdentityAdminStore.InvalidPrincipalException.class);
+      assertThatThrownBy(() -> store.addAttribute(id, "user.dept", "FIN", null, "admin", null))
+          .isInstanceOf(IdentityAdminStore.InvalidPrincipalException.class);
+      assertThatThrownBy(() -> store.addAttribute(id, "clearance", "  ", null, "admin", null))
+          .isInstanceOf(IdentityAdminStore.InvalidPrincipalException.class);
+    }
+
+    @Test
+    @DisplayName("the audit trail names the value, not just the attribute")
+    void auditCarriesTheValue() {
+      // "somebody changed clearance" is not an answer an auditor can use.
+      UUID id = create("analyst_a");
+      store.addAttribute(id, "clearance", "L2", "CAB-114", "admin", "192.0.2.10");
+      store.removeAttribute(id, "clearance", "L2", "role changed", "admin", "192.0.2.10");
+
+      List<String> trail =
+          jdbi.withHandle(
+              handle ->
+                  handle
+                      .createQuery(
+                          """
+                          SELECT action || ' ' || attr_key || ' ' || attr_value || ' ' || reason
+                          FROM audit_identity_change
+                          WHERE target_username = 'analyst_a' AND attr_key IS NOT NULL
+                          ORDER BY id
+                          """)
+                      .mapTo(String.class)
+                      .list());
+      assertThat(trail)
+          .containsExactly(
+              "ADD_ATTRIBUTE clearance L2 CAB-114",
+              "REMOVE_ATTRIBUTE clearance L2 role changed");
+    }
+  }
+
+  @Nested
   @DisplayName("the audit trail")
   class Audit {
 

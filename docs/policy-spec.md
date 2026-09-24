@@ -86,14 +86,17 @@ ORG → DOMAIN (shallow → deep) → SERVICE → DATABASE → SCHEMA → TABLE 
 ```
 
 Each is evaluated independently, producing its own decision. Those decisions are
-then composed by **intersection**:
+then composed by **intersection across layers and union within one** — any
+single matching ALLOW satisfies its own layer, and every layer that holds an
+ALLOW must be satisfied. A layer holding none is not a gate at all, or failing
+to write a SERVICE-level policy would lock out the estate.
 
 | Situation | Rule |
 |---|---|
 | Subscription ALLOW and DENY | **DENY wins** |
 | Subscription across layers | must pass **every** layer |
 | Row filters from several policies | **ANDed** |
-| Two masks on one column | **strictest wins**: `NULLIFY > CONSTANT > HASH > REGEX_REPLACE > PARTIAL > ROUNDING > plaintext` |
+| Two masks on one column | **strictest wins**: `NULLIFY 7 > CONSTANT 6 > HASH 5 > REGEX_REPLACE 4 > PARTIAL 3 > ROUNDING 2 > CONDITIONAL 1 > plaintext 0`. Ties keep the incumbent, so the result does not depend on evaluation order |
 | Mask and hide on one column | **hide wins** |
 | No policy matches | **deny** |
 
@@ -101,6 +104,17 @@ A lower layer may only tighten. It may relax a higher one only if that higher
 policy sets `allowLocalOverride: true` **and** the author holds the right to
 override — and the override is written to `audit_policy_change` with a mandatory
 reason.
+
+There is no "latest wins" and no priority number anywhere in the model. Both
+were considered and rejected: the first makes an afternoon edit silently undo a
+morning one and cannot answer *why did this work yesterday*, and the second
+turns authorship into a numbering war that can only be audited by reading every
+policy in the estate. Strictest-wins fails towards less visible data, which
+produces a complaint rather than a leak.
+
+**Worked examples of all of this, written for the people who author policies
+rather than the people who build the engine, are in
+[policy-conflict-resolution.md](policy-conflict-resolution.md).**
 
 ### The mistake this rule exists to prevent
 
@@ -137,7 +151,7 @@ Masking functions and their intent:
 | `PARTIAL` | keep last *n*, for national IDs, phone numbers, card numbers |
 | `REGEX_REPLACE` | e.g. email local part |
 | `ROUNDING` | date of birth to year, salary to band |
-| `CONDITIONAL` | wrapper that makes any of the above a cell mask |
+| `CONDITIONAL` | wrapper that makes any of the above a cell mask. ⚠️ It ranks **below** every unconditional function, so a plain `ROUNDING` on the same column beats it and the condition is lost wholesale — the cell mask becomes an unconditional one |
 
 ## The decision
 

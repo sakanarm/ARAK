@@ -44,6 +44,11 @@ import java.util.UUID;
  *   <li><b>App roles</b> — {@code app_role_assignment} is ours outright, so a
  *       role may be granted to any principal whatever directory they came
  *       from.
+ *   <li><b>Local attributes</b> — the values an ABAC rule is written against
+ *       that no directory carries. A {@code source = 'local'} attribute row may
+ *       be put on any principal, synced or not, because a sync writes only its
+ *       own rows: the two cannot overwrite each other, and the engine reads
+ *       both.
  * </ul>
  *
  * <p>A role change reaches the console immediately, because {@code /auth/me}
@@ -141,6 +146,9 @@ public class PrincipalResource {
 
   /** A new password chosen by an administrator on somebody else's behalf. */
   public record PasswordReset(String password) {}
+
+  /** One attribute value to give somebody, and why. */
+  public record AttributeChange(String key, String value, String reason) {}
 
   /**
    * Every role in force, with the count of administrators beside it.
@@ -248,6 +256,79 @@ public class PrincipalResource {
           return null;
         });
     return principals.detail(id.toString()).orElseThrow(() -> new NotFoundException("No principal " + id));
+  }
+
+  /**
+   * Gives a principal an attribute (FR-2.4).
+   *
+   * <p>Answers with the principal rather than with an acknowledgement, because
+   * the question the screen has next is what they now carry — and the answer
+   * includes the rows this call did not write, from every directory they are
+   * in.
+   *
+   * <p>200 either way: an attribute somebody already carries is the state the
+   * caller asked for. {@code changed} says which it was.
+   */
+  @POST
+  @Path("/{id}/attributes")
+  @Consumes(MediaType.APPLICATION_JSON)
+  @Secured({"PLATFORM_ADMIN"})
+  public Map<String, Object> addAttribute(
+      @PathParam("id") UUID id,
+      AttributeChange change,
+      @Context SecurityContext security,
+      @Context HttpServletRequest request) {
+    AuthenticatedUser actor = caller(security);
+    if (change == null) {
+      throw new BadRequestException("Send an attribute to add");
+    }
+    boolean changed =
+        translate(
+            () ->
+                admin.addAttribute(
+                    id,
+                    change.key(),
+                    change.value(),
+                    change.reason(),
+                    actor.username(),
+                    clientIp(request)));
+    return Map.of(
+        "changed",
+        changed,
+        "principal",
+        principals.detail(id.toString()).orElseThrow(() -> new NotFoundException("No principal " + id)));
+  }
+
+  /**
+   * Withdraws an attribute this platform holds.
+   *
+   * <p>Query parameters rather than a body, for the same reason the role
+   * withdrawal takes them: a DELETE with a body is read inconsistently, and
+   * what is being withdrawn is identified by the pair (key, value) — an
+   * attribute is multi-valued, so withdrawing {@code clearance} without saying
+   * which one would be ambiguous.
+   */
+  @DELETE
+  @Path("/{id}/attributes")
+  @Secured({"PLATFORM_ADMIN"})
+  public Map<String, Object> removeAttribute(
+      @PathParam("id") UUID id,
+      @QueryParam("key") String key,
+      @QueryParam("value") String value,
+      @QueryParam("reason") String reason,
+      @Context SecurityContext security,
+      @Context HttpServletRequest request) {
+    AuthenticatedUser actor = caller(security);
+    boolean changed =
+        translate(
+            () ->
+                admin.removeAttribute(
+                    id, key, value, reason, actor.username(), clientIp(request)));
+    return Map.of(
+        "changed",
+        changed,
+        "principal",
+        principals.detail(id.toString()).orElseThrow(() -> new NotFoundException("No principal " + id)));
   }
 
   /** Replaces a local account's password; the holder must change it at next login. */

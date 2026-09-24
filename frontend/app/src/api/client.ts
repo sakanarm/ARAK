@@ -193,6 +193,8 @@ export interface ColumnDetail {
 
 export interface AssetDetail {
   asset: AssetSummary;
+  /** Null when this asset did not come from a crawl, or none is configured. */
+  openMetadataUrl: string | null;
   customProperties: Record<string, unknown>;
   columns: ColumnDetail[];
   facets: FacetRow[];

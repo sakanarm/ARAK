@@ -16,21 +16,52 @@ import type { NavItemType } from '@openmetadata/ui-core-components/components/ap
 /**
  * The console's sections, in the order the work lands.
  *
- * Sections whose milestone has not shipped carry their milestone as a badge and
- * route to a placeholder that says so. Hiding them would be tidier but would
- * also hide the shape of the product from the people who have to plan around
- * it, and a dead link that explains itself beats a menu that grows silently.
+ * Sections whose milestone has not shipped route to a placeholder that says so,
+ * and most of them carry their milestone as a badge in the rail: a dead link
+ * that explains itself beats a menu that grows silently, and it keeps the shape
+ * of the product visible to the people planning around it.
+ *
+ * That argument has a limit, and `hidden` is where it stops. A section with
+ * nothing behind it yet reads to somebody being shown the product as a feature
+ * that is broken rather than one that is coming, and two of them side by side
+ * read as a console half built. Those are taken out of the rail until they do
+ * something, and put back the moment they do. The route stays either way, so a
+ * bookmark or a link from a document still lands somewhere that explains
+ * itself rather than on the home page.
  */
 export interface NavSection extends NavItemType {
   href: string;
   /** Null once the section is real. */
   milestone: string | null;
+  /**
+   * Kept out of the rail while there is nothing behind it.
+   *
+   * <p>Not a permission: it hides a section from everyone, including an
+   * administrator, and hides nothing that anybody could otherwise reach. The
+   * route stays live and still answers with the placeholder.
+   */
+  hidden?: boolean;
   description: string;
+  /**
+   * Who this section is offered to.
+   *
+   * <p>`'everyone'` means any signed-in account. Otherwise the roles that get
+   * it, with PLATFORM_ADMIN implied throughout -- so an empty list is the way
+   * to say "administrators only".
+   *
+   * <p>This is the menu, not the boundary. Every section listed here is also
+   * refused at the API by the roles its resource declares, and this list is
+   * kept to match them: a requester who never had People or Settings should
+   * not be handed two links whose only outcome is a 403. Narrowing the rail
+   * does not narrow anyone's rights, and widening it would not widen them.
+   */
+  visibleTo: 'everyone' | string[];
 }
 
 export const NAV_SECTIONS: NavSection[] = [
   {
     label: 'Home',
+    visibleTo: 'everyone',
     href: '/',
     icon: Home01,
     milestone: null,
@@ -38,6 +69,7 @@ export const NAV_SECTIONS: NavSection[] = [
   },
   {
     label: 'Catalog',
+    visibleTo: 'everyone',
     href: '/catalog',
     icon: Database01,
     milestone: null,
@@ -46,6 +78,7 @@ export const NAV_SECTIONS: NavSection[] = [
   },
   {
     label: 'Governance',
+    visibleTo: ['POLICY_AUTHOR', 'DATA_OWNER', 'AUDITOR'],
     href: '/governance',
     icon: BookOpen01,
     milestone: null,
@@ -54,6 +87,7 @@ export const NAV_SECTIONS: NavSection[] = [
   },
   {
     label: 'People',
+    visibleTo: [],
     href: '/principals',
     icon: User03,
     milestone: null,
@@ -62,6 +96,7 @@ export const NAV_SECTIONS: NavSection[] = [
   },
   {
     label: 'Policies',
+    visibleTo: ['POLICY_AUTHOR', 'DATA_OWNER', 'AUDITOR'],
     href: '/policies',
     icon: ShieldTick,
     milestone: null,
@@ -70,6 +105,7 @@ export const NAV_SECTIONS: NavSection[] = [
   },
   {
     label: 'Query',
+    visibleTo: 'everyone',
     href: '/query',
     icon: SearchRefraction,
     milestone: null,
@@ -78,6 +114,7 @@ export const NAV_SECTIONS: NavSection[] = [
   },
   {
     label: 'Simulator',
+    visibleTo: ['POLICY_AUTHOR', 'DATA_OWNER', 'AUDITOR'],
     href: '/simulator',
     icon: Activity,
     milestone: null,
@@ -86,17 +123,29 @@ export const NAV_SECTIONS: NavSection[] = [
   },
   {
     label: 'Enforcement',
+    visibleTo: ['POLICY_AUTHOR', 'DATA_OWNER'],
     href: '/enforcement',
     icon: FileShield02,
     milestone: 'M5',
+    // Hidden at the user's request until it does something. M5 has shipped one
+    // slice -- a decision compiled into a secure view -- and none of it has a
+    // screen yet, so the link leads only to the placeholder. Put it back with
+    // the apply/rollback slice.
+    hidden: true,
     description:
       'Native source config, secure views and the query API, with drift detection.',
   },
   {
     label: 'Access',
+    visibleTo: ['POLICY_AUTHOR', 'DATA_OWNER', 'AUDITOR'],
     href: '/access',
     icon: Users01,
     milestone: 'M8',
+    // Hidden for the same reason. Grants themselves do work -- they are issued
+    // and revoked from the asset page, and "who can reach this" is the Access
+    // tab there -- but this rail entry has no page of its own, so it promises
+    // a screen that is not there. Put it back with the M8 overview.
+    hidden: true,
     description: 'Grants, expiry and who can reach what.',
   },
   // Sources is not in this rail. It is a setup screen, reached from Settings
@@ -105,6 +154,7 @@ export const NAV_SECTIONS: NavSection[] = [
   // though registering a database were daily work, which it is not.
   {
     label: 'Settings',
+    visibleTo: [],
     href: '/settings',
     icon: Settings01,
     milestone: null,
@@ -113,6 +163,7 @@ export const NAV_SECTIONS: NavSection[] = [
   },
   {
     label: 'System',
+    visibleTo: [],
     href: '/system',
     icon: Server01,
     milestone: null,
@@ -122,4 +173,20 @@ export const NAV_SECTIONS: NavSection[] = [
 
 export function findSection(pathname: string): NavSection | undefined {
   return NAV_SECTIONS.find((section) => section.href === pathname);
+}
+
+/**
+ * The sections one account is offered.
+ *
+ * @param hasRole the store's check, which already treats PLATFORM_ADMIN as
+ *     holding every role
+ */
+export function sectionsFor(
+  hasRole: (...roles: string[]) => boolean
+): NavSection[] {
+  return NAV_SECTIONS.filter(
+    (section) =>
+      !section.hidden &&
+      (section.visibleTo === 'everyone' || hasRole(...section.visibleTo))
+  );
 }

@@ -1,12 +1,17 @@
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { Plus, SearchLg, ShieldTick } from '@untitledui/icons';
 import { Chip as Badge } from '../../components/chips';
 import { Button } from '@openmetadata/ui-core-components/components/base/buttons/button';
 import { Input } from '@openmetadata/ui-core-components/components/base/input/input';
 import { apiErrorMessage } from '../../api/client';
-import { fetchPolicies, type StoredPolicy } from '../../api/policies';
+import {
+  countPolicies,
+  fetchPolicies,
+  type StoredPolicy,
+} from '../../api/policies';
+import { PAGE_SIZES, Pager } from '../../components/Pager';
 import { Select } from './controls';
 import { describeSelector, describeSubject } from './policyLanguage';
 
@@ -18,6 +23,15 @@ import { describeSelector, describeSubject } from './policyLanguage';
  * row carries its own one-line readback, generated from the document. Names
  * drift from intent; the document cannot.
  */
+
+/**
+ * How many policies fit before the page is longer than it is useful.
+ *
+ * Fifteen rather than the catalogue's twenty-five. A policy row is a title
+ * and a sentence of readback where an asset card is a name and two chips, so
+ * the same count of rows is roughly twice the page.
+ */
+const PAGE_SIZE = 15;
 
 const STATE_TONE: Record<string, 'success' | 'gray' | 'warning' | 'error'> = {
   ACTIVE: 'success',
@@ -36,16 +50,44 @@ export default function PolicyListPage() {
   const search = params.get('q') ?? '';
   const [searchDraft, setSearchDraft] = useState(search);
 
-  const { data, isLoading, error } = useQuery({
-    queryKey: ['policies', state, type, scopeLevel, search],
-    queryFn: () => fetchPolicies({ state, type, scopeLevel, q: search }),
+  const offset = Math.max(0, Number(params.get('offset') ?? 0) || 0);
+  const sized = Number(params.get('size') ?? PAGE_SIZE);
+  const pageSize = PAGE_SIZES.includes(sized) ? sized : PAGE_SIZE;
+  const filter = { state, type, scopeLevel, q: search };
+
+  const { data, isLoading, isFetching, error } = useQuery({
+    queryKey: ['policies', state, type, scopeLevel, search, offset, pageSize],
+    queryFn: () => fetchPolicies({ ...filter, limit: pageSize, offset }),
+    // The page being left stays on screen while the next one is fetched.
+    // Without this the list empties for the length of a request and the page
+    // springs back to the top, which reads as something having gone wrong
+    // rather than as a page turn.
+    placeholderData: keepPreviousData,
   });
+
+  // Counted separately, and deliberately not keyed on the offset: the total
+  // belongs to the filter, not to the page, so clicking through pages must not
+  // make the server count the same rows again.
+  const { data: total = 0 } = useQuery({
+    queryKey: ['policies-count', state, type, scopeLevel, search],
+    queryFn: () => countPolicies(filter),
+  });
+
+  const filtered = Boolean(state || type || scopeLevel || search);
 
   function update(key: string, value: string) {
     const draft = new URLSearchParams(params);
     if (value) draft.set(key, value);
     else draft.delete(key);
+    // Page four of the old filter is not page four of the new one, and more
+    // often than not it is past the end of it -- an empty list that reads as
+    // "nothing matches" when the answer was sitting on page one.
+    draft.delete('offset');
     setParams(draft, { replace: true });
+  }
+
+  function page(next: URLSearchParams) {
+    setParams(next, { replace: true });
   }
 
   return (
@@ -161,8 +203,24 @@ export default function PolicyListPage() {
         </p>
       )}
 
-      <section className="tw:mt-6 tw:flex tw:flex-col tw:gap-3">
-        {isLoading && <p className="tw:text-sm tw:text-tertiary">Loading…</p>}
+      {/* The size of the answer, above the answer. At the foot of the list it
+          would arrive after the reader had already decided whether to scroll,
+          which is the one moment it was useful. */}
+      <div className="tw:mt-6 tw:flex tw:flex-wrap tw:items-baseline tw:justify-between tw:gap-2">
+        <p className="tw:text-sm tw:text-tertiary">
+          {isLoading
+            ? 'Loading…'
+            : `${total} ${total === 1 ? 'policy' : 'policies'}${filtered ? ' matching' : ''}`}
+          {isFetching && !isLoading && ' · refreshing'}
+        </p>
+        {total > pageSize && (
+          <p className="tw:text-xs tw:text-tertiary">
+            Showing {offset + 1}–{Math.min(offset + pageSize, total)}
+          </p>
+        )}
+      </div>
+
+      <section className="tw:mt-3 tw:flex tw:flex-col tw:gap-3">
 
         {data?.length === 0 && (
           <div className="tw:rounded-xl tw:border tw:border-dashed tw:border-secondary tw:p-10 tw:text-center">
@@ -184,6 +242,27 @@ export default function PolicyListPage() {
           <PolicyRow key={policy.id} policy={policy} />
         ))}
       </section>
+
+      <Pager
+        label="Policy pages"
+        noun="Policies"
+        offset={offset}
+        onOffset={(next) => {
+          const draft = new URLSearchParams(params);
+          draft.set('offset', String(next));
+          page(draft);
+        }}
+        onPageSize={(next) => {
+          const draft = new URLSearchParams(params);
+          draft.set('size', String(next));
+          // A different page size means different page boundaries, so the
+          // offset it was on no longer points at anything anybody chose.
+          draft.delete('offset');
+          page(draft);
+        }}
+        pageSize={pageSize}
+        total={total}
+      />
     </>
   );
 }

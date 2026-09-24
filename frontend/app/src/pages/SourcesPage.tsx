@@ -16,8 +16,11 @@ import {
   createSource,
   deleteSource,
   fetchSources,
+  SEALED_CREDENTIAL,
+  isSealed,
   setSourceEnabled,
   testSource,
+  testSourceTarget,
   updateSource,
   type EnforcementMode,
   type ProbeResult,
@@ -38,10 +41,12 @@ import { Field, Select, TextField } from './policies/controls';
  * than a governance decision about data, which is why the server only lets an
  * administrator make it while letting every data owner read it.
  *
- * The credential field holds a *reference* to a secret and the server rejects
- * anything else. That is deliberate and worth the friction: the moment a
- * console accepts a password in a text box, the password is in the database,
- * the backups and somebody's screen recording.
+ * A credential may be typed in or pointed at. Pointing at a vault stays the
+ * better answer where there is a vault; refusing everything else did not keep
+ * passwords out of the product, it pushed them into an environment variable
+ * nobody could rotate or audit. What is typed here is sealed before it is
+ * stored and is never served back — the form shows that a credential exists,
+ * not what it is.
  */
 
 const DEFAULT_PORT: Record<SourceEngine, number> = {
@@ -56,6 +61,8 @@ const BLANK: SourceInput = {
   port: null,
   defaultDatabase: null,
   credentialRef: '',
+  username: '',
+  password: '',
   defaultEnforcementMode: 'NONE',
   omServiceFqn: null,
   secureSchema: 'sec',
@@ -110,7 +117,9 @@ export default function SourcesPage() {
         </Notice>
       )}
 
-      {isLoading && <p className="tw:text-sm tw:text-tertiary">Loading…</p>}
+      {isLoading && editing === null && (
+        <p className="tw:text-sm tw:text-tertiary">Loading…</p>
+      )}
 
       {sources && sources.length === 0 && editing === null && (
         <div className="tw:flex tw:flex-col tw:items-center tw:gap-3 tw:rounded-xl tw:border tw:border-dashed tw:border-secondary tw:bg-primary tw:px-6 tw:py-12 tw:text-center">
@@ -128,7 +137,11 @@ export default function SourcesPage() {
         </div>
       )}
 
-      {sources && sources.length > 0 && (
+      {/* The form stands alone. A list underneath it repeats the source being
+          edited a second time, a few hundred pixels below its own form, and
+          puts every other source's Edit and Remove button within reach of
+          somebody who is in the middle of changing this one. */}
+      {sources && sources.length > 0 && editing === null && (
         <ul className="tw:flex tw:flex-col tw:gap-4">
           {sources.map((source) => (
             <SourceCard
@@ -236,7 +249,14 @@ function SourceCard({
           )}
 
           <dl className="tw:mt-3 tw:grid tw:gap-x-6 tw:gap-y-1 tw:text-xs tw:sm:grid-cols-2">
-            <Pair label="Credential" value={source.credentialRef} />
+            <Pair
+              label="Credential"
+              value={
+                isSealed(source.credentialRef)
+                  ? 'Stored, encrypted'
+                  : source.credentialRef
+              }
+            />
             <Pair
               label="OpenMetadata service"
               value={source.omServiceFqn ?? 'not linked'}
@@ -335,7 +355,12 @@ function SourceForm({
           host: source.host,
           port: source.port,
           defaultDatabase: source.defaultDatabase,
+          // Served as `fernet:stored` for a sealed credential. Kept as-is and
+          // sent back unchanged, which the server reads as "leave it alone";
+          // blanking it here would make every edit demand the password again.
           credentialRef: source.credentialRef,
+          username: '',
+          password: '',
           defaultEnforcementMode: source.defaultEnforcementMode,
           omServiceFqn: source.omServiceFqn,
           secureSchema: source.secureSchema,
@@ -348,9 +373,31 @@ function SourceForm({
       : BLANK
   );
   const [problem, setProblem] = useState<string | null>(null);
+  const hasStoredCredential = source != null && isSealed(source.credentialRef);
+  // An existing sealed credential opens on the mode that can replace it; a
+  // pointer opens on the pointer. A new source opens on typing, because that
+  // is what somebody registering their first source has in front of them.
+  const [credentialMode, setCredentialMode] = useState<'typed' | 'pointer'>(
+    () => (source && !hasStoredCredential ? 'pointer' : 'typed')
+  );
+
+  const trial = useMutation({
+    mutationFn: () =>
+      testSourceTarget({
+        ...draft,
+        // Sent so the server can fall back to the stored credential for a
+        // source being edited without its password retyped.
+        id: source?.id,
+      }),
+    onError: (error) =>
+      setProblem(apiErrorMessage(error, 'The connection could not be tested.')),
+  });
 
   function patch(next: Partial<SourceInput>) {
     setDraft((current) => ({ ...current, ...next }));
+    // A result that outlived the host it was measured against reads as a
+    // guarantee about the new one.
+    trial.reset();
   }
 
   const save = useMutation({
@@ -429,15 +476,117 @@ function SourceForm({
           />
         </Field>
 
-        <Field
-          hint={`A pointer to a secret, never the secret. Accepted: ${CREDENTIAL_SCHEMES.join(', ')}`}
-          label="Credential reference">
-          <TextField
-            onChange={(next) => patch({ credentialRef: next })}
-            placeholder="vault://secret/data/dac/prod-mssql"
-            value={draft.credentialRef}
-          />
-        </Field>
+        <div className="tw:sm:col-span-2 tw:rounded-lg tw:border tw:border-secondary tw:bg-secondary tw:p-4">
+          <div className="tw:flex tw:flex-wrap tw:items-center tw:justify-between tw:gap-3">
+            <div>
+              <h3 className="tw:text-sm tw:font-semibold tw:text-primary">
+                Credential
+              </h3>
+              <p className="tw:mt-0.5 tw:text-xs tw:text-tertiary">
+                Arak connects as this login to read the catalog and to create
+                secure objects. It is never shown again once saved.
+              </p>
+            </div>
+            <div className="tw:flex tw:gap-1 tw:rounded-lg tw:bg-primary tw:p-1">
+              {(
+                [
+                  ['typed', 'Username and password'],
+                  ['pointer', 'Secret store'],
+                ] as const
+              ).map(([value, label]) => (
+                <button
+                  className={`tw:cursor-pointer tw:rounded-md tw:px-3 tw:py-1.5 tw:text-xs tw:font-medium ${
+                    credentialMode === value
+                      ? 'tw:bg-brand-solid tw:text-white'
+                      : 'tw:text-tertiary hover:tw:text-primary'
+                  }`}
+                  key={value}
+                  onClick={() => {
+                    setCredentialMode(value);
+                    // Switching away from a half-typed credential must not
+                    // leave it queued behind the other mode's field.
+                    patch(
+                      value === 'typed'
+                        ? { credentialRef: '' }
+                        : { username: '', password: '' }
+                    );
+                  }}
+                  type="button">
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {credentialMode === 'typed' ? (
+            <div>
+              {hasStoredCredential && (
+                <p className="tw:mt-3 tw:text-xs tw:text-tertiary">
+                  A credential is already stored for this source. Leave both
+                  fields blank to keep it, or fill both to replace it — the
+                  password cannot be re-sealed without the username beside it.
+                </p>
+              )}
+              <div className="tw:mt-3 tw:grid tw:gap-4 tw:sm:grid-cols-2">
+                <Field label="Username">
+                  <TextField
+                    onChange={(next) => patch({ username: next })}
+                    placeholder="arak"
+                    value={draft.username ?? ''}
+                  />
+                </Field>
+                <Field
+                  hint="Encrypted with the deployment key before it is stored."
+                  label="Password">
+                  <TextField
+                    onChange={(next) => patch({ password: next })}
+                    type="password"
+                    value={draft.password ?? ''}
+                  />
+                </Field>
+              </div>
+            </div>
+          ) : (
+            <div className="tw:mt-4">
+              <Field
+                hint={`A pointer to where the secret is kept. Accepted: ${CREDENTIAL_SCHEMES.join(', ')}`}
+                label="Credential reference">
+                <TextField
+                  onChange={(next) => patch({ credentialRef: next })}
+                  placeholder="vault://secret/data/dac/prod-mssql"
+                  value={
+                    draft.credentialRef === SEALED_CREDENTIAL
+                      ? ''
+                      : draft.credentialRef
+                  }
+                />
+              </Field>
+            </div>
+          )}
+
+          <div className="tw:mt-4 tw:flex tw:flex-wrap tw:items-center tw:gap-3">
+            <Button
+              color="secondary"
+              isDisabled={trial.isPending || !draft.host}
+              onPress={() => trial.mutate()}
+              size="sm">
+              {trial.isPending ? 'Connecting…' : 'Test connection'}
+            </Button>
+            <span className="tw:text-xs tw:text-quaternary">
+              Opens one read-only connection. Nothing is saved.
+            </span>
+          </div>
+
+          {trial.data && (
+            <div className="tw:mt-3">
+              <Notice tone={trial.data.reachable ? 'success' : 'error'}>
+                {trial.data.reachable
+                  ? `${trial.data.productName} ${trial.data.engineVersion} answered in ${trial.data.millis} ms.`
+                  : trial.data.message}
+              </Notice>
+            </div>
+          )}
+        </div>
 
         <Field
           className="tw:sm:col-span-2"

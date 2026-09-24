@@ -7,7 +7,9 @@ import com.mfec.dac.engine.PolicyExpressionEvaluator;
 import com.mfec.dac.schema.api.ResolvedColumnMask;
 import com.mfec.dac.schema.entity.policy.Policy;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import org.jdbi.v3.core.Handle;
@@ -263,15 +265,67 @@ public class PolicyStore {
   /** Policies, newest first, optionally narrowed the way the list screen narrows them. */
   public List<StoredPolicy> list(
       String lifecycleState, String policyType, String scopeLevel, String search, int limit, int offset) {
-    StringBuilder sql = new StringBuilder("SELECT * FROM policy WHERE 1 = 1");
+    Filter filter = filter(lifecycleState, policyType, scopeLevel, search);
+    String sql =
+        "SELECT * FROM policy "
+            + filter.where()
+            + " ORDER BY updated_at DESC LIMIT :limit OFFSET :offset";
+
+    return jdbi.withHandle(
+        handle -> {
+          var query = handle.createQuery(sql).bind("limit", limit).bind("offset", offset);
+          filter.bind(query);
+          return query.map(this::map).list();
+        });
+  }
+
+  /**
+   * How many policies the same filter matches, for the pager.
+   *
+   * <p>Separate from {@link #list} rather than returned with it, because the
+   * two are asked at different rates: the page changes as somebody clicks
+   * through, and the total does not. Splitting them lets the total be cached
+   * while the page is not.
+   *
+   * <p>What matters is that both go through {@link #filter}. A count built from
+   * a second copy of the WHERE clause is a page count that drifts from the page
+   * the moment somebody adds a filter to one and forgets the other, and the
+   * symptom is a last page that is empty.
+   */
+  public int count(String lifecycleState, String policyType, String scopeLevel, String search) {
+    Filter filter = filter(lifecycleState, policyType, scopeLevel, search);
+    String sql = "SELECT count(*) FROM policy " + filter.where();
+
+    return jdbi.withHandle(
+        handle -> {
+          var query = handle.createQuery(sql);
+          filter.bind(query);
+          return query.mapTo(Integer.class).one();
+        });
+  }
+
+  /** A WHERE clause and the values it needs, so a count cannot disagree with a page. */
+  private record Filter(String where, Map<String, Object> binds) {
+    void bind(org.jdbi.v3.core.statement.Query query) {
+      binds.forEach(query::bind);
+    }
+  }
+
+  private static Filter filter(
+      String lifecycleState, String policyType, String scopeLevel, String search) {
+    StringBuilder where = new StringBuilder("WHERE 1 = 1");
+    Map<String, Object> binds = new LinkedHashMap<>();
     if (lifecycleState != null) {
-      sql.append(" AND lifecycle_state = :lifecycleState");
+      where.append(" AND lifecycle_state = :lifecycleState");
+      binds.put("lifecycleState", lifecycleState);
     }
     if (policyType != null) {
-      sql.append(" AND policy_type = :policyType");
+      where.append(" AND policy_type = :policyType");
+      binds.put("policyType", policyType);
     }
     if (scopeLevel != null) {
-      sql.append(" AND scope_level = :scopeLevel");
+      where.append(" AND scope_level = :scopeLevel");
+      binds.put("scopeLevel", scopeLevel);
     }
     String term = search == null ? null : search.trim();
     if (term != null && !term.isEmpty()) {
@@ -280,29 +334,12 @@ public class PolicyStore {
       // the sentence explaining why it exists, or -- most often -- the table
       // it is about. Searching only the name finds a policy for whoever named
       // it and nobody else.
-      sql.append(
+      where.append(
           " AND (name ILIKE :search OR display_name ILIKE :search"
               + " OR description ILIKE :search OR scope_fqn ILIKE :search)");
+      binds.put("search", "%" + escapeLike(term) + "%");
     }
-    sql.append(" ORDER BY updated_at DESC LIMIT :limit OFFSET :offset");
-
-    return jdbi.withHandle(
-        handle -> {
-          var query = handle.createQuery(sql.toString()).bind("limit", limit).bind("offset", offset);
-          if (lifecycleState != null) {
-            query.bind("lifecycleState", lifecycleState);
-          }
-          if (policyType != null) {
-            query.bind("policyType", policyType);
-          }
-          if (scopeLevel != null) {
-            query.bind("scopeLevel", scopeLevel);
-          }
-          if (term != null && !term.isEmpty()) {
-            query.bind("search", "%" + escapeLike(term) + "%");
-          }
-          return query.map(this::map).list();
-        });
+    return new Filter(where.toString(), binds);
   }
 
   /**
