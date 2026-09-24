@@ -31,7 +31,7 @@ Phase 1 รองรับ SQL Server + PostgreSQL · identity หลักค�
 | **M2 Identity** | 🚧 ~50% — local sign-in ใช้ได้ · schema `principal`/`principal_attribute`/`group_member`/`app_role_assignment` มีตั้งแต่ V2 · read API + หน้า People & attributes (**filter ตาม attribute + กดเข้าไปดูสมาชิกใน group ได้ที่ `/principals/:id`**) + **หน้า Application roles (`/settings/roles`) อ่านอย่างเดียว** เสร็จ · **เพิ่ม local account + assign/withdraw app role ได้จาก UI แล้ว (V10 + `IdentityAdminStore` + audit)** · **ยังไม่มี write API สำหรับ *attribute* — ต้อง seed ด้วย SQL** · ยังไม่มีหน้าจอเปลี่ยน password (ทุก account ที่สร้างเป็น `must_change`) · ยังไม่มี Entra OIDC / Graph sync |
 | **M3 Policy Engine** | 🚧 ~97% — engine **277 tests** (+10 รอบนี้ — `DataPolicyCompositionTest.MaskConflicts` ที่ทำให้เจอบั๊กการให้เครดิต policy ดูข้อ AH.3) (+101 รอบนี้ — `PolicyAlgebraTest` 34 ที่ assert **เซตของคนที่ผ่าน** ไม่ใช่ทีละคน + `ExpressionReferenceTest` ที่รันทุก example ในหน้า doc ผ่าน evaluator จริง) · เดิม **166 tests** (+10 รอบนี้ · **เจอบั๊กจริงสองตัวที่ grant โดนเต็มๆ ดูข้อ AE.1/AE.2**) (data policy 26 + subscription 45 เพิ่มรอบนี้ · เจอบั๊กจริง 2 ตัว ดูข้อ P) · persistence (`PolicyStore`) + `policy_binding` materializer + REST · `PolicyBindingMaterializerIT` 10 tests บน Postgres จริง · **decision cache (FR-5.5) ปิดแล้วรอบนี้ — 25 tests ดูข้อ AB** · เหลือ ANTLR grammar ของ `expr` (FR-3.2) ข้อเดียว |
 | **M4 Policy Authoring UI** | ✅ **เสร็จ** — Policy list + Policy builder + readback + capability matrix + `/policies/:id` หน้าสรุปอ่านอย่างเดียว + panel Policies ในหน้า asset (FR-3.1.5) + View-as-user (FR-5.2, ข้อ Z) · **รอบนี้ปิดข้อสุดท้าย: impact analysis (FR-5.3) — `GET /v1/policies/{id}/impact` + panel “Who it changes things for” ดูข้อ AA** · **รอบนี้เพิ่มหน้า `/docs/expressions` — syntax reference ที่ backend ส่งมาจาก jar ของ engine กดจากช่อง expression ได้ พร้อม 11 policy ตัวอย่างจริงใน DB (ข้อ AF.3/AF.4)** |
-| **M5 Secure View (5.1.2)** | 🚧 ~30% — **slice 1 จบ: `ViewCompiler` + golden-file test 2 dialect (18 tests เขียว) ดูข้อ AK.1** · `DecisionSql` + dialect ใช้ร่วมกับ 5.2 เหมือนเดิม · เหลือ slice 2 (`V12__row_entitlement.sql` + maintainer) · slice 3 (dry-run / apply / rollback + `enforcement_state` + REST + UI + cutover) · slice 4 (Testcontainers กับ PG/MSSQL จริง) |
+| **M5 Secure View (5.1.2)** | 🚧 ~55% — **slice 1 จบ: `ViewCompiler` + golden-file test 2 dialect ดูข้อ AK.1** · **slice 2 จบ: `RowEntitlementMaintainer` (17 tests) — pure ทั้งคลาส · **refuse ไม่ใช่ skip** เมื่อ treatment/entitlement key ไม่ตรงกับ view ที่ติดตั้งอยู่ · ⚠️ **ไม่ต้องมี migration** (ตาราง `acl.*` อยู่ที่ source) — ดูข้อ AT** · `DecisionSql` + dialect ใช้ร่วมกับ 5.2 เหมือนเดิม · เหลือ slice 3 (dry-run / apply / rollback + `enforcement_state` + REST + UI + cutover) · slice 4 (Testcontainers กับ PG/MSSQL จริง) |
 | **M6 Push Config (5.1.1)** | ⬜ **re-scope รอบนี้ · เลื่อนหลัง M5/M7 · opt-in ต่อ source** — ยิงเฉพาะ **policy object ที่แยกจาก table** (PG `CREATE POLICY` · MSSQL `CREATE SECURITY POLICY` · column GRANT) · **ตัด MSSQL DDM ออก** เพราะมัน `ALTER COLUMN` ทับนิยาม table — ดูข้อ AC.1 และ DESIGN FR-6.2a |
 | **M7 Query API (5.2a)** | 🚧 ~80% — **`POST /v1/query` + Query console ใช้งานได้จริงรอบนี้** · rewrite → RLS + mask + hidden column → execute → audit ครบ · พิสูจน์กับ Postgres จริงแล้วทั้ง allow / RLS / mask / refuse · เหลือ direct-access detector (FR-6.3.1) และ result cache |
 | **M7b Cross-mode consistency** | ⬜ — ต้องมี M5/M6 ก่อน |
@@ -56,13 +56,13 @@ Phase 1 รองรับ SQL Server + PostgreSQL · identity หลักค�
 | App DB (docker `dac-appdb`, postgres:16-alpine) | `:5432` db/user `dac` |
 | OpenMetadata ของทีม | `2.0.1` — sync ผ่าน **ingestion-bot JWT** (ดู What Didn't Work) |
 
-เทสต์ทั้งหมดเขียว — **backend unit รันครบเมื่อ 2026-09-24 → exit 0 · unit 662 · Failures 0 Errors 0** (integration **160** — `-Pintegration verify` รันเต็มชุด **2026-09-24 16:00** → BUILD SUCCESS · `Failures 0 Errors 0` · **+8 จาก `HomeLayoutStoreIT` ซึ่งเป็นการรัน `V19__home_role_layout.sql` บน Postgres จริงครั้งแรก**), frontend `npx jest` + `npx tsc --noEmit` + `vite build` รันใหม่ **2026-09-24** (**25 suites / 166 tests** เขียว · tsc exit 0 · build 6.24s · `scripts/check-cursor-pointer.mjs` → *every &lt;button&gt; offers a hand*)
+เทสต์ทั้งหมดเขียว — **backend unit รันครบเมื่อ 2026-09-24 → exit 0 · unit 679 · Failures 0 Errors 0** (integration **160** — `-Pintegration verify` รันเต็มชุด **2026-09-24 16:00** → BUILD SUCCESS · `Failures 0 Errors 0` · **+8 จาก `HomeLayoutStoreIT` ซึ่งเป็นการรัน `V19__home_role_layout.sql` บน Postgres จริงครั้งแรก**), frontend `npx jest` + `npx tsc --noEmit` + `vite build` รันใหม่ **2026-09-24** (**25 suites / 166 tests** เขียว · tsc exit 0 · build 6.24s · `scripts/check-cursor-pointer.mjs` → *every &lt;button&gt; offers a hand*)
 
 > ⚠️ **`backend/dac-service/target/surefire-reports/com.mfec.dac.catalog.AssetStoreIT.txt` ยังแดงค้างอยู่ในโฟลเดอร์ — เป็นไฟล์เก่าจาก 2026-09-23 20:35 ก่อน commit `19b0503` ซึ่งคือ commit ที่แก้เคสนั้นพอดี** อย่าอ่านรายงานใน `target/` โดยไม่ดูเวลาไฟล์ — `mvn test` ไม่ล้างรายงานของคลาสที่รอบนี้ไม่ได้รัน
 
 | ชุด | จำนวน | คำสั่ง |
 |---|---|---|
-| Backend unit | **dac-common 31 (+25 — `SourceEngineConformanceTest`)** · dac-engine 277 · **dac-compiler-sql 34 (+9 — `SqlDialectsTest`)** · dac-connector-openmetadata 91 · **dac-connector-source 19 (+8 — `JdbcTargetsTest`)** · **dac-proxy 30 (+14 — `ProxyCapabilitiesTest`)** · **dac-service 180** = **662** | `./mvnw -o test` |
+| Backend unit | dac-common 31 · dac-engine 277 · **dac-compiler-sql 51 (+17 — `RowEntitlementMaintainerTest`)** · dac-connector-openmetadata 91 · dac-connector-source 19 · dac-proxy 30 · **dac-service 180** = **679** | `./mvnw -o test` |
 | Backend integration (Testcontainers `postgres:16-alpine`) | **160 tests** — `AssetStoreIT` 7 · `CatalogQueryIT` 18 · `DataSourceStoreIT` 13 · `GovernanceStoreIT` 10 · `GrantCompositionIT` 17 · **`HomeLayoutStoreIT` 14 (+8 รอบนี้ — persona)** · `IdentityAdminStoreIT` 24 · `ImpactAnalysisIT` 8 · `PolicyBindingMaterializerIT` 10 · `PolicyOverviewIT` 24 · `PolicyStoreIT` 10 · `SourceEngineRegistryIT` 5 | `./mvnw -am -pl backend/dac-service verify -Pintegration` |
 | Frontend | **25 suites / 166 tests** (+4 ใน `HomePersonasPage.test.tsx` — หน้าที่คนหนึ่งจัดหน้าจอให้อีกคน: admin เท่านั้นที่เห็น · ครบทั้ง 5 role ไม่ว่าจะตั้งไว้หรือยัง · ประโยค "starting point ไม่ใช่ override" · เซฟแล้วต้องลง role ที่เปิดอยู่เท่านั้น) | `npx jest` ใน `frontend/app` |
 
@@ -381,7 +381,69 @@ M18 ก่อนเพิ่ม engine ตัวที่ 3 เสมอ
 
 ---
 
-## รอบนี้ — **M12b Persona: หน้าแรกที่ admin จัดให้แต่ละ Platform Role** (ผู้ใช้ขอไว้ตั้งแต่รอบ M12)
+## รอบนี้ — **M5 slice 2: `RowEntitlementMaintainer`** — อีกครึ่งของ secure view
+
+slice 1 (`ViewCompiler`) ตอบว่า *"view หน้าตายังไง"* แต่ view เป็น object เดียวที่ทุกคนใช้ร่วมกัน มัน**พูดชื่อคนไม่ได้**
+slice 2 คือครึ่งที่ตอบว่า *"ใครได้อะไร"* — เนื้อในของตาราง ACL 3 ใบที่ view join ตอนอ่าน (FR-6.1)
+
+### AT.1 ⚠️ แก้ความเข้าใจผิดจากข้อ AK.9 — **slice 2 ไม่ต้องมี migration**
+
+AK.9 เขียนไว้ว่า slice 2 = `V12__row_entitlement.sql` + maintainer **ข้อแรกผิด** ตาราง 3 ใบนี้อยู่ที่ **source database ไม่ใช่ app DB**:
+
+```
+acl.asset_subscription (principal, asset)                          PK(principal, asset)
+acl.row_entitlement    (principal, asset, entitlement_key, value)  PK(ทั้ง 4)
+acl.column_grant       (principal, asset, column_name, treatment)  PK(principal, asset, column_name)
+```
+
+`ViewCompiler.apply()` สร้างมันให้อยู่แล้วตอน apply ลง source → **ไม่มีอะไรต้อง migrate ใน app DB**
+ส่วน `row_entitlement` ของ app DB (`V3__policy.sql:99`) เป็น**คนละใบ** — ใบนั้นคือ*แหล่งข้อมูล* ที่ maintainer ไปอ่านค่าของ `ENTITLEMENT_JOIN` มา ไม่ใช่ปลายทางที่เขียนลง
+
+### AT.2 สองทางที่มันจะรั่วเงียบๆ — และทำไมต้อง **refuse ไม่ใช่ skip**
+
+จุดที่คลาสนี้ต่างจาก maintainer ธรรมดาคือมัน**โยน exception** ในเคสที่ดูเหมือนควรจะข้ามไปเฉยๆ เหตุผลเดียวกันทั้งสองเคส: *view ก็ยัง valid, แถวก็ยัง valid, apply ก็สำเร็จ, เปิดฐานข้อมูลดูก็ถูกหมด* — แต่ข้อมูลไปถึงคนที่ policy ไม่ได้ส่งให้
+
+| เคส | ถ้าเขียนลงไปเฉยๆ | ทำแทน |
+|---|---|---|
+| treatment key ไม่มีอยู่ใน `Plan.treatments()` ของ column นั้น | ไม่ match branch ไหนเลย → คนอ่านตกไปที่ `ELSE` เงียบๆ · **ทิศอันตราย** = decision ใหม่เข้มกว่า fallback ที่ติดตั้งอยู่ → อ่านได้มากกว่าที่ policy อนุญาต | `MismatchedPlanException` — "Recompile the view from these decisions before maintaining its rows." |
+| entitlement key ไม่มีใน `Plan.entitlementKeys()` | view ไม่ได้ join คีย์นั้น → เขียนแถวไปก็ไม่ได้กรองอะไร **ทุกแถวกลับมาหมด** | refuse เหมือนกัน |
+| policy mask column ที่ view select ดิบๆ (ตอน compile ยังไม่มีใคร mask) | ไม่มีแถวไหนในตารางทั้ง 3 ใบที่ทำให้ view mask ได้ → **อ่านได้ในรูปแบบดิบ** | refuse — "they would read it in the clear" |
+
+> ทิศตรงข้าม (view มี gate แต่คนนี้ไม่มีค่าเลย) **ไม่ refuse** เพราะมันปิดไม่ใช่เปิด — แค่ใส่ note ว่า "Nothing gives X any value of Y … They will read no rows of this asset until something does."
+
+### AT.3 การตัดสินใจอื่นที่เป็นเรื่องความหมาย ไม่ใช่รายละเอียด
+
+| เรื่อง | ทำอย่างไร | เพราะ |
+|---|---|---|
+| **`ALWAYS_FALSE`** | **ไม่ออกแถว `asset_subscription` ให้เลย** | view เขียน `1=0` ให้คนเดียวไม่ได้ — การไม่ให้ subscription พูดประโยคเดียวกันเป๊ะ |
+| **plaintext ต้องมีแถว** | ถ้า `PLAIN` ไม่ใช่ fallback ของ column นั้น → ต้องเขียน `column_grant` ที่ treatment = `PLAIN` | `maskedColumn()` ใส่ `PLAIN` เป็น candidate ตัวหนึ่งเสมอ การ "ไม่มี mask" จึงไม่เท่ากับ "ไม่ต้องขออะไร" |
+| **fallback ไม่ต้องมีแถว** | คนที่ได้ treatment เดียวกับ `ELSE` → ข้าม | เขียนไปก็แค่ทำให้ตารางใหญ่ขึ้นโดยไม่เปลี่ยนอะไร |
+| **hidden column** | **ไม่ออกแถว** + note | hide ชนะ mask (FR-4.5) แต่ view ตัด column ให้คนเดียวไม่ได้ → ปล่อยให้ตกไปที่ fallback ซึ่งเป็นสิ่งที่เข้มที่สุดที่ view ทำกับ column นั้นได้ · ⚠️ **ถ้าตีความว่า "ไม่มี mask = PLAIN" จะกลายเป็นการ grant plaintext ให้คนที่ policy สั่งซ่อน** — มีเทสต์ยิงตรงจุดนี้ |
+| **denied principal** | ไม่เหลืออะไรเลยทั้ง 3 ใบ | ถ้าปล่อยแถวค้างไว้ วันที่มีคนไปกด subscribe ใหม่ด้วยมือ เขาจะได้สิทธิ์เก่ากลับมาทั้งชุด |
+| **คำนวณ desired state เต็ม แล้ว diff** | ไม่ใช่ "emit เฉพาะ insert ที่รู้" | ตารางทั้ง 3 ใบถูกอ่านด้วย `EXISTS` → **แถวที่ควรถูกลบแล้วไม่ถูกลบ คือความพังที่สำคัญ** ไม่ใช่แถวที่ควรเขียนแล้วไม่ได้เขียน · การ revoke จึงต้องมาจาก `delete` ของ diff |
+| **negated gate (`NOT_IN` / `NE`)** | เขียนค่าเหมือนเดิม | `gate()` ของ compiler ทำ `NOT EXISTS` ให้แล้ว → แถวพวกนั้นคือค่าที่เขา **ห้าม**เห็น ไม่ใช่ที่อนุญาต อ่านโค้ดตรงนี้ต้องระวัง |
+| **`EXISTS` / `NOT_EXISTS`** | ไม่ออกแถว | ไม่ได้ถามอะไรเกี่ยวกับคนอ่าน |
+| **`RAW_PREDICATE`** | ไม่ออกแถว | ประโยคเดียวกันสำหรับทุกคน อยู่ใน view แล้ว เขียนซ้ำ = สำเนาที่ 2 ที่ต้องคอยดูแลให้ตรงกัน |
+| **mask ซ้ำ column เดียวใน decision เดียว** | เข้มสุดชนะ เสมอกันถือครองเดิม (`MaskStrength`) | engine ควรรีดให้เหลือตัวเดียวอยู่แล้ว — ที่ใส่ไว้เพื่อไม่ให้แถวที่ได้ขึ้นกับ*ลำดับ*ที่ engine เรียงมา |
+
+### AT.4 `EntitlementSource` — ทำไมต้อง inject
+
+`ENTITLEMENT_JOIN` เป็นเคสเดียวที่ **decision ไม่พกค่ามาด้วย** (mapping ใหญ่/เปลี่ยนบ่อยเกินกว่าจะ inline) → maintainer ต้องไปอ่านเอง
+เป็น `@FunctionalInterface` ที่ slice 3 จะ implement ด้วย `row_entitlement` ของ app DB · `EntitlementSource.NONE` คืนค่าว่างเสมอ = **ซ่อนทุกแถวของคีย์นั้น** ซึ่งเป็นทิศที่ถูกเวลาพัง
+
+### AT.5 ของที่เพิ่ม
+
+| ไฟล์ | อะไร |
+|---|---|
+| `dac-compiler-sql/…/RowEntitlementMaintainer.java` | **ใหม่** — pure ทั้งคลาส ไม่มี JDBC · `maintain(plan, assetKey, decisions, entitlements, installed)` → `Maintenance {desired, insert, delete, notes}` · record `Subscription` / `Entitlement` / `ColumnGrant` / `Rows` · `MismatchedPlanException` |
+| `dac-compiler-sql/…/RowEntitlementMaintainerTest.java` | **ใหม่ 17 tests** — ทุกเทสต์ **compile view จาก decision ชุดเดียวกับที่เอาไป maintain** เพราะสิ่งที่ต้องพิสูจน์คือสองครึ่งไม่หลุดจากกัน เทสต์ที่ hand-write plan เองจะพิสูจน์แค่ว่า maintainer ตรงกับคนเขียนเทสต์ |
+
+### AT.6 ต่อจากนี้ (M5 slice 3)
+
+JDBC applier: อ่าน `acl.*` ปัจจุบัน → `maintain(...)` → แสดง dry-run (`insert`/`delete` + `notes`) ให้คนกดอนุมัติ → apply ใน transaction เดียวกับ view DDL + `enforcement_state` + REST + UI + **เอาเมนู Enforcement กลับมา**
+`EntitlementSource` implementation อ่านจาก `row_entitlement` ของ app DB · **`ViewCompiler` ยังไม่ถูก wire เข้า dac-service เลย** (`grep -rln ViewCompiler` เจอแค่ `DecisionSql` + ตัวมันเอง + เทสต์) — slice 3 คือรอบที่มันจะได้ออกจากห้องทดลอง
+
+## รอบก่อนหน้า — **M12b Persona: หน้าแรกที่ admin จัดให้แต่ละ Platform Role** (ผู้ใช้ขอไว้ตั้งแต่รอบ M12)
 
 ผู้ใช้สั่งไว้ว่า
 
@@ -1519,9 +1581,9 @@ http://localhost:8090/Arak/         → 200
 | `frontend/app/src/pages/**` 8 ไฟล์ | `tw:cursor-pointer` 20 ปุ่ม |
 | `scripts/check-cursor-pointer.mjs` | **ใหม่** — ตัวตรวจว่ามีปุ่มไหนลืมใส่ |
 
-### AK.9 ต่อจากนี้ (M5 slice 2)
+### AK.9 ต่อจากนี้ (M5 slice 2) — **ทำแล้วรอบนี้ ดูข้อ AT**
 
-`V12__row_entitlement.sql` + `RowEntitlementMaintainer` ที่แปลง `PolicyDecision` ของแต่ละ principal → แถวในตาราง ACL 3 ใบ
+~~`V12__row_entitlement.sql`~~ **(ข้อนี้ผิด — ตาราง `acl.*` อยู่ที่ source ไม่ใช่ app DB ดูข้อ AT.1)** + `RowEntitlementMaintainer` ที่แปลง `PolicyDecision` ของแต่ละ principal → แถวในตาราง ACL 3 ใบ
 **ต้องเรียก `ViewCompiler.treatmentKey(...)` ห้ามคำนวณคีย์เอง** ไม่งั้น key ที่ maintainer เขียนกับที่ view มองหาจะไม่ตรงกัน แล้วทุกคนจะได้ `ELSE` (mask เข้มสุด) โดยไม่มีอะไรฟ้อง
 
 ---
