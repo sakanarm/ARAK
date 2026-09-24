@@ -16,6 +16,7 @@
   <dependencies>
     <dependency><groupId>${project.groupId}</groupId><artifactId>dac-spec</artifactId></dependency>
     <dependency><groupId>${project.groupId}</groupId><artifactId>dac-common</artifactId></dependency>
+    <dependency><groupId>${project.groupId}</groupId><artifactId>dac-compiler-sql</artifactId></dependency>
     <dependency><groupId>org.postgresql</groupId><artifactId>postgresql</artifactId></dependency>
     <dependency><groupId>com.microsoft.sqlserver</groupId><artifactId>mssql-jdbc</artifactId></dependency>
     <dependency><groupId>com.zaxxer</groupId><artifactId>HikariCP</artifactId></dependency>

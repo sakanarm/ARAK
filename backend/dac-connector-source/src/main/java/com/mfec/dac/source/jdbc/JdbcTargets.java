@@ -82,4 +82,25 @@ public final class JdbcTargets {
       DriverManager.setLoginTimeout(previous);
     }
   }
+
+  /**
+   * Opens a connection that may write, with autocommit left as the driver
+   * found it.
+   *
+   * <p>Separate from {@link #open} rather than a flag on it, so that reaching
+   * for a connection that can change a customer's database is something a
+   * caller has to spell out. The only callers are the ones that install
+   * enforcement: everything that reads data goes through {@code open}.
+   */
+  public static Connection openWritable(
+      SourceProbe.Target target, CredentialResolver.Credential credential, int loginTimeoutSeconds)
+      throws SQLException {
+    int previous = DriverManager.getLoginTimeout();
+    DriverManager.setLoginTimeout(loginTimeoutSeconds);
+    try {
+      return DriverManager.getConnection(url(target), properties(credential));
+    } finally {
+      DriverManager.setLoginTimeout(previous);
+    }
+  }
 }

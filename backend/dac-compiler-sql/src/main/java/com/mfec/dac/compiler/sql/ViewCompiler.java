@@ -154,7 +154,15 @@ public final class ViewCompiler {
       return dialect.quote(secureSchema) + "." + dialect.quote(secureView);
     }
 
-    String acl(SqlDialect dialect, String table) {
+    /**
+     * The qualified name of one of the three entitlement tables.
+     *
+     * <p>Public because the applier writes rows into the same tables this
+     * compiler reads from, and two spellings of the same table name that
+     * drifted apart would have the view consulting one table while the rows
+     * landed in another -- silently, and in the permissive direction.
+     */
+    public String acl(SqlDialect dialect, String table) {
       return dialect.quote(aclSchema) + "." + dialect.quote(table);
     }
 
