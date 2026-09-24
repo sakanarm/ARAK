@@ -56,15 +56,15 @@ Phase 1 รองรับ SQL Server + PostgreSQL · identity หลักค�
 | App DB (docker `dac-appdb`, postgres:16-alpine) | `:5432` db/user `dac` |
 | OpenMetadata ของทีม | `2.0.1` — sync ผ่าน **ingestion-bot JWT** (ดู What Didn't Work) |
 
-เทสต์ทั้งหมดเขียว — **backend unit + integration รันครบเมื่อ 2026-09-25 → `./mvnw -o verify -Pintegration` BUILD SUCCESS · unit 696 · Failures 0 Errors 0** (รอบ AY: +1 `SpaServletTest.unusualCharacters` · integration **209** — **+23 จาก `AccessRequestIT`** ขอ / อนุมัติ / ปฏิเสธ / ถอน + เคส policy ชนกัน (DENY · ชั้นบนปฏิเสธ · override · approve ไม่ปลด mask) บน Postgres จริง), frontend `npx jest` + `npx tsc --noEmit` + `vite build` รันใหม่ **2026-09-25** (**34 suites / 283 tests** เขียว — ดูข้อ AY.5 และ AX.8 · tsc exit 0 · build 11.78s · `scripts/check-cursor-pointer.mjs` → *every &lt;button&gt; offers a hand*)
+เทสต์ทั้งหมดเขียว — **backend unit + integration รันครบเมื่อ 2026-09-25 → `./mvnw -o verify -Pintegration` BUILD SUCCESS · unit 696 · Failures 0 Errors 0** (รอบ AY: +1 `SpaServletTest.unusualCharacters` · integration **214** (รอบ AZ: +5 `AccessRequestIT.Notices`) — **+23 จาก `AccessRequestIT`** ขอ / อนุมัติ / ปฏิเสธ / ถอน + เคส policy ชนกัน (DENY · ชั้นบนปฏิเสธ · override · approve ไม่ปลด mask) บน Postgres จริง), frontend `npx jest` + `npx tsc --noEmit` + `vite build` รันใหม่ **2026-09-25** (**35 suites / 302 tests** เขียว — ดูข้อ AZ.5, AY.5 และ AX.8 · tsc exit 0 · build 11.78s · `scripts/check-cursor-pointer.mjs` → *every &lt;button&gt; offers a hand*)
 
 > ⚠️ **`backend/dac-service/target/surefire-reports/com.mfec.dac.catalog.AssetStoreIT.txt` ยังแดงค้างอยู่ในโฟลเดอร์ — เป็นไฟล์เก่าจาก 2026-09-23 20:35 ก่อน commit `19b0503` ซึ่งคือ commit ที่แก้เคสนั้นพอดี** อย่าอ่านรายงานใน `target/` โดยไม่ดูเวลาไฟล์ — `mvn test` ไม่ล้างรายงานของคลาสที่รอบนี้ไม่ได้รัน
 
 | ชุด | จำนวน | คำสั่ง |
 |---|---|---|
 | Backend unit | dac-common 31 · dac-engine 277 · **dac-compiler-sql 51 (+17 — `RowEntitlementMaintainerTest`)** · dac-connector-openmetadata 91 · **dac-connector-source 25 (+6 — `SecureViewApplierTest`)** · dac-proxy 30 · **dac-service 186 (+6 — `ReviewedPlansTest`)** = **696** (dac-service **191** — +4 `AccessEligibilityTest` · +1 `SpaServletTest.unusualCharacters` ข้อ AY) | `./mvnw -o test` |
-| Backend integration (Testcontainers `postgres:16-alpine`) | **209 tests** — **`AccessRequestIT` 23 (ใหม่ — ข้อ AX.8)** · `AssetStoreIT` 7 · `CatalogQueryIT` 18 · `DataSourceStoreIT` 13 · `GovernanceStoreIT` 10 · `GrantCompositionIT` 17 · **`HomeLayoutStoreIT` 14 (+8 รอบนี้ — persona)** · `IdentityAdminStoreIT` 24 · `ImpactAnalysisIT` 8 · `PolicyBindingMaterializerIT` 10 · `PolicyOverviewIT` 24 · `PolicyStoreIT` 10 · **`SecureViewApplierIT` 11 (ใหม่รอบนี้ — อยู่ใน `dac-connector-source` ไม่ใช่ `dac-service`)** · **`SecureViewServiceIT` 15 (ใหม่รอบนี้)** · `SourceEngineRegistryIT` 5 | `./mvnw verify -Pintegration` (ทั้ง reactor) |
-| Frontend | **34 suites / 283 tests** (รอบ AY: +10 `AriaRouter.test.tsx` · `AssetRequestAccess.test.tsx` 9 · +4 `AssetDetailPage.test.tsx` — ดูข้อ AY.5 · รอบ AX: +20 `SqlEditor.test.tsx` · +16 `RequestAccess.test.tsx` · +13 `AccessRequestsPage.test.tsx` · +5 `accessRequests.test.ts` · `sqlCompletion.test.ts` — ดูข้อ AX.8 · ก่อนหน้า: +7 `EnforcementPage.test.tsx` — dry run → apply ส่งแค่ reviewId · non-admin ไม่มีปุ่ม Apply / Roll back · apply ที่ถูกปฏิเสธล้าง review · rollback ต้องยืนยัน · +9 `policyFlow.test.ts` — ลำดับด่าน · selector ว่าง = 0 asset ไม่ใช่ทุก asset · subject ว่าง = `open` ไม่ใช่ `set` · "ไม่ผ่านด่าน" ต้องไม่อ่านว่า deny · +3 `PolicyFlowChart.test.tsx` — ไม่ส่ง `onEdit` ต้องไม่มีปุ่มใดๆ · ก่อนหน้านี้ +4 ใน `HomePersonasPage.test.tsx` — หน้าที่คนหนึ่งจัดหน้าจอให้อีกคน: admin เท่านั้นที่เห็น · ครบทั้ง 5 role ไม่ว่าจะตั้งไว้หรือยัง · ประโยค "starting point ไม่ใช่ override" · เซฟแล้วต้องลง role ที่เปิดอยู่เท่านั้น) | `npx jest` ใน `frontend/app` |
+| Backend integration (Testcontainers `postgres:16-alpine`) | **214 tests** — **`AccessRequestIT` 28 (+5 `Notices` ข้อ AZ.5 · 23 ข้อ AX.8)** · `AssetStoreIT` 7 · `CatalogQueryIT` 18 · `DataSourceStoreIT` 13 · `GovernanceStoreIT` 10 · `GrantCompositionIT` 17 · **`HomeLayoutStoreIT` 14 (+8 รอบนี้ — persona)** · `IdentityAdminStoreIT` 24 · `ImpactAnalysisIT` 8 · `PolicyBindingMaterializerIT` 10 · `PolicyOverviewIT` 24 · `PolicyStoreIT` 10 · **`SecureViewApplierIT` 11 (ใหม่รอบนี้ — อยู่ใน `dac-connector-source` ไม่ใช่ `dac-service`)** · **`SecureViewServiceIT` 15 (ใหม่รอบนี้)** · `SourceEngineRegistryIT` 5 | `./mvnw verify -Pintegration` (ทั้ง reactor) |
+| Frontend | **35 suites / 302 tests** (รอบ AZ: `AccessRequestsPage.test.tsx` 22 (+9) · `RequestNotices.test.tsx` ใหม่ 10 — ดูข้อ AZ.5 · รอบ AY: +10 `AriaRouter.test.tsx` · `AssetRequestAccess.test.tsx` 9 · +4 `AssetDetailPage.test.tsx` — ดูข้อ AY.5 · รอบ AX: +20 `SqlEditor.test.tsx` · +16 `RequestAccess.test.tsx` · +13 `AccessRequestsPage.test.tsx` · +5 `accessRequests.test.ts` · `sqlCompletion.test.ts` — ดูข้อ AX.8 · ก่อนหน้า: +7 `EnforcementPage.test.tsx` — dry run → apply ส่งแค่ reviewId · non-admin ไม่มีปุ่ม Apply / Roll back · apply ที่ถูกปฏิเสธล้าง review · rollback ต้องยืนยัน · +9 `policyFlow.test.ts` — ลำดับด่าน · selector ว่าง = 0 asset ไม่ใช่ทุก asset · subject ว่าง = `open` ไม่ใช่ `set` · "ไม่ผ่านด่าน" ต้องไม่อ่านว่า deny · +3 `PolicyFlowChart.test.tsx` — ไม่ส่ง `onEdit` ต้องไม่มีปุ่มใดๆ · ก่อนหน้านี้ +4 ใน `HomePersonasPage.test.tsx` — หน้าที่คนหนึ่งจัดหน้าจอให้อีกคน: admin เท่านั้นที่เห็น · ครบทั้ง 5 role ไม่ว่าจะตั้งไว้หรือยัง · ประโยค "starting point ไม่ใช่ override" · เซฟแล้วต้องลง role ที่เปิดอยู่เท่านั้น) | `npx jest` ใน `frontend/app` |
 
 `yarn type-check` · `yarn lint` · `yarn build` ผ่านหมด → **BUILD SUCCESS** ทั้งสองฝั่ง
 
@@ -381,7 +381,46 @@ M18 ก่อนเพิ่ม engine ตัวที่ 3 เสมอ
 
 ---
 
-## รอบนี้ — **ข้อ AY: ปุ่ม "Open in OpenMetadata" พัง (500) · Request access ย้ายขึ้นมุมขวาบนของหน้า asset · หัวหน้า asset จัดใหม่แบบ OpenMetadata · ทดสอบ flow ขอสิทธิ์ทั้งเส้น + seed เคส demo**
+## รอบนี้ — **ข้อ AZ: หน้า Access requests แบ่งเป็นแท็บ Inbox / My requests · กระดิ่งแจ้งเตือนจริง · ตัวเลขบนเมนู Requests** (+ ข้อ AY.6 เส้นคั่นแทนจุด — commit `04cbc93`)
+
+ผู้ใช้ขอ: *"หน้า Access Request แบ่ง Sub tab ในหน้าจอให้ดีไหม ว่าเป็น My Request, Inbox / และต้องมี Notification ด้วย / ออกแบบหน้านี้ให้สวยหน่อย"* และก่อนหน้านั้น *"จุดพวกนี้คือะไรอะ ไม่สวย"* (จุด `·` คั่นข้อมูลบนหัวหน้า asset — ลอกสไตล์ OM มา → เปลี่ยนเป็นเส้นแนวตั้งบางๆ แล้วใน `04cbc93`)
+
+### AZ.1 Backend — `V22__access_request_notice.sql` + 2 endpoint
+- **ไม่มีตาราง "notification" แยก** — เหตุการณ์คือแถวของ `audit_access_request` (V21) อ่านตรงๆ ไม่ copy (สองที่เก็บข้อเท็จจริงเดียวกัน = วันหนึ่งจะไม่ตรงกัน) ที่เก็บเพิ่มมีแค่ `access_request_notice_seen(username PK lower-case, seen_at)` = อ่านถึงไหนแล้ว ใช้นับ "N new"
+- index ใหม่ 2 ตัว: `audit_access_request_requester_idx (lower(requester_username), occurred_at DESC)` · `audit_access_request_action_idx (action, occurred_at DESC)`
+- `GET /api/v1/access-requests/notifications` → `{unseen, inboxPending, minePending, seenAt, items[]}` — `items` แต่ละตัวมี `kind` (REQUESTED/WITHDRAWN/APPROVED/REJECTED) · `side` (INBOX/MINE) · `requestId` · `assetFqn` · `actor` · `note` · `occurredAt` · `unseen`
+  - ฝั่ง INBOX = การขอ/ถอนของ table ที่คนนี้ **ตัดสินได้** (owner match ใช้ของ engine ไม่ใช่ SQL — แบบเดียวกับ inbox) · ฝั่ง MINE = คำตอบต่อคำขอของตัวเอง (**ไม่รวมการขอของตัวเอง** — ไม่ต้องแจ้งสิ่งที่ตัวเองเพิ่งทำ)
+  - list ถูก cap แต่ `unseen` ไม่ถูก cap
+- `POST /api/v1/access-requests/notifications/seen` → ตั้ง `seen_at = now()` ของคนเรียกเท่านั้น (per person, ประวัติไม่หาย)
+
+### AZ.2 Frontend — กระดิ่ง (`TopNav.tsx` `Notifications`, export แล้วเพื่อเทสต์)
+- ตัวเลขแดงนับ **สิ่งที่ยังไม่เคยเห็น** ไม่ใช่ของที่ค้าง — กระดิ่งที่ติดตลอดเวลาทำให้คนเลิกมอง · เปิด popover = อ่านแล้ว (`markRequestNoticesSeen` เฉพาะตอนมีของใหม่) · จุดสีน้ำเงินค้างไว้จนปิด popover
+- หัว popover: "N requests waiting for your decision" + ปุ่ม **Review** → `/requests?tab=inbox`
+- แต่ละแถว: avatar ของคนทำ + badge เล็ก (✓ อนุมัติ / ✕ ปฏิเสธ / ↩ ถอน / 🔑 ขอ) + "actor verb table" + note ของการปฏิเสธ + เวลาไทยแบบ relative → คลิกไป `/requests?tab=inbox|mine&id=<requestId>`
+- admin ยังได้ alert crawl ของ OM ที่พัง/ไม่เคยรันในกระดิ่งเดียวกัน · non-admin **ไม่เรียก** `/system/sync-status` เลย
+- ว่าง: "You're all caught up"
+- `pages/requests/useRequestNotices.ts` — query เดียว (`NOTICES_KEY`) poll ทุก 30 วิ ใช้ร่วมกันทั้งกระดิ่ง / เมนูซ้าย / แท็บ → ตัวเลขสามที่ไม่มีทางไม่ตรงกัน
+
+### AZ.3 Frontend — เมนูซ้าย (`AppShell.tsx` `NavItem`, export แล้ว)
+- "Requests" มี pill ตัวเลข `inboxPending` (เกิน 9 → `9+`) · ตอนพับเมนูเหลือจุด + aria-label "…, N waiting" · 0 = ไม่วาดอะไร
+
+### AZ.4 Frontend — หน้า `/requests` เขียนใหม่ (`AccessRequestsPage.tsx`)
+- **Header card**: ไอคอน + "Access requests" + คำอธิบาย + ปุ่ม "Find a table to request" (→ `/catalog`) + สถิติ 2 ช่อง "Waiting for your decision" / "Your open requests" คั่นด้วยเส้นบาง
+- **แท็บ** `role=tablist`: **Inbox** · **My requests** พร้อมตัวเลข · state อยู่ใน URL `?tab=inbox|mine&status=&id=` (แชร์ลิงก์/Back ได้) · ไม่มี `tab` → ถ้ามีของรอตัดสินเปิด Inbox ไม่งั้นเปิด My requests
+- **Master/detail** (`lg:grid-cols-[24rem_1fr]`): ซ้าย = ตัวกรอง Pending/Approved/Rejected/Withdrawn/All (`role=radiogroup`, บรรทัดเดียว เลื่อนแนวนอนได้) + รายการ (Inbox มี avatar ผู้ขอ, Mine มีไอคอน table) · ขวา = รายละเอียด: หัว + FQN link + "Open table" · Requested by / For / Purpose / Asked · Reason · `<details>` "What was refused" (deniedBy + SQL ที่โดนปฏิเสธ) · **Activity timeline** · ฟอร์ม Decide (Inbox) หรือ Withdraw (Mine)
+- ค่าเริ่มต้นตัวกรอง: Inbox = Pending · Mine = All
+- `?id=` ที่ไม่อยู่ในรายการ (เช่นมาจากกระดิ่งแต่ตัวกรองไม่ตรง) → ดึงเดี่ยวผ่าน `fetchRequest` · ดึงไม่ได้ → "That request is not one you can see, or it no longer exists."
+- logic การตัดสิน **ไม่เปลี่ยน** (ย่อวันได้อย่างเดียว · reject ต้องมี note · approve ไม่ปลด mask)
+
+### AZ.5 เทสต์
+- **`AccessRequestIT` +5 (`Notices`)**: owner ได้ยินเฉพาะ table ที่ตัดสินได้ · requester ได้ยินคำตอบไม่ใช่การขอของตัวเอง · ถอนแล้วคนตัดสินได้ยินและ pending ลด · mark seen หยุดตัวเลข ประวัติอยู่ แยกต่อคน · list cap / count ไม่ cap → **`AccessRequestIT` 28 · integration รวม 214**
+- **`AccessRequestsPage.test.tsx` 22** (tabs 5 · inbox 12 · my requests 5) · **`RequestNotices.test.tsx` ใหม่ 10** (กระดิ่ง 7 · เมนูซ้าย 3) → **frontend 35 suites / 302 tests**
+- ทดสอบบนระบบจริง (`localhost:8090/Arak/`, Flyway → v22) ด้วย Playwright: admin / analyst_a / analyst_b — เมนู "Requests 3", กระดิ่ง "Notifications, N new", Inbox 3 แถว, Decide render, My requests + Withdraw, popover ของผู้ขอเห็น "admin rejected your request for …"
+
+### AZ.6 ข้อควรรู้ในการรันเครื่อง dev
+- **TaskStop ฆ่าแค่ `sh` ของ bring-up แต่ `java` ลูกยังถือ :8080 อยู่** → หา PID ของ :8080 (`Get-NetTCPConnection -LocalPort 8080`) ยืนยันว่า CommandLine เป็น `dac-service.jar` ของ ARAK แล้วค่อย `Stop-Process` ก่อน bring-up ใหม่ ไม่งั้น migration ใหม่ไม่ถูกรัน
+
+## รอบก่อนหน้า — **ข้อ AY: ปุ่ม "Open in OpenMetadata" พัง (500) · Request access ย้ายขึ้นมุมขวาบนของหน้า asset · หัวหน้า asset จัดใหม่แบบ OpenMetadata · ทดสอบ flow ขอสิทธิ์ทั้งเส้น + seed เคส demo**
 
 ผู้ใช้ถาม 3 เรื่องติดกัน (2026-09-25):
 - *"ทำไม Openin Openmetadata แล้วเจอแบบนี้"* — กดแล้วได้ HTTP 500 `InvalidPathException` บน `/catalog/http:/<om-host>/...`

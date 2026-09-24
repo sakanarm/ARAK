@@ -3,6 +3,7 @@ import { NavLink, useLocation } from 'react-router-dom';
 import { Badge } from '@openmetadata/ui-core-components/components/base/badges/badges';
 import AssistDock from '../assist/AssistDock';
 import { useAuthStore } from '../auth/authStore';
+import { countLabel, useRequestNotices } from '../pages/requests/useRequestNotices';
 import { sectionsFor, type NavSection } from './navigation';
 import TopNav from './TopNav';
 
@@ -103,6 +104,9 @@ function Sidebar({
   // it is what stops a requester being handed six links that can only 403.
   const hasRole = useAuthStore((state) => state.hasRole);
   const sections = sectionsFor(hasRole);
+  // Requests waiting for this person's decision, on the link that leads to
+  // them -- the same number the bell and the Inbox tab show.
+  const waiting = useRequestNotices().data?.inboxPending ?? 0;
 
   return (
     /*
@@ -127,6 +131,7 @@ function Sidebar({
           <li key={section.href}>
             <NavItem
               collapsed={collapsed}
+              count={section.href === '/requests' ? waiting : 0}
               current={isCurrent(activeUrl, section.href)}
               section={section}
             />
@@ -159,14 +164,17 @@ function Sidebar({
   );
 }
 
-function NavItem({
+export function NavItem({
   section,
   current,
   collapsed,
+  count = 0,
 }: {
   section: NavSection;
   current: boolean;
   collapsed: boolean;
+  /** Something waiting behind this link; drawn only when above zero. */
+  count?: number;
 }) {
   const Icon = section.icon;
 
@@ -174,7 +182,11 @@ function NavItem({
     <NavLink
       // The label has to reach a screen reader even when it is not drawn, and
       // the title is what tells a sighted reader which icon is which.
-      aria-label={collapsed ? section.label : undefined}
+      aria-label={
+        collapsed
+          ? `${section.label}${count > 0 ? `, ${count} waiting` : ''}`
+          : undefined
+      }
       className={`tw:group tw:flex tw:h-11 tw:items-center tw:rounded-lg tw:outline-focus-ring tw:transition tw:duration-100 tw:focus-visible:outline-2 ${
         collapsed ? 'tw:w-11 tw:justify-center' : 'tw:gap-3 tw:px-3.5'
       } ${
@@ -186,12 +198,21 @@ function NavItem({
       title={collapsed ? section.label : undefined}
       to={section.href}>
       {Icon && (
-        <Icon
-          aria-hidden
-          className={`tw:size-6 tw:shrink-0 ${
-            current ? 'tw:text-fg-white' : 'tw:text-fg-quaternary'
-          }`}
-        />
+        <span className="tw:relative tw:flex tw:shrink-0">
+          <Icon
+            aria-hidden
+            className={`tw:size-6 ${
+              current ? 'tw:text-fg-white' : 'tw:text-fg-quaternary'
+            }`}
+          />
+          {/* Collapsed, the number has no room; a dot says "something here". */}
+          {collapsed && count > 0 && (
+            <span
+              aria-hidden
+              className="tw:absolute tw:-top-0.5 tw:-right-0.5 tw:size-2.5 tw:rounded-full tw:bg-error-solid tw:ring-2 tw:ring-bg-primary"
+            />
+          )}
+        </span>
       )}
 
       {!collapsed && (
@@ -205,6 +226,18 @@ function NavItem({
             }`}>
             {section.label}
           </span>
+
+          {count > 0 && (
+            <span
+              aria-label={`${count} waiting`}
+              className={`tw:flex tw:h-5 tw:min-w-5 tw:items-center tw:justify-center tw:rounded-full tw:px-1.5 tw:text-xs tw:font-semibold tw:tabular-nums ${
+                current
+                  ? 'tw:bg-white tw:text-brand-secondary'
+                  : 'tw:bg-error-solid tw:text-white'
+              }`}>
+              {countLabel(count)}
+            </span>
+          )}
 
           {section.milestone && (
             <Badge color="gray" size="sm" type="pill-color">

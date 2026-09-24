@@ -115,7 +115,8 @@ class AccessRequestIT {
         handle -> {
           handle.execute(
               """
-              TRUNCATE access_request, audit_access_request, policy_version, policy_binding,
+              TRUNCATE access_request, audit_access_request, access_request_notice_seen,
+                       policy_version, policy_binding,
                        access_grant, audit_grant_change, row_entitlement, enforcement_state,
                        asset_facet, asset_owner, asset_fqn_map, asset_column, asset, policy,
                        principal_attribute, app_role_assignment, group_member, principal CASCADE
@@ -416,6 +417,128 @@ class AccessRequestIT {
       assertThat(gone.decidedBy()).isEqualTo("analyst_a");
       assertThat(requests.decidableBy(OWNER, "PENDING", 100)).isEmpty();
       assertThat(trail(made.id())).containsExactly("WITHDRAW", "REQUEST");
+    }
+  }
+
+  // ------------------------------------------------------------- the bell
+
+  @Nested
+  @DisplayName("notices")
+  class Notices {
+
+    @Test
+    @DisplayName("an owner hears about asks for tables they decide, and only those")
+    void ownerHearsAsks() {
+      AccessRequestStore.StoredRequest customer = ask("analyst_a", CUSTOMER, 7);
+      ask("analyst_a", LEDGER, 7);
+      ask("analyst_b", ORPHAN, null);
+
+      AccessRequestStore.Notices owner = requests.notices(OWNER, 20);
+      assertThat(owner.items())
+          .extracting(AccessRequestStore.Notice::requestId)
+          .containsExactly(customer.id());
+      assertThat(owner.items().get(0).kind()).isEqualTo("REQUESTED");
+      assertThat(owner.items().get(0).side()).isEqualTo("INBOX");
+      assertThat(owner.items().get(0).actor()).isEqualTo("analyst_a");
+      assertThat(owner.unseen()).isEqualTo(1);
+      assertThat(owner.inboxPending()).isEqualTo(1);
+      assertThat(owner.minePending()).isZero();
+
+      // Through the team, the ledger only.
+      assertThat(requests.notices(TEAM_MEMBER, 20).items())
+          .extracting(AccessRequestStore.Notice::assetFqn)
+          .containsExactly(LEDGER);
+      // An administrator decides everything, so hears everything.
+      AccessRequestStore.Notices admin = requests.notices(ADMIN, 20);
+      assertThat(admin.items()).hasSize(3);
+      assertThat(admin.inboxPending()).isEqualTo(3);
+      // A stranger hears nothing, and learns nothing about who asked for what.
+      assertThat(requests.notices(ANALYST_B, 20).items())
+          .extracting(AccessRequestStore.Notice::assetFqn)
+          .doesNotContain(CUSTOMER, LEDGER);
+    }
+
+    @Test
+    @DisplayName("a requester hears the answer, not their own ask")
+    void requesterHearsAnswers() {
+      AccessRequestStore.StoredRequest approved = ask("analyst_a", CUSTOMER, 7);
+      AccessRequestStore.StoredRequest rejected = ask("analyst_a", LEDGER, 7);
+      ask("analyst_a", ORPHAN, null);
+
+      AccessRequestStore.Notices before = requests.notices(ANALYST_A, 20);
+      assertThat(before.items()).isEmpty();
+      assertThat(before.minePending()).isEqualTo(3);
+      assertThat(before.inboxPending()).isZero();
+
+      requests.approve(approved.id(), OWNER, null, null);
+      requests.reject(rejected.id(), TEAM_MEMBER, "Use the reporting view");
+
+      AccessRequestStore.Notices after = requests.notices(ANALYST_A, 20);
+      assertThat(after.items())
+          .extracting(AccessRequestStore.Notice::kind)
+          .containsExactly("REJECTED", "APPROVED");
+      assertThat(after.items()).allSatisfy(n -> assertThat(n.side()).isEqualTo("MINE"));
+      assertThat(after.items().get(0).note()).isEqualTo("Use the reporting view");
+      assertThat(after.items().get(0).actor()).isEqualTo("finance_lead");
+      assertThat(after.unseen()).isEqualTo(2);
+      assertThat(after.minePending()).isEqualTo(1);
+
+      // The owner does not hear about what the owner did.
+      assertThat(requests.notices(OWNER, 20).items())
+          .extracting(AccessRequestStore.Notice::kind)
+          .containsExactly("REQUESTED");
+    }
+
+    @Test
+    @DisplayName("a withdrawn ask is heard by whoever decides it, and leaves the pending count")
+    void withdrawn() {
+      AccessRequestStore.StoredRequest made = ask("analyst_a", CUSTOMER, 7);
+      requests.withdraw(made.id(), ANALYST_A);
+
+      AccessRequestStore.Notices owner = requests.notices(OWNER, 20);
+      assertThat(owner.items())
+          .extracting(AccessRequestStore.Notice::kind)
+          .containsExactly("WITHDRAWN", "REQUESTED");
+      assertThat(owner.inboxPending()).isZero();
+      // Taking one's own request back is not news to oneself.
+      assertThat(requests.notices(ANALYST_A, 20).items()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("marking seen stops the count, keeps the history, and is per person")
+    void seen() {
+      ask("analyst_a", CUSTOMER, 7);
+      ask("analyst_b", ORPHAN, null);
+      assertThat(requests.notices(OWNER, 20).unseen()).isEqualTo(1);
+
+      requests.markNoticesSeen(OWNER);
+      AccessRequestStore.Notices read = requests.notices(OWNER, 20);
+      assertThat(read.unseen()).isZero();
+      assertThat(read.seenAt()).isNotNull();
+      assertThat(read.items()).hasSize(1).allSatisfy(n -> assertThat(n.unseen()).isFalse());
+      // Somebody else's bell is untouched.
+      assertThat(requests.notices(ADMIN, 20).unseen()).isEqualTo(2);
+
+      // Marking twice is harmless, and the name is matched without case.
+      requests.markNoticesSeen(new AccessRequestStore.Actor("OWNER_O", false));
+      assertThat(requests.notices(OWNER, 20).unseen()).isZero();
+
+      // Something new after reading counts again.
+      ask("analyst_b", CUSTOMER, 3);
+      assertThat(requests.notices(OWNER, 20).unseen()).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("the list is capped, the count is not")
+    void capped() {
+      ask("analyst_a", CUSTOMER, 7);
+      ask("analyst_a", LEDGER, 7);
+      ask("analyst_a", ORPHAN, null);
+      AccessRequestStore.Notices one = requests.notices(ADMIN, 1);
+      assertThat(one.items()).hasSize(1);
+      assertThat(one.unseen()).isEqualTo(3);
+      // Newest first.
+      assertThat(one.items().get(0).assetFqn()).isEqualTo(ORPHAN);
     }
   }
 

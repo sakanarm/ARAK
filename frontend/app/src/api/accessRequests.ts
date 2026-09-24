@@ -145,6 +145,12 @@ export async function fetchEligibility(
   return data;
 }
 
+/** One request, for its requester or someone who may decide it; 404 for anyone else. */
+export async function fetchRequest(id: string): Promise<AccessRequest> {
+  const { data } = await apiClient.get<AccessRequest>(`/v1/access-requests/${encodeURIComponent(id)}`);
+  return data;
+}
+
 export async function approveRequest(
   id: string,
   decision: { days?: number | null; note?: string | null }
@@ -175,4 +181,48 @@ export function describeApprovers(approvers: Approver[] | undefined): string {
   }
   const names = approvers.map((a) => (a.type === 'team' ? `team ${a.name}` : a.name));
   return `Decided by ${names.join(', ')}.`;
+}
+
+/**
+ * One thing that happened to a request, told to somebody who should hear it.
+ *
+ * `side` says which tab of the requests page it belongs on: INBOX when the
+ * reader decides the table, MINE when it was the reader's own ask.
+ */
+export interface RequestNotice {
+  id: number;
+  kind: 'REQUESTED' | 'WITHDRAWN' | 'APPROVED' | 'REJECTED';
+  side: 'INBOX' | 'MINE';
+  requestId: string;
+  assetFqn: string;
+  actor: string;
+  requesterUsername: string;
+  note: string | null;
+  occurredAt: string;
+  unseen: boolean;
+}
+
+export interface RequestNotices {
+  /** How many of the reader's notices are newer than the last time they looked. */
+  unseen: number;
+  /** Pending requests the reader may decide: the Inbox tab's count. */
+  inboxPending: number;
+  /** The reader's own requests still waiting: the My requests tab's count. */
+  minePending: number;
+  seenAt: string | null;
+  items: RequestNotice[];
+}
+
+/** Shared by the bell, the rail and the requests page, so one fetch feeds all three. */
+export const NOTICES_KEY = ['access-requests', 'notifications'] as const;
+
+export async function fetchRequestNotices(limit = 20): Promise<RequestNotices> {
+  const { data } = await apiClient.get<RequestNotices>('/v1/access-requests/notifications', {
+    params: { limit },
+  });
+  return data;
+}
+
+export async function markRequestNoticesSeen(): Promise<void> {
+  await apiClient.post('/v1/access-requests/notifications/seen');
 }

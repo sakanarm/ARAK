@@ -9,20 +9,23 @@ import {
   type ReactNode,
 } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Bell01,
   BookClosed,
   BookOpen01,
   Bookmark,
+  Check,
   ChevronDown,
   Columns03,
   CornerDownLeft,
+  CornerUpLeft,
   Cube01,
   Database01,
   EyeOff,
   Globe01,
   HelpCircle,
+  Key01,
   LayoutLeft,
   LayoutRight,
   Loading02,
@@ -57,10 +60,23 @@ import {
   type SearchHit,
   type SearchKind,
 } from '../api/search';
+import {
+  markRequestNoticesSeen,
+  NOTICES_KEY,
+  type RequestNotice,
+} from '../api/accessRequests';
 import { fetchSyncStatus } from '../api/system';
 import { AUTH_SPLASH_MS, useAuthSplash } from '../auth/AuthSplash';
 import { useAuthStore } from '../auth/authStore';
+import { relativeTime } from '../components/widgets';
 import { plainText } from '../lib/text';
+import {
+  countLabel,
+  noticeHref,
+  noticeVerb,
+  tableName,
+  useRequestNotices,
+} from '../pages/requests/useRequestNotices';
 import mark from '../assets/arak-mark.png';
 
 /**
@@ -73,7 +89,7 @@ import mark from '../assets/arak-mark.png';
  *
  * Every control goes somewhere real. A header of decorative icons is worse than
  * a plain one, because it teaches people that clicking things in this product
- * does nothing — so there is no bell here until something rings it.
+ * does nothing — so the bell is here because requests and a broken crawl ring it.
  */
 export default function TopNav({
   drawer,
@@ -552,17 +568,25 @@ function flatten(
 /**
  * What needs somebody's attention.
  *
- * The bell only rings for things this console actually knows are wrong. The
- * first of those is the age of the metadata cache: every screen in the product
- * is a view of it, so a crawl that failed or never ran silently makes every
- * other screen a lie. Admin-only, because the endpoint behind it is.
+ * Two kinds of thing ring it. For everyone: access requests -- a table they
+ * decide was asked for, or their own ask was answered -- because a request
+ * nobody notices waits until the requester gives up and sends a chat message
+ * instead. For an administrator, also the age of the metadata cache: every
+ * screen is a view of it, so a crawl that failed or never ran silently makes
+ * every other screen a lie.
  *
- * A bell that is always empty trains people to stop looking at it, so there is
- * no badge unless there is something to read.
+ * The number counts what is new since the bell was last opened; opening it is
+ * reading it. A bell that is always lit trains people to stop looking at it,
+ * so there is no badge unless there is something they have not seen.
  */
-function Notifications() {
+export function Notifications() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const isAdmin = useAuthStore((state) => state.hasRole('PLATFORM_ADMIN'));
+  const notices = useRequestNotices();
+  // What was new when the panel opened. Held here because opening marks
+  // everything read, and the dots should stay until the panel is closed.
+  const [fresh, setFresh] = useState<Set<number>>(new Set());
 
   const { data } = useQuery({
     queryKey: ['sync-status'],
@@ -588,57 +612,211 @@ function Notifications() {
     });
   }
 
+  const items = notices.data?.items ?? [];
+  const unseen = (notices.data?.unseen ?? 0) + alerts.length;
+  const waiting = notices.data?.inboxPending ?? 0;
+
+  function onOpenChange(open: boolean) {
+    if (open) {
+      setFresh(new Set(items.filter((item) => item.unseen).map((item) => item.id)));
+      if ((notices.data?.unseen ?? 0) > 0) {
+        markRequestNoticesSeen()
+          .then(() => queryClient.invalidateQueries({ queryKey: NOTICES_KEY }))
+          .catch(() => {
+            // Still unread on the server; the badge simply comes back.
+          });
+      }
+    } else {
+      setFresh(new Set());
+    }
+  }
+
   return (
-    <Dropdown.Root>
+    <AriaDialogTrigger onOpenChange={onOpenChange}>
       <AriaButton
-        aria-label={
-          alerts.length > 0
-            ? `Notifications, ${alerts.length} needing attention`
-            : 'Notifications'
-        }
+        aria-label={unseen > 0 ? `Notifications, ${unseen} new` : 'Notifications'}
         className="tw:relative tw:flex tw:size-10 tw:cursor-pointer tw:items-center tw:justify-center tw:rounded-lg tw:text-fg-quaternary tw:outline-focus-ring tw:transition tw:hover:bg-secondary tw:hover:text-fg-secondary tw:focus-visible:outline-2">
         <Bell01 className="tw:size-5" />
-        {alerts.length > 0 && (
+        {unseen > 0 && (
           <span
             aria-hidden
-            className="tw:absolute tw:top-2 tw:right-2.5 tw:size-2 tw:rounded-full tw:bg-fg-error-primary tw:ring-2 tw:ring-bg-primary"
-          />
+            className="tw:absolute tw:top-1 tw:right-1 tw:flex tw:h-4.5 tw:min-w-4.5 tw:items-center tw:justify-center tw:rounded-full tw:bg-error-solid tw:px-1 tw:text-[10px] tw:leading-none tw:font-semibold tw:text-white tw:ring-2 tw:ring-bg-primary">
+            {countLabel(unseen)}
+          </span>
         )}
       </AriaButton>
 
-      <Dropdown.Popover className="tw:w-80">
-        <div className="tw:border-b tw:border-secondary tw:px-4 tw:py-3">
-          <p className="tw:text-sm tw:font-semibold tw:text-primary">
-            Notifications
-          </p>
-          <p className="tw:text-xs tw:text-tertiary">
-            {isAdmin
-              ? `Metadata cache · crawled ${shortAge(
-                  data?.lastFullCrawlAt ?? data?.updatedAt
-                )}`
-              : 'Only a platform admin sees the state of the metadata cache.'}
-          </p>
-        </div>
+      <Dropdown.Popover className="tw:w-96">
+        <AriaDialog aria-label="Notifications" className="tw:outline-none">
+          {({ close }) => (
+            <>
+              <div className="tw:flex tw:items-center tw:justify-between tw:gap-3 tw:border-b tw:border-secondary tw:px-4 tw:py-3">
+                <div>
+                  <p className="tw:text-sm tw:font-semibold tw:text-primary">Notifications</p>
+                  <p className="tw:text-xs tw:text-tertiary">
+                    {waiting > 0
+                      ? `${waiting} request${waiting === 1 ? '' : 's'} waiting for your decision`
+                      : 'Access requests you decide or asked for'}
+                  </p>
+                </div>
+                {waiting > 0 && (
+                  <button
+                    className="tw:shrink-0 tw:cursor-pointer tw:rounded-md tw:bg-utility-brand-50 tw:px-2 tw:py-1 tw:text-xs tw:font-semibold tw:text-brand-secondary tw:hover:bg-utility-brand-100"
+                    onClick={() => {
+                      close();
+                      navigate('/requests?tab=inbox');
+                    }}
+                    type="button">
+                    Review
+                  </button>
+                )}
+              </div>
 
-        {alerts.length === 0 ? (
-          <p className="tw:px-4 tw:py-6 tw:text-center tw:text-sm tw:text-tertiary">
-            Nothing needs your attention.
-          </p>
-        ) : (
-          <Dropdown.Menu selectionMode="none">
-            {alerts.map((alert) => (
-              <Dropdown.Item
-                icon={RefreshCcw01}
-                id={alert.id}
-                key={alert.id}
-                label={alert.label}
-                onAction={() => navigate('/settings/openmetadata')}
-              />
-            ))}
-          </Dropdown.Menu>
-        )}
+              <div className="tw:max-h-96 tw:overflow-y-auto">
+                {alerts.length > 0 && (
+                  <ul aria-label="System">
+                    {alerts.map((alert) => (
+                      <li key={alert.id}>
+                        <NoticeRow
+                          icon={
+                            <span className="tw:flex tw:size-8 tw:items-center tw:justify-center tw:rounded-full tw:bg-utility-error-50">
+                              <RefreshCcw01 className="tw:size-4 tw:text-fg-error-primary" />
+                            </span>
+                          }
+                          onPress={() => {
+                            close();
+                            navigate('/settings/openmetadata');
+                          }}
+                          unread>
+                          <span className="tw:font-semibold tw:text-primary">{alert.label}</span>
+                          <span className="tw:mt-0.5 tw:block tw:truncate tw:text-xs tw:text-tertiary">
+                            {alert.detail}
+                          </span>
+                        </NoticeRow>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+
+                {items.length === 0 && alerts.length === 0 ? (
+                  <div className="tw:flex tw:flex-col tw:items-center tw:gap-2 tw:px-6 tw:py-8 tw:text-center">
+                    <span className="tw:flex tw:size-10 tw:items-center tw:justify-center tw:rounded-full tw:bg-secondary">
+                      <Bell01 className="tw:size-5 tw:text-fg-quaternary" />
+                    </span>
+                    <p className="tw:text-sm tw:font-medium tw:text-secondary">You&apos;re all caught up</p>
+                    <p className="tw:text-xs tw:text-tertiary">
+                      Requests for tables you own, and answers to yours, arrive here.
+                    </p>
+                  </div>
+                ) : (
+                  <ul aria-label="Access requests">
+                    {items.map((item) => (
+                      <li key={item.id}>
+                        <NoticeRow
+                          icon={<NoticeIcon notice={item} />}
+                          onPress={() => {
+                            close();
+                            navigate(noticeHref(item));
+                          }}
+                          unread={fresh.has(item.id) || item.unseen}>
+                          <span className="tw:text-secondary">
+                            <span className="tw:font-semibold tw:text-primary">{item.actor}</span>{' '}
+                            {noticeVerb(item)}{' '}
+                            <span className="tw:font-semibold tw:text-primary">
+                              {tableName(item.assetFqn)}
+                            </span>
+                          </span>
+                          {item.kind === 'REJECTED' && item.note && (
+                            <span className="tw:mt-1 tw:block tw:truncate tw:text-xs tw:text-tertiary">
+                              “{item.note}”
+                            </span>
+                          )}
+                          <span className="tw:mt-1 tw:block tw:text-xs tw:text-quaternary">
+                            {relativeTime(item.occurredAt)}
+                          </span>
+                        </NoticeRow>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+
+              <div className="tw:flex tw:items-center tw:justify-between tw:border-t tw:border-secondary tw:px-4 tw:py-2.5 tw:text-xs">
+                {isAdmin ? (
+                  <span className="tw:text-tertiary">
+                    Metadata crawled {shortAge(data?.lastFullCrawlAt ?? data?.updatedAt)}
+                  </span>
+                ) : (
+                  <span />
+                )}
+                <button
+                  className="tw:cursor-pointer tw:font-semibold tw:text-brand-secondary tw:hover:underline"
+                  onClick={() => {
+                    close();
+                    navigate('/requests');
+                  }}
+                  type="button">
+                  View all requests
+                </button>
+              </div>
+            </>
+          )}
+        </AriaDialog>
       </Dropdown.Popover>
-    </Dropdown.Root>
+    </AriaDialogTrigger>
+  );
+}
+
+/** One line of the bell: an icon, what happened, and a dot while it is new. */
+function NoticeRow({
+  icon,
+  unread,
+  onPress,
+  children,
+}: {
+  icon: ReactNode;
+  unread: boolean;
+  onPress: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      className={`tw:flex tw:w-full tw:cursor-pointer tw:items-start tw:gap-3 tw:border-b tw:border-secondary tw:px-4 tw:py-3 tw:text-left tw:text-sm tw:transition-colors tw:last:border-b-0 tw:hover:bg-primary_hover tw:focus-visible:bg-primary_hover tw:focus-visible:outline-none ${
+        unread ? 'tw:bg-utility-brand-50/40' : ''
+      }`}
+      onClick={onPress}
+      type="button">
+      <span className="tw:shrink-0">{icon}</span>
+      <span className="tw:min-w-0 tw:flex-1">{children}</span>
+      {unread && (
+        <span
+          aria-label="New"
+          className="tw:mt-1.5 tw:size-2 tw:shrink-0 tw:rounded-full tw:bg-brand-solid"
+          role="img"
+        />
+      )}
+    </button>
+  );
+}
+
+/** Who did it, and a small mark for what they did. */
+function NoticeIcon({ notice }: { notice: RequestNotice }) {
+  const mark =
+    notice.kind === 'APPROVED'
+      ? { Icon: Check, tone: 'tw:bg-success-solid' }
+      : notice.kind === 'REJECTED'
+        ? { Icon: XClose, tone: 'tw:bg-error-solid' }
+        : notice.kind === 'WITHDRAWN'
+          ? { Icon: CornerUpLeft, tone: 'tw:bg-gray-500' }
+          : { Icon: Key01, tone: 'tw:bg-brand-solid' };
+  return (
+    <span className="tw:relative tw:flex tw:size-8 tw:items-center tw:justify-center tw:rounded-full tw:bg-utility-brand-50 tw:text-xs tw:font-semibold tw:text-brand-secondary tw:uppercase">
+      {notice.actor.slice(0, 1)}
+      <span
+        className={`tw:absolute tw:-right-1 tw:-bottom-1 tw:flex tw:size-4 tw:items-center tw:justify-center tw:rounded-full tw:ring-2 tw:ring-bg-primary ${mark.tone}`}>
+        <mark.Icon className="tw:size-2.5 tw:text-white" />
+      </span>
+    </span>
   );
 }
 

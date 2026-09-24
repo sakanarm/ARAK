@@ -598,6 +598,182 @@ public class AccessRequestStore {
     return out;
   }
 
+  // ---------------------------------------------------------------- notices
+
+  /**
+   * One thing that happened to a request, told to somebody who should hear it.
+   *
+   * @param kind {@code REQUESTED} or {@code WITHDRAWN} for someone who decides
+   *     the table; {@code APPROVED} or {@code REJECTED} for the requester
+   * @param side {@code INBOX} when the reader decides, {@code MINE} when it is
+   *     the reader's own request -- which tab of the requests page it opens
+   */
+  public record Notice(
+      long id,
+      String kind,
+      String side,
+      UUID requestId,
+      String assetFqn,
+      String actor,
+      String requesterUsername,
+      String note,
+      Instant occurredAt,
+      boolean unseen) {}
+
+  /**
+   * What the header needs: the newest notices, how many are new, and the two
+   * counts the requests page puts on its tabs.
+   */
+  public record Notices(
+      int unseen, int inboxPending, int minePending, Instant seenAt, List<Notice> items) {}
+
+  /** How far back the bell looks: enough to count "new" honestly, not the whole history. */
+  static final int NOTICE_WINDOW = 500;
+
+  /**
+   * What this person should hear about, newest first.
+   *
+   * <p>Built from {@code audit_access_request}, not stored separately. The
+   * reader hears about requests for tables they may decide <em>today</em> --
+   * the owner match is {@link #mayDecide}, the same one the inbox and approval
+   * use -- and about answers to their own requests. Nobody is told about what
+   * they did themselves.
+   */
+  public Notices notices(Actor actor, int limit) {
+    int keep = limit <= 0 ? 20 : Math.min(limit, 50);
+    return jdbi.withHandle(
+        handle -> {
+          Instant seenAt =
+              handle
+                  .createQuery(
+                      "SELECT seen_at FROM access_request_notice_seen WHERE username = lower(:who)")
+                  .bind("who", actor.username())
+                  .map((rs, ctx) -> instant(rs, "seen_at"))
+                  .findOne()
+                  .orElse(null);
+
+          List<Notice> all = new ArrayList<>();
+          all.addAll(
+              handle
+                  .createQuery(
+                      """
+                      SELECT * FROM audit_access_request
+                      WHERE lower(requester_username) = lower(:who)
+                        AND action IN ('APPROVE', 'REJECT')
+                        AND lower(actor) <> lower(:who)
+                      ORDER BY occurred_at DESC
+                      LIMIT :window
+                      """)
+                  .bind("who", actor.username())
+                  .bind("window", NOTICE_WINDOW)
+                  .map((rs, ctx) -> notice(rs, "MINE", seenAt))
+                  .list());
+
+          List<Notice> asked =
+              handle
+                  .createQuery(
+                      """
+                      SELECT * FROM audit_access_request
+                      WHERE action IN ('REQUEST', 'WITHDRAW')
+                        AND lower(requester_username) <> lower(:who)
+                      ORDER BY occurred_at DESC
+                      LIMIT :window
+                      """)
+                  .bind("who", actor.username())
+                  .bind("window", NOTICE_WINDOW)
+                  .map((rs, ctx) -> notice(rs, "INBOX", seenAt))
+                  .list();
+          Map<String, List<Approver>> owners =
+              owners(handle, asked.stream().map(Notice::assetFqn).distinct().toList());
+          Map<String, Boolean> decides = new LinkedHashMap<>();
+          for (Notice one : asked) {
+            if (decides.computeIfAbsent(
+                one.assetFqn(), fqn -> mayDecide(handle, actor, fqn, owners))) {
+              all.add(one);
+            }
+          }
+
+          // Newest first; the audit id breaks a tie in the same instant.
+          all.sort(
+              java.util.Comparator.comparing(Notice::occurredAt)
+                  .thenComparingLong(Notice::id)
+                  .reversed());
+          int unseen = (int) all.stream().filter(Notice::unseen).count();
+
+          int minePending =
+              handle
+                  .createQuery(
+                      """
+                      SELECT count(*) FROM access_request
+                      WHERE lower(requester_username) = lower(:who) AND status = 'PENDING'
+                      """)
+                  .bind("who", actor.username())
+                  .mapTo(Integer.class)
+                  .one();
+          int inboxPending = pendingFor(handle, actor);
+
+          return new Notices(
+              unseen,
+              inboxPending,
+              minePending,
+              seenAt,
+              List.copyOf(all.subList(0, Math.min(keep, all.size()))));
+        });
+  }
+
+  /** Everything up to now is read. The bell stops counting it; nothing is deleted. */
+  public void markNoticesSeen(Actor actor) {
+    jdbi.useHandle(
+        handle ->
+            handle
+                .createUpdate(
+                    """
+                    INSERT INTO access_request_notice_seen (username, seen_at)
+                    VALUES (lower(:who), now())
+                    ON CONFLICT (username) DO UPDATE SET seen_at = EXCLUDED.seen_at
+                    """)
+                .bind("who", actor.username())
+                .execute());
+  }
+
+  /** Pending requests this person may decide, counted the way the inbox lists them. */
+  private int pendingFor(Handle handle, Actor actor) {
+    List<StoredRequest> pending =
+        handle
+            .createQuery(
+                """
+                SELECT * FROM access_request
+                WHERE status = 'PENDING' AND lower(requester_username) <> lower(:who)
+                LIMIT 2000
+                """)
+            .bind("who", actor.username())
+            .map(AccessRequestStore::map)
+            .list();
+    return (int) annotate(handle, pending, actor).stream().filter(StoredRequest::mayDecide).count();
+  }
+
+  private static Notice notice(ResultSet rs, String side, Instant seenAt) throws SQLException {
+    Instant at = instant(rs, "occurred_at");
+    String kind =
+        switch (rs.getString("action")) {
+          case "REQUEST" -> "REQUESTED";
+          case "WITHDRAW" -> "WITHDRAWN";
+          case "APPROVE" -> "APPROVED";
+          default -> "REJECTED";
+        };
+    return new Notice(
+        rs.getLong("id"),
+        kind,
+        side,
+        UUID.fromString(rs.getString("request_id")),
+        rs.getString("asset_fqn"),
+        rs.getString("actor"),
+        rs.getString("requester_username"),
+        rs.getString("note"),
+        at,
+        seenAt == null || at.isAfter(seenAt));
+  }
+
   // --------------------------------------------------------------- plumbing
 
   private static StoredRequest load(Handle handle, UUID id, boolean lock) {

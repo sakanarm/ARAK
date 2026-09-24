@@ -185,6 +185,25 @@ public class AccessRequestResource {
     return eligibility.check(caller(security).username(), fqn, clientIp(http), purpose);
   }
 
+  /**
+   * The header bell: requests for tables the caller decides, answers to the
+   * caller's own, how many are new, and the counts the requests page tabs show.
+   */
+  @GET
+  @Path("/notifications")
+  public AccessRequestStore.Notices notifications(
+      @QueryParam("limit") @DefaultValue("20") int limit, @Context SecurityContext security) {
+    return requests.notices(actor(caller(security)), limit);
+  }
+
+  /** Marks everything so far as read, for the caller only. */
+  @POST
+  @Path("/notifications/seen")
+  public Response notificationsSeen(@Context SecurityContext security) {
+    requests.markNoticesSeen(actor(caller(security)));
+    return Response.noContent().build();
+  }
+
   /** One request, for the requester or someone who may decide it. */
   @GET
   @Path("/{id}")
