@@ -414,7 +414,7 @@ M18 ก่อนเพิ่ม engine ตัวที่ 3 เสมอ
 - **การ์ดขาวใบเดียว** `rounded-xl border shadow-xs`:
   - **Breadcrumb** `Catalog › service › database › schema › table` — ชั้นแม่เป็นลิงก์ไป `/catalog/<fqn ชั้นนั้น>` (asset ชั้นแม่มีจริงในแคตาล็อก) · ใช้ `segments()` ของ `lib/fqn.ts` จึงไม่แตก segment ที่มีจุดในเครื่องหมายคำพูด (`"Sales.DB"`) และ quote กลับตอนทำลิงก์ · ชั้นสุดท้าย `aria-current="page"`
   - ไอคอน + **ชื่อ** + ปุ่ม **Copy FQN** + description · **มุมขวา:** `AssetAccessAction` · Open in OpenMetadata · View as someone
-  - **แถบสถิติคั่นด้วยจุด** แบบ OM: Type · **Domains** (แสดงเฉพาะ domain ชั้นลึกสุด ตัด ancestor ด้วย `isAncestor` · title = FQN เต็ม · เกินหนึ่ง = `+N`) · **Owners** (avatar ตัวอักษรแรก + ชื่อ · title บอก *named on this asset* / *inherited from …* · ไม่มี = **"No owner"** สีเตือน) · Tier (badge) · Certification · Source · Columns · ค่าว่าง = `--`
+  - **แถบสถิติคั่นด้วยเส้นตั้งบางๆ** (`w-px self-stretch bg-border-secondary` สูงเท่า label+ค่า — เดิมเป็นจุดแบบ OM ผู้ใช้บอก *"จุดพวกนี้คืออะไร ไม่สวย"* จึงเปลี่ยน): Type · **Domains** (แสดงเฉพาะ domain ชั้นลึกสุด ตัด ancestor ด้วย `isAncestor` · title = FQN เต็ม · เกินหนึ่ง = `+N`) · **Owners** (avatar ตัวอักษรแรก + ชื่อ · title บอก *named on this asset* / *inherited from …* · ไม่มี = **"No owner"** สีเตือน) · Tier (badge) · Certification · Source · Columns · ค่าว่าง = `--`
 - **แท็บเป็นการ์ดแยก** แบบ OM: ขีดใต้สี brand ที่แท็บที่เปิดอยู่ · badge จำนวน column เป็นสีทึบเมื่อ active · `role="tablist"` เดิม
 - sidebar: panel Owners ย้ายขึ้นไปอยู่ในแถบสถิติแล้ว · Location เพิ่ม **FQN**
 - `BackLink` ยังใช้ในหน้า error

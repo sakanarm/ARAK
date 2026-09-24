@@ -672,7 +672,8 @@ function CopyFqn({ fqn }: { fqn: string }) {
 
 /**
  * One fact in the strip under the name: its label above, its value below,
- * a dot between it and the one before -- as OpenMetadata separates its own.
+ * a thin rule between it and the one before, the height of both lines. A dot
+ * was tried first and read as a speck on the page rather than a separator.
  */
 function Stat({
   label,
@@ -684,12 +685,9 @@ function Stat({
   children: React.ReactNode;
 }) {
   return (
-    <div className="tw:flex tw:min-w-0 tw:items-start">
+    <div className="tw:flex tw:min-w-0 tw:items-stretch">
       {!first && (
-        <span
-          aria-hidden="true"
-          className="tw:mx-5 tw:mt-6 tw:size-1 tw:shrink-0 tw:rounded-full tw:bg-quaternary"
-        />
+        <span aria-hidden="true" className="tw:mx-6 tw:w-px tw:shrink-0 tw:self-stretch tw:bg-border-secondary" />
       )}
       <div className="tw:min-w-0">
         <dt className="tw:text-sm tw:text-tertiary">{label}</dt>
