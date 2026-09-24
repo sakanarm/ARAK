@@ -59,6 +59,19 @@ class SpaServletTest {
     }
 
     @Test
+    @DisplayName("a route with characters no file name may hold is still the app, not a 500")
+    void unusualCharacters() throws Exception {
+      // Seen live: a link that resolved an absolute URL as a route produced
+      // /catalog/http:/host:8585/..., and Windows' Path.resolve threw on the
+      // colon. Whatever the router makes of it, the server must not fall over.
+      Reply reply = get("/catalog/http:/om.example.test:8585/database/svc.db");
+
+      assertThat(reply.status).isEqualTo(200);
+      assertThat(reply.body).contains("<title>app</title>");
+      assertThat(get("/catalog/svc:db/app.js").status).isEqualTo(404);
+    }
+
+    @Test
     @DisplayName("a plain route is the app")
     void plainRoute() throws Exception {
       assertThat(get("/policies/new").body).contains("<title>app</title>");

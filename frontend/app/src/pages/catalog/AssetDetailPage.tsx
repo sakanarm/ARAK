@@ -1,12 +1,22 @@
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, AlertCircle, Eye, LinkExternal01 } from '@untitledui/icons';
+import {
+  ArrowLeft,
+  AlertCircle,
+  Check,
+  ChevronRight,
+  Copy01,
+  Eye,
+  LinkExternal01,
+} from '@untitledui/icons';
 import { lookFor } from './assetLook';
 import { Chip as Badge } from '../../components/chips';
 import { Button } from '@openmetadata/ui-core-components/components/base/buttons/button';
 import {
   apiErrorMessage,
   fetchAsset,
+  type AssetOwner,
   type ColumnDetail,
   type FacetRow,
 } from '../../api/client';
@@ -17,14 +27,16 @@ import {
 import {
   FacetChip,
   FacetGroup,
-  OwnerChip,
   columnFacets,
+  facetName,
   groupFacets,
 } from './facets';
 import { AccessTab } from './AccessTab';
+import { AssetAccessAction } from './AssetRequestAccess';
 import { AuditTab } from './AuditTab';
 import { Field, Panel } from './panels';
 import { plainText } from '../../lib/text';
+import { isAncestor, leaf, segments } from '../../lib/fqn';
 
 /**
  * One asset, with everything a policy can select it by.
@@ -116,28 +128,42 @@ export default function AssetDetailPage() {
 
   return (
     <>
-      <BackLink />
+      {/* One card, laid out as OpenMetadata lays out its own asset page:
+          where it sits, what it is called, what you can do to it, and the
+          handful of facts people look for first. Somebody who lives in
+          OpenMetadata should find each of them where their eye already goes. */}
+      <header className="tw:rounded-xl tw:border tw:border-secondary tw:bg-primary tw:px-5 tw:pt-4 tw:pb-5 tw:shadow-xs">
+        <Breadcrumb fqn={asset.fqn} />
 
-      <header className="tw:mt-4">
-        <div className="tw:flex tw:flex-wrap tw:items-center tw:gap-2">
-          {/* The same tile the catalog list draws, so arriving here confirms
-            * you opened what you clicked rather than asking you to re-read
-            * the FQN to be sure. */}
-          <span
-            className={`tw:flex tw:size-9 tw:shrink-0 tw:items-center tw:justify-center tw:rounded-lg ${look.tile}`}>
-            <look.Icon className="tw:size-4.5" />
-          </span>
-          <h1 className="tw:text-display-xs tw:font-semibold tw:text-primary">
-            {asset.displayName || asset.name}
-          </h1>
-          {/*
-            The policies below say what governs this table. This says what
-            that adds up to for one person -- the question an owner asks
-            straight after reading the list, and the one the list cannot
-            answer, because composing seven layers in your head is exactly
-            what nobody can do reliably (FR-5.2).
-          */}
-          <div className="tw:ml-auto tw:flex tw:items-center tw:gap-2">
+        <div className="tw:mt-3 tw:flex tw:flex-wrap tw:items-start tw:gap-x-4 tw:gap-y-3">
+          <div className="tw:flex tw:min-w-0 tw:flex-1 tw:items-start tw:gap-3">
+            {/* The same tile the catalog list draws, so arriving here confirms
+              * you opened what you clicked rather than asking you to re-read
+              * the FQN to be sure. */}
+            <span
+              className={`tw:flex tw:size-10 tw:shrink-0 tw:items-center tw:justify-center tw:rounded-lg ${look.tile}`}>
+              <look.Icon className="tw:size-5" />
+            </span>
+            <div className="tw:min-w-0">
+              <div className="tw:flex tw:items-center tw:gap-1.5">
+                <h1 className="tw:truncate tw:text-display-xs tw:font-semibold tw:text-primary">
+                  {asset.displayName || asset.name}
+                </h1>
+                <CopyFqn fqn={asset.fqn} />
+              </div>
+              {plainText(asset.description) && (
+                <p className="tw:mt-1 tw:max-w-3xl tw:text-pretty tw:text-sm tw:text-tertiary">
+                  {plainText(asset.description)}
+                </p>
+              )}
+            </div>
+          </div>
+
+          {/* The asset's actions, top right. Request access leads because it
+            * is the one a reader who cannot get in came for; the other two
+            * are for somebody who already can. */}
+          <div className="tw:flex tw:flex-wrap tw:items-center tw:gap-2">
+            <AssetAccessAction asset={asset} />
             {/* ARAK caches what OpenMetadata knows; it does not replace it.
               * Everything this page cannot answer -- lineage, profiles, the
               * conversation hanging off the description -- is one click away
@@ -154,6 +180,9 @@ export default function AssetDetailPage() {
                 Open in OpenMetadata
               </Button>
             )}
+            {/* What the policies add up to for one person -- the question an
+              * owner asks straight after reading them, and the one a list
+              * cannot answer (FR-5.2). */}
             <Button
               color="secondary"
               iconLeading={Eye}
@@ -164,28 +193,41 @@ export default function AssetDetailPage() {
               View as someone
             </Button>
           </div>
-          <Badge color="gray" size="sm" type="modern">
-            {asset.assetType}
-          </Badge>
-          {asset.tier && (
-            <Badge color="warning" size="sm" type="pill-color">
-              {asset.tier}
-            </Badge>
-          )}
-          {asset.certification && (
-            <Badge color="success" size="sm" type="pill-color">
-              {asset.certification}
-            </Badge>
-          )}
         </div>
-        <p className="tw:mt-2 tw:font-mono tw:text-xs tw:break-all tw:text-quaternary">
-          {asset.fqn}
-        </p>
-        {plainText(asset.description) && (
-          <p className="tw:mt-3 tw:max-w-3xl tw:text-pretty tw:text-sm tw:text-tertiary">
-            {plainText(asset.description)}
-          </p>
-        )}
+
+        <dl className="tw:mt-5 tw:flex tw:flex-wrap tw:items-start tw:gap-y-4">
+          <Stat first label="Type">
+            {asset.assetType}
+          </Stat>
+          <Stat label="Domains">
+            <Domains facets={data.facets} />
+          </Stat>
+          <Stat label="Owners">
+            <Owners owners={data.owners} />
+          </Stat>
+          <Stat label="Tier">
+            {asset.tier ? (
+              <Badge color="warning" size="sm" type="pill-color">
+                {leaf(asset.tier)}
+              </Badge>
+            ) : (
+              <None />
+            )}
+          </Stat>
+          <Stat label="Certification">
+            {asset.certification ? (
+              <Badge color="success" size="sm" type="pill-color">
+                {leaf(asset.certification)}
+              </Badge>
+            ) : (
+              <None />
+            )}
+          </Stat>
+          <Stat label="Source">{asset.dataSource ?? <None />}</Stat>
+          <Stat label="Columns">
+            {asset.columnCount > 0 ? asset.columnCount : <None />}
+          </Stat>
+        </dl>
       </header>
 
       <AssetTabs columnCount={columns.length} onChange={openTab} value={tab} />
@@ -217,29 +259,9 @@ export default function AssetDetailPage() {
             </section>
 
             <aside className="tw:space-y-6">
-              <Panel title="Owners">
-                {data.owners.length === 0 ? (
-                  // Worth saying rather than leaving blank: no owner means no one
-                  // can author a local policy here (FR-3.1.2) and, in Phase 2, no
-                  // one to route a request to.
-                  <p className="tw:text-sm tw:text-warning-primary">
-                    Nobody owns this asset in OpenMetadata, so no local policy
-                    can be authored for it.
-                  </p>
-                ) : (
-                  <div className="tw:flex tw:flex-wrap tw:gap-1.5">
-                    {data.owners.map((owner) => (
-                      <OwnerChip
-                        key={`${owner.type}:${owner.name}`}
-                        owner={owner}
-                      />
-                    ))}
-                  </div>
-                )}
-              </Panel>
-
               <Panel title="Location">
                 <dl className="tw:space-y-2 tw:text-sm">
+                  <Field label="FQN" value={asset.fqn} />
                   <Field label="Source" value={asset.dataSource} />
                   <Field label="Parent" value={asset.parentFqn} />
                   <Field
@@ -330,13 +352,14 @@ function isTab(value: string | null): value is TabId {
 }
 
 /**
- * The five tabs, as a segmented control.
+ * The five tabs, as OpenMetadata draws its own: a full-width strip in a card
+ * of its own, the open tab underlined in brand blue, its count filled.
  *
- * <p>An underline is the lightest way to mark a selection and it was too
- * light here: the strip sat between a heading and a card with nothing of its
- * own, so the one blue word had to carry both "this is a control" and "this
- * is where you are". A track with a filled selection says the first before
- * anybody reads the second.
+ * <p>A segmented control stood here for a while, because an underline alone
+ * was too light between a heading and a card. The card is what fixes that --
+ * the strip reads as the page's navigation because it is a surface of its own
+ * -- and it keeps the page looking like the one people have open in the other
+ * tab.
  *
  * <p>Only the column count is shown, because it is the only one already in
  * hand. The others would each cost a request made solely to put a number on a
@@ -353,45 +376,51 @@ function AssetTabs({
   columnCount: number;
 }) {
   return (
-    // `overflow-y-hidden` is not decoration. Setting only `overflow-x`
-    // leaves the other axis computing to `auto`, and the half-pixel the
-    // buttons overhang by was enough for Windows to park a full vertical
-    // scrollbar -- arrows and all -- on the right of the strip.
-    <div
-      aria-label="Asset"
-      className="tw:mt-6 tw:flex tw:w-fit tw:max-w-full tw:gap-1 tw:overflow-x-auto tw:overflow-y-hidden tw:rounded-lg tw:border tw:border-secondary tw:bg-primary tw:p-1"
-      role="tablist">
-      {TABS.map((tab) => {
-        const active = tab.value === value;
-        return (
-          <button
-            aria-selected={active}
-            // Tailwind's reset gives a button `cursor: default`, which reads
-            // as "not clickable" on everything that is not obviously a form
-            // control. These are the page's main navigation.
-            className={`tw:shrink-0 tw:cursor-pointer tw:rounded-md tw:px-3 tw:py-2 tw:text-sm tw:font-semibold tw:transition-colors tw:focus-visible:outline-2 tw:focus-visible:outline-offset-2 tw:focus-visible:outline-brand ${
-              active
-                ? 'tw:bg-utility-blue-50 tw:text-utility-blue-700'
-                : 'tw:text-tertiary tw:hover:bg-secondary tw:hover:text-primary'
-            }`}
-            key={tab.value}
-            onClick={() => onChange(tab.value)}
-            role="tab"
-            type="button">
-            {tab.label}
-            {tab.value === 'columns' && columnCount > 0 && (
-              <span
-                className={`tw:ml-1.5 tw:rounded tw:px-1.5 tw:py-0.5 tw:text-xs ${
-                  active
-                    ? 'tw:bg-utility-blue-100 tw:text-utility-blue-700'
-                    : 'tw:bg-secondary tw:text-tertiary'
-                }`}>
-                {columnCount}
-              </span>
-            )}
-          </button>
-        );
-      })}
+    <div className="tw:mt-4 tw:rounded-xl tw:border tw:border-secondary tw:bg-primary tw:px-3 tw:shadow-xs">
+      {/* `overflow-y-hidden` is not decoration. Setting only `overflow-x`
+          leaves the other axis computing to `auto`, and the half-pixel the
+          underline overhangs by was enough for Windows to park a full
+          vertical scrollbar -- arrows and all -- on the right of the strip. */}
+      <div
+        aria-label="Asset"
+        className="tw:flex tw:gap-2 tw:overflow-x-auto tw:overflow-y-hidden"
+        role="tablist">
+        {TABS.map((tab) => {
+          const active = tab.value === value;
+          return (
+            <button
+              aria-selected={active}
+              // Tailwind's reset gives a button `cursor: default`, which reads
+              // as "not clickable" on everything that is not obviously a form
+              // control. These are the page's main navigation.
+              className={`tw:relative tw:flex tw:shrink-0 tw:cursor-pointer tw:items-center tw:px-3 tw:py-3.5 tw:text-sm tw:font-semibold tw:transition-colors tw:focus-visible:outline-2 tw:focus-visible:-outline-offset-2 tw:focus-visible:outline-brand ${
+                active ? 'tw:text-brand-secondary' : 'tw:text-tertiary tw:hover:text-primary'
+              }`}
+              key={tab.value}
+              onClick={() => onChange(tab.value)}
+              role="tab"
+              type="button">
+              {tab.label}
+              {tab.value === 'columns' && columnCount > 0 && (
+                <span
+                  className={`tw:ml-2 tw:rounded tw:px-1.5 tw:py-0.5 tw:text-xs tw:tabular-nums ${
+                    active
+                      ? 'tw:bg-brand-solid tw:text-white'
+                      : 'tw:bg-secondary tw:text-tertiary'
+                  }`}>
+                  {columnCount}
+                </span>
+              )}
+              {active && (
+                <span
+                  aria-hidden="true"
+                  className="tw:absolute tw:inset-x-3 tw:bottom-0 tw:h-0.5 tw:rounded-full tw:bg-brand-solid"
+                />
+              )}
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -569,6 +598,187 @@ function ColumnRow({ column }: { column: ColumnDetail }) {
         )}
       </td>
     </tr>
+  );
+}
+
+/**
+ * Where the asset sits: Catalog, then each level of its FQN.
+ *
+ * <p>Each parent is a link, because "what else is in this schema?" is the next
+ * question often enough, and the service, database and schema all have pages
+ * of their own here. The last segment is this page and is not a link.
+ */
+function Breadcrumb({ fqn }: { fqn: string }) {
+  const parts = segments(fqn);
+  // Re-quoted where OpenMetadata quotes: a segment holding a dot is one
+  // level, and splitting it on the way back would link to an asset that is
+  // not there.
+  const raw = parts.map((part) => (part.includes('.') ? `"${part}"` : part));
+  return (
+    <nav aria-label="Breadcrumb">
+      <ol className="tw:flex tw:flex-wrap tw:items-center tw:gap-1 tw:text-sm">
+        <li>
+          <Link className="tw:text-tertiary tw:hover:text-primary" to="/catalog">
+            Catalog
+          </Link>
+        </li>
+        {parts.map((part, index) => {
+          const last = index === parts.length - 1;
+          return (
+            <li className="tw:flex tw:min-w-0 tw:items-center tw:gap-1" key={index}>
+              <ChevronRight aria-hidden className="tw:size-3.5 tw:shrink-0 tw:text-quaternary" />
+              {last ? (
+                <span aria-current="page" className="tw:truncate tw:font-semibold tw:text-primary">
+                  {part}
+                </span>
+              ) : (
+                <Link
+                  className="tw:truncate tw:text-tertiary tw:hover:text-primary"
+                  to={`/catalog/${raw.slice(0, index + 1).join('.')}`}>
+                  {part}
+                </Link>
+              )}
+            </li>
+          );
+        })}
+      </ol>
+    </nav>
+  );
+}
+
+/** The FQN to the clipboard -- the thing people paste into a policy or a ticket. */
+function CopyFqn({ fqn }: { fqn: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <button
+      aria-label={copied ? 'Copied' : 'Copy FQN'}
+      className="tw:flex tw:size-7 tw:shrink-0 tw:cursor-pointer tw:items-center tw:justify-center tw:rounded-md tw:text-quaternary tw:hover:bg-primary_hover tw:hover:text-secondary"
+      onClick={() => {
+        void navigator.clipboard?.writeText(fqn).then(() => {
+          setCopied(true);
+          window.setTimeout(() => setCopied(false), 1500);
+        });
+      }}
+      title={fqn}
+      type="button">
+      {copied ? (
+        <Check className="tw:size-4 tw:text-fg-success-primary" />
+      ) : (
+        <Copy01 className="tw:size-4" />
+      )}
+    </button>
+  );
+}
+
+/**
+ * One fact in the strip under the name: its label above, its value below,
+ * a dot between it and the one before -- as OpenMetadata separates its own.
+ */
+function Stat({
+  label,
+  first = false,
+  children,
+}: {
+  label: string;
+  first?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="tw:flex tw:min-w-0 tw:items-start">
+      {!first && (
+        <span
+          aria-hidden="true"
+          className="tw:mx-5 tw:mt-6 tw:size-1 tw:shrink-0 tw:rounded-full tw:bg-quaternary"
+        />
+      )}
+      <div className="tw:min-w-0">
+        <dt className="tw:text-sm tw:text-tertiary">{label}</dt>
+        <dd className="tw:mt-1.5 tw:flex tw:min-h-6 tw:items-center tw:text-sm tw:font-medium tw:text-primary">
+          {children}
+        </dd>
+      </div>
+    </div>
+  );
+}
+
+function None() {
+  return <span className="tw:text-quaternary">--</span>;
+}
+
+/**
+ * The domains this asset is in, deepest only -- one shown, the rest counted.
+ *
+ * <p>Only the leaves: the crawl stores every ancestor of a sub-domain so a
+ * selector stays an index lookup (FR-2A.2), and printing `Finance`,
+ * `Finance.Risk` and `Finance.Risk.Credit` side by side says one thing three
+ * times. The Governance panel below has them all.
+ */
+function Domains({ facets }: { facets: FacetRow[] }) {
+  const fqns = [
+    ...new Set(
+      facets.filter((facet) => facet.facetType === 'domains').map((facet) => facet.facetFqn)
+    ),
+  ];
+  const leaves = fqns.filter((fqn) => !fqns.some((other) => isAncestor(fqn, other)));
+  if (leaves.length === 0) {
+    return <None />;
+  }
+  return (
+    <span className="tw:flex tw:min-w-0 tw:items-center tw:gap-1.5">
+      <span
+        className="tw:max-w-56 tw:truncate tw:rounded-md tw:border tw:border-secondary tw:bg-secondary tw:px-2 tw:py-0.5 tw:text-sm tw:font-medium tw:text-secondary"
+        title={`Domain · ${leaves[0]}`}>
+        {facetName(leaves[0])}
+      </span>
+      {leaves.length > 1 && (
+        <span className="tw:text-xs tw:text-tertiary" title={leaves.slice(1).join('\n')}>
+          +{leaves.length - 1}
+        </span>
+      )}
+    </span>
+  );
+}
+
+/**
+ * Who owns it: the first owner with an initial, as OpenMetadata draws a person,
+ * and how many more.
+ *
+ * <p>No owner is said outright rather than left as a dash: it means no one can
+ * author a local policy here (FR-3.1.2) and nobody to send a request to, so the
+ * platform admin decides it.
+ */
+function Owners({ owners }: { owners: AssetOwner[] }) {
+  if (owners.length === 0) {
+    return (
+      <span
+        className="tw:text-warning-primary"
+        title="Nobody owns this asset in OpenMetadata, so no local policy can be authored for it and access requests go to the platform admin.">
+        No owner
+      </span>
+    );
+  }
+  const [first, ...rest] = owners;
+  const how = first.direct
+    ? 'named on this asset'
+    : `inherited${first.inheritedFrom ? ` from ${first.inheritedFrom}` : ''}`;
+  return (
+    <span className="tw:flex tw:min-w-0 tw:items-center tw:gap-1.5">
+      <span
+        aria-hidden="true"
+        className="tw:flex tw:size-6 tw:shrink-0 tw:items-center tw:justify-center tw:rounded-full tw:bg-utility-brand-50 tw:text-xs tw:font-semibold tw:text-brand-secondary tw:uppercase">
+        {first.name.charAt(0)}
+      </span>
+      <span className="tw:max-w-44 tw:truncate" title={`${first.type} · ${how}`}>
+        {first.name}
+      </span>
+      {rest.length > 0 && (
+        <span
+          className="tw:text-xs tw:text-tertiary"
+          title={rest.map((owner) => owner.name).join('\n')}>
+          +{rest.length}
+        </span>
+      )}
+    </span>
   );
 }
 

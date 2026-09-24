@@ -22,20 +22,103 @@ import { FIELD, TextField } from '../policies/controls';
  * the table. When a DENY or a stricter layer would still refuse, the box says
  * which policy that is instead, because asking the owner would put a request in
  * front of somebody who cannot give the answer being asked for.
+ *
+ * <p>The catalog asks the same question before anybody has run anything
+ * (`from="catalog"`): there is no statement and no refusal to send along, so
+ * the request carries only the reason, and the box says "you cannot read this
+ * yet" rather than pointing at a query that never ran.
  */
 export default function RequestAccess({
   refusal,
   sourceId,
   sql,
   purpose,
+  from = 'query',
 }: {
   refusal: Refusal;
   sourceId: string | null;
   sql: string;
   purpose: string | null;
+  from?: 'query' | 'catalog';
 }) {
-  const queryClient = useQueryClient();
+  const catalog = from === 'catalog';
   const [asking, setAsking] = useState(false);
+  const [sent, setSent] = useState<AccessRequest | null>(null);
+
+  if (!refusal.assetFqn) {
+    return null;
+  }
+
+  if (sent || refusal.openRequestId) {
+    return <RequestedNote refusal={refusal} sent={sent} />;
+  }
+
+  if (!refusal.requestable) {
+    return <BlockedNote refusal={refusal} />;
+  }
+
+  if (!asking) {
+    return (
+      <Card>
+        <div className="tw:min-w-0 tw:flex-1">
+          <p className="tw:text-sm tw:font-semibold tw:text-primary">
+            {catalog ? 'You cannot read this table yet' : 'The owner can let you in'}
+          </p>
+          <p className="tw:mt-0.5 tw:text-sm tw:text-tertiary">
+            {catalog && 'The owner can let you in. '}
+            {describeApprovers(refusal.approvers)}
+          </p>
+        </div>
+        <Button color="primary" iconLeading={Send01} onPress={() => setAsking(true)} size="sm">
+          {catalog ? 'Request access' : 'Request access from the owner'}
+        </Button>
+      </Card>
+    );
+  }
+
+  return (
+    <RequestAccessForm
+      className="tw:mt-3 tw:shadow-xs"
+      from={from}
+      onCancel={() => setAsking(false)}
+      onSent={setSent}
+      purpose={purpose}
+      refusal={refusal}
+      sourceId={sourceId}
+      sql={sql}
+    />
+  );
+}
+
+/**
+ * The request itself: why, and for how long.
+ *
+ * <p>Its own component so the catalog can open it in a dialog from the page
+ * header, where OpenMetadata puts an asset's actions, while the Query page
+ * keeps it inline under the refusal it answers. Both send the same request.
+ */
+export function RequestAccessForm({
+  refusal,
+  sourceId,
+  sql,
+  purpose,
+  from = 'query',
+  onCancel,
+  onSent,
+  className = '',
+}: {
+  refusal: Refusal;
+  sourceId: string | null;
+  sql: string;
+  purpose: string | null;
+  from?: 'query' | 'catalog';
+  onCancel: () => void;
+  onSent: (request: AccessRequest) => void;
+  /** Added to the frame: a margin inline, a heavier shadow in a dialog. */
+  className?: string;
+}) {
+  const catalog = from === 'catalog';
+  const queryClient = useQueryClient();
   const [reason, setReason] = useState('');
   const [days, setDays] = useState('30');
 
@@ -47,61 +130,14 @@ export default function RequestAccess({
         reason: reason.trim(),
         purpose,
         days: days.trim() === '' ? null : Number.parseInt(days, 10),
-        attemptedSql: sql,
-        deniedBy: refusal.message,
+        attemptedSql: catalog ? null : sql,
+        deniedBy: catalog ? null : refusal.message,
       }),
-    onSuccess: () => {
+    onSuccess: (request) => {
       void queryClient.invalidateQueries({ queryKey: ['access-requests'] });
+      onSent(request);
     },
   });
-
-  if (!refusal.assetFqn) {
-    return null;
-  }
-
-  const sent: AccessRequest | undefined = send.data;
-  if (sent || refusal.openRequestId) {
-    return (
-      <Note icon={CheckCircle} tone="success">
-        <span className="tw:font-semibold">{sent ? 'Request sent' : 'Already requested'}</span>{' '}
-        for <span className="tw:font-mono">{refusal.assetFqn}</span>.{' '}
-        {describeApprovers(sent?.approvers ?? refusal.approvers)} You will be let in once it is
-        approved — follow it under{' '}
-        <Link className="tw:font-semibold tw:text-brand-secondary tw:hover:underline" to="/requests">
-          Access requests
-        </Link>
-        .
-      </Note>
-    );
-  }
-
-  if (!refusal.requestable) {
-    // Nothing to say when the server gave no reason: that is a run on
-    // somebody else's behalf, and a request is theirs to make, not ours.
-    return refusal.blockedBy ? (
-      <Note icon={AlertTriangle} tone="warning">
-        Asking the owner would not help: even with their grant,{' '}
-        <strong>{refusal.blockedBy}</strong> still refuses. Access to{' '}
-        <span className="tw:font-mono">{refusal.assetFqn}</span> has to change in that policy.
-      </Note>
-    ) : null;
-  }
-
-  if (!asking) {
-    return (
-      <Card>
-        <div className="tw:min-w-0 tw:flex-1">
-          <p className="tw:text-sm tw:font-semibold tw:text-primary">The owner can let you in</p>
-          <p className="tw:mt-0.5 tw:text-sm tw:text-tertiary">
-            {describeApprovers(refusal.approvers)}
-          </p>
-        </div>
-        <Button color="primary" iconLeading={Send01} onPress={() => setAsking(true)} size="sm">
-          Request access from the owner
-        </Button>
-      </Card>
-    );
-  }
 
   const parsedDays = Number.parseInt(days, 10);
   const daysValid = days.trim() === '' || (parsedDays >= 1 && parsedDays <= 365);
@@ -110,7 +146,7 @@ export default function RequestAccess({
   return (
     <form
       aria-label="Request access"
-      className="tw:mt-3 tw:rounded-xl tw:border tw:border-secondary tw:bg-primary tw:shadow-xs"
+      className={`tw:rounded-xl tw:border tw:border-secondary tw:bg-primary ${className}`}
       onSubmit={(event) => {
         event.preventDefault();
         if (ready) send.mutate();
@@ -127,8 +163,10 @@ export default function RequestAccess({
 
       <div className="tw:flex tw:flex-col tw:gap-4 tw:px-4 tw:py-4">
         <p className="tw:text-sm tw:text-tertiary">
-          {describeApprovers(refusal.approvers)} The statement you ran and the refusal go with
-          the request, so they can see what you were trying to do.
+          {describeApprovers(refusal.approvers)}{' '}
+          {catalog
+            ? 'Say what the data is for; that is what they decide on.'
+            : 'The statement you ran and the refusal go with the request, so they can see what you were trying to do.'}
         </p>
         <label className="tw:flex tw:flex-col tw:gap-1.5">
           <span className="tw:text-sm tw:font-medium tw:text-secondary">
@@ -176,7 +214,7 @@ export default function RequestAccess({
       </div>
 
       <div className="tw:flex tw:justify-end tw:gap-2 tw:border-t tw:border-secondary tw:px-4 tw:py-3">
-        <Button color="secondary" onPress={() => setAsking(false)} size="sm">
+        <Button color="secondary" onPress={onCancel} size="sm">
           Cancel
         </Button>
         <Button color="primary" iconLeading={Send01} isDisabled={!ready} size="sm" type="submit">
@@ -207,18 +245,60 @@ function Card({ children }: { children: ReactNode }) {
   );
 }
 
+/** A request is already on its way to the people who decide it. */
+export function RequestedNote({
+  refusal,
+  sent,
+  className,
+}: {
+  refusal: Refusal;
+  sent: AccessRequest | null;
+  className?: string;
+}) {
+  return (
+    <Note className={className} icon={CheckCircle} tone="success">
+      <span className="tw:font-semibold">{sent ? 'Request sent' : 'Already requested'}</span>{' '}
+      for <span className="tw:font-mono">{refusal.assetFqn}</span>.{' '}
+      {describeApprovers(sent?.approvers ?? refusal.approvers)} You will be let in once it is
+      approved — follow it under{' '}
+      <Link className="tw:font-semibold tw:text-brand-secondary tw:hover:underline" to="/requests">
+        Access requests
+      </Link>
+      .
+    </Note>
+  );
+}
+
+/**
+ * A grant would not help, and which policy is in the way.
+ *
+ * <p>Nothing to say when the server gave no reason: that is a run on
+ * somebody else's behalf, and a request is theirs to make, not ours.
+ */
+export function BlockedNote({ refusal, className }: { refusal: Refusal; className?: string }) {
+  return refusal.blockedBy ? (
+    <Note className={className} icon={AlertTriangle} tone="warning">
+      Asking the owner would not help: even with their grant,{' '}
+      <strong>{refusal.blockedBy}</strong> still refuses. Access to{' '}
+      <span className="tw:font-mono">{refusal.assetFqn}</span> has to change in that policy.
+    </Note>
+  ) : null;
+}
+
 function Note({
   children,
   icon: Icon,
   tone,
+  className = 'tw:mt-3 tw:shadow-xs',
 }: {
   children: ReactNode;
   icon: typeof CheckCircle;
   tone: 'success' | 'warning';
+  className?: string;
 }) {
   return (
     <p
-      className="tw:mt-3 tw:flex tw:items-start tw:gap-2 tw:rounded-lg tw:border tw:border-secondary tw:bg-primary tw:px-3 tw:py-2.5 tw:text-sm tw:text-secondary tw:shadow-xs">
+      className={`${className} tw:flex tw:items-start tw:gap-2 tw:rounded-lg tw:border tw:border-secondary tw:bg-primary tw:px-3 tw:py-2.5 tw:text-sm tw:text-secondary`}>
       <Icon
         className={`tw:mt-0.5 tw:size-4 tw:shrink-0 ${
           tone === 'success' ? 'tw:text-fg-success-primary' : 'tw:text-fg-warning-primary'

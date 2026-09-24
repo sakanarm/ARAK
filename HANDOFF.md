@@ -40,7 +40,7 @@ Phase 1 รองรับ SQL Server + PostgreSQL · identity หลักค�
 | **M10 Access Control Dashboard** | ⬜ **Phase 2 — ออกแบบแล้ว ยังไม่เริ่ม** · หน้าเดียวที่ตอบว่า "ตอนนี้องค์กรคุมข้อมูลได้ดีแค่ไหน" · 4 แถว: **Coverage** (asset ที่มี tag PII แต่ไม่มี policy คุ้มครอง / % ของ asset ที่ enforce แล้ว) · **Exposure** (ใครเข้าถึง PII ได้บ้าง · grant ที่ใกล้หมดอายุ · สิทธิ์ที่ไม่ได้ใช้เกิน 90 วัน) · **Activity** (query ต่อวัน แยก EXECUTED/REJECTED/FAILED · top principal · top asset · เหตุผลที่ถูกปฏิเสธบ่อยที่สุด) · **Health** (enforcement state ต่อ source · drift · รอบ sync ล่าสุด · p95 ของ decision) — **ข้อมูลมีอยู่ครบแล้วทั้งหมด** (`audit_query`, `audit_decision`, `asset_facet`, `policy_binding`, `access_grant`, `enforcement_state`) → งานคือ query + หน้าจอ ไม่ต้อง migrate — ดูแบบเต็มที่ข้อ AM.4 |
 | **M11 LLM Assist** | 🚧 **~60%** — ตารางนี้เคยเขียนว่า "ยังไม่เริ่ม" ซึ่งไม่จริงแล้ว · **per-user gateway ใช้งานได้จริง** — แต่ละคนใส่ base URL + key ของตัวเองในหน้า Settings และเลือกเองว่าจะเปิดใช้ไหม (`llm_user_setting.base_url` + `api_key_cipher` Fernet · key ไม่เคยถูกส่งกลับ ตอบแค่ `hasOwnKey`) · `llm_provider.allow_personal` เป็น kill switch · ⚠️ `LlmResource.putUser` ตัดสิทธิ์ admin ให้แก้ได้แค่ `enabled` — **ไม่มีใครเขียน gateway ของคนอื่นได้ ห้ามผ่อน** · ทดสอบสดผ่านแล้ว (21 models + completion ด้วย key ของ `analyst_a` เอง) · เหลือฟีเจอร์จริงสองตัว: **NL→SQL** และ **ร่าง policy** ที่ออกมาเป็น `DRAFT` เท่านั้น (FR-2.6 — LLM ไม่มีสิทธิ์ activate เอง) — ดูข้อ AO.8/AO.9 |
 | **M12 Home ที่จัดเอง** | ✅ **เสร็จ — milestone ใหม่ ไม่อยู่ในแผนเดิม** · หน้าแรกจัดวางเองได้ต่อ account · 5 preset · 14 widget type (กราฟวาดเป็น SVG มือ ไม่มี chart library) · วาง **HTML / Note / Link / Video** ได้ · `V13__home_layout.sql` — ไม่มีแถว = default (ลบแถว = reset) · **default คนละใบตาม role**: governance ได้หน้าเดิม · Requestor ได้หน้า Search · ⚠️ **HTML ที่คนพิมพ์เอง = stored XSS** → `HomeLayoutValidator` ล้างทั้ง**ตอนเขียนและตอนอ่าน** **ห้ามมีทางเขียน `home_layout` ที่ไม่ผ่านตัวนี้** · **M12b persona เสร็จแล้ว** (`V19__home_role_layout.sql`) — admin จัดหน้าแรกให้แต่ละ Platform Role ได้ที่ `/settings/home` · resolve แบบ **personal → role (แรงสุดที่ถือ) → built-in** · **persona ไม่เคยทับหน้าที่คนจัดเอง** · ⚠️ เป็น**ที่แรกที่ markup ของคนหนึ่งถูก render ใน session ของอีกคนโดยตั้งใจ** → `@Secured("PLATFORM_ADMIN")` + ล้างผ่าน `HomeLayoutValidator` ทั้งเขียนและอ่าน — ดูข้อ AN และ AS |
-| **M13 Request access จากจุดที่โดนปฏิเสธ** | ✅ **เสร็จรอบนี้ (ข้อ AX)** · refusal (403) ของ `POST /v1/query` พก `assetFqn` · `requestable` · `blockedBy` · `approvers[]` · `openRequestId` · หน้า Query ขึ้นกล่อง **"The owner can let you in"** → ฟอร์มขอสิทธิ์ (เหตุผล + จำนวนวัน + purpose + SQL ที่ติด) · ถ้า grant ช่วยไม่ได้ (DENY / ชั้นบนปฏิเสธ) บอกชื่อ policy ที่ขวางแทน ไม่ส่งไปให้ owner · **SQL Suggest** ในหน้า Query พร้อมป้าย *Readable* / *Request needed* ต่อ table · ยังไม่ทำ: ปุ่มเดียวกันบนหน้า asset ใน Catalog · flag "ปฏิเสธแบบไม่บอกอะไรเลย" ต่อ policy |
+| **M13 Request access จากจุดที่โดนปฏิเสธ** | ✅ **เสร็จรอบนี้ (ข้อ AX)** · refusal (403) ของ `POST /v1/query` พก `assetFqn` · `requestable` · `blockedBy` · `approvers[]` · `openRequestId` · หน้า Query ขึ้นกล่อง **"The owner can let you in"** → ฟอร์มขอสิทธิ์ (เหตุผล + จำนวนวัน + purpose + SQL ที่ติด) · ถ้า grant ช่วยไม่ได้ (DENY / ชั้นบนปฏิเสธ) บอกชื่อ policy ที่ขวางแทน ไม่ส่งไปให้ owner · **SQL Suggest** ในหน้า Query พร้อมป้าย *Readable* / *Request needed* ต่อ table · **ปุ่มเดียวกันบนหน้า asset ใน Catalog ✅ (ข้อ AY)** — มุมขวาบนของหัวหน้า asset · เปิด dialog ฟอร์มเดียวกัน · บอก *You can read this* / *Access requested* / กุญแจ + ชื่อ policy ที่ขวาง · ยังไม่ทำ: flag "ปฏิเสธแบบไม่บอกอะไรเลย" ต่อ policy |
 | **M14 Public API + Swagger + Org Key** | ⬜ **Roadmap ใหม่ — ผู้ใช้ขอ 2026-09-24** · เปิด ARAK ให้ระบบอื่นเรียกได้: **Swagger UI + OpenAPI spec** ที่ generate จาก resource จริง · **สร้าง policy** และ **query ตามสิทธิ์ที่ตัวเองมี** ผ่าน API ได้ · auth ด้วย **Org Key ที่มีวันหมดอายุบังคับ** — scope ต่อ key, ผูกกับ principal ที่ระบุ, สิทธิ์ของ key ไม่เกินสิทธิ์ของเจ้าของ — ดูข้อ AP.2 |
 | **M15 LLM อธิบาย policy และอธิบาย dashboard** | ⬜ **Roadmap ใหม่ — ผู้ใช้ขอ 2026-09-24** · ต่อยอดจาก M11 ที่ per-user gateway ใช้ได้จริงแล้ว · **(ก)** admin เปิด policy ตัวหนึ่งแล้วกด "อธิบายให้ฟัง" — LLM แปล selector + subject rule + row filter + mask ออกมาเป็นภาษาคน พร้อมบอกว่า **จะถูก policy ชั้นบนทับตรงไหน** · **(ข)** หน้า Dashboard (M10) กดที่กราฟแล้วให้ LLM อ่านตัวเลขให้ฟังว่ามันแปลว่าอะไรและควรไปดูอะไรต่อ — ⚠️ **ส่ง metadata + ตัวเลขสรุปเท่านั้น ห้ามส่งแถวข้อมูลจริง และ LLM ยังไม่มีสิทธิ์ activate อะไรทั้งสิ้น** (FR-2.6) — ดูข้อ AP.3 |
 | **M16 LLM ช่วยหา asset จากสิ่งที่อยากได้** | ⬜ **Roadmap ใหม่ — ผู้ใช้ขอ 2026-09-24** · ในหน้า Query เพิ่ม option ให้พิมพ์เป็นภาษาคนว่า *“อยากได้ข้อมูลผลิตภัณฑ์และราคา”* แล้ว LLM ไปค้นใน metadata (asset + column + description + tag + glossary term + domain) แล้วตอบกลับเป็น **ตาราง/คอลัมน์ที่น่าจะใช่ พร้อมเหตุผลว่าทำไม** · แต่ละตัวต้องบอกด้วยว่า **คุณ query ได้เลย** หรือ **ต้องไปขอสิทธิ์ก่อน** (ต่อปุ่มของ M13 ตรงนั้น) · ตัวที่ query ได้กดแล้วเติม SQL ร่างลงช่อง editor ให้เลย — ⚠️ **ค้นบน metadata เท่านั้น ห้ามส่งแถวข้อมูลจริงให้ LLM** และผลลัพธ์ต้อง **กรองด้วยสิทธิ์ของคนที่ถาม** ก่อนแสดง (ห้ามใช้ LLM เป็นช่องทางส่องว่ามีตารางอะไรอยู่บ้าง) — ดูข้อ AP.4 |
@@ -56,15 +56,15 @@ Phase 1 รองรับ SQL Server + PostgreSQL · identity หลักค�
 | App DB (docker `dac-appdb`, postgres:16-alpine) | `:5432` db/user `dac` |
 | OpenMetadata ของทีม | `2.0.1` — sync ผ่าน **ingestion-bot JWT** (ดู What Didn't Work) |
 
-เทสต์ทั้งหมดเขียว — **backend unit + integration รันครบเมื่อ 2026-09-25 → `./mvnw -o verify -Pintegration` BUILD SUCCESS · unit 695 · Failures 0 Errors 0** (integration **209** — **+23 จาก `AccessRequestIT`** ขอ / อนุมัติ / ปฏิเสธ / ถอน + เคส policy ชนกัน (DENY · ชั้นบนปฏิเสธ · override · approve ไม่ปลด mask) บน Postgres จริง), frontend `npx jest` + `npx tsc --noEmit` + `vite build` รันใหม่ **2026-09-25** (**32 suites / 260 tests** เขียว — ดูข้อ AX.8 · tsc exit 0 · build 11.78s · `scripts/check-cursor-pointer.mjs` → *every &lt;button&gt; offers a hand*)
+เทสต์ทั้งหมดเขียว — **backend unit + integration รันครบเมื่อ 2026-09-25 → `./mvnw -o verify -Pintegration` BUILD SUCCESS · unit 696 · Failures 0 Errors 0** (รอบ AY: +1 `SpaServletTest.unusualCharacters` · integration **209** — **+23 จาก `AccessRequestIT`** ขอ / อนุมัติ / ปฏิเสธ / ถอน + เคส policy ชนกัน (DENY · ชั้นบนปฏิเสธ · override · approve ไม่ปลด mask) บน Postgres จริง), frontend `npx jest` + `npx tsc --noEmit` + `vite build` รันใหม่ **2026-09-25** (**34 suites / 283 tests** เขียว — ดูข้อ AY.5 และ AX.8 · tsc exit 0 · build 11.78s · `scripts/check-cursor-pointer.mjs` → *every &lt;button&gt; offers a hand*)
 
 > ⚠️ **`backend/dac-service/target/surefire-reports/com.mfec.dac.catalog.AssetStoreIT.txt` ยังแดงค้างอยู่ในโฟลเดอร์ — เป็นไฟล์เก่าจาก 2026-09-23 20:35 ก่อน commit `19b0503` ซึ่งคือ commit ที่แก้เคสนั้นพอดี** อย่าอ่านรายงานใน `target/` โดยไม่ดูเวลาไฟล์ — `mvn test` ไม่ล้างรายงานของคลาสที่รอบนี้ไม่ได้รัน
 
 | ชุด | จำนวน | คำสั่ง |
 |---|---|---|
-| Backend unit | dac-common 31 · dac-engine 277 · **dac-compiler-sql 51 (+17 — `RowEntitlementMaintainerTest`)** · dac-connector-openmetadata 91 · **dac-connector-source 25 (+6 — `SecureViewApplierTest`)** · dac-proxy 30 · **dac-service 186 (+6 — `ReviewedPlansTest`)** = **695** (dac-service **190** — +4 `AccessEligibilityTest`) | `./mvnw -o test` |
+| Backend unit | dac-common 31 · dac-engine 277 · **dac-compiler-sql 51 (+17 — `RowEntitlementMaintainerTest`)** · dac-connector-openmetadata 91 · **dac-connector-source 25 (+6 — `SecureViewApplierTest`)** · dac-proxy 30 · **dac-service 186 (+6 — `ReviewedPlansTest`)** = **696** (dac-service **191** — +4 `AccessEligibilityTest` · +1 `SpaServletTest.unusualCharacters` ข้อ AY) | `./mvnw -o test` |
 | Backend integration (Testcontainers `postgres:16-alpine`) | **209 tests** — **`AccessRequestIT` 23 (ใหม่ — ข้อ AX.8)** · `AssetStoreIT` 7 · `CatalogQueryIT` 18 · `DataSourceStoreIT` 13 · `GovernanceStoreIT` 10 · `GrantCompositionIT` 17 · **`HomeLayoutStoreIT` 14 (+8 รอบนี้ — persona)** · `IdentityAdminStoreIT` 24 · `ImpactAnalysisIT` 8 · `PolicyBindingMaterializerIT` 10 · `PolicyOverviewIT` 24 · `PolicyStoreIT` 10 · **`SecureViewApplierIT` 11 (ใหม่รอบนี้ — อยู่ใน `dac-connector-source` ไม่ใช่ `dac-service`)** · **`SecureViewServiceIT` 15 (ใหม่รอบนี้)** · `SourceEngineRegistryIT` 5 | `./mvnw verify -Pintegration` (ทั้ง reactor) |
-| Frontend | **32 suites / 260 tests** (รอบ AX: +20 `SqlEditor.test.tsx` · +16 `RequestAccess.test.tsx` · +13 `AccessRequestsPage.test.tsx` · +5 `accessRequests.test.ts` · `sqlCompletion.test.ts` — ดูข้อ AX.8 · ก่อนหน้า: +7 `EnforcementPage.test.tsx` — dry run → apply ส่งแค่ reviewId · non-admin ไม่มีปุ่ม Apply / Roll back · apply ที่ถูกปฏิเสธล้าง review · rollback ต้องยืนยัน · +9 `policyFlow.test.ts` — ลำดับด่าน · selector ว่าง = 0 asset ไม่ใช่ทุก asset · subject ว่าง = `open` ไม่ใช่ `set` · "ไม่ผ่านด่าน" ต้องไม่อ่านว่า deny · +3 `PolicyFlowChart.test.tsx` — ไม่ส่ง `onEdit` ต้องไม่มีปุ่มใดๆ · ก่อนหน้านี้ +4 ใน `HomePersonasPage.test.tsx` — หน้าที่คนหนึ่งจัดหน้าจอให้อีกคน: admin เท่านั้นที่เห็น · ครบทั้ง 5 role ไม่ว่าจะตั้งไว้หรือยัง · ประโยค "starting point ไม่ใช่ override" · เซฟแล้วต้องลง role ที่เปิดอยู่เท่านั้น) | `npx jest` ใน `frontend/app` |
+| Frontend | **34 suites / 283 tests** (รอบ AY: +10 `AriaRouter.test.tsx` · `AssetRequestAccess.test.tsx` 9 · +4 `AssetDetailPage.test.tsx` — ดูข้อ AY.5 · รอบ AX: +20 `SqlEditor.test.tsx` · +16 `RequestAccess.test.tsx` · +13 `AccessRequestsPage.test.tsx` · +5 `accessRequests.test.ts` · `sqlCompletion.test.ts` — ดูข้อ AX.8 · ก่อนหน้า: +7 `EnforcementPage.test.tsx` — dry run → apply ส่งแค่ reviewId · non-admin ไม่มีปุ่ม Apply / Roll back · apply ที่ถูกปฏิเสธล้าง review · rollback ต้องยืนยัน · +9 `policyFlow.test.ts` — ลำดับด่าน · selector ว่าง = 0 asset ไม่ใช่ทุก asset · subject ว่าง = `open` ไม่ใช่ `set` · "ไม่ผ่านด่าน" ต้องไม่อ่านว่า deny · +3 `PolicyFlowChart.test.tsx` — ไม่ส่ง `onEdit` ต้องไม่มีปุ่มใดๆ · ก่อนหน้านี้ +4 ใน `HomePersonasPage.test.tsx` — หน้าที่คนหนึ่งจัดหน้าจอให้อีกคน: admin เท่านั้นที่เห็น · ครบทั้ง 5 role ไม่ว่าจะตั้งไว้หรือยัง · ประโยค "starting point ไม่ใช่ override" · เซฟแล้วต้องลง role ที่เปิดอยู่เท่านั้น) | `npx jest` ใน `frontend/app` |
 
 `yarn type-check` · `yarn lint` · `yarn build` ผ่านหมด → **BUILD SUCCESS** ทั้งสองฝั่ง
 
@@ -381,7 +381,61 @@ M18 ก่อนเพิ่ม engine ตัวที่ 3 เสมอ
 
 ---
 
-## รอบนี้ — **M13 เสร็จ + M9 slice 1: SQL Suggest ในหน้า Query · ติดสิทธิ์แล้วขอ Data Owner ได้ · หน้า `/requests` · UI จัดให้เข้า theme**
+## รอบนี้ — **ข้อ AY: ปุ่ม "Open in OpenMetadata" พัง (500) · Request access ย้ายขึ้นมุมขวาบนของหน้า asset · หัวหน้า asset จัดใหม่แบบ OpenMetadata · ทดสอบ flow ขอสิทธิ์ทั้งเส้น + seed เคส demo**
+
+ผู้ใช้ถาม 3 เรื่องติดกัน (2026-09-25):
+- *"ทำไม Openin Openmetadata แล้วเจอแบบนี้"* — กดแล้วได้ HTTP 500 `InvalidPathException` บน `/catalog/http:/<om-host>/...`
+- *"ปุ่ม Request Access ตรงไหนอะ / แล้วทดสอบหรือยัง Flow Access Control ทั้ง Flow / ช่วยทดสอบ แล้วสร้าง Case จริงในระบบหน่อย เดี๋ยวจะเอาไว้ demo"*
+- *"หน้า Asset Detail การจัดวางไม่สวย เหมือน Openmetdata / และ Request Access ควรจะไปอยู่ด้านบนขวาไหม"* (แนบภาพหน้า table ของ OM เทียบกับของเรา) → *"ต่อครับ"*
+
+### AY.1 🐛 "Open in OpenMetadata" → 500 — สาเหตุสองชั้น
+1. **Frontend:** ปุ่มของ `@openmetadata/ui-core-components` ที่มี `href` เป็น react-aria `Link` → react-aria ส่งทุก `href` ผ่าน `useHref` ของ `RouterProvider` เรา ซึ่ง `useHref()` ของ react-router ถือ URL เต็ม `http://…` เป็น **path สัมพัทธ์ในแอป** → ลิงก์กลายเป็น `/Arak/catalog/http:/…` แทนที่จะออกไป OM
+   - แก้: `frontend/app/src/AriaRouter.tsx` (ใหม่) — `isExternalHref()` จับ href ที่มี scheme (`http:` `https:` `mailto:` …) หรือ `//host` · `AriaRouter` ครอบ `RouterProvider` ด้วย `useHref` ที่ **ปล่อยลิงก์ภายนอกไว้ตามที่เขียน** และใส่ base path `/Arak/` ให้ route ในแอปเหมือนเดิม · `main.tsx` ใช้ `AriaRouter` แทนการประกอบ `RouterProvider` เอง
+2. **Backend:** `SpaServlet` เอา path แปลกๆ นั้นไป `Path.resolve()` → บน Windows `:` ในชื่อ path โยน `InvalidPathException` → **500** แทนที่จะเป็นหน้าแอป
+   - แก้: `SpaServlet` จับ `InvalidPathException` → ถ้า path ดูเหมือนไฟล์ (มีนามสกุล) ตอบ **404**, ไม่งั้นส่ง `index.html` เหมือน route อื่นของ SPA
+- เทสต์: `AriaRouter.test.tsx` 10 เคส (ลิงก์ไป OM คง href เดิม · route ในแอปยังได้ `/Arak/` นำหน้า · `isExternalHref` 8 แบบ: `https://` · `HTTP://` · `mailto:` · `//host` = ภายนอก / `/catalog/x` · `catalog/x` · `svc.db` · ว่าง = ภายใน) · `SpaServletTest.unusualCharacters()` (`/catalog/http:/om.example.test:8585/…` → 200 index.html ไม่ใช่ 500 · `/catalog/svc:db/app.js` → 404)
+
+### AY.2 Request access บนหน้า asset — **ย้ายขึ้นมุมขวาบน** ข้าง "Open in OpenMetadata" / "View as someone"
+เหตุผล: OM วาง action ของ asset ไว้มุมขวาบน คนหาปุ่มที่นั่น — และคนเดิน catalog ไม่ควรต้องเขียน SQL แล้วโดนปฏิเสธก่อนถึงจะรู้ว่าต้องขอใคร (ปิดข้อที่ค้างใน M13: *"ปุ่มเดียวกันบนหน้า asset ใน Catalog"*)
+- `pages/catalog/AssetRequestAccess.tsx` → export `AssetAccessAction({asset})` · เฉพาะ `TABLE` / `VIEW` (schema / service ไม่มีแถวให้ grant) · ถาม server ผ่าน `fetchEligibility` (queryKey `['access-requests','eligibility',fqn]` — ส่งคำขอแล้ว invalidate `access-requests` ทำให้ปุ่มเปลี่ยนเอง)
+- สถานะที่ปุ่มบอก (**server ตัดสินทุกอย่าง** header พูดแค่ที่ถูกบอก):
+  | สถานะจาก server | สิ่งที่เห็นมุมขวาบน |
+  |---|---|
+  | `readable` | ป้ายเขียว **"You can read this"** (ไม่ใช่ปุ่ม) |
+  | มี `openRequestId` | ปุ่มรอง **"Access requested"** (ไอคอนนาฬิกา) → ลิงก์ `/requests` |
+  | `requestable` | ปุ่มหลักสีน้ำเงิน **"Request access"** → เปิด dialog ฟอร์ม (เหตุผล + จำนวนวัน) |
+  | ติด `blockedBy` (DENY / ชั้นบนปฏิเสธ) | ปุ่มรองรูปกุญแจ **"Request access"** → dialog บอกชื่อ policy ที่ขวาง **ไม่มีฟอร์ม** (ขอ owner ไปก็ไม่ช่วย) |
+  | ไม่ requestable และไม่มี blockedBy / ยังโหลด / error | ไม่แสดงอะไร |
+- dialog = react-aria `ModalOverlay` + `Modal` + `Dialog aria-label="Request access"` แบบเดียวกับ `GrantDialog` · ส่งแล้วค้าง dialog ไว้บอก **"Request sent"** + ลิงก์ Access requests
+- `pages/query/RequestAccess.tsx` แตกชิ้นให้ใช้ซ้ำ: export **`RequestAccessForm`** (ฟอร์ม + mutation · catalog mode ส่ง `attemptedSql`/`deniedBy` = null) · **`RequestedNote`** · **`BlockedNote`** · `Note` รับ `className` — **หน้า Query ยังเหมือนเดิมทุกอย่าง** (กล่องใต้ refusal)
+
+### AY.3 หัวหน้า asset จัดใหม่ตามแบบ OpenMetadata
+ของเดิม: ลิงก์ Back ลอยๆ + ชื่อ + ชิป owner + แท็บแบบ segmented · ของใหม่ (`AssetDetailPage.tsx`):
+- **การ์ดขาวใบเดียว** `rounded-xl border shadow-xs`:
+  - **Breadcrumb** `Catalog › service › database › schema › table` — ชั้นแม่เป็นลิงก์ไป `/catalog/<fqn ชั้นนั้น>` (asset ชั้นแม่มีจริงในแคตาล็อก) · ใช้ `segments()` ของ `lib/fqn.ts` จึงไม่แตก segment ที่มีจุดในเครื่องหมายคำพูด (`"Sales.DB"`) และ quote กลับตอนทำลิงก์ · ชั้นสุดท้าย `aria-current="page"`
+  - ไอคอน + **ชื่อ** + ปุ่ม **Copy FQN** + description · **มุมขวา:** `AssetAccessAction` · Open in OpenMetadata · View as someone
+  - **แถบสถิติคั่นด้วยจุด** แบบ OM: Type · **Domains** (แสดงเฉพาะ domain ชั้นลึกสุด ตัด ancestor ด้วย `isAncestor` · title = FQN เต็ม · เกินหนึ่ง = `+N`) · **Owners** (avatar ตัวอักษรแรก + ชื่อ · title บอก *named on this asset* / *inherited from …* · ไม่มี = **"No owner"** สีเตือน) · Tier (badge) · Certification · Source · Columns · ค่าว่าง = `--`
+- **แท็บเป็นการ์ดแยก** แบบ OM: ขีดใต้สี brand ที่แท็บที่เปิดอยู่ · badge จำนวน column เป็นสีทึบเมื่อ active · `role="tablist"` เดิม
+- sidebar: panel Owners ย้ายขึ้นไปอยู่ในแถบสถิติแล้ว · Location เพิ่ม **FQN**
+- `BackLink` ยังใช้ในหน้า error
+- ตรวจด้วยตาในเบราว์เซอร์จริง (playwright, 1440×900) ครบ: analyst_a บน `assignments` (ปุ่มน้ำเงิน → dialog) · `users` (กุญแจ → ชื่อ policy DENY) · `customers` (Access requested) · `demo-pg…customer` (Risk / Credit · No owner) · admin แท็บ Columns (badge 3 สีทึบ)
+
+### AY.4 ทดสอบ flow ขอสิทธิ์ทั้งเส้น + seed เคส demo (บนระบบที่รันอยู่)
+- **E2E smoke 30/30 ผ่าน** ผ่าน API จริง: eligibility (readable / requestable / blocked / open) · ขอ → ซ้ำโดนปฏิเสธ (มีคำขอเปิดอยู่แล้ว) · ผู้ขออนุมัติของตัวเองไม่ได้ · approve → grant ออกจริง → query อ่านได้ (PII ยัง mask) · reject ต้องมีเหตุผล · withdraw · DENY policy ขอไม่ได้ · audit ครบทุกขั้น
+- **เคส demo ที่ค้างไว้ในระบบ:**
+  - analyst_a → `dtp-iprm…assignments` = ปุ่ม Request access · `…users` = กุญแจ (DENY `deny-app-login-accounts`) · `…customers` = Access requested
+  - admin → `/requests` มี **3 คำขอรอพิจารณา**
+  - analyst_c → Query `demo-pg` `sales.customer` ได้แถว CNX-01 และ PII ถูก mask (grant จากคำขอที่อนุมัติ)
+  - analyst_b มีคำขอที่ **ถูกปฏิเสธพร้อมเหตุผลภาษาไทย** · analyst_a มีคำขอที่ **ถอนเอง**
+- ข้อควรรู้ตอน demo: owner ใน OM ยังไม่มี login ในเครื่องนี้ → **admin เป็นคนตัดสิน** · การอ่านขึ้นกับหน้าต่างเวลา 08:00–23:00 Asia/Bangkok ของ policy · รายการของ analyst_a มีแถวประวัติจาก smoke test ปนอยู่
+
+### AY.5 เทสต์
+- Backend: `./mvnw -o verify -Pintegration` → **BUILD SUCCESS** · unit **696** (dac-service **191** — +1 `SpaServletTest.unusualCharacters`) · integration **209** · Failures 0 Errors 0
+- Frontend: **34 suites / 283 tests** เขียว (+10 `AriaRouter.test.tsx` · `AssetRequestAccess.test.tsx` 9 เคส — ปุ่ม/ฟอร์มซ่อนก่อนกด · dialog ส่ง body ถูก (`sourceId`/`attemptedSql`/`deniedBy` = null, reason trim) แล้วขึ้น Request sent · Cancel ไม่ส่ง · readable · Access requested → `/requests` · blocked ไม่มีฟอร์ม · ไม่ requestable = ว่าง · schema ไม่ fetch · error = ว่าง · `AssetDetailPage.test.tsx` +4 — breadcrumb ลิงก์ชั้นแม่ ไม่ลิงก์ตัวเอง · segment ที่มีจุดในเครื่องหมายคำพูดเป็นชั้นเดียว · แถบสถิติชื่อ domain ชั้นลึกสุด (ไม่ใช่ Finance) + owner + Tier1 · No owner) · `tsc --noEmit` exit 0 · `vite build` (`VITE_BASE=/Arak/`) ผ่าน
+
+---
+
+## รอบก่อนหน้า — **M13 เสร็จ + M9 slice 1: SQL Suggest ในหน้า Query · ติดสิทธิ์แล้วขอ Data Owner ได้ · หน้า `/requests` · UI จัดให้เข้า theme**
 
 > โจทย์: *"หน้า Query ให้มี Suggest ด้วยสิ ถ้าติดสิทธิ ก็ให้ไปขอ Data Owner"* + *"ทำ UI ให้ออกมาตรง Theme และสวยๆ นะ ดู Open metadata ได้"*
 > ผลคือคนที่พิมพ์ SQL เห็นก่อนกด Run ว่า table ไหนอ่านได้ table ไหนต้องขอ — และถ้าโดนปฏิเสธ หน้าเดียวกันส่งคำขอไปหา owner ได้ทันที โดย owner อนุมัติ/ปฏิเสธจากหน้า `/requests`
@@ -4708,7 +4762,9 @@ estate ที่ใช้: `prod-mssql.SalesDB.dbo.{customer, order}` + **`prod-
 
 ## Next Steps
 
-0. **ต่อจากรอบนี้ทันที (ผู้ใช้สั่ง 2026-09-25) — M9 slice 2 ดูข้อ AX.9:** Approve = ตัดสินใจเท่านั้น → Fulfil ด้วยมือ (ออก grant / เพิ่มเข้า policy เดิม / สร้าง policy ใหม่เป็น Draft) โดย Owner · Steward · Custodian · หน้า review: ข้อมูลผู้ขอ + impact + risk + suggestion + conflict · ไอคอน Inbox + badge บน header
+- ✅ **ข้อ AY เสร็จแล้ว** (Open in OpenMetadata ไม่ 500 · Request access มุมขวาบน · หัวหน้า asset แบบ OM · seed เคส demo) — ต่อด้วย **M9 slice 2** ข้างล่าง
+
+0. **ต่อทันที (ผู้ใช้สั่ง 2026-09-25) — M9 slice 2 ดูข้อ AX.9:** Approve = ตัดสินใจเท่านั้น → Fulfil ด้วยมือ (ออก grant / เพิ่มเข้า policy เดิม / สร้าง policy ใหม่เป็น Draft) โดย Owner · Steward · Custodian · หน้า review: ข้อมูลผู้ขอ + impact + risk + suggestion + conflict · ไอคอน Inbox + badge บน header
 0a. **ถัดไป:** Flowchart สำหรับอ่านระดับ table บนหน้า asset (ผู้ใช้ขอแล้ว — toggle text/diagram แบบ `PolicyFlowChart`, ค่าเริ่มต้นเป็นหน้าเดิม)
 0b. **M6 ⏸️ ON HOLD** — ห้ามเริ่มจนกว่าผู้ใช้จะสั่ง
 0c. **M16 (LLM ช่วยหา asset)** แยกเป็นงานของมันเอง ไม่ได้อยู่ใน Suggest รอบนี้ — Suggest รอบนี้เป็น rule-based ล้วน ไม่ส่งอะไรให้ LLM

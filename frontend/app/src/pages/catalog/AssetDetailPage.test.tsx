@@ -19,6 +19,9 @@ jest.mock('../../api/client', () => ({
   fetchAsset: (...args: unknown[]) => fetchAsset(...args),
 }));
 
+// The request button has its own tests; here it only has to stay out of the way.
+jest.mock('./AssetRequestAccess', () => ({ AssetAccessAction: () => null }));
+
 jest.mock('../../api/policies', () => ({
   fetchPoliciesForAsset: (...args: unknown[]) => fetchPoliciesForAsset(...args),
 }));
@@ -343,4 +346,57 @@ test('moving between tabs changes what the page answers', async () => {
   expect(
     screen.queryByRole('heading', { name: 'Governance' })
   ).not.toBeInTheDocument();
+});
+
+test('the breadcrumb links every level above the asset, as OpenMetadata does', async () => {
+  renderPage();
+
+  const crumbs = await screen.findByRole('navigation', { name: 'Breadcrumb' });
+  expect(within(crumbs).getByRole('link', { name: 'Catalog' })).toHaveAttribute('href', '/catalog');
+  expect(within(crumbs).getByRole('link', { name: 'dbo' })).toHaveAttribute(
+    'href',
+    '/catalog/prod-pg.SalesDB.dbo'
+  );
+  // The asset itself is where you are, not a link to it.
+  expect(within(crumbs).queryByRole('link', { name: 'customer' })).toBeNull();
+});
+
+test('a quoted segment stays one level in the breadcrumb', async () => {
+  const fqn = 'prod-mssql."Sales.DB".dbo.customer';
+  fetchAsset.mockResolvedValue({ ...DETAIL, asset: { ...DETAIL.asset, fqn } });
+  renderPage(fqn);
+
+  const crumbs = await screen.findByRole('navigation', { name: 'Breadcrumb' });
+  expect(within(crumbs).getByRole('link', { name: 'dbo' })).toHaveAttribute(
+    'href',
+    '/catalog/prod-mssql."Sales.DB".dbo'
+  );
+});
+
+test('the header strip names the deepest domain and the owner', async () => {
+  fetchAsset.mockResolvedValue({
+    ...DETAIL,
+    facets: [
+      facet({ facetType: 'domains', facetFqn: 'Finance', direct: false, depth: 2 }),
+      facet({ facetType: 'domains', facetFqn: 'Finance.Risk', direct: false, depth: 1 }),
+      facet({ facetType: 'domains', facetFqn: 'Finance.Risk.Credit', depth: 0 }),
+    ],
+  });
+  renderPage();
+
+  // Three stored rows are one sub-domain and its ancestors; the strip names
+  // the one the steward chose, the Governance panel lists the lot.
+  expect(await screen.findByTitle('Domain · Finance.Risk.Credit')).toHaveTextContent(
+    'Risk / Credit'
+  );
+  expect(screen.queryByTitle(/^Domain · Finance$/)).toBeNull();
+  expect(screen.getByTitle('team · named on this asset')).toHaveTextContent('Finance');
+  expect(screen.getByText('Tier1')).toBeInTheDocument();
+});
+
+test('an asset nobody owns says so in the header', async () => {
+  fetchAsset.mockResolvedValue({ ...DETAIL, owners: [] });
+  renderPage();
+
+  expect(await screen.findByText('No owner')).toBeInTheDocument();
 });

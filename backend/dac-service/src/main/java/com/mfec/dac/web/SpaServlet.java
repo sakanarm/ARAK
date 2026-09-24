@@ -7,6 +7,7 @@ import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.file.Files;
+import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.util.Locale;
 import java.util.Map;
@@ -115,7 +116,16 @@ public class SpaServlet extends HttpServlet {
       return Files.isReadable(index) ? index : null;
     }
 
-    Path candidate = root.resolve(path.substring(1)).normalize();
+    Path candidate;
+    try {
+      candidate = root.resolve(path.substring(1)).normalize();
+    } catch (InvalidPathException e) {
+      // Windows refuses characters a route may legitimately hold -- a ':' in
+      // an FQN, or a link that pasted a whole URL onto the end of one -- where
+      // Linux would simply find no such file. Either way it is not a file, so
+      // it is answered the way every other non-file is, not with a 500.
+      return looksLikeFile(path) ? null : (Files.isReadable(index) ? index : null);
+    }
     if (!candidate.startsWith(root)) {
       return null;
     }
