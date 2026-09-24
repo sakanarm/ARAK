@@ -2,9 +2,10 @@ package com.mfec.dac.policy;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mfec.dac.audit.ClientAddress;
-import com.mfec.dac.compiler.sql.PostgresDialect;
+import com.mfec.dac.common.engine.SourceEngines;
 import com.mfec.dac.compiler.sql.SqlDialect;
-import com.mfec.dac.compiler.sql.SqlServerDialect;
+import com.mfec.dac.compiler.sql.SqlDialects;
+import com.mfec.dac.proxy.ProxyCapabilities;
 import com.mfec.dac.proxy.QueryRewriter;
 import com.mfec.dac.schema.api.DecisionReason;
 import com.mfec.dac.schema.api.MaskingSpec;
@@ -419,14 +420,25 @@ public class QueryService {
     int evaluationMs = (int) Math.min(Integer.MAX_VALUE,
         (System.nanoTime() - startedAt + 999_999L) / 1_000_000L);
     recordDecision(decision, clientIp, purpose, evaluationMs);
+
+    // Recorded first, refused second. A query that is about to be turned away
+    // because this engine cannot express the mask is still a decision that was
+    // reached, and an auditor asking who tried to read this table deserves the
+    // same answer whichever engine it lives on.
+    ProxyCapabilities.require(SourceEngines.of(source.engine().name()), fqn.get(), decision);
+
     return new QueryRewriter.Governed(fqn.get(), decision, columns);
   }
 
+  /**
+   * The dialect to rewrite this source's queries in.
+   *
+   * <p>Resolved through the registry rather than a switch. The switch compiled
+   * happily with an arm missing and failed when somebody ran a query, which is
+   * both the latest and the most expensive moment to find out.
+   */
   private static SqlDialect dialectFor(DataSourceStore.Source source) {
-    return switch (source.engine()) {
-      case POSTGRES -> new PostgresDialect();
-      case SQLSERVER -> new SqlServerDialect();
-    };
+    return SqlDialects.forEngineId(source.engine().name());
   }
 
   // ----------------------------------------------------------------- audit

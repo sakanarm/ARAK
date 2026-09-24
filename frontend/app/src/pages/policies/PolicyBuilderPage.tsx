@@ -26,6 +26,7 @@ import DataPolicyBuilder from './DataPolicyBuilder';
 import SelectorBuilder from './SelectorBuilder';
 import SubjectBuilder from './SubjectBuilder';
 import { capabilities, MODES, type Engine } from './enforcement';
+import { engineOptions, useSourceEngines } from '../../engines';
 import { describePolicy } from './policyLanguage';
 
 /**
@@ -120,7 +121,15 @@ export default function PolicyBuilderPage() {
     return EMPTY;
   });
   const [loaded, setLoaded] = useState<StoredPolicy | null>(null);
-  const [engine, setEngine] = useState<Engine>('POSTGRES');
+  // Null until the engine list arrives, then the first one the server lists.
+  // Naming one here would be this page keeping its own copy of a list that
+  // exists precisely so it does not have to.
+  const [engine, setEngine] = useState<Engine | null>(null);
+  const { data: engines } = useSourceEngines();
+  useEffect(() => {
+    const first = engines?.[0]?.id;
+    if (first) setEngine((current) => current ?? first);
+  }, [engines]);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [assistNote, setAssistNote] = useState<string | null>(null);
 
@@ -232,7 +241,10 @@ export default function PolicyBuilderPage() {
   const bindings = useMutation({ mutationFn: () => resolveBindings(id!) });
 
   const sentences = useMemo(() => describePolicy(draft), [draft]);
-  const modes = useMemo(() => capabilities(draft, engine), [draft, engine]);
+  const modes = useMemo(
+    () => (engine ? capabilities(draft, engine) : []),
+    [draft, engine]
+  );
 
   const incomplete = !draft.name.trim() || !hasCondition(draft);
 
@@ -574,11 +586,8 @@ export default function PolicyBuilderPage() {
                 ariaLabel="Engine"
                 className="tw:w-32 tw:py-1"
                 onChange={(next) => setEngine(next as Engine)}
-                options={[
-                  { value: 'POSTGRES', label: 'PostgreSQL' },
-                  { value: 'SQLSERVER', label: 'SQL Server' },
-                ]}
-                value={engine}
+                options={engineOptions(engines)}
+                value={engine ?? ''}
               />
             </div>
             <p className="tw:mt-2 tw:text-xs tw:text-tertiary">

@@ -67,19 +67,17 @@ public final class SourceProbe {
 
     String url;
     try {
-      url = jdbcUrl(target);
+      url = JdbcTargets.url(target);
     } catch (IllegalArgumentException e) {
       return new Result(false, null, null, e.getMessage(), elapsed(started));
     }
 
-    Properties properties = new Properties();
-    properties.setProperty("user", credential.username());
-    properties.setProperty("password", credential.password());
     // Named so a DBA reading sys.dm_exec_sessions or pg_stat_activity can tell
     // who opened this, which matters because the proxy mode's identity rules
     // depend on being able to distinguish our connections from a user's.
-    properties.setProperty("ApplicationName", "arak-dac");
-    properties.setProperty("applicationName", "arak-dac");
+    // Built by JdbcTargets rather than here, so the probe cannot announce
+    // itself differently from the connection that later runs the query.
+    Properties properties = JdbcTargets.properties(credential);
 
     int previousTimeout = DriverManager.getLoginTimeout();
     DriverManager.setLoginTimeout(timeoutSeconds);
@@ -101,31 +99,6 @@ public final class SourceProbe {
     } finally {
       DriverManager.setLoginTimeout(previousTimeout);
     }
-  }
-
-  private static String jdbcUrl(Target target) {
-    String database = target.database() == null || target.database().isBlank() ? null : target.database();
-    return switch (String.valueOf(target.engine()).toUpperCase(java.util.Locale.ROOT)) {
-      case "POSTGRES" ->
-          "jdbc:postgresql://"
-              + target.host()
-              + ":"
-              + target.port()
-              + "/"
-              + (database == null ? "postgres" : database);
-      case "SQLSERVER" ->
-          "jdbc:sqlserver://"
-              + target.host()
-              + ":"
-              + target.port()
-              // encrypt=true is the driver 10+ default and trustServerCertificate
-              // is what makes a self-signed certificate usable; stating both makes
-              // the choice visible rather than leaving it to a driver upgrade.
-              + ";encrypt=true;trustServerCertificate=true"
-              + (database == null ? "" : ";databaseName=" + database);
-      default -> throw new IllegalArgumentException(
-          "Phase 1 can only connect to POSTGRES and SQLSERVER, not " + target.engine());
-    };
   }
 
   private static long elapsed(long startedNanos) {

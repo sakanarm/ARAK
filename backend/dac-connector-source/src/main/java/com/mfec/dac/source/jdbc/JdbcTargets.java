@@ -1,9 +1,10 @@
 package com.mfec.dac.source.jdbc;
 
+import com.mfec.dac.common.engine.SourceEngine;
+import com.mfec.dac.common.engine.SourceEngines;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.SQLException;
-import java.util.Locale;
 import java.util.Properties;
 
 /**
@@ -28,27 +29,22 @@ public final class JdbcTargets {
   /** The name every connection from this platform announces itself under. */
   public static final String APPLICATION_NAME = "arak-dac";
 
+  /**
+   * The JDBC URL for this target.
+   *
+   * <p>The engine registry owns the shape of the URL. This method used to own
+   * it too, in a switch that was copied verbatim into {@code SourceProbe} — so
+   * the class whose entire stated reason for existing is that the probe and
+   * the proxy connect identically contained the very duplication it was meant
+   * to prevent.
+   */
   public static String url(SourceProbe.Target target) {
-    String database =
-        target.database() == null || target.database().isBlank() ? null : target.database();
-    return switch (String.valueOf(target.engine()).toUpperCase(Locale.ROOT)) {
-      case "POSTGRES" ->
-          "jdbc:postgresql://"
-              + target.host()
-              + ":"
-              + target.port()
-              + "/"
-              + (database == null ? "postgres" : database);
-      case "SQLSERVER" ->
-          "jdbc:sqlserver://"
-              + target.host()
-              + ":"
-              + target.port()
-              + ";encrypt=true;trustServerCertificate=true"
-              + (database == null ? "" : ";databaseName=" + database);
-      default -> throw new IllegalArgumentException(
-          "Phase 1 can only connect to POSTGRES and SQLSERVER, not " + target.engine());
-    };
+    return SourceEngines.of(target.engine()).jdbcUrl(coordinates(target));
+  }
+
+  /** The coordinates of a target, validated. */
+  static SourceEngine.JdbcCoordinates coordinates(SourceProbe.Target target) {
+    return new SourceEngine.JdbcCoordinates(target.host(), target.port(), target.database());
   }
 
   public static Properties properties(CredentialResolver.Credential credential) {

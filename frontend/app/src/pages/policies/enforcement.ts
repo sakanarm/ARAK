@@ -15,7 +15,15 @@ import type { Policy } from '../../generated/entity/policy/policy';
  */
 
 export type EnforcementMode = 'PROXY' | 'SECURE_VIEW' | 'NATIVE_CONFIG';
-export type Engine = 'POSTGRES' | 'SQLSERVER';
+/**
+ * An engine id as the server spells it.
+ *
+ * Deliberately not a union of the two engines shipped today. The notes below
+ * are prose about a specific product, so a note genuinely can be missing for an
+ * engine — but a missing note has to read as a missing note, not as the note
+ * for whichever product happened to be on the other side of a ternary.
+ */
+export type Engine = string;
 
 export const MODES: {
   mode: EnforcementMode;
@@ -62,6 +70,31 @@ interface Feature {
   gap: Partial<Record<EnforcementMode, (engine: Engine) => string | undefined>>;
 }
 
+/**
+ * Why native column masking is awkward, per engine.
+ *
+ * Keyed rather than branched. This used to be a ternary between the two
+ * engines we ship, which meant a third engine would have been handed the SQL
+ * Server sentence — a specific, confident, wrong claim about a product nobody
+ * had checked. A lookup can be missing an entry; a ternary cannot.
+ */
+const NATIVE_MASK_NOTES: Record<string, string> = {
+  POSTGRES:
+    'PostgreSQL has no column masking in core. Without the anon extension the only native option is hiding the column entirely.',
+  SQLSERVER:
+    'SQL Server dynamic data masking is on or off per column, so the mask is the same for everyone who is not granted UNMASK. Granting UNMASK per column needs SQL Server 2022 or later.',
+};
+
+/**
+ * What we can say about an engine whose native masking nobody has written up.
+ *
+ * Reported as a gap rather than passed over. Treating silence as "this works"
+ * is the exact failure this matrix exists to prevent, and an engine we have no
+ * notes for is the engine we are least sure about.
+ */
+const UNKNOWN_ENGINE_MASK_NOTE =
+  'Native column masking on this engine has not been verified. Until it has, use a secure view or the query API for masking rather than assuming the source will apply it.';
+
 const FEATURES: Feature[] = [
   {
     used: (policy) => (policy.data?.rowFilters?.length ?? 0) > 0,
@@ -73,10 +106,7 @@ const FEATURES: Feature[] = [
     used: (policy) =>
       (policy.data?.columnRules ?? []).some((rule) => rule.action === 'MASK'),
     gap: {
-      NATIVE_CONFIG: (engine) =>
-        engine === 'POSTGRES'
-          ? 'PostgreSQL has no column masking in core. Without the anon extension the only native option is hiding the column entirely.'
-          : 'SQL Server dynamic data masking is on or off per column, so the mask is the same for everyone who is not granted UNMASK. Granting UNMASK per column needs SQL Server 2022 or later.',
+      NATIVE_CONFIG: (engine) => NATIVE_MASK_NOTES[engine] ?? UNKNOWN_ENGINE_MASK_NOTE,
     },
   },
   {
@@ -84,7 +114,7 @@ const FEATURES: Feature[] = [
       (policy.data?.columnRules ?? []).some((rule) => Boolean(rule.condition)),
     gap: {
       NATIVE_CONFIG: () =>
-        'Cell masking — masking only on some rows — cannot be expressed by native masking on either engine. This rule would not be applied.',
+        'Cell masking — masking only on some rows — is not something native column masking expresses on any engine we support. This rule would not be applied.',
     },
   },
   {

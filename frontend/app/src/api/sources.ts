@@ -12,7 +12,34 @@ import { apiClient } from './client';
  * this console becoming the place somebody pastes a production password.
  */
 
-export type SourceEngine = 'POSTGRES' | 'SQLSERVER';
+/**
+ * An engine id as the server spells it, such as `POSTGRES`.
+ *
+ * Deliberately a string rather than a union of the two we support today. The
+ * union meant six screens each carried their own copy of the list, so adding an
+ * engine was one backend change plus six frontend ones — and missing any of the
+ * six produced a dropdown offering a source the backend would then refuse to
+ * connect to. The list now comes from `fetchEngines()`; the one place a name is
+ * still written down is the capability notes in the policy builder, which are
+ * prose about a specific product rather than a list of products.
+ */
+export type SourceEngine = string;
+
+/** One engine this build can govern, as the server describes it. */
+export interface SourceEngineInfo {
+  id: SourceEngine;
+  displayName: string;
+  defaultPort: number;
+  /** False where a database is the schema, as in MySQL, which shortens the FQN. */
+  supportsSchemas: boolean;
+  /**
+   * What the query proxy can express on this engine — not what the engine can
+   * enforce natively. A policy needing a treatment missing from this list is
+   * refused rather than run unprotected, so the console can warn before a
+   * source is pointed at the proxy instead of after.
+   */
+  proxyCapabilities: string[];
+}
 
 export type EnforcementMode =
   | 'NATIVE_CONFIG'
@@ -126,6 +153,17 @@ export const ENFORCEMENT_MODES: {
     what: 'Rewritten at the query API. Touches nothing in the database, but only protects traffic that comes through it.',
   },
 ];
+
+/**
+ * The engines this build can govern.
+ *
+ * Cache it generously: it changes when the backend is deployed, never while
+ * somebody is filling in a form.
+ */
+export async function fetchEngines(): Promise<SourceEngineInfo[]> {
+  const { data } = await apiClient.get<SourceEngineInfo[]>('/v1/sources/engines');
+  return data;
+}
 
 export async function fetchSources(): Promise<Source[]> {
   const { data } = await apiClient.get<Source[]>('/v1/sources');

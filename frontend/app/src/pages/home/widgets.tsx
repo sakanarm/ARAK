@@ -25,6 +25,7 @@ import { fetchCatalogSummary, fetchSystemVersion } from '../../api/client';
 import { fetchVocabulary } from '../../api/governance';
 import { fetchPolicies } from '../../api/policies';
 import { fetchSources } from '../../api/sources';
+import { engineLabel, useSourceEngines } from '../../engines';
 import { KIND_GROUPS, hitHref, search } from '../../api/search';
 import type { HomeLink, HomeWidget, HomeWidgetType } from '../../api/home';
 import { Chart, slicesOf } from './charts';
@@ -513,6 +514,7 @@ function SourcesWidget({ widget }: { widget: HomeWidget }) {
     queryFn: fetchSources,
     retry: false,
   });
+  const { data: engines } = useSourceEngines();
 
   return (
     <Widget
@@ -548,7 +550,7 @@ function SourcesWidget({ widget }: { widget: HomeWidget }) {
                   )}
                 </span>
                 <span className="tw:mt-0.5 tw:block tw:truncate tw:text-xs tw:text-tertiary">
-                  {source.engine === 'SQLSERVER' ? 'SQL Server' : 'PostgreSQL'} ·{' '}
+                  {engineLabel(engines, source.engine)} ·{' '}
                   {humanise(source.defaultEnforcementMode)} ·{' '}
                   {source.assetCount.toLocaleString()} assets
                 </span>

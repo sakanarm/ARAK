@@ -96,6 +96,34 @@ test('native source config cannot carry a cell mask on either engine', () => {
   }
 });
 
+test('an engine nobody wrote notes for is reported as unverified, not as SQL Server', () => {
+  // The notes used to be a ternary between the two engines we ship, so a third
+  // one silently inherited the SQL Server sentence -- a confident, specific
+  // claim about a product nobody had checked. A gap with no note is a gap.
+  const policy: Policy = {
+    name: 'mask',
+    policyType: 'DATA',
+    scopeLevel: 'ORG',
+    selector: { condition: { facet: 'tags', operator: 'contains', value: 'PII' } },
+    data: {
+      columnRules: [
+        {
+          columns: { condition: { facet: 'columnName', operator: 'eq', value: 'email' } },
+          action: 'MASK',
+          masking: { function: 'NULLIFY' },
+        },
+      ],
+    },
+  };
+
+  const native = capabilities(policy, 'MYSQL').find(
+    (note) => note.mode === 'NATIVE_CONFIG'
+  )!;
+  expect(native.support).not.toBe('full');
+  expect(native.gaps.join(' ')).toContain('has not been verified');
+  expect(native.gaps.join(' ')).not.toContain('SQL Server');
+});
+
 test('a row-filter-only policy is carried whole by all three modes', () => {
   const policy: Policy = {
     name: 'rls',

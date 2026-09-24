@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   AlertTriangle,
@@ -28,6 +28,7 @@ import {
   type SourceEngine,
   type SourceInput,
 } from '../api/sources';
+import { engineLabel, engineOptions, enginePort, useSourceEngines } from '../engines';
 import { useAuthStore } from '../auth/authStore';
 import { Field, Select, TextField } from './policies/controls';
 
@@ -49,14 +50,12 @@ import { Field, Select, TextField } from './policies/controls';
  * not what it is.
  */
 
-const DEFAULT_PORT: Record<SourceEngine, number> = {
-  POSTGRES: 5432,
-  SQLSERVER: 1433,
-};
-
 const BLANK: SourceInput = {
   name: '',
-  engine: 'POSTGRES',
+  // Filled from the engine list once it arrives. Naming one here would be a
+  // seventh copy of a list this screen no longer keeps, and would quietly
+  // submit an engine the server had stopped offering.
+  engine: '',
   host: '',
   port: null,
   defaultDatabase: null,
@@ -167,6 +166,7 @@ function SourceCard({
   onEdit: () => void;
 }) {
   const queryClient = useQueryClient();
+  const { data: engines } = useSourceEngines();
   const [probe, setProbe] = useState<ProbeResult | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
@@ -222,7 +222,7 @@ function SourceCard({
               {source.name}
             </h2>
             <Badge color="gray" size="sm" type="pill-color">
-              {source.engine === 'SQLSERVER' ? 'SQL Server' : 'PostgreSQL'}
+              {engineLabel(engines, source.engine)}
               {source.engineVersion ? ` ${source.engineVersion}` : ''}
             </Badge>
             <Badge color={modeColor(source.defaultEnforcementMode)} size="sm" type="pill-color">
@@ -347,6 +347,7 @@ function SourceForm({
   onDone: () => void;
 }) {
   const queryClient = useQueryClient();
+  const { data: engines } = useSourceEngines();
   const [draft, setDraft] = useState<SourceInput>(() =>
     source
       ? {
@@ -393,6 +394,16 @@ function SourceForm({
       setProblem(apiErrorMessage(error, 'The connection could not be tested.')),
   });
 
+  // A new source opens on whichever engine the server lists first, so the
+  // form is never submitted with an empty engine and the person registering a
+  // source is never asked to choose before anything is on offer.
+  useEffect(() => {
+    const first = engines?.[0]?.id;
+    if (first) setDraft((current) => (current.engine ? current : { ...current, engine: first }));
+  }, [engines]);
+
+  const defaultPort = enginePort(engines, draft.engine);
+
   function patch(next: Partial<SourceInput>) {
     setDraft((current) => ({ ...current, ...next }));
     // A result that outlived the host it was measured against reads as a
@@ -436,13 +447,10 @@ function SourceForm({
                 engine,
                 // Only when the box is empty, so a deliberate port survives a
                 // change of mind about the engine.
-                port: draft.port ?? DEFAULT_PORT[engine],
+                port: draft.port ?? enginePort(engines, engine) ?? null,
               });
             }}
-            options={[
-              { value: 'POSTGRES', label: 'PostgreSQL' },
-              { value: 'SQLSERVER', label: 'SQL Server' },
-            ]}
+            options={engineOptions(engines)}
             value={draft.engine}
           />
         </Field>
@@ -456,13 +464,17 @@ function SourceForm({
         </Field>
 
         <Field
-          hint={`Blank uses the engine default (${DEFAULT_PORT[draft.engine]}).`}
+          hint={
+            defaultPort
+              ? `Blank uses the engine default (${defaultPort}).`
+              : 'Blank uses the engine default.'
+          }
           label="Port">
           <TextField
             onChange={(next) =>
               patch({ port: next.trim() === '' ? null : Number(next) })
             }
-            placeholder={String(DEFAULT_PORT[draft.engine])}
+            placeholder={defaultPort ? String(defaultPort) : ''}
             type="number"
             value={draft.port === null ? '' : String(draft.port)}
           />

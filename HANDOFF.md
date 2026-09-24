@@ -45,7 +45,7 @@ Phase 1 รองรับ SQL Server + PostgreSQL · identity หลักค�
 | **M15 LLM อธิบาย policy และอธิบาย dashboard** | ⬜ **Roadmap ใหม่ — ผู้ใช้ขอ 2026-09-24** · ต่อยอดจาก M11 ที่ per-user gateway ใช้ได้จริงแล้ว · **(ก)** admin เปิด policy ตัวหนึ่งแล้วกด "อธิบายให้ฟัง" — LLM แปล selector + subject rule + row filter + mask ออกมาเป็นภาษาคน พร้อมบอกว่า **จะถูก policy ชั้นบนทับตรงไหน** · **(ข)** หน้า Dashboard (M10) กดที่กราฟแล้วให้ LLM อ่านตัวเลขให้ฟังว่ามันแปลว่าอะไรและควรไปดูอะไรต่อ — ⚠️ **ส่ง metadata + ตัวเลขสรุปเท่านั้น ห้ามส่งแถวข้อมูลจริง และ LLM ยังไม่มีสิทธิ์ activate อะไรทั้งสิ้น** (FR-2.6) — ดูข้อ AP.3 |
 | **M16 LLM ช่วยหา asset จากสิ่งที่อยากได้** | ⬜ **Roadmap ใหม่ — ผู้ใช้ขอ 2026-09-24** · ในหน้า Query เพิ่ม option ให้พิมพ์เป็นภาษาคนว่า *“อยากได้ข้อมูลผลิตภัณฑ์และราคา”* แล้ว LLM ไปค้นใน metadata (asset + column + description + tag + glossary term + domain) แล้วตอบกลับเป็น **ตาราง/คอลัมน์ที่น่าจะใช่ พร้อมเหตุผลว่าทำไม** · แต่ละตัวต้องบอกด้วยว่า **คุณ query ได้เลย** หรือ **ต้องไปขอสิทธิ์ก่อน** (ต่อปุ่มของ M13 ตรงนั้น) · ตัวที่ query ได้กดแล้วเติม SQL ร่างลงช่อง editor ให้เลย — ⚠️ **ค้นบน metadata เท่านั้น ห้ามส่งแถวข้อมูลจริงให้ LLM** และผลลัพธ์ต้อง **กรองด้วยสิทธิ์ของคนที่ถาม** ก่อนแสดง (ห้ามใช้ LLM เป็นช่องทางส่องว่ามีตารางอะไรอยู่บ้าง) — ดูข้อ AP.4 |
 | **M17 ประวัติย้อนหลังของ policy** | ⬜ **Roadmap ใหม่ — ผู้ใช้ขอ 2026-09-24** · ชิป *`v13 · active`* ที่เห็นบนหน้า policy มาจาก `policy.version` + `policy.lifecycle_state` · **ประวัติเก็บครบอยู่แล้วใน `policy_version`** (append-only ตั้งแต่ V3 — `PolicyStore` เขียนทุกครั้งก่อนแก้แถวจริง เก็บ `document` ทั้งใบ + `lifecycle_state` + `changed_by` + `change_reason` + `changed_at`) และ `GET /v1/policies/{id}/versions` ก็เปิดอยู่ **แต่ไม่มีหน้าจอไหนเรียกมันเลย** (`fetchPolicyVersions` ใน `api/policies.ts` เขียนไว้แล้วแต่ไม่มีใครใช้) · งานคือ: **แท็บ History** บนหน้า policy · **diff ระหว่างสองเวอร์ชัน** · **rollback** (เขียนเวอร์ชันใหม่ทับ ไม่ใช่ลบของเก่า ตาม FR-9.2) · และ **`audit_policy_change` ที่ยังไม่มีใครเขียนลงไปเลยสักแถว** — ดูข้อ AP.5 |
-| **M18 รองรับ database type ใหม่ได้โดยไม่ต้องไล่แก้ 14 จุด** | ⬜ **Roadmap ใหม่ — ผู้ใช้ขอ 2026-09-24** · ของที่แพงออกแบบถูกแล้ว (`PolicyDecision` ไม่มี SQL · `SqlDialect` เป็น interface · `engine_capability` เป็น data) **แต่ชื่อ engine ถูก hardcode อยู่ 14 ที่** — `CHECK (engine IN (...))` 2 migration · switch ใน `JdbcTargets` + `SourceProbe` + `QueryService.dialectFor()` · frontend อีก 6 ไฟล์ · ลืมจุดเดียว**ไม่ error ตอน compile** แต่พังตอน runtime · งานคือ **`SourceEngine` registry ตัวเดียว** ที่ถือ url template + driver + dialect + probe + introspection quirk แล้วให้ทุกจุดอ่านจากมัน → เพิ่ม engine = **class 1 ตัว + capability rows** — ดูข้อ AP.7 |
+| **M18 รองรับ database type ใหม่ได้โดยไม่ต้องไล่แก้ 14 จุด** | 🚧 **~75% — slice 1 จบรอบนี้และ*ผ่านการรันจริง*แล้ว (ดูข้อ AR)** · `SourceEngine` registry + `SqlDialects` + `ProxyCapabilities` + `V18__source_engine.sql` + `GET /v1/sources/engines` · **switch ทั้ง 3 ตัวและ hardcode ฝั่ง frontend ทั้ง 6 ไฟล์หายไปแล้ว** · **proxy fail-closed แล้ว** — engine ที่ mask ไม่ได้ถูกปฏิเสธพร้อมบอกทางออก แทนที่จะคืน column แบบ plaintext · เหลือ: introspection quirk ต่อ engine (`supportsSchemas` ยังไม่มีใครอ่าน) · `engine_capability` ฝั่ง native ยังไม่มีคนอ่าน (รอ M6) · และ **เพิ่ม engine ตัวที่ 3 จริงเพื่อพิสูจน์ว่า class เดียวพอ** · เดิมคือ ⬜ **Roadmap ใหม่ — ผู้ใช้ขอ 2026-09-24** · ของที่แพงออกแบบถูกแล้ว (`PolicyDecision` ไม่มี SQL · `SqlDialect` เป็น interface · `engine_capability` เป็น data) **แต่ชื่อ engine ถูก hardcode อยู่ 14 ที่** — `CHECK (engine IN (...))` 2 migration · switch ใน `JdbcTargets` + `SourceProbe` + `QueryService.dialectFor()` · frontend อีก 6 ไฟล์ · ลืมจุดเดียว**ไม่ error ตอน compile** แต่พังตอน runtime · งานคือ **`SourceEngine` registry ตัวเดียว** ที่ถือ url template + driver + dialect + probe + introspection quirk แล้วให้ทุกจุดอ่านจากมัน → เพิ่ม engine = **class 1 ตัว + capability rows** — ดูข้อ AP.7 |
 
 **ที่รันอยู่ตอนนี้**
 | | |
@@ -56,15 +56,15 @@ Phase 1 รองรับ SQL Server + PostgreSQL · identity หลักค�
 | App DB (docker `dac-appdb`, postgres:16-alpine) | `:5432` db/user `dac` |
 | OpenMetadata ของทีม | `2.0.1` — sync ผ่าน **ingestion-bot JWT** (ดู What Didn't Work) |
 
-เทสต์ทั้งหมดเขียว — **backend unit รันครบเมื่อ 2026-09-24 14:33 → exit 0 · unit 606 · Failures 0 Errors 0** (integration **132** ครั้งล่าสุด `-Pintegration verify` → BUILD SUCCESS), frontend `npx jest` + `npx tsc --noEmit` + `vite build` รันใหม่ **2026-09-24** (**24 suites / 161 tests** เขียว · tsc exit 0 · build 32.17s · `scripts/check-cursor-pointer.mjs` → *every &lt;button&gt; offers a hand*)
+เทสต์ทั้งหมดเขียว — **backend unit รันครบเมื่อ 2026-09-24 → exit 0 · unit 662 · Failures 0 Errors 0** (integration **152** — `-Pintegration verify` รันเต็มชุด **2026-09-24 15:30** → BUILD SUCCESS · `Failures 0 Errors 0` · **+5 จาก `SourceEngineRegistryIT` ซึ่งเป็นการรัน `V18__source_engine.sql` บน Postgres จริงครั้งแรก**), frontend `npx jest` + `npx tsc --noEmit` + `vite build` รันใหม่ **2026-09-24** (**24 suites / 162 tests** เขียว · tsc exit 0 · build 7.20s · `scripts/check-cursor-pointer.mjs` → *every &lt;button&gt; offers a hand*)
 
 > ⚠️ **`backend/dac-service/target/surefire-reports/com.mfec.dac.catalog.AssetStoreIT.txt` ยังแดงค้างอยู่ในโฟลเดอร์ — เป็นไฟล์เก่าจาก 2026-09-23 20:35 ก่อน commit `19b0503` ซึ่งคือ commit ที่แก้เคสนั้นพอดี** อย่าอ่านรายงานใน `target/` โดยไม่ดูเวลาไฟล์ — `mvn test` ไม่ล้างรายงานของคลาสที่รอบนี้ไม่ได้รัน
 
 | ชุด | จำนวน | คำสั่ง |
 |---|---|---|
-| Backend unit | dac-common 6 · dac-engine 277 · dac-compiler-sql 25 · dac-connector-openmetadata 91 · **dac-connector-source 11 (ใหม่ — `CredentialResolverTest`)** · dac-proxy 16 · **dac-service 180** = **606** | `./mvnw -o test` |
+| Backend unit | **dac-common 31 (+25 — `SourceEngineConformanceTest`)** · dac-engine 277 · **dac-compiler-sql 34 (+9 — `SqlDialectsTest`)** · dac-connector-openmetadata 91 · **dac-connector-source 19 (+8 — `JdbcTargetsTest`)** · **dac-proxy 30 (+14 — `ProxyCapabilitiesTest`)** · **dac-service 180** = **662** | `./mvnw -o test` |
 | Backend integration (Testcontainers `postgres:16-alpine`) | **132 tests** — `AssetStoreIT` 7 · `CatalogQueryIT` 18 · `DataSourceStoreIT` 13 · `GovernanceStoreIT` 10 · `GrantCompositionIT` **17 (+4 รอบก่อน: `AgainstDataPolicies` — grant ตรงต้องไม่ถอด mask)** · `IdentityAdminStoreIT` 15 · `ImpactAnalysisIT` 8 · `PolicyBindingMaterializerIT` 10 · `PolicyOverviewIT` 24 · `PolicyStoreIT` 10 | `./mvnw -am -pl backend/dac-service verify -Pintegration` |
-| Frontend | **24 suites / 161 tests** (+`OpenMetadataSettingsPage.test.tsx` 5 — สัญญาเรื่องช่องความลับ) | `npx jest` ใน `frontend/app` |
+| Frontend | **24 suites / 162 tests** (+1 ใน `policyLanguage.test.ts` — engine ที่ไม่มี note ต้องไม่ได้ประโยคของ SQL Server ไป) | `npx jest` ใน `frontend/app` |
 
 `yarn type-check` · `yarn lint` · `yarn build` ผ่านหมด → **BUILD SUCCESS** ทั้งสองฝั่ง
 
@@ -381,7 +381,140 @@ M18 ก่อนเพิ่ม engine ตัวที่ 3 เสมอ
 
 ---
 
-## รอบนี้ — **ของที่เคยต้อง redeploy ย้ายมาอยู่บนหน้าจอครบ 3 อย่าง** · **ผู้ช่วย LLM มีประตูเข้าแล้ว** · และ **เอกสารกติกาการชนกันของ policy ที่ผู้ใช้ขอ**
+## รอบนี้ — **M18 slice 1: ชื่อ engine หายไปจากโค้ดทั้ง 14 จุด** · และ **proxy หยุด query ที่มันบังคับ policy ไม่ได้ แทนที่จะปล่อยผ่าน**
+
+> ผู้ใช้สั่งสลับลำดับให้ M18 ขึ้นก่อนทุกอย่าง (`ปรับมาทำส่วนนี้ก่อนเลย เพื่อสร้างฐานให้แข็งแรง`) และให้เริ่มที่ฝั่ง proxy
+> รอบนี้คือ slice 1 ของ M18 — **ปิดครบทั้ง 14 จุดที่ AP.7 นับไว้** บวกของที่เจอระหว่างทางอีกสองอย่าง
+
+### AR.1 registry ตัวเดียวที่ทุกจุดอ่าน — `com.mfec.dac.common.engine`
+
+ของใหม่ 4 ไฟล์ใน `dac-common` (โมดูลที่**ไม่มี** JDBC driver และ**ไม่มี** SQL compiler อยู่บน classpath ซึ่งเป็นข้อจำกัดที่กำหนดรูปร่างของ interface):
+
+| ไฟล์ | หน้าที่ |
+|---|---|
+| `SourceEngine.java` | interface — `id()` · `displayName()` · `defaultPort()` · `supportsSchemas()` · `driverClassName()` · `jdbcUrl(JdbcCoordinates)` · `dialectId()` · `proxyCapabilities()` · nested `record JdbcCoordinates` ที่ปฏิเสธ host ว่างและ port นอกช่วง 1–65535 ตั้งแต่ constructor · nested `Capability` ที่ถือ `ROW_FILTER` / `COLUMN_MASK` / `CELL_MASK` / `COLUMN_HIDE` |
+| `SourceEngines.java` | registry — `all()` · `ids()` · `find()` · `of()` · `UnsupportedEngineException extends IllegalArgumentException` |
+| `PostgresEngine.java` | POSTGRES · PostgreSQL · 5432 · `org.postgresql.Driver` · url fallback เป็น database `postgres` · capability ครบ 4 |
+| `SqlServerEngine.java` | SQLSERVER · SQL Server · 1433 · `com.microsoft.sqlserver.jdbc.SQLServerDriver` · url ระบุ `encrypt=true;trustServerCertificate=true` ตรงๆ · capability ครบ 4 |
+
+**สองการตัดสินใจที่ควรอ่านก่อนแก้:**
+
+1. **`dialectId()` คืน String ไม่ใช่ `SqlDialect`** — เพราะถ้าคืน object โมดูลที่แค่เปิด socket (`dac-connector-source`) จะต้องลาก SQL compiler มาทั้งก้อน · ราคาของการเลือกแบบนี้คือไม่มีอะไรใน `dac-common` รู้ว่าชื่อ dialect นั้น resolve ได้จริงไหม → หนี้ก้อนนี้จ่ายด้วย `SqlDialectsTest` ที่เดินทุก engine ที่ลงทะเบียนแล้วเรียก `SqlDialects.forEngine()` จริง (อยู่ใน `dac-compiler-sql` ซึ่งเห็นทั้งสองฝั่ง)
+2. **`REGISTRY` เป็น static map ไม่ใช่ `ServiceLoader`** — engine ที่ platform นี้บังคับ policy ได้คือ**การตัดสินใจ** ไม่ใช่ผลข้างเคียงของการแพ็ก jar · ServiceLoader แปลว่า jar ที่หล่นเข้า classpath เพิ่ม engine ได้เงียบๆ ซึ่งเป็นสิ่งสุดท้ายที่อยากได้ในระบบควบคุมการเข้าถึงข้อมูล
+
+### AR.2 switch ทั้ง 3 ตัวหายไปแล้ว — และระหว่างทางเจอโค้ดที่ copy ตัวเอง
+
+| ที่เดิม | เปลี่ยนเป็น |
+|---|---|
+| `JdbcTargets.url()` — `switch (engine)` | `SourceEngines.of(target.engine()).jdbcUrl(coordinates(target))` |
+| `SourceProbe.jdbcUrl()` — **switch ชุดเดียวกัน copy มาทั้งดุ้น** | ลบทิ้งทั้ง method → เรียก `JdbcTargets.url(target)` |
+| `QueryService.dialectFor()` — `switch` ที่ default เป็น Postgres | `SqlDialects.forEngineId(source.engine().name())` |
+
+🐛 **ของที่เจอ:** `JdbcTargets` มี javadoc เขียนไว้เองว่ามันมีอยู่เพื่อ *"ให้ probe กับ proxy ต่อเหมือนกัน"* — แต่ `SourceProbe` **copy ทั้ง URL builder และ block ที่ตั้ง `Properties` ไปไว้ในตัวเอง** คือคลาสที่เกิดมาเพื่อกันการ duplicate มี duplicate ของตัวเองอยู่ข้างใน · รอบนี้ยุบทั้งสองอย่างเข้า `JdbcTargets` แล้ว (`properties(Credential)` ตัวเดียว) ซึ่งสำคัญกว่าที่เห็น เพราะข้อโต้แย้งเรื่องความปลอดภัยของ FR-6.3.1 คือ *DBA ต้องแยก traffic ของเราออกจากของ user ได้ใน `pg_stat_activity`* — ซึ่งจริงก็ต่อเมื่อ probe / introspector / proxy ประกาศชื่อตัวเองเหมือนกันทุกตัว
+
+⚠️ `dialectFor()` เดิม **default เป็น Postgres dialect** แปลว่า engine ที่ไม่รู้จักจะได้ SQL ของ Postgres ไปยิง — ไม่ใช่แค่ error แต่เป็น error ที่ **อาจสำเร็จ**
+
+### AR.3 🔒 proxy fail-closed แล้ว — `ProxyCapabilities`
+
+ของใหม่: `backend/dac-proxy/src/main/java/com/mfec/dac/proxy/ProxyCapabilities.java`
+
+```java
+ProxyCapabilities.require(SourceEngines.of(source.engine().name()), fqn.get(), decision);
+```
+
+- `required(decision)` → แปลง decision เป็นเซตของ capability ที่ต้องใช้ (row predicate → `ROW_FILTER` · hidden column → `COLUMN_HIDE` · mask ที่ไม่มีเงื่อนไข → `COLUMN_MASK` · mask ที่มีเงื่อนไข → `CELL_MASK`)
+- `missing(engine, decision)` → ตัวที่ engine นั้นทำไม่ได้ **ทั้งหมด** ไม่ใช่ตัวแรก
+- `require(...)` → โยน `QueryRewriter.RefusedException` ที่บอก **ชื่อ asset + สิ่งที่ทำไม่ได้ + ให้ไปทำอะไรแทน** (*"Enforce this asset through a secure view instead."*) — refusal ที่ไม่บอกทางออกคือ refusal ที่คนแก้ด้วยการปิด policy
+
+**วางไว้หลัง `recordDecision(...)` โดยตั้งใจ** — query ที่กำลังจะถูกปฏิเสธเพราะ engine ทำไม่ได้ ก็ยังเป็น decision ที่เกิดขึ้นจริง · auditor ที่ถามว่า "ใครพยายามอ่านตารางนี้บ้าง" ต้องได้คำตอบเดียวกันไม่ว่าตารางนั้นอยู่ engine ไหน
+
+⚠️ **ทำไมไม่ใช้ตาราง `engine_capability`** — ตารางนั้นตอบว่า *engine* บังคับอะไรได้เอง (โหมด 5.1.1 / 5.1.2) · แต่โหมด proxy ไม่มีอะไรถูกบังคับโดย engine เลย ARAK เขียน statement ใหม่เอง คำถามจึงเป็น *rewriter ของ build นี้พูดอะไรได้* ซึ่งเป็นข้อเท็จจริงเกี่ยวกับโค้ด ไม่ใช่เกี่ยวกับ database · และสองคำตอบนี้**ต่างกันจริงทั้งสองทาง** — Postgres ไม่มี column masking ใน core เลย แต่ proxy mask column ของมันได้สบาย
+
+### AR.4 `V18__source_engine.sql` — `CHECK` สองอันกลายเป็นตารางที่อ่านได้
+
+```sql
+CREATE TABLE source_engine (id, display_name, default_port, supports_schemas);
+DELETE FROM engine_capability WHERE mode = 'PROXY';
+ALTER TABLE data_source        DROP CONSTRAINT data_source_engine_check;
+ALTER TABLE data_source        ADD  CONSTRAINT data_source_engine_fkey        FK → source_engine ON DELETE RESTRICT;
+ALTER TABLE engine_capability  DROP CONSTRAINT engine_capability_engine_check;
+ALTER TABLE engine_capability  ADD  CONSTRAINT engine_capability_engine_fkey  FK → source_engine ON DELETE CASCADE;
+CREATE INDEX data_source_engine_idx ON data_source (engine);
+```
+
+- `CHECK (engine IN (...))` **อ่านไม่ได้** — ไม่มีใครถาม database ได้ว่ารองรับ engine อะไรบ้าง นั่นคือเหตุผลที่ frontend ไปพิมพ์ list เอง 6 ที่ · และการขยายมันต้อง rewrite ตาราง production
+- **`DROP CONSTRAINT` เขียนแบบไม่มี `IF EXISTS` โดยตั้งใจ** — ถ้าชื่อที่ Postgres generate ไม่ตรง migration ต้องพังเสียงดัง ไม่ใช่ปล่อยให้ CHECK เก่าค้างอยู่คู่กับ FK ใหม่เงียบๆ
+- `ON DELETE RESTRICT` ไม่ใช่ `CASCADE` — cascade จะลาก credential reference และ enforcement mode ของทุก table ที่ engine นั้นคุ้มครองอยู่ไปด้วย
+- **ลบแถว PROXY ทิ้ง 8 แถว** ตามเหตุผลข้อ AR.3 · แถวของโหมด native ยังอยู่ครบ เพราะพวกนั้นเป็นคำพูดเกี่ยวกับ engine จริงๆ และ M5/M6 compiler ต้องใช้ (FR-6.0b)
+
+🐛 **ของที่เจอ:** `engine_capability` มี **25 แถวที่ seed ไว้ตั้งแต่ V4 และไม่มีโค้ด Java อ่านมันเลยสักบรรทัด** — capability matrix ที่ FR-6.0b สัญญาไว้ ฝั่ง backend ยังไม่ได้ต่อ (ฝั่ง frontend มี `enforcement.ts` ที่คำนวณเองอยู่) รอบนี้แก้ไปครึ่งหนึ่ง: แถว PROXY ย้ายเข้าโค้ดแล้วและมีคนอ่านจริง · แถว native ยังรออยู่ที่ M6
+
+### AR.5 `GET /v1/sources/engines` — และ 6 ไฟล์ frontend เลิกพิมพ์ list เอง
+
+endpoint ใหม่ใน `SourceResource` (วางไว้**ก่อน** `@Path("/{id}")` — JAX-RS เลือก literal path ก่อน template อยู่แล้ว แต่เรียงตามลำดับที่อ่านง่ายไว้ด้วย) ตอบ `id` · `displayName` · `defaultPort` · `supportsSchemas` · `proxyCapabilities`
+ไม่มี Source row ในคำตอบ → กติกา `redact()` ไม่เกี่ยว
+
+ฝั่ง frontend:
+
+| ไฟล์ | เดิม | ใหม่ |
+|---|---|---|
+| `src/engines.ts` ⭐ **ใหม่** | — | `useSourceEngines()` (TanStack Query · `staleTime: Infinity` — list เปลี่ยนตอน deploy ไม่ใช่ตอนคนกรอกฟอร์ม) · `engineLabel()` · `enginePort()` · `engineOptions()` |
+| `api/sources.ts` | `type SourceEngine = 'POSTGRES' \| 'SQLSERVER'` | `= string` + `SourceEngineInfo` + `fetchEngines()` |
+| `SourcesPage.tsx` | `DEFAULT_PORT` table · dropdown 2 ตัวเลือก · badge ternary | อ่านจาก registry ทั้งสามจุด · `BLANK.engine = ''` แล้วเติมด้วยตัวแรกที่ server ส่งมา |
+| `pages/home/widgets.tsx` | badge ternary | `engineLabel(engines, source.engine)` |
+| `PolicyBuilderPage.tsx` | dropdown 2 ตัวเลือก · `useState<Engine>('POSTGRES')` | `engineOptions(engines)` · `useState<Engine \| null>(null)` แล้วเติมเมื่อ list มาถึง |
+| `pages/policies/enforcement.ts` | `Engine = 'POSTGRES' \| 'SQLSERVER'` | `= string` |
+
+🐛 **ของที่เจอระหว่างทาง (คลาสเดียวกับ `dialectFor()` เป๊ะ):** `enforcement.ts` เขียน note ของ NATIVE_CONFIG ว่า
+
+```ts
+engine === 'POSTGRES' ? '<ข้อความ Postgres>' : '<ข้อความ SQL Server>'
+```
+
+แปลว่า engine ตัวที่สาม**จะได้ประโยคของ SQL Server ไป** — เป็นคำกล่าวอ้างที่เจาะจง มั่นใจ และผิด เกี่ยวกับผลิตภัณฑ์ที่ไม่มีใครเคยตรวจ · รอบนี้เปลี่ยนเป็น `Record<string, string>` + fallback ที่พูดความจริงว่า *"Native column masking on this engine has not been verified"* และรายงานเป็น **gap** ไม่ใช่ปล่อยผ่าน — เพราะ engine ที่เราไม่มีข้อมูลคือ engine ที่เรามั่นใจน้อยที่สุด · ตารางไม่กี่ตัวจะเงียบไม่ได้
+
+**ที่เหลือคำว่า `SQLSERVER` ใน `frontend/app/src` มีแค่ 2 จุด และทั้งคู่ถูกต้อง** — key ของตาราง note (เป็น prose เกี่ยวกับผลิตภัณฑ์นั้นจริงๆ) และ test ที่ assert พฤติกรรมของทั้งสอง engine ที่ ship จริง
+
+### AR.6 เทสต์ที่เพิ่ม — 606 → 662 (backend) · 161 → 162 (frontend)
+
+| ไฟล์ | จำนวน | สิ่งที่มันกัน |
+|---|---|---|
+| `SourceEngineConformanceTest` (dac-common) | parameterized ทุก engine | id เป็นตัวใหญ่ไม่ว่าง · หาเจอไม่ว่าสะกดยังไง · port อยู่ในช่วง · url มี host/port/database และขึ้นต้น `jdbc:` · **url ที่ database เป็น null ต้องไม่มีคำว่า "null" อยู่ในนั้น** · `JdbcCoordinates` ปฏิเสธ host ว่าง / port 0 / port 70000 |
+| `SqlDialectsTest` (dac-compiler-sql) | 7 | ทุก engine ที่ลงทะเบียนมี dialect จริง · **`of("POSTGRES")` ต้องคืนคนละ instance ทุกครั้ง** (dialect ถือ salt ต่อ column ของ HASH — แชร์ instance = hash ของสอง source correlate กันได้ ซึ่งเป็นสิ่งเดียวที่ salt ต่อ column มีไว้กัน) |
+| `ProxyCapabilitiesTest` (dac-proxy) | 11 | **การปฏิเสธ** เป็นหลัก — engine ที่ mask ไม่ได้แล้วรัน query ต่อจะคืน column แบบ plaintext และ**ไม่มีใครแจ้งเป็นบั๊กเพราะ query สำเร็จ** · บวก parameterized ว่า engine ที่ ship จริงทั้งคู่พูดได้ครบทุกอย่างที่ rewriter ปล่อยออกมา |
+| `JdbcTargetsTest` (dac-connector-source) | 8 | **`Class.forName(driverClassName())` จริง** — driver ที่มีชื่ออยู่ใน constant แต่ไม่มีใน pom จะ register ได้สวยงามแล้วพังตอนต่อครั้งแรก · โมดูลนี้เป็นที่เดียวที่มี driver ทั้งสองบน classpath |
+| `SourceEngineRegistryIT` (dac-service, Testcontainers) | 5 | ตาราง `source_engine` กับ registry ในโค้ดพูดตรงกัน · FK ยังปฏิเสธ engine ที่พิมพ์ผิดเหมือนที่ CHECK เคยทำ · ลบ engine ที่ยังมีคนใช้ไม่ได้ · `engine_capability` เหลือ PROXY 0 แถวและ native > 0 |
+| `policyLanguage.test.ts` (frontend) | +1 | engine ที่ไม่มี note ต้องรายงานว่า *ยังไม่ได้ตรวจสอบ* และ **ต้องไม่มีคำว่า "SQL Server" อยู่ในคำตอบ** |
+
+### AR.7 การรันจริง — **V18 ถูกรันบน Postgres จริงครั้งแรก และชื่อ constraint ที่เดาไว้ถูก**
+
+`./mvnw -o -am -pl backend/dac-service verify -Pintegration` → **BUILD SUCCESS 05:13 น.** (2026-09-24 15:30)
+· unit **662** (dac-common 31 · dac-engine 277 · dac-compiler-sql 34 · dac-connector-openmetadata 91 · dac-connector-source 19 · dac-proxy 30 · dac-service 180)
+· integration **152** · `Failures 0 Errors 0 Skipped 0` ทุกโมดูล · ไม่มีบรรทัด `[ERROR]` เลยทั้ง log
+
+**บรรทัดที่ต้องเห็นถึงจะพูดได้ว่าผ่าน** (ตามกับดักที่จดไว้ใน What Didn't Work):
+
+```
+[INFO] Tests run: 5, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 4.119 s
+       -- in com.mfec.dac.source.SourceEngineRegistryIT
+```
+
+**สิ่งที่การรันนี้พิสูจน์ ซึ่งก่อนหน้านี้เป็นแค่การอนุมานจากการอ่าน migration เก่า:**
+
+| สมมติฐาน | พิสูจน์ด้วย |
+|---|---|
+| `ALTER TABLE data_source DROP CONSTRAINT data_source_engine_check` มีตัวตนจริง | Flyway รัน V18 ผ่าน — ถ้าชื่อผิด migration ตายทั้งชุดและ IT ทุกตัวใน `dac-service` จะล้มตาม ไม่ใช่แค่ตัวเดียว |
+| `engine_capability_engine_check` เช่นกัน | เหมือนกัน |
+| FK ยังกันของที่ CHECK เคยกัน | `theForeignKeyGuardsWhatTheCheckUsedTo` — `INSERT ... engine = 'POSTGRESQL'` ได้ error ที่มีคำว่า `data_source_engine_fkey` |
+| `ON DELETE RESTRICT` ไม่ใช่ CASCADE | `deletingAnEngineInUseIsRefused` |
+| `DELETE FROM engine_capability WHERE mode = 'PROXY'` ลบครบและไม่ลบเกิน | `theCapabilityTableNoLongerSpeaksForTheProxy` — PROXY = 0 แถว · native > 0 แถว |
+| ตารางกับ registry ในโค้ดพูดตรงกัน | `theTableAndTheRegistryAgree` + `theRowMatchesTheEngine` |
+
+> ⚠️ **ทำไมถึงจดข้อนี้แยก:** ชื่อ constraint ที่ PostgreSQL ตั้งให้อัตโนมัติ (`<table>_<column>_check`) เป็นสิ่งที่ **เดาถูกได้ 99% แต่ `DROP CONSTRAINT` ที่ไม่มี `IF EXISTS` จะตายทันทีถ้าเดาผิด** — และมันจะตายบน production ตอน deploy ไม่ใช่ตอน compile เจตนาที่ไม่ใส่ `IF EXISTS` คือ *ถ้า CHECK ไม่อยู่ตรงนั้นแปลว่าเราเข้าใจ schema ผิด อย่าเงียบ* → การรัน IT จึงเป็นเงื่อนไขของการ commit ไม่ใช่ของแถม
+
+---
+
+## รอบก่อนหน้า — **ของที่เคยต้อง redeploy ย้ายมาอยู่บนหน้าจอครบ 3 อย่าง** · **ผู้ช่วย LLM มีประตูเข้าแล้ว** · และ **เอกสารกติกาการชนกันของ policy ที่ผู้ใช้ขอ**
 
 > รอบนี้ยาวและกระจายหลายเรื่อง เพราะผู้ใช้ถามแทรกเป็นระยะ สรุปเป็นข้อๆ ตามลำดับที่ทำ
 
@@ -3958,6 +4091,11 @@ estate ที่ใช้: `prod-mssql.SalesDB.dbo.{customer, order}` + **`prod-
 - **append `policy_version` ก่อนแก้ `policy` เสมอ** — history ไม่ขึ้นกับความจำของคนเขียน code
 - **unit test ที่เลือกคุมเฉพาะ failure mode ที่อันตราย** ไม่ใช่คุม output ทุกบรรทัด — `describeSelector(ว่าง) === 'nothing'` และ capability gap ของ cell masking
 - เขียนไฟล์ใหญ่ด้วย **Write tool หรือ python heredoc** เชื่อถือได้
+- **ให้ IT เป็นตัวยืนยันชื่อ constraint ที่ PostgreSQL ตั้งเอง แทนที่จะใส่ `IF EXISTS` แล้วปล่อยผ่าน** — `DROP CONSTRAINT` เปล่าๆ + `SourceEngineRegistryIT` แปลว่าการเดาชื่อผิดตายใน CI ไม่ใช่ตอน deploy (ข้อ AR.7)
+- **registry ของ engine เป็น static list ในโค้ด ไม่ใช่ `ServiceLoader`** — engine ที่ platform นี้บังคับ policy ได้คือ**การตัดสินใจ** ไม่ใช่ผลข้างเคียงของการแพ็ก jar
+- **`dialectId()` คืน String ไม่ใช่ `SqlDialect`** — โมดูลที่เปิด socket (`dac-connector-source`) จึงไม่ต้องขึ้นกับ SQL compiler ทั้งก้อน
+- **ตารางอ้างอิง (`source_engine`) แทน `CHECK (engine IN (...))`** — ได้ guarantee เท่าเดิมแต่ **อ่านได้** → frontend เลิกถือสำเนารายชื่อ engine ของตัวเอง 6 ไฟล์
+- **หา defect ชนิดเดียวกันซ้ำทั้ง repo หลังเจอตัวแรก** — `QueryService.dialectFor()` ที่ตกไปที่ Postgres เงียบๆ นำไปสู่การเจอ `enforcement.ts` ที่ยื่นประโยคของ SQL Server ให้ engine ตัวที่สาม ซึ่ง**ไม่มีใครรายงานได้เพราะหน้าจอไม่ได้ error**
 
 ## What Didn't Work
 

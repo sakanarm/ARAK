@@ -3,6 +3,7 @@ package com.mfec.dac.resources;
 import com.mfec.dac.auth.AuthenticatedUser;
 import com.mfec.dac.auth.Secured;
 import com.mfec.dac.catalog.SourceCatalogImporter;
+import com.mfec.dac.common.engine.SourceEngines;
 import com.mfec.dac.crypto.SecretBox;
 import com.mfec.dac.source.DataSourceStore;
 import com.mfec.dac.source.jdbc.CredentialResolver;
@@ -172,6 +173,41 @@ public class SourceResource {
   @GET
   public List<DataSourceStore.Source> list() {
     return sources.list().stream().map(SourceResource::redact).toList();
+  }
+
+  /**
+   * Which engines this build can govern, and what each one needs asked for it.
+   *
+   * <p>Served so the console stops carrying its own copy of the list. Six
+   * screens had the two engines typed into them, which meant adding a third
+   * was a backend change plus six frontend changes, and forgetting one of the
+   * six produced a dropdown that could register a source the backend would
+   * then refuse to connect to.
+   *
+   * <p>Declared before {@code /{id}} for the reader's benefit only — JAX-RS
+   * prefers a literal path over a template regardless of order — but the name
+   * {@code engines} can never be a UUID, so the two cannot collide.
+   *
+   * <p>Open to any authenticated caller, like the rest of the reads here: this
+   * is the list of products the platform supports, which is on the box.
+   */
+  @GET
+  @Path("/engines")
+  public List<Map<String, Object>> engines() {
+    return SourceEngines.all().stream()
+        .map(
+            engine ->
+                Map.<String, Object>of(
+                    "id", engine.id(),
+                    "displayName", engine.displayName(),
+                    "defaultPort", engine.defaultPort(),
+                    "supportsSchemas", engine.supportsSchemas(),
+                    // What the proxy can express, not what the engine can
+                    // enforce natively. The console uses it to warn before a
+                    // source is pointed at a mode that will refuse its
+                    // queries, rather than after.
+                    "proxyCapabilities", List.copyOf(engine.proxyCapabilities())))
+        .toList();
   }
 
   @GET
