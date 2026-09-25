@@ -619,7 +619,30 @@ M25 ทำแยกได้ (profile ผ่าน proxy ที่มีแล�
 
 ---
 
-## รอบนี้ — **ข้อ BG: M26 Fix with AI + Explain query · HTML widget มีปุ่มได้ · Dashboard ย้าย label picker ไปไว้ในการ์ด Coverage · M29 ARAK Gateway ลง Roadmap**
+## รอบนี้ — **ข้อ BH: หัวคำขอติดอยู่บนจอตอนเลื่อน · M30 IaC + Configuration as Code ลง Roadmap** (M28 Agent ยังทำอยู่ — ยังไม่ commit)
+
+### BH.1 หัวคำขอหายตอนเลื่อน — *"หน้า Request เวลาเลื่อน Scroll bar ลงมา Header ของ Request อันนั้น ไม่เห็นเลื่อนลงมาด้วยเลย"*
+- `AccessRequestsPage.tsx` — หัวของคำขอ (`data-testid="request-header"`) เป็น `tw:sticky tw:top-16 tw:z-20` ติดใต้ TopNav (สูง 4rem) · มีพื้น `bg-primary` + มุมบนมนเอง
+- การ์ดคำขอ **เอา `overflow-hidden` ออก** — ถ้ายังอยู่ sticky จะติดกับการ์ดแทนหน้าต่าง (เลยไม่ติดเลย) · นี่คือเหตุที่ของเดิมไม่ทำงาน
+- รายการคำขอทางซ้าย `tw:lg:sticky tw:lg:top-20` อยู่ข้างๆ ตลอดตอนอ่าน review ยาวๆ (จอเล็กเรียงบนลงล่างเหมือนเดิม)
+- เทสต์ใหม่ *keeps the request header in view while a long review scrolls* — เช็ค sticky + top-16 · การ์ดไม่มี overflow-hidden · ลิงก์ FQN อยู่ในหัว
+
+### BH.2 M30 ลง Roadmap — *"การทำ Infrastructure as a code IaC, Configuration as a code · CI/CD Gitlab Github · template · CLI, API, Yaml file"*
+ยังไม่ได้เขียนโค้ด — design อยู่ใน DESIGN.md **FR-20** + แถว M30:
+- **IaC** (ติดตั้ง ARAK): docker-compose ที่มีแล้ว + Helm chart + Terraform module · secret จาก platform เท่านั้น
+- **CaC** (ค่าตั้งใน ARAK): YAML `apiVersion: arak/v1` · `kind` = DataSource / Policy / Workflow / RoleBinding / FeatureAccess / HomePersona · `spec` ของ Policy = Policy IR ตัวเดิม
+- CLI `arak validate | plan | apply | export | test | drift` = API `/v1/config/*` ตัวเดียวกัน · login ด้วย PAT (ต้องมี M14)
+- template GitHub Actions + GitLab CI: PR → validate + test + plan + comment · main → dev · uat/prod ต้องกดอนุมัติ
+- กติกา: credential เป็น reference (`vault://` / `azurekeyvault://` / `env:`) เท่านั้น · policy ลงเป็น DRAFT เว้นแต่ PR ถูก approve โดยคนอื่น · ไม่ลบของที่ไม่อยู่ในไฟล์ถ้าไม่สั่ง `--prune` · ไม่มี IP / credential ใน export
+- ต่อยอด FR-9 Policy-as-Code (ยุบเข้า M30 แล้ว)
+
+### BH.3 ผลทดสอบ
+- frontend `npx tsc --noEmit -p .` ผ่าน · `npx jest` ชุด requests ผ่าน 50/50 (รวมเทสต์ใหม่)
+- `git push` จาก session นี้ยังทำไม่ได้ (Git Credential Manager ต้องเปิดหน้าต่าง) — ผู้ใช้ต้องรัน `git push origin main` เอง
+
+---
+
+## รอบก่อนหน้า — **ข้อ BG: M26 Fix with AI + Explain query · HTML widget มีปุ่มได้ · Dashboard ย้าย label picker ไปไว้ในการ์ด Coverage · M29 ARAK Gateway ลง Roadmap**
 
 ### BG.1 M26 — *"อยากให้มีปุ่ม ให้ LLM มา Correct ให้"* · *"อยากให้มีปุ่มให้ LLM AI อธิบาย Query ให้ได้ด้วย"*
 

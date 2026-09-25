@@ -345,6 +345,20 @@ describe('AccessRequestsPage inbox', () => {
     );
   });
 
+  it('keeps the request header in view while a long review scrolls', async () => {
+    fetchInbox.mockResolvedValue([request()]);
+    renderPage('/requests?tab=inbox');
+
+    const card = await detail();
+    const header = within(card).getByTestId('request-header');
+    // Sticky under the 4rem top bar. The card must not clip it, or it would
+    // stick to the card rather than to the window.
+    expect(header.className).toContain('tw:sticky');
+    expect(header.className).toContain('tw:top-16');
+    expect(card.className).not.toContain('overflow-hidden');
+    expect(within(header).getByRole('link', { name: FQN })).toBeInTheDocument();
+  });
+
   it('opens the request that was picked, and marks it in the list', async () => {
     fetchInbox.mockResolvedValue([
       request(),

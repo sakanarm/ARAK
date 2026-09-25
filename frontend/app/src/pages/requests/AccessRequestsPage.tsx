@@ -234,7 +234,7 @@ function RequestsTab({ side }: { side: Side }) {
     <div className="tw:grid tw:gap-4 tw:lg:grid-cols-[minmax(0,24rem)_minmax(0,1fr)]">
       <section
         aria-label={side === 'inbox' ? 'Inbox' : 'My requests'}
-        className="tw:flex tw:flex-col tw:self-start tw:overflow-hidden tw:rounded-xl tw:border tw:border-secondary tw:bg-primary tw:shadow-xs">
+        className="tw:flex tw:flex-col tw:self-start tw:overflow-hidden tw:rounded-xl tw:border tw:border-secondary tw:bg-primary tw:shadow-xs tw:lg:sticky tw:lg:top-20">
         <div
           aria-label="Status"
           className="tw:flex tw:gap-0.5 tw:overflow-x-auto tw:border-b tw:border-secondary tw:p-2"
@@ -540,8 +540,10 @@ function RequestDetail({ request, side }: { request: AccessRequest; side: Side }
   return (
     <article
       aria-label={`Request for ${request.assetFqn}`}
-      className="tw:overflow-hidden tw:rounded-xl tw:border tw:border-secondary tw:bg-primary tw:shadow-xs">
-      <div className="tw:flex tw:flex-wrap tw:items-start tw:gap-4 tw:border-b tw:border-secondary tw:px-6 tw:py-5">
+      className="tw:rounded-xl tw:border tw:border-secondary tw:bg-primary tw:shadow-xs">
+      <div
+        className="tw:sticky tw:top-16 tw:z-20 tw:flex tw:flex-wrap tw:items-start tw:gap-4 tw:rounded-t-xl tw:border-b tw:border-secondary tw:bg-primary tw:px-6 tw:py-4"
+        data-testid="request-header">
         <span
           aria-hidden
           className="tw:flex tw:size-11 tw:shrink-0 tw:items-center tw:justify-center tw:rounded-lg tw:bg-utility-brand-50">

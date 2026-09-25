@@ -309,7 +309,7 @@ policy change log (append-only, ค่าเดิม→ค่าใหม่) �
 | FR-8.5 compliance report | ✅ **M10** (บนหน้าจอ · export CSV/PDF ⬜) | `GET /v1/dashboard` + หน้า `/dashboard` — ใครเข้าถึง label ที่เลือกได้ (default PII) · table sensitive ที่ไม่มี data policy (แยก ถูกอ่าน / เข้าได้ / ปิดอยู่) · สิทธิ์ที่ไม่ได้ใช้เกิน 90 วัน · grant ใกล้หมด / ไม่มีวันหมด · ไม่มี IP / SQL ในคำตอบ |
 
 ### FR-9 Policy Lifecycle — ⬜
-state `DRAFT → PENDING_APPROVAL → ACTIVE → DISABLED → ARCHIVED` ✅ (มีใน schema) · version + diff + rollback (ตาราง `policy_version` มีแล้ว) · **Policy-as-Code** export/import YAML · แยก environment dev/uat/prod + promote
+state `DRAFT → PENDING_APPROVAL → ACTIVE → DISABLED → ARCHIVED` ✅ (มีใน schema) · version + diff + rollback (ตาราง `policy_version` มีแล้ว) · **Policy-as-Code** export/import YAML · แยก environment dev/uat/prod + promote → ทำรวมใน **FR-20 / M30**
 
 ### FR-11 Access Request Management — M9 🚧 ~75% · M13 ✅
 ขอสิทธิ์เอง · workflow หลาย step ต่อ scope (ALL / ANY / AT_LEAST n · Reject เลือกได้ต่อ stage) · inbox + กระดิ่ง · review ก่อนตอบ · กัน grant ที่ policy ยังปฏิเสธ ·
@@ -378,6 +378,49 @@ SQL Server source: tool ส่ง SQL แบบ PG → แปลง dialect ห�
 | **Connector** | Power BI custom connector (`.mez`, Power Query M) · Tableau connector (`.taco`) — เปลือกบาง ๆ บน pgwire เดิม | ผู้ใช้ BI ที่อยากเห็น "ARAK" ในรายการ source + ช่องใส่ token ที่ชัด | M29d · optional · ไม่มี code path ใหม่ฝั่ง server · Power BI Service ยังต้อง On-premises Data Gateway |
 | **API** | REST Query API ที่มีอยู่แล้ว (`POST /v1/query`, 5.2a) + **PAT เป็น Bearer** · saved query → CSV feed | Python / notebook · script · app ภายใน · Excel "From Web" | ต้องมี PAT (M29a) — ตอนนี้ใช้ได้แค่ session token ของหน้าเว็บ |
 
+### FR-20 Infrastructure as Code + Configuration as Code — M30 ⬜ (ผู้ใช้ขอ 2026-09-26)
+*"การทำ Infrastructure as a code IaC, Configuration as a code · อาจจะทำผ่าน CI/CD Gitlab Github หรืออะไรที่สร้างเป็น template ไว้ให้เลย · CLI, API, Yaml file"*
+
+แยกเป็น 2 ชั้น ที่ไม่ปนกัน:
+| ชั้น | คุมอะไร | ของที่ส่งมอบ |
+|---|---|---|
+| **IaC — ติดตั้งตัว ARAK** | image · App DB · reverse proxy · TLS · secret store · scale | `deploy/docker-compose.yml` (มีแล้ว) · **Helm chart** (Kubernetes / OpenShift) · **Terraform module** (VM / AKS / EKS + Postgres managed) · ค่าทุกตัวมาจาก variable / secret ของ platform — ไม่มี secret ในไฟล์ |
+| **CaC — ค่าตั้งใน ARAK** | data source · policy (subscription + data) · workflow การอนุมัติ · app role · feature access ของ AI Assist · home persona · การตั้งค่า OpenMetadata / LLM gateway (ไม่รวม key) | ไฟล์ **YAML** ใน Git · CLI `arak` · API plan / apply · template CI/CD |
+
+**รูปแบบไฟล์** — แบบ Kubernetes: `apiVersion: arak/v1` · `kind: DataSource | Policy | Workflow | RoleBinding | FeatureAccess | HomePersona` · `metadata.name` เป็น key ·
+`spec` ของ `Policy` คือ **Policy IR ตัวเดิม** (JSON Schema เดียวกับ backend และ Policy Builder — ไม่มี schema ที่สอง) · publish JSON Schema ให้ VS Code / IntelliJ เติมคำให้ได้ ·
+ไฟล์เดียวมีหลาย document ได้ (`---`) · แยกโฟลเดอร์ต่อ environment (`envs/dev`, `envs/uat`, `envs/prod`) + overlay
+
+**Secret ห้ามอยู่ในไฟล์** — ช่อง credential รับแค่ reference ที่ `DataSourceStore.validate()` ยอมอยู่แล้ว (`vault://` · `azurekeyvault://` · `env:`) ·
+`fernet:` และค่าดิบถูกปฏิเสธตอน `validate` (ไม่ใช่ตอน apply) · `export` เขียน reference เท่านั้น ไม่เคยเขียนค่าจริง
+
+**คำสั่ง (CLI `arak` = API ตัวเดียวกัน ไม่มีทางลัดเข้า DB)**
+| คำสั่ง | ทำอะไร |
+|---|---|
+| `arak validate` | ตรวจ schema + selector + expression + reference ของ secret · ไม่ต้องต่อ server ก็ได้ (offline) |
+| `arak plan` | diff ไฟล์กับของจริงบน server → เพิ่ม / แก้ / ลบ อะไร · **impact analysis** (FR-5.3) กี่ table กี่คน · ไม่เปลี่ยนอะไร |
+| `arak apply` | ทำตาม plan ที่ได้ (ต้องส่ง plan id — ถ้า server เปลี่ยนไปหลัง plan ต้อง plan ใหม่) · transactional · audit ทุกแถวพร้อม commit SHA + ชื่อ pipeline |
+| `arak export` | ดึงค่าปัจจุบันออกเป็น YAML — เริ่มจากระบบที่ตั้งด้วยหน้าจอมาแล้วได้ |
+| `arak test` | รัน **policy test** — ไฟล์ YAML ที่บอกว่า "analyst_a ต้องเห็น `email` ถูก mask" แล้วเช็คผ่าน Simulator (FR-5.2) |
+| `arak drift` | ของที่ถูกแก้บนหน้าจอหลัง apply ล่าสุด |
+
+API: `POST /v1/config/validate` · `/plan` · `/apply` · `GET /v1/config/export` — ผ่าน permission เดียวกับหน้าจอทุกข้อ (Data Owner apply ได้เฉพาะ scope ของตัวเอง FR-3.1.2) ·
+login ด้วย **PAT / service account** (M14) ไม่ใช่รหัสผ่าน
+
+**Template CI/CD ที่ให้ไปใช้ได้เลย** — GitHub Actions (`arak/setup-action` + workflow ตัวอย่าง) · GitLab CI (`include:` template) · Azure DevOps (ทีหลัง)
+- **Pull / Merge request** → `validate` + `test` + `plan` แล้ว comment diff + impact ลงใน PR
+- **Merge เข้า main** → `apply` ไป dev อัตโนมัติ
+- **uat / prod** → environment ที่ต้องมีคนกดอนุมัติ (GitHub Environments / GitLab protected environment) แล้ว `apply` ด้วย plan เดิม
+
+**กติกา (ห้ามหลุด)**
+- **policy ที่ apply ผ่าน pipeline ลงเป็น `DRAFT` เสมอ** เว้นแต่ไฟล์ขอ `ACTIVE` **และ** PR ได้ approve จากคนที่ไม่ใช่ผู้เขียน (separation of duty FR-2.6 — ตรวจจาก commit / approval ที่ pipeline ส่งมา) · LLM ไม่มีสิทธิ์ในเส้นนี้
+- **ไม่ลบของที่ไม่อยู่ในไฟล์** เว้นแต่สั่ง `--prune` · plan แสดงรายการลบแยกให้เห็นชัด
+- ของแต่ละชิ้นเลือกได้ว่า **managed by Git** (หน้าจอแก้ไม่ได้ มีป้ายบอก + ลิงก์ไป repo) หรือ **แก้บนหน้าจอได้** (drift ถูกรายงาน ไม่ถูกทับเงียบๆ)
+- apply เป็น config ของ ARAK เท่านั้น — การ enforce ลง source ยังผ่าน dry-run / apply ของ Enforcement เหมือนเดิม (ข้อตัดสินใจที่ 8)
+- ไม่มี `client_ip` / `requester_ip` / credential ใน export ใดๆ
+
+**ต่อยอดทีหลัง** — Terraform provider (`arak_policy`, `arak_data_source`) สำหรับทีมที่ทำทุกอย่างบน Terraform อยู่แล้ว · GitOps แบบ pull (ARAK ดึงจาก repo เอง)
+
 ### FR-10 Non-Functional
 | # | | สถานะ |
 |---|---|---|
@@ -426,6 +469,7 @@ SQL Server source: tool ส่ง SQL แบบ PG → แปลง dialect ห�
 | **M27** | ขอสิทธิ์ในนามกลุ่ม | – | ⬜ ต่อยอด M9 |
 | **M29** | **ARAK Gateway** — ให้ DBeaver / Excel / Power BI / Tableau / pgAdmin ต่อตรงแต่ query วิ่งผ่าน ARAK (FR-19 · 5.2b) · M29a pgwire + PAT + pg_catalog emulation (PG source) · M29b SQL ที่ BI tool สร้าง (subquery ซ้อน) + result cache · M29c SQL Server source (แปลง dialect หรือ TDS) · M29d Power BI / Tableau connector (optional) · JDBC/ODBC = driver PG มาตรฐาน · API = `/v1/query` + PAT | 3–4 wk | ⬜ ผู้ใช้ถาม 2026-09-26 · ต่อยอด M7 |
 | **M28** | Conversational ARAK Agent — แชทใน mascot + Catalog · ค้น catalog · ตอบ SQL syntax · เขียน query · พาไปหน้าในแอพ · metadata เท่านั้น · ไม่ apply อะไรเอง | – | ⬜ ต้องมี M11 · ต่อยอด M16 + M26 |
+| **M30** | **IaC + Configuration as Code** (FR-20) — M30a YAML (`apiVersion: arak/v1`) + `validate` / `plan` / `apply` / `export` API · M30b CLI `arak` + policy test ผ่าน Simulator · M30c template GitHub Actions + GitLab CI (PR = plan + comment · main = dev · uat/prod ต้องกดอนุมัติ) · M30d Helm chart + Terraform module ติดตั้ง ARAK · M30e Terraform provider (optional) · secret เป็น reference เท่านั้น · policy ลงเป็น DRAFT เว้นแต่ PR ผ่านคนอื่น approve | 3–4 wk | ⬜ ผู้ใช้ขอ 2026-09-26 · ต้องมี M14 (PAT) · ต่อยอด FR-9 + M17 |
 
 **ลำดับ:** M0 → M1 → M2 → M3 → (M4 ‖ M5 ‖ M6 ‖ M7) → M7b → M8
 หลัง M3 fix `PolicyDecision` แล้ว **compiler 3 ตัวทำขนานกันได้** — นี่คือผลตอบแทนของการลงทุนทำ Policy IR ตั้งแต่ต้น
