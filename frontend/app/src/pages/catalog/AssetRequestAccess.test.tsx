@@ -63,6 +63,39 @@ describe('AssetAccessAction', () => {
     expect(screen.queryByLabelText('Why you need it')).toBeNull();
   });
 
+  it('shows the workflow a request would walk, step by step, in the dialog', async () => {
+    fetchEligibility.mockResolvedValue(
+      eligibility({
+        route: {
+          workflowName: 'Finance tables',
+          stages: [
+            { step: 1, name: 'Owner approval', rule: 'ANY', minApprovals: null, onReject: 'VETO', approvers: ['Owners of the table'] },
+            { step: 2, name: 'Security', rule: 'ALL', minApprovals: null, onReject: 'VETO', approvers: ['Team Security'] },
+          ],
+        },
+      })
+    );
+    renderBox();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Request access' }));
+    const dialog = await screen.findByRole('dialog');
+    const route = within(dialog).getByRole('group', { name: 'Approval route' });
+    expect(within(route).getAllByRole('listitem')).toHaveLength(2);
+    expect(within(route).getByText('Asks Team Security')).toBeInTheDocument();
+    expect(
+      within(dialog).getByText(/It goes through the “Finance tables” workflow: Owner approval, then Security\./)
+    ).toBeInTheDocument();
+  });
+
+  it('says nobody can decide it when the server says the request would be stranded', async () => {
+    fetchEligibility.mockResolvedValue(eligibility({ approvers: [], stranded: true }));
+    renderBox();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Request access' }));
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByText(/nobody can decide this yet/)).toBeInTheDocument();
+  });
+
   it('opens the form in a dialog and sends only the reason and the days', async () => {
     fetchEligibility.mockResolvedValue(eligibility());
     requestAccess.mockResolvedValue({

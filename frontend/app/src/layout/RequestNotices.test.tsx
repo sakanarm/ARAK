@@ -113,12 +113,40 @@ describe('the bell', () => {
     fireEvent.click(bell);
 
     const panel = await screen.findByRole('dialog', { name: 'Notifications' });
-    expect(within(panel).getByText('1 request waiting for your decision')).toBeInTheDocument();
+    expect(within(panel).getByText('1 request waiting for you')).toBeInTheDocument();
     expect(within(panel).getByText('asked for access to')).toBeInTheDocument();
     expect(within(panel).getByText('rejected your request for')).toBeInTheDocument();
     expect(within(panel).getByText('“Use the summary”')).toBeInTheDocument();
     expect(within(panel).getAllByRole('img', { name: 'New' })).toHaveLength(2);
     await waitFor(() => expect(markSeen).toHaveBeenCalledTimes(1));
+  });
+
+  it('tells a later step, a configurer and a requester what the workflow did', async () => {
+    fetchNotices.mockResolvedValue(
+      notices({
+        items: [
+          notice({ id: 3, kind: 'ADVANCED', step: 2, actor: 'owner_a' }),
+          notice({ id: 4, kind: 'TO_CONFIGURE', actor: 'steward_s' }),
+          notice({
+            id: 5,
+            kind: 'COMPLETED',
+            side: 'MINE',
+            actor: 'custodian_c',
+            note: 'Granted for 10 days',
+          }),
+        ],
+      })
+    );
+    renderWith(<Notifications />);
+
+    fireEvent.click(await screen.findByRole('button', { name: /Notifications/ }));
+    const panel = await screen.findByRole('dialog', { name: 'Notifications' });
+    expect(within(panel).getByText('passed on to you a request for')).toBeInTheDocument();
+    expect(
+      within(panel).getByText('approved, for you to configure, a request for')
+    ).toBeInTheDocument();
+    expect(within(panel).getByText('set up your access to')).toBeInTheDocument();
+    expect(within(panel).getByText('“Granted for 10 days”')).toBeInTheDocument();
   });
 
   it('opens the request a notice is about, on the right tab', async () => {

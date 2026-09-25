@@ -19,6 +19,7 @@ import PolicyListPage from './pages/policies/PolicyListPage';
 import QueryPage from './pages/query/QueryPage';
 import AccessRequestsPage from './pages/requests/AccessRequestsPage';
 import SimulatorPage from './pages/simulator/SimulatorPage';
+import AccessWorkflowsPage from './pages/settings/AccessWorkflowsPage';
 import AppRolesPage from './pages/settings/AppRolesPage';
 import HomePersonasPage from './pages/settings/HomePersonasPage';
 import LlmSettingsPage from './pages/settings/LlmSettingsPage';
@@ -96,6 +97,7 @@ export default function App() {
             path="/settings/openmetadata"
           />
           <Route element={<AppRolesPage />} path="/settings/roles" />
+          <Route element={<AccessWorkflowsPage />} path="/settings/workflows" />
           <Route element={<HomePersonasPage />} path="/settings/home" />
           <Route element={<LlmSettingsPage />} path="/settings/assistant" />
           <Route element={<SettingsPage />} path="/settings" />

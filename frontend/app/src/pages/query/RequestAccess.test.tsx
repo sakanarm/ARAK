@@ -1,8 +1,8 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import RequestAccess from './RequestAccess';
-import type { AccessRequest, Refusal } from '../../api/accessRequests';
+import type { AccessRequest, Refusal, Route } from '../../api/accessRequests';
 
 const requestAccess = jest.fn();
 
@@ -58,6 +58,22 @@ function sent(overrides: Partial<AccessRequest> = {}): AccessRequest {
   };
 }
 
+const BUILT_IN: Route = {
+  workflowName: 'Built-in',
+  stages: [
+    { step: 1, name: 'Owner approval', rule: 'ANY', minApprovals: null, onReject: 'VETO', approvers: ['Owners of the table'] },
+  ],
+};
+
+const FINANCE: Route = {
+  workflowName: 'Finance tables',
+  stages: [
+    { step: 1, name: 'Owner approval', rule: 'ANY', minApprovals: null, onReject: 'VETO', approvers: ['Owners of the table'] },
+    { step: 2, name: 'Security', rule: 'ALL', minApprovals: null, onReject: 'VETO', approvers: ['Team Security'] },
+    { step: 2, name: 'Compliance', rule: 'AT_LEAST', minApprovals: 2, onReject: 'QUORUM', approvers: ['ann', 'bob', 'Role Auditor'] },
+  ],
+};
+
 function renderBox(r: Refusal, purpose: string | null = null) {
   const client = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
   return render(
@@ -103,6 +119,58 @@ describe('RequestAccess', () => {
         'No owner is recorded for this table, so a platform administrator decides.'
       )
     ).toBeInTheDocument();
+  });
+
+  it('names the owners while the route is the built-in one', () => {
+    renderBox(refusal({ route: BUILT_IN }));
+
+    expect(screen.getByText('Decided by owner_o.')).toBeInTheDocument();
+    openForm();
+    expect(screen.queryByRole('group', { name: 'Approval route' })).toBeNull();
+  });
+
+  it('tells the steps of a configured workflow, and shows each stage in the form', () => {
+    renderBox(refusal({ route: FINANCE }));
+
+    // The owners may not be asked at all under a workflow: the steps say who is.
+    expect(
+      screen.getByText(
+        'It goes through the “Finance tables” workflow: Owner approval, then Security and Compliance together.'
+      )
+    ).toBeInTheDocument();
+    expect(screen.queryByText('Decided by owner_o.')).toBeNull();
+
+    openForm();
+    const route = screen.getByRole('group', { name: 'Approval route' });
+    expect(within(route).getByText('Finance tables')).toBeInTheDocument();
+    expect(within(route).getByText('Step 2 · in parallel')).toBeInTheDocument();
+    expect(within(route).getByText('Asks Team Security')).toBeInTheDocument();
+    expect(within(route).getByText('Asks ann, bob, Role Auditor')).toBeInTheDocument();
+    expect(
+      within(route).getByText('At least 2 approve · A rejection counts only once the approvals can no longer come')
+    ).toBeInTheDocument();
+    expect(within(route).getAllByRole('listitem')).toHaveLength(2);
+  });
+
+  it('says nobody can decide it, whatever the route, when nobody else could', () => {
+    renderBox(refusal({ route: FINANCE, stranded: true }));
+
+    expect(screen.getByText(/nobody can decide this yet/)).toBeInTheDocument();
+    openForm();
+    expect(screen.queryByRole('group', { name: 'Approval route' })).toBeNull();
+  });
+
+  it('keeps the route in the note once the request is sent', async () => {
+    requestAccess.mockResolvedValue(sent());
+    renderBox(refusal({ route: FINANCE }));
+    const { reason, send } = openForm();
+    fireEvent.change(reason, { target: { value: 'Audit' } });
+
+    fireEvent.click(send);
+
+    expect((await screen.findByText(/Request sent/)).closest('p')).toHaveTextContent(
+      /goes through the “Finance tables” workflow: Owner approval, then Security and Compliance together\. You will be let in once it is approved and set up/
+    );
   });
 
   it('sends the statement that ran and the refusal along with the reason', async () => {

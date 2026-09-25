@@ -112,6 +112,8 @@ function asRefusal(data: Eligibility): Refusal {
     blockedBy: data.blockedBy,
     approvers: data.approvers,
     openRequestId: data.openRequestId,
+    stranded: data.stranded,
+    route: data.route,
   };
 }
 

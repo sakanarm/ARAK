@@ -2,16 +2,85 @@ import axios from 'axios';
 import { apiClient } from './client';
 
 /**
- * Asking a table's owner for access, and answering (FR-7, the first slice of
- * the Phase 2 workflow).
+ * Asking for a table, and moving the ask through its workflow (FR-7).
  *
- * Who may decide is not a console role. It is the table's owner as
- * OpenMetadata records it, or a platform administrator, and the server checks
- * it on every answer — `mayDecide` on a request is there to draw the buttons,
- * never to authorise them.
+ * A request walks the stages of the workflow that covers its table -- stages
+ * of one step in parallel, steps in sequence -- and once approved waits for
+ * somebody to configure it: a grant written here, or a policy changed on the
+ * policy pages. Who may answer is resolved by the server from the workflow's
+ * seats and checked on every call; `mayDecide`, `mayVote` and `mayConfigure`
+ * are there to draw the buttons, never to authorise them.
  */
 
-export type RequestStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'WITHDRAWN';
+export type RequestStatus =
+  | 'PENDING'
+  | 'APPROVED'
+  | 'IN_PROGRESS'
+  | 'COMPLETED'
+  | 'REJECTED'
+  | 'WITHDRAWN';
+
+/** Waiting for somebody: approvers, or whoever configures it. */
+export const OPEN_STATUSES: readonly RequestStatus[] = ['PENDING', 'APPROVED', 'IN_PROGRESS'];
+
+export type SeatKind =
+  | 'USER'
+  | 'TEAM'
+  | 'ROLE'
+  | 'ASSET_OWNERS'
+  | 'DATA_STEWARD'
+  | 'DATA_CUSTODIAN';
+
+/** Who a workflow asks: a person, a team, a role, or a part of the table itself. */
+export interface Seat {
+  kind: SeatKind;
+  name?: string | null;
+}
+
+/** One person a seat resolved to, and through which seat. */
+export interface Member {
+  username: string;
+  via: string;
+}
+
+export type StageRule = 'ALL' | 'ANY' | 'AT_LEAST';
+export type OnReject = 'VETO' | 'QUORUM' | 'FIRST_RESPONSE';
+export type StageStatus = 'WAITING' | 'OPEN' | 'APPROVED' | 'REJECTED' | 'CLOSED';
+
+export interface VoteView {
+  voter: string;
+  decision: 'APPROVE' | 'REJECT' | string;
+  /** An administrator answering for the stage's approvers. */
+  override: boolean;
+  note: string | null;
+  votedAt: string;
+}
+
+/** One stage of one request, as the reader sees it. */
+export interface StageView {
+  idx: number;
+  step: number;
+  name: string;
+  rule: StageRule;
+  minApprovals: number | null;
+  onReject: OnReject;
+  approvers: Seat[];
+  /** Who was asked; empty until the stage's step opens. */
+  pool: Member[];
+  /** No seat named anybody but the requester, so the administrators were asked. */
+  fallback: boolean;
+  status: StageStatus;
+  openedAt: string | null;
+  settledAt: string | null;
+  votes: VoteView[];
+  approvals: number;
+  rejections: number;
+  needed: number;
+  stranded: boolean;
+  mayVote: boolean;
+}
+
+export type Fulfilment = 'GRANT' | 'POLICY_UPDATED' | 'POLICY_CREATED';
 
 /** Somebody who can say yes: a user or an OpenMetadata team, per the catalog. */
 export interface Approver {
@@ -39,10 +108,47 @@ export interface AccessRequest {
   decidedAt: string | null;
   decisionNote: string | null;
   grantId: string | null;
+  /** The workflow it walks, by name as it was when the request was made. */
+  workflowName?: string | null;
+  currentStep?: number | null;
+  /** Who took it to configure. */
+  assignee?: string | null;
+  assignedAt?: string | null;
+  completedBy?: string | null;
+  completedAt?: string | null;
+  fulfilment?: Fulfilment | null;
+  /** The policy a policy fulfilment points at. */
+  fulfilmentRef?: string | null;
+  fulfilmentNote?: string | null;
+  configurers?: Seat[];
+  /** Who may configure it once approved; empty before. */
+  configurerPool?: Member[];
+  configurersFallback?: boolean;
+  stages?: StageView[];
+  /** The table's owners today, as OpenMetadata records them. */
   approvers: Approver[];
+  /** The reader may answer a stage now. */
   mayDecide: boolean;
-  /** Pending, and nobody but the requester could decide it. */
+  /** The reader may start, complete or decline it now. */
+  mayConfigure?: boolean;
+  /** Open, and nobody but the requester could move it. */
   stranded: boolean;
+}
+
+/** One stage of the route a request on a table would walk. */
+export interface RouteStage {
+  step: number;
+  name: string;
+  rule: StageRule;
+  minApprovals: number | null;
+  onReject: OnReject;
+  /** The seats, named for the page. */
+  approvers: string[];
+}
+
+export interface Route {
+  workflowName: string;
+  stages: RouteStage[];
 }
 
 export interface NewAccessRequest {
@@ -71,6 +177,8 @@ export interface Eligibility {
   approvers: Approver[];
   openRequestId: string | null;
   stranded?: boolean;
+  /** The stages a request would walk; null when the table is readable already. */
+  route?: Route | null;
 }
 
 /** What a refused query carries when the refusal names one table. */
@@ -82,6 +190,8 @@ export interface Refusal {
   approvers?: Approver[];
   openRequestId?: string | null;
   stranded?: boolean;
+  /** The stages a request would walk, when the server said. */
+  route?: Route | null;
 }
 
 /**
@@ -155,19 +265,70 @@ export async function fetchRequest(id: string): Promise<AccessRequest> {
   return data;
 }
 
+/**
+ * Approves one stage. How long access lasts is not set here: it is for whoever
+ * configures the request, and the server refuses a length on an approval.
+ *
+ * @param decision.stageIdx the stage answered; needed only when the reader
+ *     sits on more than one open stage, or is an administrator answering for one
+ */
 export async function approveRequest(
   id: string,
-  decision: { days?: number | null; note?: string | null }
+  decision: { note?: string | null; stageIdx?: number | null } = {}
 ): Promise<AccessRequest> {
-  const { data } = await apiClient.post<AccessRequest>(
-    `/v1/access-requests/${id}/approve`,
-    decision
-  );
+  const { data } = await apiClient.post<AccessRequest>(`/v1/access-requests/${id}/approve`, {
+    note: decision.note ?? null,
+    stageIdx: decision.stageIdx ?? null,
+  });
   return data;
 }
 
-export async function rejectRequest(id: string, note: string): Promise<AccessRequest> {
+export async function rejectRequest(
+  id: string,
+  note: string,
+  stageIdx?: number | null
+): Promise<AccessRequest> {
   const { data } = await apiClient.post<AccessRequest>(`/v1/access-requests/${id}/reject`, {
+    note,
+    stageIdx: stageIdx ?? null,
+  });
+  return data;
+}
+
+/** Takes an approved request to configure, so the other configurers see it is taken. */
+export async function startRequest(id: string): Promise<AccessRequest> {
+  const { data } = await apiClient.post<AccessRequest>(`/v1/access-requests/${id}/start`);
+  return data;
+}
+
+/**
+ * Says how an approved request was configured, and closes it.
+ *
+ * A GRANT is written by the server. A policy is only pointed at: it was
+ * changed or written on the policy pages, where it is reviewed and activated
+ * like any other, and completing the request never activates it.
+ */
+export async function completeRequest(
+  id: string,
+  how: {
+    fulfilment: Fulfilment;
+    days?: number | null;
+    policyId?: string | null;
+    note?: string | null;
+  }
+): Promise<AccessRequest> {
+  const { data } = await apiClient.post<AccessRequest>(`/v1/access-requests/${id}/complete`, {
+    fulfilment: how.fulfilment,
+    days: how.days ?? null,
+    policyId: how.policyId ?? null,
+    note: how.note ?? null,
+  });
+  return data;
+}
+
+/** Refuses to configure an approved request; the requester reads the reason. */
+export async function declineRequest(id: string, note: string): Promise<AccessRequest> {
+  const { data } = await apiClient.post<AccessRequest>(`/v1/access-requests/${id}/decline`, {
     note,
   });
   return data;
@@ -199,6 +360,73 @@ export function describeApprovers(approvers: Approver[] | undefined, stranded = 
   return `Decided by ${names.join(', ')}.`;
 }
 
+/** "ann", "Team Finance", "Owners of the table": a seat as the page names it. */
+const ROLE_LABELS: Record<string, string> = {
+  PLATFORM_ADMIN: 'Platform administrator',
+  POLICY_AUTHOR: 'Policy author',
+  DATA_OWNER: 'Data owner',
+  AUDITOR: 'Auditor',
+  REQUESTER: 'Requester',
+};
+
+/** "Data owner" for DATA_OWNER, as the server words it. */
+export function roleLabel(role: string | null | undefined): string {
+  if (!role) return '?';
+  return ROLE_LABELS[role.toUpperCase()] ?? role;
+}
+
+export function describeSeat(seat: Seat): string {
+  switch (seat.kind) {
+    case 'USER':
+      return seat.name ?? '?';
+    case 'TEAM':
+      return `Team ${seat.name ?? '?'}`;
+    case 'ROLE':
+      return `Role ${roleLabel(seat.name)}`;
+    case 'ASSET_OWNERS':
+      return 'Owners of the table';
+    case 'DATA_STEWARD':
+      return 'Data steward';
+    case 'DATA_CUSTODIAN':
+      return 'Data custodian';
+    default:
+      return '?';
+  }
+}
+
+/** "Any one approves", "All 3 approve", "At least 2 of 4 approve". */
+export function describeRule(
+  rule: StageRule,
+  minApprovals: number | null | undefined,
+  asked?: number
+): string {
+  const counted = asked !== undefined && asked > 0;
+  switch (rule) {
+    case 'ALL':
+      return counted ? `All ${asked} approve` : 'Everyone asked approves';
+    case 'ANY':
+      return 'Any one approves';
+    case 'AT_LEAST':
+      return `At least ${minApprovals ?? 1}${counted ? ` of ${asked}` : ''} approve`;
+    default:
+      return rule;
+  }
+}
+
+/** What a rejection does to the stage, in the words the editor offers. */
+export function describeOnReject(onReject: OnReject): string {
+  switch (onReject) {
+    case 'VETO':
+      return 'One rejection rejects the request';
+    case 'QUORUM':
+      return 'A rejection counts only once the approvals can no longer come';
+    case 'FIRST_RESPONSE':
+      return 'The first answer decides';
+    default:
+      return onReject;
+  }
+}
+
 /**
  * One thing that happened to a request, told to somebody who should hear it.
  *
@@ -207,7 +435,19 @@ export function describeApprovers(approvers: Approver[] | undefined, stranded = 
  */
 export interface RequestNotice {
   id: number;
-  kind: 'REQUESTED' | 'WITHDRAWN' | 'APPROVED' | 'REJECTED';
+  /**
+   * INBOX: REQUESTED (a stage asks the reader), ADVANCED (a step passed and the
+   * next asks the reader), TO_CONFIGURE (approved; the reader configures it),
+   * WITHDRAWN. MINE: APPROVED, REJECTED, COMPLETED.
+   */
+  kind:
+    | 'REQUESTED'
+    | 'ADVANCED'
+    | 'TO_CONFIGURE'
+    | 'WITHDRAWN'
+    | 'APPROVED'
+    | 'REJECTED'
+    | 'COMPLETED';
   side: 'INBOX' | 'MINE';
   requestId: string;
   assetFqn: string;
@@ -216,12 +456,14 @@ export interface RequestNotice {
   note: string | null;
   occurredAt: string;
   unseen: boolean;
+  /** For ADVANCED: the step that opened. */
+  step?: number | null;
 }
 
 export interface RequestNotices {
   /** How many of the reader's notices are newer than the last time they looked. */
   unseen: number;
-  /** Pending requests the reader may decide: the Inbox tab's count. */
+  /** Open requests waiting on the reader, to answer or to configure: the Inbox tab's count. */
   inboxPending: number;
   /** The reader's own requests still waiting: the My requests tab's count. */
   minePending: number;

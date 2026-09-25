@@ -5,6 +5,12 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import com.mfec.dac.access.AccessWorkflow.Draft;
+import com.mfec.dac.access.AccessWorkflow.Kind;
+import com.mfec.dac.access.AccessWorkflow.OnReject;
+import com.mfec.dac.access.AccessWorkflow.Rule;
+import com.mfec.dac.access.AccessWorkflow.Seat;
+import com.mfec.dac.access.AccessWorkflow.Stage;
 import com.mfec.dac.catalog.AssetStore;
 import com.mfec.dac.engine.EngineConfig;
 import com.mfec.dac.engine.PolicyEngine;
@@ -88,6 +94,9 @@ class AccessRequestIT {
       new AccessRequestStore.Actor("analyst_a", false);
   private static final AccessRequestStore.Actor ANALYST_B =
       new AccessRequestStore.Actor("analyst_b", false);
+  private static final AccessRequestStore.Actor SEC_A = new AccessRequestStore.Actor("sec_a", false);
+  private static final AccessRequestStore.Actor SEC_B = new AccessRequestStore.Actor("sec_b", false);
+  private static final AccessRequestStore.Actor SEC_C = new AccessRequestStore.Actor("sec_c", false);
 
   private static Jdbi jdbi;
   private final ObjectMapper json = new ObjectMapper().registerModule(new JavaTimeModule());
@@ -95,6 +104,7 @@ class AccessRequestIT {
   private PolicyBindingMaterializer materializer;
   private GrantStore grants;
   private DecisionService decisions;
+  private WorkflowStore workflows;
   private AccessRequestStore requests;
   private AccessEligibility eligibility;
 
@@ -116,7 +126,7 @@ class AccessRequestIT {
           handle.execute(
               """
               TRUNCATE access_request, audit_access_request, access_request_notice_seen,
-                       policy_version, policy_binding,
+                       access_workflow, audit_access_workflow, policy_version, policy_binding,
                        access_grant, audit_grant_change, row_entitlement, enforcement_state,
                        asset_facet, asset_owner, asset_fqn_map, asset_column, asset, policy,
                        principal_attribute, app_role_assignment, group_member, principal CASCADE
@@ -145,7 +155,8 @@ class AccessRequestIT {
             // Off for the same reason as GrantCompositionIT: every test changes
             // the world between two decisions about the same pair.
             DecisionCache.disabled());
-    requests = new AccessRequestStore(jdbi, grants, principals);
+    workflows = new WorkflowStore(jdbi, json);
+    requests = new AccessRequestStore(jdbi, json, grants, workflows);
     eligibility = new AccessEligibility(decisions, requests);
 
     crawl();
@@ -174,6 +185,21 @@ class AccessRequestIT {
           .extracting(AccessRequestStore.Approver::name)
           .containsExactly("owner_o");
       assertThat(made.mayDecide()).isFalse();
+      // With no workflow configured, the built-in one: any one owner.
+      assertThat(made.workflowName()).isEqualTo("Built-in");
+      assertThat(made.currentStep()).isEqualTo(1);
+      assertThat(made.stages())
+          .singleElement()
+          .satisfies(
+              stage -> {
+                assertThat(stage.name()).isEqualTo("Owner approval");
+                assertThat(stage.status()).isEqualTo("OPEN");
+                assertThat(stage.pool())
+                    .extracting(ApproverDirectory.Member::username)
+                    .containsExactly("owner_o");
+                assertThat(stage.fallback()).isFalse();
+                assertThat(stage.mayVote()).isFalse();
+              });
 
       assertThat(requests.madeBy(ANALYST_A, 10))
           .extracting(AccessRequestStore.StoredRequest::id)
@@ -229,19 +255,41 @@ class AccessRequestIT {
   class Deciding {
 
     @Test
-    @DisplayName("an owner's yes writes a request grant that opens the table")
+    @DisplayName("an owner's yes waits to be configured; configuring it as a grant opens the table")
     void approveWritesAGrant() {
       AccessRequestStore.StoredRequest made = ask("analyst_a", LEDGER, 7);
       assertThat(read("analyst_a", LEDGER)).isFalse();
 
       AccessRequestStore.StoredRequest decided =
-          requests.approve(made.id(), TEAM_MEMBER, null, "For the audit");
+          requests.approve(made.id(), TEAM_MEMBER, "For the audit", null);
 
       assertThat(decided.status()).isEqualTo("APPROVED");
       assertThat(decided.decidedBy()).isEqualTo("finance_lead");
       assertThat(decided.decisionNote()).isEqualTo("For the audit");
+      // Approved is not configured: nothing is open yet.
+      assertThat(decided.grantId()).isNull();
+      assertThat(read("analyst_a", LEDGER)).isFalse();
+      assertThat(decided.stages().get(0).status()).isEqualTo("APPROVED");
+      assertThat(decided.stages().get(0).votes())
+          .singleElement()
+          .satisfies(
+              v -> {
+                assertThat(v.voter()).isEqualTo("finance_lead");
+                assertThat(v.override()).isFalse();
+              });
+      // The team owns the ledger, so its member configures it too.
+      assertThat(decided.mayConfigure()).isTrue();
+      assertThat(requests.openRequest(LEDGER, "analyst_a")).isPresent();
 
-      GrantStore.StoredGrant grant = grants.find(decided.grantId()).orElseThrow();
+      AccessRequestStore.StoredRequest done =
+          requests.complete(
+              made.id(), TEAM_MEMBER, new AccessRequestStore.Completion("GRANT", null, null, null));
+      assertThat(done.status()).isEqualTo("COMPLETED");
+      assertThat(done.fulfilment()).isEqualTo("GRANT");
+      assertThat(done.completedBy()).isEqualTo("finance_lead");
+      assertThat(done.assignee()).isEqualTo("finance_lead");
+
+      GrantStore.StoredGrant grant = grants.find(done.grantId()).orElseThrow();
       assertThat(grant.source()).isEqualTo("request");
       assertThat(grant.requestId()).isEqualTo(made.id());
       assertThat(grant.username()).isEqualTo("analyst_a");
@@ -253,7 +301,7 @@ class AccessRequestIT {
       assertThat(read("analyst_a", LEDGER)).isTrue();
       // The grant names one person; the colleague is still outside.
       assertThat(read("analyst_b", LEDGER)).isFalse();
-      assertThat(trail(made.id())).containsExactly("APPROVE", "REQUEST");
+      assertThat(trail(made.id())).containsExactly("COMPLETE", "APPROVE", "VOTE", "REQUEST");
       assertThat(requests.openRequest(LEDGER, "analyst_a")).isEmpty();
     }
 
@@ -261,7 +309,7 @@ class AccessRequestIT {
     @DisplayName("revoking the grant an approval wrote closes the table again")
     void revokeUndoesApproval() {
       AccessRequestStore.StoredRequest made = ask("analyst_a", LEDGER, 7);
-      AccessRequestStore.StoredRequest decided = requests.approve(made.id(), ADMIN, null, null);
+      AccessRequestStore.StoredRequest decided = approveAndGrant(made.id(), ADMIN, null);
 
       grants.revoke(decided.grantId(), "owner_o", "Audit is over");
 
@@ -354,9 +402,15 @@ class AccessRequestIT {
       administrator("owner_o");
       assertThat(requests.find(own.id(), ADMIN).stranded()).isFalse();
 
-      // A decided request waits for nothing.
-      requests.approve(own.id(), new AccessRequestStore.Actor("owner_o", true), null, null);
+      // A decided request waits for nothing: another administrator configures it.
+      AccessRequestStore.StoredRequest approved =
+          requests.approve(own.id(), new AccessRequestStore.Actor("owner_o", true), null, null);
+      assertThat(approved.status()).isEqualTo("APPROVED");
+      assertThat(approved.stages().get(0).votes().get(0).override()).isTrue();
       assertThat(requests.find(own.id(), ADMIN).stranded()).isFalse();
+      assertThat(requests.find(own.id(), ADMIN).configurerPool())
+          .extracting(ApproverDirectory.Member::username)
+          .containsExactly("owner_o");
     }
 
     @Test
@@ -445,24 +499,25 @@ class AccessRequestIT {
       assertThatThrownBy(() -> requests.approve(made.id(), OWNER, null, null))
           .satisfies(e -> assertThat(kind(e)).isEqualTo(AccessRequestStore.RequestException.Kind.NOT_FOUND));
 
-      AccessRequestStore.StoredRequest decided = requests.approve(made.id(), ADMIN, null, null);
+      AccessRequestStore.StoredRequest decided = approveAndGrant(made.id(), ADMIN, null);
       // Asked for "until revoked", granted as asked.
       assertThat(grants.find(decided.grantId()).orElseThrow().validUntil()).isNull();
       assertThat(read("analyst_a", ORPHAN)).isTrue();
     }
 
     @Test
-    @DisplayName("an owner may shorten what was asked, never lengthen it")
+    @DisplayName("whoever configures may shorten what was asked, never lengthen it")
     void shortenOnly() {
       AccessRequestStore.StoredRequest made = ask("analyst_a", CUSTOMER, 7);
+      requests.approve(made.id(), OWNER, null, null);
 
-      assertInvalid(() -> requests.approve(made.id(), OWNER, 30, null));
-      assertInvalid(() -> requests.approve(made.id(), OWNER, 0, null));
-      // Still open after both refusals, and nothing granted.
-      assertThat(requests.find(made.id(), OWNER).pending()).isTrue();
+      assertInvalid(() -> requests.complete(made.id(), OWNER, grantFor(30)));
+      assertInvalid(() -> requests.complete(made.id(), OWNER, grantFor(0)));
+      // Still waiting after both refusals, and nothing granted.
+      assertThat(requests.find(made.id(), OWNER).status()).isEqualTo("APPROVED");
       assertThat(grants.onAsset(CUSTOMER)).isEmpty();
 
-      AccessRequestStore.StoredRequest decided = requests.approve(made.id(), OWNER, 2, null);
+      AccessRequestStore.StoredRequest decided = requests.complete(made.id(), OWNER, grantFor(2));
       GrantStore.StoredGrant grant = grants.find(decided.grantId()).orElseThrow();
       assertThat(Duration.between(grant.validFrom(), grant.validUntil())).isEqualTo(Duration.ofDays(2));
     }
@@ -471,7 +526,7 @@ class AccessRequestIT {
     @DisplayName("an open-ended ask may be given a window")
     void boundAnOpenAsk() {
       AccessRequestStore.StoredRequest made = ask("analyst_a", ORPHAN, null);
-      AccessRequestStore.StoredRequest decided = requests.approve(made.id(), ADMIN, 14, null);
+      AccessRequestStore.StoredRequest decided = approveAndGrant(made.id(), ADMIN, 14);
       GrantStore.StoredGrant grant = grants.find(decided.grantId()).orElseThrow();
       assertThat(Duration.between(grant.validFrom(), grant.validUntil())).isEqualTo(Duration.ofDays(14));
     }
@@ -487,6 +542,11 @@ class AccessRequestIT {
           .hasMessageContaining("owner_o");
       assertThatThrownBy(() -> requests.reject(made.id(), ADMIN, "Too late"))
           .satisfies(e -> assertThat(kind(e)).isEqualTo(AccessRequestStore.RequestException.Kind.CONFLICT));
+
+      requests.complete(made.id(), OWNER, grantFor(null));
+      assertThatThrownBy(() -> requests.complete(made.id(), ADMIN, grantFor(null)))
+          .satisfies(e -> assertThat(kind(e)).isEqualTo(AccessRequestStore.RequestException.Kind.CONFLICT))
+          .hasMessageContaining("configured by owner_o");
       assertThatThrownBy(() -> requests.withdraw(made.id(), ANALYST_A))
           .satisfies(e -> assertThat(kind(e)).isEqualTo(AccessRequestStore.RequestException.Kind.CONFLICT));
       // One grant, however many people pressed the button.
@@ -508,7 +568,7 @@ class AccessRequestIT {
           .singleElement()
           .satisfies(r -> assertThat(r.decisionNote()).isEqualTo("Use the reporting view instead"));
       assertThat(read("analyst_a", CUSTOMER)).isFalse();
-      assertThat(trail(made.id())).containsExactly("REJECT", "REQUEST");
+      assertThat(trail(made.id())).containsExactly("REJECT", "VOTE", "REQUEST");
     }
 
     @Test
@@ -591,12 +651,23 @@ class AccessRequestIT {
       assertThat(after.items().get(0).note()).isEqualTo("Use the reporting view");
       assertThat(after.items().get(0).actor()).isEqualTo("finance_lead");
       assertThat(after.unseen()).isEqualTo(2);
-      assertThat(after.minePending()).isEqualTo(1);
+      // Approved is still open until somebody configures it.
+      assertThat(after.minePending()).isEqualTo(2);
 
-      // The owner does not hear about what the owner did.
-      assertThat(requests.notices(OWNER, 20).items())
+      // The owner does not hear that they approved -- only that it now waits
+      // for them to configure it.
+      AccessRequestStore.Notices owner = requests.notices(OWNER, 20);
+      assertThat(owner.items())
           .extracting(AccessRequestStore.Notice::kind)
-          .containsExactly("REQUESTED");
+          .containsExactly("TO_CONFIGURE", "REQUESTED");
+      assertThat(owner.inboxPending()).isEqualTo(1);
+
+      requests.complete(approved.id(), OWNER, grantFor(null));
+      assertThat(requests.notices(ANALYST_A, 20).items())
+          .extracting(AccessRequestStore.Notice::kind)
+          .containsExactly("COMPLETED", "REJECTED", "APPROVED");
+      assertThat(requests.notices(ANALYST_A, 20).minePending()).isEqualTo(1);
+      assertThat(requests.notices(OWNER, 20).inboxPending()).isZero();
     }
 
     @Test
@@ -652,6 +723,751 @@ class AccessRequestIT {
     }
   }
 
+  // ------------------------------------------------------------- workflows
+
+  @Nested
+  @DisplayName("workflows: steps one after another, stages side by side")
+  class Workflows {
+
+    @BeforeEach
+    void securityDesk() {
+      jdbi.useHandle(
+          handle -> {
+            person(handle, "sec_a", "L2");
+            person(handle, "sec_b", "L2");
+            person(handle, "sec_c", "L2");
+          });
+    }
+
+    @Test
+    @DisplayName("the next step opens only once this one passes, and asks only its own people")
+    void sequence() {
+      workflow(
+          DBO,
+          List.of(),
+          stage(1, "Owner", Rule.ANY, null, OnReject.VETO, Seat.of(Kind.ASSET_OWNERS)),
+          stage(2, "Security", Rule.ALL, null, OnReject.VETO, user("sec_a"), user("sec_b")));
+      AccessRequestStore.StoredRequest made = ask("analyst_a", CUSTOMER, 7);
+
+      assertThat(made.workflowName()).isEqualTo("Workflow on " + DBO);
+      assertThat(made.currentStep()).isEqualTo(1);
+      assertThat(made.stages()).extracting(AccessRequestStore.StageView::status)
+          .containsExactly("OPEN", "WAITING");
+      // Who a later step asks is settled when it opens, not before.
+      assertThat(made.stages().get(1).pool()).isEmpty();
+      // Until then, security has nothing to see, answer or hear.
+      assertThatThrownBy(() -> requests.approve(made.id(), SEC_A, null, null))
+          .satisfies(e -> assertThat(kind(e)).isEqualTo(AccessRequestStore.RequestException.Kind.NOT_FOUND));
+      assertThatThrownBy(() -> requests.find(made.id(), SEC_A))
+          .satisfies(e -> assertThat(kind(e)).isEqualTo(AccessRequestStore.RequestException.Kind.NOT_FOUND));
+      assertThat(requests.notices(SEC_A, 20).items()).isEmpty();
+
+      AccessRequestStore.StoredRequest advanced = requests.approve(made.id(), OWNER, null, null);
+      assertThat(advanced.status()).isEqualTo("PENDING");
+      assertThat(advanced.currentStep()).isEqualTo(2);
+      assertThat(advanced.stages()).extracting(AccessRequestStore.StageView::status)
+          .containsExactly("APPROVED", "OPEN");
+      assertThat(advanced.stages().get(1).pool())
+          .extracting(ApproverDirectory.Member::username)
+          .containsExactly("sec_a", "sec_b");
+      assertThat(advanced.stages().get(1).needed()).isEqualTo(2);
+
+      // Security hears it now; the owner, who is not asked at step 2, does not.
+      assertThat(requests.notices(SEC_A, 20).items())
+          .extracting(AccessRequestStore.Notice::kind)
+          .containsExactly("ADVANCED");
+      assertThat(requests.notices(OWNER, 20).items())
+          .extracting(AccessRequestStore.Notice::kind)
+          .containsExactly("REQUESTED");
+      assertThat(requests.notices(SEC_A, 20).inboxPending()).isEqualTo(1);
+      assertThat(requests.notices(OWNER, 20).inboxPending()).isZero();
+      // The owner's part is over.
+      assertThatThrownBy(() -> requests.approve(made.id(), OWNER, null, null))
+          .satisfies(e -> assertThat(kind(e)).isEqualTo(AccessRequestStore.RequestException.Kind.FORBIDDEN))
+          .hasMessageContaining("Security");
+
+      AccessRequestStore.StoredRequest half = requests.approve(made.id(), SEC_A, "Fine by me", null);
+      assertThat(half.status()).isEqualTo("PENDING");
+      assertThat(half.stages().get(1).approvals()).isEqualTo(1);
+      assertThatThrownBy(() -> requests.approve(made.id(), SEC_A, null, null))
+          .satisfies(e -> assertThat(kind(e)).isEqualTo(AccessRequestStore.RequestException.Kind.CONFLICT))
+          .hasMessageContaining("You already answered Security");
+
+      AccessRequestStore.StoredRequest done = requests.approve(made.id(), SEC_B, null, null);
+      assertThat(done.status()).isEqualTo("APPROVED");
+      assertThat(done.decidedBy()).isEqualTo("sec_b");
+      assertThat(done.currentStep()).isNull();
+      assertThat(done.stages()).extracting(AccessRequestStore.StageView::status)
+          .containsExactly("APPROVED", "APPROVED");
+      assertThat(trail(made.id()))
+          .containsExactly("APPROVE", "VOTE", "VOTE", "ADVANCE", "VOTE", "REQUEST");
+      // Configured by the default configurers: the table's owners.
+      assertThat(requests.find(made.id(), OWNER).mayConfigure()).isTrue();
+      assertThat(requests.find(made.id(), SEC_A).mayConfigure()).isFalse();
+      assertThat(read("analyst_a", CUSTOMER)).isFalse();
+    }
+
+    @Test
+    @DisplayName("stages of one step run side by side, and all of them must pass")
+    void parallel() {
+      workflow(
+          DBO,
+          List.of(),
+          stage(1, "Owner", Rule.ANY, null, OnReject.VETO, Seat.of(Kind.ASSET_OWNERS)),
+          stage(1, "Security", Rule.ANY, null, OnReject.VETO, user("sec_a")));
+      AccessRequestStore.StoredRequest made = ask("analyst_a", CUSTOMER, 7);
+      assertThat(made.stages()).extracting(AccessRequestStore.StageView::status)
+          .containsExactly("OPEN", "OPEN");
+      // Both are asked now, so both hear it now.
+      assertThat(requests.notices(SEC_A, 20).items())
+          .extracting(AccessRequestStore.Notice::kind)
+          .containsExactly("REQUESTED");
+
+      AccessRequestStore.StoredRequest one = requests.approve(made.id(), OWNER, null, null);
+      assertThat(one.status()).isEqualTo("PENDING");
+      assertThat(one.stages()).extracting(AccessRequestStore.StageView::status)
+          .containsExactly("APPROVED", "OPEN");
+
+      assertThat(requests.approve(made.id(), SEC_A, null, null).status()).isEqualTo("APPROVED");
+      assertThat(trail(made.id())).containsExactly("APPROVE", "VOTE", "VOTE", "REQUEST");
+    }
+
+    @Test
+    @DisplayName("somebody asked in two stages answers both at once, or one by name")
+    void twoSeats() {
+      workflow(
+          DBO,
+          List.of(),
+          stage(1, "Owner", Rule.ANY, null, OnReject.VETO, Seat.of(Kind.ASSET_OWNERS)),
+          stage(1, "Custodian", Rule.ANY, null, OnReject.VETO, user("owner_o")));
+
+      AccessRequestStore.StoredRequest both = ask("analyst_a", CUSTOMER, 7);
+      AccessRequestStore.StoredRequest answered = requests.approve(both.id(), OWNER, null, null);
+      assertThat(answered.status()).isEqualTo("APPROVED");
+      assertThat(answered.stages()).allSatisfy(s -> assertThat(s.votes()).hasSize(1));
+
+      AccessRequestStore.StoredRequest byName = ask("analyst_b", CUSTOMER, 7);
+      assertThatThrownBy(() -> requests.approve(byName.id(), OWNER, null, 9))
+          .satisfies(e -> assertThat(kind(e)).isEqualTo(AccessRequestStore.RequestException.Kind.INVALID));
+      AccessRequestStore.StoredRequest first = requests.approve(byName.id(), OWNER, null, 0);
+      assertThat(first.status()).isEqualTo("PENDING");
+      assertThat(first.stages()).extracting(AccessRequestStore.StageView::status)
+          .containsExactly("APPROVED", "OPEN");
+      assertThat(first.mayDecide()).isTrue();
+      // The stage already passed is not waiting for anybody.
+      assertThatThrownBy(() -> requests.approve(byName.id(), OWNER, null, 0))
+          .satisfies(e -> assertThat(kind(e)).isEqualTo(AccessRequestStore.RequestException.Kind.CONFLICT))
+          .hasMessageContaining("not waiting");
+      assertThat(requests.approve(byName.id(), OWNER, null, 1).status()).isEqualTo("APPROVED");
+    }
+
+    @Test
+    @DisplayName("any one, quorum: a no waits for the others, and fails only when nobody is left")
+    void anyQuorum() {
+      workflow(DBO, List.of(), stage(1, "Security", Rule.ANY, null, OnReject.QUORUM, user("sec_a"), user("sec_b")));
+
+      AccessRequestStore.StoredRequest carried = ask("analyst_a", CUSTOMER, 7);
+      AccessRequestStore.StoredRequest after = requests.reject(carried.id(), SEC_A, "Not me");
+      assertThat(after.status()).isEqualTo("PENDING");
+      assertThat(after.stages().get(0).status()).isEqualTo("OPEN");
+      assertThat(after.stages().get(0).rejections()).isEqualTo(1);
+      assertThat(requests.approve(carried.id(), SEC_B, null, null).status()).isEqualTo("APPROVED");
+
+      AccessRequestStore.StoredRequest failed = ask("analyst_b", CUSTOMER, 7);
+      requests.reject(failed.id(), SEC_A, "Not me");
+      AccessRequestStore.StoredRequest no = requests.reject(failed.id(), SEC_B, "Nor me");
+      assertThat(no.status()).isEqualTo("REJECTED");
+      assertThat(no.decidedBy()).isEqualTo("sec_b");
+      assertThat(no.decisionNote()).isEqualTo("Nor me");
+      assertThat(no.stages().get(0).status()).isEqualTo("REJECTED");
+    }
+
+    @Test
+    @DisplayName("any one, veto: one no fails the request at once, and closes what was waiting")
+    void anyVeto() {
+      workflow(
+          DBO,
+          List.of(),
+          stage(1, "Security", Rule.ANY, null, OnReject.VETO, user("sec_a"), user("sec_b")),
+          stage(2, "Owner", Rule.ANY, null, OnReject.VETO, Seat.of(Kind.ASSET_OWNERS)));
+      AccessRequestStore.StoredRequest made = ask("analyst_a", CUSTOMER, 7);
+
+      AccessRequestStore.StoredRequest no = requests.reject(made.id(), SEC_A, "Not this quarter");
+      assertThat(no.status()).isEqualTo("REJECTED");
+      assertThat(no.currentStep()).isNull();
+      assertThat(no.stages()).extracting(AccessRequestStore.StageView::status)
+          .containsExactly("REJECTED", "CLOSED");
+      assertThatThrownBy(() -> requests.approve(made.id(), SEC_B, null, null))
+          .satisfies(e -> assertThat(kind(e)).isEqualTo(AccessRequestStore.RequestException.Kind.CONFLICT))
+          .hasMessageContaining("rejected by sec_a");
+      assertThat(trail(made.id())).containsExactly("REJECT", "VOTE", "REQUEST");
+      // The requester hears the no.
+      assertThat(requests.notices(ANALYST_A, 20).items())
+          .extracting(AccessRequestStore.Notice::kind)
+          .containsExactly("REJECTED");
+    }
+
+    @Test
+    @DisplayName("any one, first answer decides: whichever way it goes")
+    void firstResponse() {
+      workflow(DBO, List.of(), stage(1, "Security", Rule.ANY, null, OnReject.FIRST_RESPONSE, user("sec_a"), user("sec_b")));
+
+      AccessRequestStore.StoredRequest yes = ask("analyst_a", CUSTOMER, 7);
+      assertThat(requests.approve(yes.id(), SEC_B, null, null).status()).isEqualTo("APPROVED");
+
+      AccessRequestStore.StoredRequest no = ask("analyst_b", CUSTOMER, 7);
+      assertThat(requests.reject(no.id(), SEC_B, "No").status()).isEqualTo("REJECTED");
+      assertThatThrownBy(() -> requests.approve(no.id(), SEC_A, null, null))
+          .satisfies(e -> assertThat(kind(e)).isEqualTo(AccessRequestStore.RequestException.Kind.CONFLICT));
+    }
+
+    @Test
+    @DisplayName("at least n, quorum: carried by enough yeses, failed once they cannot come")
+    void atLeastQuorum() {
+      workflow(
+          DBO,
+          List.of(),
+          stage(1, "Panel", Rule.AT_LEAST, 2, OnReject.QUORUM, user("sec_a"), user("sec_b"), user("sec_c")));
+
+      AccessRequestStore.StoredRequest carried = ask("analyst_a", CUSTOMER, 7);
+      requests.reject(carried.id(), SEC_A, "Not me");
+      assertThat(requests.approve(carried.id(), SEC_B, null, null).status()).isEqualTo("PENDING");
+      AccessRequestStore.StoredRequest yes = requests.approve(carried.id(), SEC_C, null, null);
+      assertThat(yes.status()).isEqualTo("APPROVED");
+      assertThat(yes.stages().get(0).approvals()).isEqualTo(2);
+      assertThat(yes.stages().get(0).rejections()).isEqualTo(1);
+      assertThat(yes.stages().get(0).needed()).isEqualTo(2);
+
+      AccessRequestStore.StoredRequest failed = ask("analyst_b", CUSTOMER, 7);
+      assertThat(requests.reject(failed.id(), SEC_A, "No").status()).isEqualTo("PENDING");
+      // Two noes of three: two yeses can no longer come.
+      assertThat(requests.reject(failed.id(), SEC_B, "No").status()).isEqualTo("REJECTED");
+    }
+
+    @Test
+    @DisplayName("at least n, veto: one no fails it even when enough yeses could still come")
+    void atLeastVeto() {
+      workflow(
+          DBO,
+          List.of(),
+          stage(1, "Panel", Rule.AT_LEAST, 2, OnReject.VETO, user("sec_a"), user("sec_b"), user("sec_c")));
+      AccessRequestStore.StoredRequest made = ask("analyst_a", CUSTOMER, 7);
+      requests.approve(made.id(), SEC_A, null, null);
+      assertThat(requests.reject(made.id(), SEC_B, "No").status()).isEqualTo("REJECTED");
+    }
+
+    @Test
+    @DisplayName("everyone: every yes is needed, so one no fails it whatever else was chosen")
+    void allRejects() {
+      workflow(DBO, List.of(), stage(1, "Everyone", Rule.ALL, null, OnReject.QUORUM, user("sec_a"), user("sec_b")));
+      AccessRequestStore.StoredRequest made = ask("analyst_a", CUSTOMER, 7);
+      requests.approve(made.id(), SEC_A, null, null);
+      assertThat(requests.reject(made.id(), SEC_B, "No").status()).isEqualTo("REJECTED");
+
+      AccessRequestStore.StoredRequest early = ask("analyst_b", CUSTOMER, 7);
+      assertThat(requests.reject(early.id(), SEC_A, "No").status()).isEqualTo("REJECTED");
+    }
+
+    @Test
+    @DisplayName("an administrator may answer for any stage, and the answer says it was for the approvers")
+    void adminOverride() {
+      workflow(
+          DBO,
+          List.of(),
+          stage(1, "Everyone", Rule.ALL, null, OnReject.VETO, user("sec_a"), user("sec_b")),
+          stage(2, "Owner", Rule.ANY, null, OnReject.VETO, Seat.of(Kind.ASSET_OWNERS)));
+      AccessRequestStore.StoredRequest made = ask("analyst_a", CUSTOMER, 7);
+      assertThat(requests.find(made.id(), ADMIN).mayDecide()).isTrue();
+
+      AccessRequestStore.StoredRequest advanced = requests.approve(made.id(), ADMIN, null, null);
+      // One administrator's yes stands for the whole stage, not one seat of it.
+      assertThat(advanced.currentStep()).isEqualTo(2);
+      assertThat(advanced.stages().get(0).votes())
+          .singleElement()
+          .satisfies(v -> assertThat(v.override()).isTrue());
+      String note =
+          jdbi.withHandle(
+              handle ->
+                  handle
+                      .createQuery(
+                          "SELECT note FROM audit_access_request WHERE request_id = :id AND action = 'VOTE'")
+                      .bind("id", made.id())
+                      .mapTo(String.class)
+                      .one());
+      assertThat(note).isEqualTo("Everyone: approved for the approvers");
+
+      AccessRequestStore.StoredRequest no = requests.reject(made.id(), ADMIN, "Not now");
+      assertThat(no.status()).isEqualTo("REJECTED");
+    }
+
+    @Test
+    @DisplayName("a seat that names nobody falls back to the administrators, and says so")
+    void fallback() {
+      workflow(DBO, List.of(), stage(1, "Security", Rule.ANY, null, OnReject.VETO, user("nobody_here")));
+
+      AccessRequestStore.StoredRequest alone = ask("analyst_a", CUSTOMER, 7);
+      assertThat(alone.stages().get(0).fallback()).isTrue();
+      assertThat(alone.stages().get(0).pool()).isEmpty();
+      assertThat(alone.stranded()).isTrue();
+
+      administrator("admin");
+      AccessRequestStore.StoredRequest made = ask("analyst_b", CUSTOMER, 7);
+      AccessRequestStore.StageView stage = made.stages().get(0);
+      assertThat(stage.fallback()).isTrue();
+      assertThat(stage.pool())
+          .singleElement()
+          .satisfies(
+              m -> {
+                assertThat(m.username()).isEqualTo("admin");
+                assertThat(m.via()).isEqualTo("Platform administrator");
+              });
+      assertThat(made.stranded()).isFalse();
+      // Asked, so not an override.
+      AccessRequestStore.StoredRequest yes = requests.approve(made.id(), ADMIN, null, null);
+      assertThat(yes.stages().get(0).votes().get(0).override()).isFalse();
+    }
+
+    @Test
+    @DisplayName("a stage that asks too few people for its rule is stranded until an administrator answers")
+    void strandedRule() {
+      workflow(DBO, List.of(), stage(1, "Panel", Rule.AT_LEAST, 3, OnReject.QUORUM, user("sec_a"), user("sec_b")));
+      assertThat(requests.nobodyElseDecides("analyst_a", CUSTOMER)).isTrue();
+      AccessRequestStore.StoredRequest made = ask("analyst_a", CUSTOMER, 7);
+      assertThat(made.stranded()).isTrue();
+      assertThat(made.stages().get(0).stranded()).isTrue();
+
+      administrator("admin");
+      assertThat(requests.nobodyElseDecides("analyst_a", CUSTOMER)).isFalse();
+      assertThat(requests.find(made.id(), ANALYST_A).stranded()).isFalse();
+      // Two yeses of the two asked are still not three.
+      requests.approve(made.id(), SEC_A, null, null);
+      assertThat(requests.approve(made.id(), SEC_B, null, null).status()).isEqualTo("PENDING");
+      assertThat(requests.approve(made.id(), ADMIN, null, null).status()).isEqualTo("APPROVED");
+    }
+
+    @Test
+    @DisplayName("every kind of seat resolves to the right people, never the requester")
+    void seats() {
+      jdbi.useHandle(
+          handle -> {
+            role(handle, "sec_a", "DATA_OWNER", DBO);
+            role(handle, "sec_b", "DATA_OWNER", "prod-pg.OtherDB");
+            role(handle, "sec_c", "DATA_OWNER", null);
+            handle
+                .createUpdate(
+                    "UPDATE asset SET custom_properties = CAST(:p AS jsonb) WHERE fqn = :fqn AND is_current")
+                .bind("p", "{\"DataSteward\": \"sec_b\", \"dataCustodian\": \"Finance\"}")
+                .bind("fqn", CUSTOMER)
+                .execute();
+          });
+      workflow(
+          DBO,
+          List.of(),
+          stage(1, "Team", Rule.ANY, null, OnReject.VETO, new Seat(Kind.TEAM, "Finance")),
+          stage(1, "Role", Rule.ANY, null, OnReject.VETO, new Seat(Kind.ROLE, "data_owner")),
+          stage(1, "Steward", Rule.ANY, null, OnReject.VETO, Seat.of(Kind.DATA_STEWARD)),
+          stage(1, "Custodian", Rule.ANY, null, OnReject.VETO, Seat.of(Kind.DATA_CUSTODIAN)),
+          stage(1, "Self", Rule.ALL, null, OnReject.VETO, user("analyst_a"), user("sec_a")));
+      AccessRequestStore.StoredRequest made = ask("analyst_a", CUSTOMER, 7);
+
+      assertThat(pool(made, "Team")).containsExactly("finance_lead|Team Finance");
+      // Scoped to the schema, or everywhere; not to another database.
+      assertThat(pool(made, "Role")).containsExactly("sec_a|Role Data owner", "sec_c|Role Data owner");
+      // The property's name is matched without case.
+      assertThat(pool(made, "Steward")).containsExactly("sec_b|Data steward");
+      // A bare name that is no person is a team.
+      assertThat(pool(made, "Custodian")).containsExactly("finance_lead|Data custodian (team Finance)");
+      // Nobody is asked about their own request, so "everyone" is everyone else.
+      assertThat(pool(made, "Self")).containsExactly("sec_a|sec_a");
+      assertThat(made.stages()).allSatisfy(s -> assertThat(s.fallback()).isFalse());
+    }
+
+    @Test
+    @DisplayName("a request keeps the workflow it started with; editing or deleting it changes new requests only")
+    void keepsItsCopy() {
+      WorkflowStore.Stored first =
+          workflow(DBO, List.of(), stage(1, "Security", Rule.ANY, null, OnReject.VETO, user("sec_a")));
+      AccessRequestStore.StoredRequest made = ask("analyst_a", CUSTOMER, 7);
+
+      workflows.update(
+          first.workflow().id(),
+          AccessWorkflow.validate(
+              new Draft(
+                  "Stricter", null, DBO, true,
+                  List.of(stage(1, "Panel", Rule.ALL, null, OnReject.VETO, user("sec_b"), user("sec_c"))),
+                  List.of())),
+          "admin");
+      assertThat(requests.find(made.id(), ANALYST_A).stages())
+          .extracting(AccessRequestStore.StageView::name)
+          .containsExactly("Security");
+      assertThat(ask("analyst_b", CUSTOMER, 7).stages())
+          .extracting(AccessRequestStore.StageView::name)
+          .containsExactly("Panel");
+
+      workflows.delete(first.workflow().id(), "admin");
+      AccessRequestStore.StoredRequest kept = requests.find(made.id(), ANALYST_A);
+      assertThat(kept.workflowName()).isEqualTo("Workflow on " + DBO);
+      assertThat(requests.approve(made.id(), SEC_A, null, null).status()).isEqualTo("APPROVED");
+      assertThat(workflows.history(first.workflow().id()))
+          .extracting(row -> row.get("action"))
+          .containsExactly("DELETE", "UPDATE", "CREATE");
+      // With nothing configured any more, the built-in one again.
+      assertThat(ask("analyst_a", LEDGER, 7).workflowName()).isEqualTo("Built-in");
+    }
+
+    @Test
+    @DisplayName("the deepest enabled workflow wins; one per scope, the default included")
+    void scopes() {
+      workflow(null, List.of(), stage(1, "Org", Rule.ANY, null, OnReject.VETO, user("sec_a")));
+      workflow(DBO, List.of(), stage(1, "Schema", Rule.ANY, null, OnReject.VETO, user("sec_a")));
+      WorkflowStore.Stored table =
+          workflows.create(
+              AccessWorkflow.validate(
+                  new Draft(
+                      "Table", null, CUSTOMER, false,
+                      List.of(stage(1, "Table", Rule.ANY, null, OnReject.VETO, user("sec_a"))),
+                      List.of())),
+              "admin");
+
+      assertThat(workflows.effective(CUSTOMER).name()).isEqualTo("Workflow on " + DBO);
+      assertThat(workflows.effective(LEDGER).name()).isEqualTo("Workflow on " + DBO);
+      // Matched by segment: "customer_x" is not under "customer", "dbo2" not under "dbo".
+      assertThat(workflows.effective(DBO + ".customer_x").name()).isEqualTo("Workflow on " + DBO);
+      assertThat(workflows.effective(SALES + ".dbo2.t").name()).isEqualTo("Workflow on the organisation");
+
+      workflows.update(
+          table.workflow().id(),
+          AccessWorkflow.validate(
+              new Draft("Table", null, CUSTOMER, true, table.workflow().stages(), List.of())),
+          "admin");
+      assertThat(workflows.effective(CUSTOMER).name()).isEqualTo("Table");
+      assertThat(requests.route(CUSTOMER).stages())
+          .singleElement()
+          .satisfies(s -> assertThat(s.approvers()).containsExactly("sec_a"));
+
+      assertThatThrownBy(() -> workflow(DBO, List.of(), stage(1, "Again", Rule.ANY, null, OnReject.VETO, user("sec_b"))))
+          .isInstanceOf(WorkflowStore.ScopeTakenException.class)
+          .hasMessageContaining(DBO);
+      assertThatThrownBy(() -> workflow(null, List.of(), stage(1, "Again", Rule.ANY, null, OnReject.VETO, user("sec_b"))))
+          .isInstanceOf(WorkflowStore.ScopeTakenException.class)
+          .hasMessageContaining("organisation-wide");
+      assertThat(workflows.list())
+          .extracting(s -> s.workflow().scopeFqn())
+          .containsExactly(null, DBO, CUSTOMER);
+    }
+
+    @Test
+    @DisplayName("a DENY is not something any number of approvals can answer")
+    void denyAfterSteps() {
+      workflow(
+          DBO,
+          List.of(),
+          stage(1, "Owner", Rule.ANY, null, OnReject.VETO, Seat.of(Kind.ASSET_OWNERS)),
+          stage(2, "Security", Rule.ANY, null, OnReject.VETO, user("sec_a")));
+      AccessRequestStore.StoredRequest made = ask("analyst_a", CUSTOMER, 7);
+      requests.approve(made.id(), OWNER, null, null);
+      activate(orgDeny("no-l1", "L1"));
+
+      // The approvers may still say yes, and the grant is still written, but it
+      // composes like every other grant and loses.
+      requests.approve(made.id(), SEC_A, null, null);
+      requests.complete(made.id(), OWNER, grantFor(null));
+      assertThat(read("analyst_a", CUSTOMER)).isFalse();
+      AccessEligibility.Verdict verdict = eligibility.check("analyst_a", CUSTOMER, null, null);
+      assertThat(verdict.requestable()).isFalse();
+      assertThat(verdict.blockedBy()).startsWith("no-l1");
+    }
+
+    @Test
+    @DisplayName("a gate that refuses the person: the route is not offered, whatever the workflow")
+    void gateHidesTheRoute() {
+      workflow(DBO, List.of(), stage(1, "Security", Rule.ANY, null, OnReject.VETO, user("sec_a")));
+      activate(orgAllow("l2-only", "L2"));
+
+      AccessEligibility.Verdict verdict = eligibility.check("analyst_a", CUSTOMER, null, null);
+      assertThat(verdict.requestable()).isFalse();
+      assertThat(verdict.route()).isNull();
+      // The ledger is outside the gate's selector: the workflow's route is shown.
+      assertThat(eligibility.check("analyst_a", LEDGER, null, null).route().workflowName())
+          .isEqualTo("Workflow on " + DBO);
+    }
+  }
+
+  // ------------------------------------------------------------- configuring
+
+  @Nested
+  @DisplayName("configuring an approved request")
+  class Configuring {
+
+    @BeforeEach
+    void configurer() {
+      jdbi.useHandle(handle -> person(handle, "sec_c", "L2"));
+    }
+
+    @Test
+    @DisplayName("the workflow's configurers take it, one at a time; an administrator may still finish it")
+    void startAndFinish() {
+      workflow(
+          DBO,
+          List.of(user("sec_c")),
+          stage(1, "Owner", Rule.ANY, null, OnReject.VETO, Seat.of(Kind.ASSET_OWNERS)));
+      AccessRequestStore.StoredRequest made = ask("analyst_a", CUSTOMER, 7);
+      AccessRequestStore.StoredRequest approved = requests.approve(made.id(), OWNER, null, null);
+
+      assertThat(approved.configurerPool())
+          .extracting(ApproverDirectory.Member::username)
+          .containsExactly("sec_c");
+      assertThat(approved.mayConfigure()).isFalse();
+      assertThatThrownBy(() -> requests.complete(made.id(), OWNER, grantFor(null)))
+          .satisfies(e -> assertThat(kind(e)).isEqualTo(AccessRequestStore.RequestException.Kind.FORBIDDEN))
+          .hasMessageContaining("Configured by sec_c");
+      assertThatThrownBy(() -> requests.start(made.id(), ANALYST_B))
+          .satisfies(e -> assertThat(kind(e)).isEqualTo(AccessRequestStore.RequestException.Kind.NOT_FOUND));
+      assertThatThrownBy(() -> requests.start(made.id(), ANALYST_A))
+          .satisfies(e -> assertThat(kind(e)).isEqualTo(AccessRequestStore.RequestException.Kind.FORBIDDEN));
+      // The configurer hears it waits for them; the owner is done.
+      assertThat(requests.notices(SEC_C, 20).items())
+          .extracting(AccessRequestStore.Notice::kind)
+          .containsExactly("TO_CONFIGURE");
+      assertThat(requests.notices(OWNER, 20).items())
+          .extracting(AccessRequestStore.Notice::kind)
+          .doesNotContain("TO_CONFIGURE");
+
+      AccessRequestStore.StoredRequest taken = requests.start(made.id(), SEC_C);
+      assertThat(taken.status()).isEqualTo("IN_PROGRESS");
+      assertThat(taken.assignee()).isEqualTo("sec_c");
+      assertThat(taken.assignedAt()).isNotNull();
+      // Taking it again is harmless; somebody else taking it is not.
+      assertThat(requests.start(made.id(), SEC_C).status()).isEqualTo("IN_PROGRESS");
+      assertThatThrownBy(() -> requests.start(made.id(), ADMIN))
+          .satisfies(e -> assertThat(kind(e)).isEqualTo(AccessRequestStore.RequestException.Kind.CONFLICT))
+          .hasMessageContaining("sec_c is already configuring");
+      // Still open for the requester: it is not done until it is configured.
+      assertThat(requests.openRequest(CUSTOMER, "analyst_a")).isPresent();
+
+      AccessRequestStore.StoredRequest done = requests.complete(made.id(), ADMIN, grantFor(3));
+      assertThat(done.status()).isEqualTo("COMPLETED");
+      assertThat(done.completedBy()).isEqualTo("admin");
+      assertThat(done.assignee()).isEqualTo("sec_c");
+      assertThat(read("analyst_a", CUSTOMER)).isTrue();
+      assertThat(trail(made.id())).containsExactly("COMPLETE", "START", "APPROVE", "VOTE", "REQUEST");
+    }
+
+    @Test
+    @DisplayName("configured as a policy: points at it, never activates it, and needs a note")
+    void policyFulfilment() {
+      AccessRequestStore.StoredRequest made = ask("analyst_a", CUSTOMER, 7);
+      Policy widen = orgAllow("widen", null);
+      widen.setEnvironment(Policy.Environment.fromValue(DecisionService.DEFAULT_ENVIRONMENT));
+      UUID policyId = policies.create(widen, "alice").id();
+
+      // Not yet approved: nothing to configure.
+      assertThatThrownBy(
+              () ->
+                  requests.complete(
+                      made.id(),
+                      OWNER,
+                      new AccessRequestStore.Completion("POLICY_UPDATED", null, policyId.toString(), "Widened")))
+          .satisfies(e -> assertThat(kind(e)).isEqualTo(AccessRequestStore.RequestException.Kind.CONFLICT))
+          .hasMessageContaining("still waiting");
+      requests.approve(made.id(), OWNER, null, null);
+
+      assertInvalid(() -> requests.complete(made.id(), OWNER, new AccessRequestStore.Completion("MAYBE", null, null, null)));
+      assertInvalid(() -> requests.complete(made.id(), OWNER, null));
+      assertInvalid(
+          () ->
+              requests.complete(
+                  made.id(), OWNER,
+                  new AccessRequestStore.Completion("POLICY_UPDATED", 7, policyId.toString(), "Widened")));
+      assertInvalid(
+          () ->
+              requests.complete(
+                  made.id(), OWNER,
+                  new AccessRequestStore.Completion("POLICY_UPDATED", null, policyId.toString(), "  ")));
+      assertInvalid(
+          () ->
+              requests.complete(
+                  made.id(), OWNER, new AccessRequestStore.Completion("POLICY_UPDATED", null, "nope", "Widened")));
+      assertThatThrownBy(
+              () ->
+                  requests.complete(
+                      made.id(), OWNER,
+                      new AccessRequestStore.Completion(
+                          "POLICY_CREATED", null, UUID.randomUUID().toString(), "Wrote one")))
+          .satisfies(e -> assertThat(kind(e)).isEqualTo(AccessRequestStore.RequestException.Kind.INVALID))
+          .hasMessageContaining("There is no policy");
+      assertThat(requests.find(made.id(), OWNER).status()).isEqualTo("APPROVED");
+
+      AccessRequestStore.StoredRequest done =
+          requests.complete(
+              made.id(), OWNER,
+              new AccessRequestStore.Completion(
+                  "policy_updated", null, policyId.toString(), "Widened the reader group"));
+      assertThat(done.status()).isEqualTo("COMPLETED");
+      assertThat(done.fulfilment()).isEqualTo("POLICY_UPDATED");
+      assertThat(done.fulfilmentRef()).isEqualTo(policyId.toString());
+      assertThat(done.fulfilmentNote()).isEqualTo("Widened the reader group");
+      assertThat(done.grantId()).isNull();
+      assertThat(grants.onAsset(CUSTOMER)).isEmpty();
+      // Pointed at, not switched on: the draft is still a draft, and the table still closed.
+      assertThat(policies.find(policyId).orElseThrow().lifecycleState()).isEqualTo("DRAFT");
+      assertThat(read("analyst_a", CUSTOMER)).isFalse();
+      assertThat(requests.notices(ANALYST_A, 20).items().get(0).kind()).isEqualTo("COMPLETED");
+    }
+
+    @Test
+    @DisplayName("whoever configures may decline it, with a reason the requester reads")
+    void decline() {
+      AccessRequestStore.StoredRequest made = ask("analyst_a", CUSTOMER, 7);
+      assertThatThrownBy(() -> requests.decline(made.id(), OWNER, "Retired"))
+          .satisfies(e -> assertThat(kind(e)).isEqualTo(AccessRequestStore.RequestException.Kind.CONFLICT));
+      requests.approve(made.id(), OWNER, null, null);
+
+      assertInvalid(() -> requests.decline(made.id(), OWNER, "  "));
+      assertThatThrownBy(() -> requests.decline(made.id(), ANALYST_A, "Never mind"))
+          .satisfies(e -> assertThat(kind(e)).isEqualTo(AccessRequestStore.RequestException.Kind.FORBIDDEN));
+
+      AccessRequestStore.StoredRequest no = requests.decline(made.id(), OWNER, "The table is being retired");
+      assertThat(no.status()).isEqualTo("REJECTED");
+      assertThat(no.completedBy()).isEqualTo("owner_o");
+      assertThat(no.fulfilmentNote()).isEqualTo("The table is being retired");
+      assertThat(no.fulfilment()).isNull();
+      assertThat(grants.onAsset(CUSTOMER)).isEmpty();
+      assertThat(requests.openRequest(CUSTOMER, "analyst_a")).isEmpty();
+      assertThat(trail(made.id())).containsExactly("REJECT", "APPROVE", "VOTE", "REQUEST");
+      assertThat(requests.notices(ANALYST_A, 20).items())
+          .extracting(AccessRequestStore.Notice::kind)
+          .containsExactly("REJECTED", "APPROVED");
+      assertThatThrownBy(() -> requests.complete(made.id(), OWNER, grantFor(null)))
+          .satisfies(e -> assertThat(kind(e)).isEqualTo(AccessRequestStore.RequestException.Kind.CONFLICT));
+    }
+
+    @Test
+    @DisplayName("the requester may take it back until it is configured")
+    void withdrawBeforeConfigured() {
+      AccessRequestStore.StoredRequest approved = ask("analyst_a", CUSTOMER, 7);
+      requests.approve(approved.id(), OWNER, null, null);
+      AccessRequestStore.StoredRequest gone = requests.withdraw(approved.id(), ANALYST_A);
+      assertThat(gone.status()).isEqualTo("WITHDRAWN");
+      assertThat(gone.completedBy()).isEqualTo("analyst_a");
+      assertThatThrownBy(() -> requests.complete(approved.id(), OWNER, grantFor(null)))
+          .satisfies(e -> assertThat(kind(e)).isEqualTo(AccessRequestStore.RequestException.Kind.CONFLICT))
+          .hasMessageContaining("withdrawn");
+
+      AccessRequestStore.StoredRequest taken = ask("analyst_a", LEDGER, 7);
+      requests.approve(taken.id(), TEAM_MEMBER, null, null);
+      requests.start(taken.id(), TEAM_MEMBER);
+      assertThat(requests.withdraw(taken.id(), ANALYST_A).status()).isEqualTo("WITHDRAWN");
+      assertThat(grants.onAsset(LEDGER)).isEmpty();
+      assertThat(requests.notices(TEAM_MEMBER, 20).items().get(0).kind()).isEqualTo("WITHDRAWN");
+    }
+  }
+
+  // ------------------------------------------------------ before workflows
+
+  @Nested
+  @DisplayName("requests from before workflows")
+  class Legacy {
+
+    @Test
+    @DisplayName("an open stage with nobody recorded is resolved when read, and kept once answered")
+    void lazyPool() {
+      AccessRequestStore.StoredRequest made = ask("analyst_a", CUSTOMER, 7);
+      jdbi.useHandle(
+          handle ->
+              handle
+                  .createUpdate("UPDATE access_request_stage SET pool = NULL WHERE request_id = :id")
+                  .bind("id", made.id())
+                  .execute());
+
+      AccessRequestStore.StoredRequest seen = requests.find(made.id(), OWNER);
+      assertThat(seen.stages().get(0).pool())
+          .extracting(ApproverDirectory.Member::username)
+          .containsExactly("owner_o");
+      assertThat(seen.mayDecide()).isTrue();
+      assertThat(requests.decidableBy(OWNER, null, 10)).hasSize(1);
+
+      requests.approve(made.id(), OWNER, null, null);
+      Boolean kept =
+          jdbi.withHandle(
+              handle ->
+                  handle
+                      .createQuery("SELECT pool IS NOT NULL FROM access_request_stage WHERE request_id = :id")
+                      .bind("id", made.id())
+                      .mapTo(Boolean.class)
+                      .one());
+      assertThat(kept).isTrue();
+    }
+
+    @Test
+    @DisplayName("an approved request with no configurers recorded is configured by the defaults")
+    void lazyConfigurers() {
+      AccessRequestStore.StoredRequest made = ask("analyst_a", CUSTOMER, 7);
+      requests.approve(made.id(), OWNER, null, null);
+      jdbi.useHandle(
+          handle ->
+              handle
+                  .createUpdate("UPDATE access_request SET configurer_pool = NULL WHERE id = :id")
+                  .bind("id", made.id())
+                  .execute());
+
+      AccessRequestStore.StoredRequest seen = requests.find(made.id(), OWNER);
+      assertThat(seen.mayConfigure()).isTrue();
+      assertThat(seen.configurerPool())
+          .extracting(ApproverDirectory.Member::username)
+          .containsExactly("owner_o");
+      assertThat(requests.complete(made.id(), OWNER, grantFor(null)).status()).isEqualTo("COMPLETED");
+    }
+
+    @Test
+    @DisplayName("a request decided before stages existed is still the owner's to read")
+    void stageless() {
+      AccessRequestStore.StoredRequest made = ask("analyst_a", CUSTOMER, 7);
+      approveAndGrant(made.id(), ADMIN, null);
+      jdbi.useHandle(
+          handle ->
+              handle
+                  .createUpdate("DELETE FROM access_request_stage WHERE request_id = :id")
+                  .bind("id", made.id())
+                  .execute());
+
+      AccessRequestStore.StoredRequest seen = requests.find(made.id(), OWNER);
+      assertThat(seen.status()).isEqualTo("COMPLETED");
+      assertThat(seen.stages()).isEmpty();
+      assertThatThrownBy(() -> requests.find(made.id(), ANALYST_B))
+          .satisfies(e -> assertThat(kind(e)).isEqualTo(AccessRequestStore.RequestException.Kind.NOT_FOUND));
+    }
+
+    @Test
+    @DisplayName("an owner added since does not hear about a table's old requests")
+    void newOwnerHearsNothingOld() {
+      AccessRequestStore.StoredRequest rejected = ask("analyst_a", CUSTOMER, 7);
+      requests.reject(rejected.id(), OWNER, "Not this quarter");
+      AccessRequestStore.StoredRequest withdrawn = ask("analyst_a", CUSTOMER, 3);
+      requests.withdraw(withdrawn.id(), ANALYST_A);
+      jdbi.useHandle(
+          handle -> {
+            handle.execute("DELETE FROM access_request_stage");
+            handle.execute(
+                """
+                INSERT INTO asset_owner (target_fqn, owner_type, owner_name)
+                VALUES ('prod-pg.SalesDB.dbo.customer', 'user', 'analyst_b')
+                """);
+          });
+
+      // Today's owners still read them: that is what makes the history theirs.
+      assertThat(requests.find(rejected.id(), ANALYST_B).status()).isEqualTo("REJECTED");
+      // But the bell is news, and none of this is news to somebody who was not there.
+      assertThat(requests.notices(ANALYST_B, 20).items()).isEmpty();
+      assertThat(requests.notices(ANALYST_B, 20).unseen()).isZero();
+      // The owner who decided keeps hearing that it was asked; nobody hears
+      // the withdrawal of one nobody recorded answering.
+      assertThat(requests.notices(OWNER, 20).items())
+          .extracting(n -> n.kind() + " " + n.requestId())
+          .containsExactly("REQUESTED " + rejected.id());
+    }
+  }
+
   // ---------------------------------------- whether asking would help at all
 
   @Nested
@@ -670,6 +1486,11 @@ class AccessRequestIT {
           .extracting(AccessRequestStore.Approver::name)
           .containsExactly("Finance");
       assertThat(verdict.openRequestId()).isNull();
+      // The page shows the route before anybody asks: the built-in one here.
+      assertThat(verdict.route().workflowName()).isEqualTo("Built-in");
+      assertThat(verdict.route().stages())
+          .singleElement()
+          .satisfies(s -> assertThat(s.approvers()).containsExactly("Owners of the table"));
 
       AccessRequestStore.StoredRequest made = ask("analyst_a", LEDGER, 7);
       assertThat(eligibility.check("analyst_a", LEDGER, null, null).openRequestId())
@@ -696,6 +1517,8 @@ class AccessRequestIT {
       assertThat(a.readable()).isFalse();
       assertThat(a.requestable()).isFalse();
       assertThat(a.blockedBy()).startsWith("l2-only");
+      // Nothing to ask for, so no route to show.
+      assertThat(a.route()).isNull();
       // L2 satisfies the gate, but the gate only speaks for layers; with no
       // grant the TABLE layer is silent, so analyst_b is already in.
       assertThat(eligibility.check("analyst_b", CUSTOMER, null, null).readable()).isTrue();
@@ -713,7 +1536,7 @@ class AccessRequestIT {
       assertThat(verdict.requestable()).isTrue();
 
       AccessRequestStore.StoredRequest made = ask("analyst_a", CUSTOMER, 7);
-      requests.approve(made.id(), OWNER, null, null);
+      approveAndGrant(made.id(), OWNER, null);
       assertThat(read("analyst_a", CUSTOMER)).isTrue();
     }
 
@@ -738,7 +1561,7 @@ class AccessRequestIT {
 
       // The owner may still answer -- the workflow does not second-guess them --
       // but the grant they write composes like every other grant and loses.
-      requests.approve(made.id(), OWNER, null, null);
+      approveAndGrant(made.id(), OWNER, null);
       assertThat(read("analyst_a", CUSTOMER)).isFalse();
       assertThat(eligibility.check("analyst_a", CUSTOMER, null, null).blockedBy()).startsWith("no-l1");
     }
@@ -750,7 +1573,7 @@ class AccessRequestIT {
       assertThat(eligibility.check("analyst_a", CUSTOMER, null, null).requestable()).isTrue();
 
       AccessRequestStore.StoredRequest made = ask("analyst_a", CUSTOMER, 7);
-      requests.approve(made.id(), OWNER, null, null);
+      approveAndGrant(made.id(), OWNER, null);
 
       PolicyDecision decision = decisions.decide(DecisionService.Ask.of("analyst_a", CUSTOMER));
       assertThat(decision.getAllowed()).isTrue();
@@ -774,6 +1597,66 @@ class AccessRequestIT {
     return requests.create(
         newRequest(who, fqn, "Quarter-end reconciliation", days),
         new AccessRequestStore.Actor(who, "admin".equals(who)));
+  }
+
+  /** Approves on the only open stage, then configures it as a grant. */
+  private AccessRequestStore.StoredRequest approveAndGrant(
+      UUID id, AccessRequestStore.Actor who, Integer days) {
+    requests.approve(id, who, null, null);
+    return requests.complete(id, who, grantFor(days));
+  }
+
+  private static AccessRequestStore.Completion grantFor(Integer days) {
+    return new AccessRequestStore.Completion("GRANT", days, null, null);
+  }
+
+  /** A workflow on this scope (null: the organisation's default), named after it. */
+  private WorkflowStore.Stored workflow(String scope, List<Seat> configurers, Stage... stages) {
+    return workflows.create(
+        AccessWorkflow.validate(
+            new Draft(
+                "Workflow on " + (scope == null ? "the organisation" : scope),
+                null,
+                scope,
+                true,
+                List.of(stages),
+                configurers)),
+        "admin");
+  }
+
+  private static Stage stage(
+      int step, String name, Rule rule, Integer min, OnReject onReject, Seat... seats) {
+    return new Stage(step, name, rule, min, onReject, List.of(seats));
+  }
+
+  private static Seat user(String name) {
+    return new Seat(Kind.USER, name);
+  }
+
+  /** An app role, scoped to an FQN or (null) everywhere. */
+  private static void role(Handle handle, String name, String role, String scope) {
+    handle
+        .createUpdate(
+            """
+            INSERT INTO app_role_assignment (principal_id, app_role, scope_fqn)
+            SELECT id, :role, :scope FROM principal WHERE username = :name
+            """)
+        .bind("role", role)
+        .bind("scope", scope)
+        .bind("name", name)
+        .execute();
+  }
+
+  /** Who a stage asks, as "username|via". */
+  private static List<String> pool(AccessRequestStore.StoredRequest request, String stage) {
+    return request.stages().stream()
+        .filter(s -> s.name().equals(stage))
+        .findFirst()
+        .orElseThrow()
+        .pool()
+        .stream()
+        .map(m -> m.username() + "|" + m.via())
+        .toList();
   }
 
   private static AccessRequestStore.NewRequest newRequest(

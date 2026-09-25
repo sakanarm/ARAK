@@ -7,10 +7,14 @@ import { Chip as Badge } from '../../components/chips';
 import { apiErrorMessage } from '../../api/client';
 import {
   describeApprovers,
+  describeOnReject,
+  describeRule,
   requestAccess,
   type AccessRequest,
   type Refusal,
+  type Route,
 } from '../../api/accessRequests';
+import { stepsOf } from '../../api/accessWorkflows';
 import { FIELD, TextField } from '../policies/controls';
 
 /**
@@ -66,7 +70,7 @@ export default function RequestAccess({
           </p>
           <p className="tw:mt-0.5 tw:text-sm tw:text-tertiary">
             {catalog && 'The owner can let you in. '}
-            {describeApprovers(refusal.approvers, refusal.stranded)}
+            {whoDecides(refusal)}
           </p>
         </div>
         <Button color="primary" iconLeading={Send01} onPress={() => setAsking(true)} size="sm">
@@ -162,8 +166,11 @@ export function RequestAccessForm({
       </div>
 
       <div className="tw:flex tw:flex-col tw:gap-4 tw:px-4 tw:py-4">
+        {refusal.route && !refusal.stranded && !ownersOnly(refusal.route) && (
+          <RouteSteps route={refusal.route} />
+        )}
         <p className="tw:text-sm tw:text-tertiary">
-          {describeApprovers(refusal.approvers, refusal.stranded)}{' '}
+          {whoDecides(refusal)}{' '}
           {catalog
             ? 'Say what the data is for; that is what they decide on.'
             : 'The statement you ran and the refusal go with the request, so they can see what you were trying to do.'}
@@ -225,6 +232,91 @@ export function RequestAccessForm({
   );
 }
 
+/**
+ * The route is the built-in one: any one owner of the table approves.
+ *
+ * <p>Then the owners' names say it better than the route does, so the page
+ * keeps saying "Decided by ann" rather than "Owners of the table".
+ */
+function ownersOnly(route: Route): boolean {
+  const [only, ...rest] = route.stages;
+  return (
+    rest.length === 0 &&
+    only !== undefined &&
+    only.rule === 'ANY' &&
+    only.approvers.length === 1 &&
+    only.approvers[0] === 'Owners of the table'
+  );
+}
+
+/**
+ * Who a request will wait for, in a sentence.
+ *
+ * <p>The owners by name while the route is the built-in one, the workflow's
+ * steps once somebody configured one -- the owners might not be asked at all
+ * then. A request that would wait for nobody says so whatever the route.
+ */
+export function whoDecides(refusal: Refusal): string {
+  const route = refusal.route;
+  if (refusal.stranded || !route || route.stages.length === 0 || ownersOnly(route)) {
+    return describeApprovers(refusal.approvers, refusal.stranded);
+  }
+  const steps = stepsOf(route.stages).map((group) =>
+    group.length === 1 ? group[0].name : `${group.map((stage) => stage.name).join(' and ')} together`
+  );
+  return `It goes through the “${route.workflowName}” workflow: ${steps.join(', then ')}.`;
+}
+
+/**
+ * The steps of the route, one under the other, with who each stage asks.
+ *
+ * <p>Shown in the form, before the request is sent, so the requester knows
+ * how many answers it takes and from whom; stages that share a step are
+ * asked at the same time.
+ */
+export function RouteSteps({ route }: { route: Route }) {
+  const steps = stepsOf(route.stages);
+  return (
+    <div
+      aria-label="Approval route"
+      className="tw:rounded-lg tw:border tw:border-secondary tw:px-3 tw:py-2.5"
+      role="group">
+      <p className="tw:text-xs tw:text-tertiary">
+        Workflow <span className="tw:font-semibold tw:text-secondary">{route.workflowName}</span>
+      </p>
+      <ol className="tw:mt-2 tw:flex tw:flex-col tw:gap-2">
+        {steps.map((group, index) => (
+          <li className="tw:flex tw:items-start tw:gap-2.5" key={group[0].step}>
+            <span
+              aria-hidden
+              className="tw:flex tw:size-5 tw:shrink-0 tw:items-center tw:justify-center tw:rounded-full tw:bg-utility-brand-50 tw:text-xs tw:font-semibold tw:text-brand-secondary">
+              {index + 1}
+            </span>
+            <span className="tw:flex tw:min-w-0 tw:flex-col tw:gap-1">
+              {group.length > 1 && (
+                <span className="tw:text-xs tw:text-tertiary">
+                  Step {index + 1} · in parallel
+                </span>
+              )}
+              {group.map((stage) => (
+                <span className="tw:block" key={`${stage.step}-${stage.name}`}>
+                  <span className="tw:text-sm tw:font-medium tw:text-primary">{stage.name}</span>
+                  <span className="tw:block tw:text-xs tw:text-tertiary">
+                    {describeRule(stage.rule, stage.minApprovals)} · {describeOnReject(stage.onReject)}
+                  </span>
+                  <span className="tw:block tw:text-xs tw:text-secondary">
+                    Asks {stage.approvers.join(', ') || 'nobody'}
+                  </span>
+                </span>
+              ))}
+            </span>
+          </li>
+        ))}
+      </ol>
+    </div>
+  );
+}
+
 /** The key in a brand tile, as the cards elsewhere carry their icon. */
 function Tile() {
   return (
@@ -259,10 +351,8 @@ export function RequestedNote({
     <Note className={className} icon={CheckCircle} tone="success">
       <span className="tw:font-semibold">{sent ? 'Request sent' : 'Already requested'}</span>{' '}
       for <span className="tw:font-mono">{refusal.assetFqn}</span>.{' '}
-      {sent
-        ? describeApprovers(sent.approvers, sent.stranded)
-        : describeApprovers(refusal.approvers, refusal.stranded)} You will be let in once it is
-      approved — follow it under{' '}
+      {whoDecides(sent ? { ...refusal, approvers: sent.approvers, stranded: sent.stranded } : refusal)}{' '}
+      You will be let in once it is approved and set up — follow it under{' '}
       <Link className="tw:font-semibold tw:text-brand-secondary tw:hover:underline" to="/requests">
         Access requests
       </Link>

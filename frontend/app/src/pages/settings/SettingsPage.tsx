@@ -4,6 +4,7 @@ import {
   ArrowRight,
   CpuChip01,
   Database01,
+  Dataflow03,
   Key01,
   LayoutAlt01,
   RefreshCcw01,
@@ -43,6 +44,8 @@ interface SettingCard {
   milestone?: string;
   /** Hidden from anyone who cannot act on it. */
   adminOnly?: boolean;
+  /** Shown only to someone holding one of these roles. */
+  roles?: string[];
 }
 
 interface SettingGroup {
@@ -92,6 +95,14 @@ const GROUPS: SettingGroup[] = [
           'The five roles this platform recognises, what each one may do, who holds them — and, for an administrator, where a role is granted or an account added.',
         to: '/settings/roles',
         icon: ShieldTick,
+      },
+      {
+        title: 'Access workflows',
+        description:
+          'Who approves a request for a table, in what order -- in parallel or one step after another -- and who configures the access once it is approved.',
+        to: '/settings/workflows',
+        icon: Dataflow03,
+        roles: ['PLATFORM_ADMIN', 'POLICY_AUTHOR', 'DATA_OWNER', 'AUDITOR'],
       },
       {
         title: 'People & attributes',
@@ -160,6 +171,7 @@ const GROUPS: SettingGroup[] = [
 
 export default function SettingsPage() {
   const isAdmin = useAuthStore((state) => state.hasRole('PLATFORM_ADMIN'));
+  const hasRole = useAuthStore((state) => state.hasRole);
 
   return (
     <>
@@ -176,7 +188,9 @@ export default function SettingsPage() {
       <div className="tw:mt-8 tw:flex tw:flex-col tw:gap-10">
         {GROUPS.map((group) => {
           const cards = group.cards.filter(
-            (card) => !card.adminOnly || isAdmin
+            (card) =>
+              (!card.adminOnly || isAdmin) &&
+              (!card.roles || hasRole(...card.roles))
           );
           if (cards.length === 0) {
             return null;

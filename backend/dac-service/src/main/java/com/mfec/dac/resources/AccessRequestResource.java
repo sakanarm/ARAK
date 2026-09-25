@@ -28,14 +28,15 @@ import java.util.UUID;
 import java.util.function.Supplier;
 
 /**
- * Asking a table's owner for access, and answering (FR-7, first slice of the
- * Phase 2 workflow).
+ * Asking for access to a table, answering the stages of its workflow, and
+ * configuring what was approved (FR-7; M9 slice 2a).
  *
  * <p>Open to every signed-in person, because anybody can be refused and
- * anybody may ask. Who may <em>decide</em> is not a console role: it is the
- * table's owner as OpenMetadata records it, or a platform administrator, and
- * {@link AccessRequestStore} checks it on every approval rather than trusting
- * the inbox that showed the button.
+ * anybody may ask. Who may <em>answer</em> or <em>configure</em> is not a
+ * console role: it is whoever the workflow's stages and configurers name for
+ * that table, or a platform administrator, and {@link AccessRequestStore}
+ * checks it on every call rather than trusting the inbox that showed the
+ * button.
  */
 @Path("/v1/access-requests")
 @Produces(MediaType.APPLICATION_JSON)
@@ -63,8 +64,17 @@ public class AccessRequestResource {
       String attemptedSql,
       String deniedBy) {}
 
-  /** An owner's answer. {@code days} may shorten what was asked, never extend it. */
-  public record Decision(Integer days, String note) {}
+  /**
+   * An approver's answer.
+   *
+   * @param days refused: how long is set when the request is configured
+   * @param stageIdx one stage, or null for every stage of the current step the
+   *     caller answers for
+   */
+  public record Decision(Integer days, String note, Integer stageIdx) {}
+
+  /** How an approved request was configured; see {@link AccessRequestStore.Completion}. */
+  public record Configure(String fulfilment, Integer days, String policyId, String note) {}
 
   /** Which tables to check, for the caller only. */
   public record Check(List<String> assetFqns, String purpose) {}
@@ -135,7 +145,7 @@ public class AccessRequestResource {
     return requests.madeBy(actor(caller(security)), limit);
   }
 
-  /** What the caller may decide: tables they own, or everything for an administrator. */
+  /** The requests the caller takes part in, those waiting for them first. */
   @GET
   @Path("/inbox")
   public List<AccessRequestStore.StoredRequest> inbox(
@@ -212,23 +222,31 @@ public class AccessRequestResource {
     return guarded(() -> requests.find(id, actor(caller(security))));
   }
 
-  /** Approves, which writes the grant. */
+  /**
+   * Approves the caller's stages of the current step. The last step passing
+   * makes the request APPROVED, which is not yet access: it then waits to be
+   * configured.
+   */
   @POST
   @Path("/{id}/approve")
   @Consumes(MediaType.APPLICATION_JSON)
   public AccessRequestStore.StoredRequest approve(
       @PathParam("id") UUID id, Decision decision, @Context SecurityContext security) {
     AuthenticatedUser caller = caller(security);
+    if (decision != null && decision.days() != null) {
+      throw new BadRequestException(
+          "Approving does not set how long; set it when configuring the request");
+    }
     return guarded(
         () ->
             requests.approve(
                 id,
                 actor(caller),
-                decision == null ? null : decision.days(),
-                decision == null ? null : decision.note()));
+                decision == null ? null : decision.note(),
+                decision == null ? null : decision.stageIdx()));
   }
 
-  /** Rejects, with a reason the requester reads. */
+  /** Rejects the caller's stages of the current step, with a reason the requester reads. */
   @POST
   @Path("/{id}/reject")
   @Consumes(MediaType.APPLICATION_JSON)
@@ -236,10 +254,57 @@ public class AccessRequestResource {
       @PathParam("id") UUID id, Decision decision, @Context SecurityContext security) {
     AuthenticatedUser caller = caller(security);
     return guarded(
-        () -> requests.reject(id, actor(caller), decision == null ? null : decision.note()));
+        () ->
+            requests.reject(
+                id,
+                actor(caller),
+                decision == null ? null : decision.note(),
+                decision == null ? null : decision.stageIdx()));
   }
 
-  /** Takes one's own open request back. */
+  /** Takes an approved request to configure it. */
+  @POST
+  @Path("/{id}/start")
+  public AccessRequestStore.StoredRequest start(
+      @PathParam("id") UUID id, @Context SecurityContext security) {
+    return guarded(() -> requests.start(id, actor(caller(security))));
+  }
+
+  /**
+   * Records how an approved request was configured: a grant, written here, or
+   * a policy the caller changed or wrote, which is only pointed at and never
+   * activated from here.
+   */
+  @POST
+  @Path("/{id}/complete")
+  @Consumes(MediaType.APPLICATION_JSON)
+  public AccessRequestStore.StoredRequest complete(
+      @PathParam("id") UUID id, Configure body, @Context SecurityContext security) {
+    if (body == null) {
+      throw new BadRequestException("Say how it was configured");
+    }
+    AuthenticatedUser caller = caller(security);
+    return guarded(
+        () ->
+            requests.complete(
+                id,
+                actor(caller),
+                new AccessRequestStore.Completion(
+                    body.fulfilment(), body.days(), body.policyId(), body.note())));
+  }
+
+  /** Refuses to configure an approved request, with a reason the requester reads. */
+  @POST
+  @Path("/{id}/decline")
+  @Consumes(MediaType.APPLICATION_JSON)
+  public AccessRequestStore.StoredRequest decline(
+      @PathParam("id") UUID id, Decision decision, @Context SecurityContext security) {
+    AuthenticatedUser caller = caller(security);
+    return guarded(
+        () -> requests.decline(id, actor(caller), decision == null ? null : decision.note()));
+  }
+
+  /** Takes one's own open request back, before or after it was approved. */
   @POST
   @Path("/{id}/withdraw")
   public AccessRequestStore.StoredRequest withdraw(

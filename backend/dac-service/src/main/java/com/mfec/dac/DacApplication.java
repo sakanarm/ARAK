@@ -4,6 +4,7 @@ import com.mfec.dac.access.AccessQuery;
 import com.mfec.dac.access.GrantExpiryJob;
 import com.mfec.dac.access.AccessEligibility;
 import com.mfec.dac.access.AccessRequestStore;
+import com.mfec.dac.access.WorkflowStore;
 import com.mfec.dac.access.GrantStore;
 import com.mfec.dac.home.HomeLayoutStore;
 import com.mfec.dac.home.HomeLayoutValidator;
@@ -38,6 +39,7 @@ import com.mfec.dac.policy.DecisionCache;
 import com.mfec.dac.identity.PrincipalQuery;
 import com.mfec.dac.om.OpenMetadataClient;
 import com.mfec.dac.resources.AccessRequestResource;
+import com.mfec.dac.resources.AccessWorkflowResource;
 import com.mfec.dac.resources.AccessResource;
 import com.mfec.dac.resources.HomePersonaResource;
 import com.mfec.dac.resources.HomeResource;
@@ -356,12 +358,16 @@ public class DacApplication extends Application<DacConfiguration> {
     // every decision, so this only controls how soon the table and the audit
     // trail catch up with what the engine has been doing since the hour turned.
     environment.lifecycle().manage(new GrantExpiryJob(grants, Duration.ofHours(1)));
-    // Asking a table's owner for access (the first slice of the Phase 2
-    // workflow). Approval writes through the same GrantStore as a manual grant,
-    // so the decision cache hears about it on the listener registered above.
-    AccessRequestStore accessRequests = new AccessRequestStore(jdbi, grants, principalLoader);
+    // Asking for access to a table: the request walks its table's workflow of
+    // approval stages, then somebody configures it. A grant fulfilment writes
+    // through the same GrantStore as a manual grant, so the decision cache
+    // hears about it on the listener registered above.
+    WorkflowStore accessWorkflows = new WorkflowStore(jdbi, environment.getObjectMapper());
+    AccessRequestStore accessRequests =
+        new AccessRequestStore(jdbi, environment.getObjectMapper(), grants, accessWorkflows);
     AccessEligibility eligibility = new AccessEligibility(decisionService, accessRequests);
     environment.jersey().register(new AccessRequestResource(accessRequests, eligibility));
+    environment.jersey().register(new AccessWorkflowResource(accessWorkflows));
     environment.jersey().register(
         new QueryResource(
             new QueryService(

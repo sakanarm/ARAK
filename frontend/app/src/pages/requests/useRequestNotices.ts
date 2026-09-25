@@ -41,6 +41,12 @@ export function noticeVerb(notice: RequestNotice): string {
   switch (notice.kind) {
     case 'REQUESTED':
       return 'asked for access to';
+    case 'ADVANCED':
+      return 'passed on to you a request for';
+    case 'TO_CONFIGURE':
+      return 'approved, for you to configure, a request for';
+    case 'COMPLETED':
+      return 'set up your access to';
     case 'WITHDRAWN':
       return 'withdrew their request for';
     case 'APPROVED':

@@ -34,6 +34,7 @@ import {
   RefreshCcw01,
   SearchLg,
   Server01,
+  Settings01,
   ShieldTick,
   Table,
   Tag01,
@@ -655,8 +656,8 @@ export function Notifications() {
                   <p className="tw:text-sm tw:font-semibold tw:text-primary">Notifications</p>
                   <p className="tw:text-xs tw:text-tertiary">
                     {waiting > 0
-                      ? `${waiting} request${waiting === 1 ? '' : 's'} waiting for your decision`
-                      : 'Access requests you decide or asked for'}
+                      ? `${waiting} request${waiting === 1 ? '' : 's'} waiting for you`
+                      : 'Access requests you take part in or asked for'}
                   </p>
                 </div>
                 {waiting > 0 && (
@@ -705,7 +706,7 @@ export function Notifications() {
                     </span>
                     <p className="tw:text-sm tw:font-medium tw:text-secondary">You&apos;re all caught up</p>
                     <p className="tw:text-xs tw:text-tertiary">
-                      Requests for tables you own, and answers to yours, arrive here.
+                      Requests waiting for you, and answers to yours, arrive here.
                     </p>
                   </div>
                 ) : (
@@ -726,7 +727,7 @@ export function Notifications() {
                               {tableName(item.assetFqn)}
                             </span>
                           </span>
-                          {item.kind === 'REJECTED' && item.note && (
+                          {(item.kind === 'REJECTED' || item.kind === 'COMPLETED') && item.note && (
                             <span className="tw:mt-1 tw:block tw:truncate tw:text-xs tw:text-tertiary">
                               “{item.note}”
                             </span>
@@ -802,13 +803,15 @@ function NoticeRow({
 /** Who did it, and a small mark for what they did. */
 function NoticeIcon({ notice }: { notice: RequestNotice }) {
   const mark =
-    notice.kind === 'APPROVED'
-      ? { Icon: Check, tone: 'tw:bg-success-solid' }
+    notice.kind === 'APPROVED' || notice.kind === 'COMPLETED'
+      ? { Icon: notice.kind === 'COMPLETED' ? Key01 : Check, tone: 'tw:bg-success-solid' }
       : notice.kind === 'REJECTED'
         ? { Icon: XClose, tone: 'tw:bg-error-solid' }
         : notice.kind === 'WITHDRAWN'
           ? { Icon: CornerUpLeft, tone: 'tw:bg-gray-500' }
-          : { Icon: Key01, tone: 'tw:bg-brand-solid' };
+          : notice.kind === 'TO_CONFIGURE'
+            ? { Icon: Settings01, tone: 'tw:bg-brand-solid' }
+            : { Icon: Key01, tone: 'tw:bg-brand-solid' };
   return (
     <span className="tw:relative tw:flex tw:size-8 tw:items-center tw:justify-center tw:rounded-full tw:bg-utility-brand-50 tw:text-xs tw:font-semibold tw:text-brand-secondary tw:uppercase">
       {notice.actor.slice(0, 1)}

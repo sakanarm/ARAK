@@ -42,8 +42,9 @@ public class AccessEligibility {
    * @param approvers who would decide a request, per OpenMetadata; empty means
    *     no owner is recorded and a platform administrator decides
    * @param openRequestId the caller's request that is already waiting, if any
-   * @param stranded nobody but the caller could decide a request: no owner
-   *     other than them and no other administrator
+   * @param stranded nobody but the caller could decide a request: a stage of
+   *     its first step would ask nobody else, and no other administrator exists
+   * @param route the stages a request would walk; null when readable
    */
   public record Verdict(
       String assetFqn,
@@ -52,7 +53,8 @@ public class AccessEligibility {
       String blockedBy,
       List<AccessRequestStore.Approver> approvers,
       String openRequestId,
-      boolean stranded) {}
+      boolean stranded,
+      AccessRequestStore.Route route) {}
 
   /** Just the first half, for listing many tables at once: can this person read it now. */
   public boolean readable(String username, String assetFqn, String ip, String purpose) {
@@ -65,7 +67,7 @@ public class AccessEligibility {
   public Verdict check(String username, String assetFqn, String ip, String purpose) {
     DecisionService.Ask ask = new DecisionService.Ask(username, assetFqn, null, ip, purpose, null);
     if (Boolean.TRUE.equals(decisions.decide(ask).getAllowed())) {
-      return new Verdict(assetFqn, true, false, null, List.of(), null, false);
+      return new Verdict(assetFqn, true, false, null, List.of(), null, false, null);
     }
     PolicyDecision ifGranted = decisions.decideAsIfGranted(ask);
     boolean requestable = Boolean.TRUE.equals(ifGranted.getAllowed());
@@ -78,7 +80,8 @@ public class AccessEligibility {
         requestable ? null : blocker(ifGranted),
         requests.approversFor(assetFqn),
         open,
-        requestable && requests.nobodyElseDecides(username, assetFqn));
+        requestable && requests.nobodyElseDecides(username, assetFqn),
+        requestable ? requests.route(assetFqn) : null);
   }
 
   /**

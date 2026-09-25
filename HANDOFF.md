@@ -36,7 +36,7 @@ Phase 1 รองรับ SQL Server + PostgreSQL · identity หลักค�
 | **M7 Query API (5.2a)** | 🚧 ~80% — **`POST /v1/query` + Query console ใช้งานได้จริงรอบนี้** · rewrite → RLS + mask + hidden column → execute → audit ครบ · พิสูจน์กับ Postgres จริงแล้วทั้ง allow / RLS / mask / refuse · เหลือ direct-access detector (FR-6.3.1) และ result cache |
 | **M7b Cross-mode consistency** | ⬜ — ต้องมี M5/M6 ก่อน |
 | **M8 Audit + Ops** | 🚧 ~35% — **FR-7 ปิดครบวงรอบนี้ (grant ตรงระดับ table + auto-revoke + audit trail + หน้าจอ) ดูข้อ AD.1** · `audit_query` / `audit_decision` / `audit_policy_change` เขียนจริงแล้วและอ่านได้ · **`evaluation_ms` มีค่าแล้ว (ข้อ AE.5)** · **ยังไม่มี audit ของการ configure** (เปลี่ยน data source / OM settings ไม่ถูกบันทึกที่ไหนเลย) · ยังไม่มี compliance report / drift detector / auto-revoke / SIEM export |
-| **M9 Access Request Management** | 🚧 **~35% — slice 1 จบรอบนี้ (ข้อ AX)** · `access_request` (V21) + ขอ / inbox / approve / reject / withdraw + audit · approver = owner จาก OM (ตรงหรือผ่าน team) หรือ platform admin ถ้าไม่มี owner · หน้า `/requests` · **slice 2 ที่ผู้ใช้สั่งแล้ว (ข้อ AX.9):** Approve ≠ ให้สิทธิ์ — แยกเป็น *ตัดสินใจ* แล้ว *Fulfil* ด้วยมือโดย Owner / **Steward / Custodian (จาก Custom Property ใน OM)** + หน้า review ที่มี impact / risk / ข้อมูลผู้ขอ (attribute, group, role, สิทธิ์ที่มีอยู่) / suggestion ว่าต้องไปแก้ policy ไหน-สร้างใหม่ + conflict + ไอคอน Inbox พร้อม badge บน header · ยังไม่ทำ: approval chain หลายขั้น · recertification · break-glass · notification ทาง email/Teams |
+| **M9 Access Request Management** | 🚧 **~55% — slice 2a จบรอบนี้ (ข้อ BB)** · slice 1 (ข้อ AX): `access_request` (V21) + ขอ / inbox / approve / reject / withdraw + audit · **slice 2a:** Access Request Workflow ออกแบบได้ต่อ scope (default องค์กร / service / database / schema / table) — หลาย step เรียงกัน, stage ใน step เดียวกันวิ่งพร้อมกัน, กติกา ALL / ANY / AT_LEAST n, Reject เลือกได้ต่อ stage (VETO / QUORUM / FIRST_RESPONSE), ผู้อนุมัติเป็น owner / steward / custodian / role / team / คน · admin ตอบแทนทุก stage ได้ · table ไม่มี owner → ตกไปหา platform admin **และขึ้นใน Inbox + กระดิ่งแล้ว** · Approve ≠ ให้สิทธิ์: APPROVED → IN_PROGRESS → COMPLETED (GRANT ไม่เกินวันที่ขอ / POLICY_UPDATED / POLICY_CREATED อ้างถึง policy เท่านั้น) หรือ Decline โดยผู้ configure · หน้า `/settings/workflows` (V23) · **ต่อไป:** 2b หน้า review (ข้อมูลผู้ขอ / impact / risk / suggestion / policy conflict — draft เท่านั้น) · 2c dashboard grant ใกล้หมดอายุ + นับถอยหลัง · สถิติคำขอต่อ table · ยังไม่ทำ: Automatic configuration (Roadmap) · recertification · break-glass · notification ทาง email/Teams |
 | **M10 Access Control Dashboard** | ⬜ **Phase 2 — ออกแบบแล้ว ยังไม่เริ่ม** · หน้าเดียวที่ตอบว่า "ตอนนี้องค์กรคุมข้อมูลได้ดีแค่ไหน" · 4 แถว: **Coverage** (asset ที่มี tag PII แต่ไม่มี policy คุ้มครอง / % ของ asset ที่ enforce แล้ว) · **Exposure** (ใครเข้าถึง PII ได้บ้าง · grant ที่ใกล้หมดอายุ · สิทธิ์ที่ไม่ได้ใช้เกิน 90 วัน) · **Activity** (query ต่อวัน แยก EXECUTED/REJECTED/FAILED · top principal · top asset · เหตุผลที่ถูกปฏิเสธบ่อยที่สุด) · **Health** (enforcement state ต่อ source · drift · รอบ sync ล่าสุด · p95 ของ decision) — **ข้อมูลมีอยู่ครบแล้วทั้งหมด** (`audit_query`, `audit_decision`, `asset_facet`, `policy_binding`, `access_grant`, `enforcement_state`) → งานคือ query + หน้าจอ ไม่ต้อง migrate — ดูแบบเต็มที่ข้อ AM.4 |
 | **M11 LLM Assist** | 🚧 **~60%** — ตารางนี้เคยเขียนว่า "ยังไม่เริ่ม" ซึ่งไม่จริงแล้ว · **per-user gateway ใช้งานได้จริง** — แต่ละคนใส่ base URL + key ของตัวเองในหน้า Settings และเลือกเองว่าจะเปิดใช้ไหม (`llm_user_setting.base_url` + `api_key_cipher` Fernet · key ไม่เคยถูกส่งกลับ ตอบแค่ `hasOwnKey`) · `llm_provider.allow_personal` เป็น kill switch · ⚠️ `LlmResource.putUser` ตัดสิทธิ์ admin ให้แก้ได้แค่ `enabled` — **ไม่มีใครเขียน gateway ของคนอื่นได้ ห้ามผ่อน** · ทดสอบสดผ่านแล้ว (21 models + completion ด้วย key ของ `analyst_a` เอง) · เหลือฟีเจอร์จริงสองตัว: **NL→SQL** และ **ร่าง policy** ที่ออกมาเป็น `DRAFT` เท่านั้น (FR-2.6 — LLM ไม่มีสิทธิ์ activate เอง) — ดูข้อ AO.8/AO.9 |
 | **M12 Home ที่จัดเอง** | ✅ **เสร็จ — milestone ใหม่ ไม่อยู่ในแผนเดิม** · หน้าแรกจัดวางเองได้ต่อ account · 5 preset · 14 widget type (กราฟวาดเป็น SVG มือ ไม่มี chart library) · วาง **HTML / Note / Link / Video** ได้ · `V13__home_layout.sql` — ไม่มีแถว = default (ลบแถว = reset) · **default คนละใบตาม role**: governance ได้หน้าเดิม · Requestor ได้หน้า Search · ⚠️ **HTML ที่คนพิมพ์เอง = stored XSS** → `HomeLayoutValidator` ล้างทั้ง**ตอนเขียนและตอนอ่าน** **ห้ามมีทางเขียน `home_layout` ที่ไม่ผ่านตัวนี้** · **M12b persona เสร็จแล้ว** (`V19__home_role_layout.sql`) — admin จัดหน้าแรกให้แต่ละ Platform Role ได้ที่ `/settings/home` · resolve แบบ **personal → role (แรงสุดที่ถือ) → built-in** · **persona ไม่เคยทับหน้าที่คนจัดเอง** · ⚠️ เป็น**ที่แรกที่ markup ของคนหนึ่งถูก render ใน session ของอีกคนโดยตั้งใจ** → `@Secured("PLATFORM_ADMIN")` + ล้างผ่าน `HomeLayoutValidator` ทั้งเขียนและอ่าน — ดูข้อ AN และ AS |
@@ -56,14 +56,14 @@ Phase 1 รองรับ SQL Server + PostgreSQL · identity หลักค�
 | App DB (docker `dac-appdb`, postgres:16-alpine) | `:5432` db/user `dac` |
 | OpenMetadata ของทีม | `2.0.1` — sync ผ่าน **ingestion-bot JWT** (ดู What Didn't Work) |
 
-เทสต์ทั้งหมดเขียว — **backend unit + integration รันครบเมื่อ 2026-09-25 → `./mvnw -o verify -Pintegration` BUILD SUCCESS · unit 713 · Failures 0 Errors 0** (รอบ BA: +6 `StewardshipTest` · +11 `StewardshipGuardsTest` · integration **217** (+3 `AccessRequestIT.Deciding` `ownerTypeMatters` · `grantReach` · `stranded`) · รอบ AY: +1 `SpaServletTest.unusualCharacters` · integration **214** (รอบ AZ: +5 `AccessRequestIT.Notices`) — **+23 จาก `AccessRequestIT`** ขอ / อนุมัติ / ปฏิเสธ / ถอน + เคส policy ชนกัน (DENY · ชั้นบนปฏิเสธ · override · approve ไม่ปลด mask) บน Postgres จริง), frontend `npx jest` + `npx tsc --noEmit` + `vite build` รันใหม่ **2026-09-25** (**36 suites / 307 tests** เขียว — รอบ BA: `AccessTab.test.tsx` ใหม่ 4 · `AccessRequestsPage.test.tsx` ±0 สุทธิ · `accessRequests.test.ts` +1 · ดูข้อ BA.4, AZ.5, AY.5 และ AX.8 · tsc exit 0 · build 11.78s · `scripts/check-cursor-pointer.mjs` → *every &lt;button&gt; offers a hand*)
+เทสต์ทั้งหมดเขียว — **backend unit + integration รันครบเมื่อ 2026-09-25 → `./mvnw -o verify -Pintegration` BUILD SUCCESS · unit 772 · integration 242 · Failures 0 Errors 0** (รอบ BB: +59 unit ใน dac-service — `StageEngineTest` 23 · `AccessWorkflowTest` 12 · `ApproverDirectoryTest` 5 · `AccessRequestResourceTest` 5 · `AccessWorkflowResourceTest` 14 · integration **242** (+25 `AccessRequestIT` `Workflows` / `Configuring` / `Legacy`) · frontend **37 suites / 347 tests** (+`AccessWorkflowsPage.test.tsx` 17) · ดูข้อ BB.6 · รอบ BA: +6 `StewardshipTest` · +11 `StewardshipGuardsTest` · integration **217** (+3 `AccessRequestIT.Deciding` `ownerTypeMatters` · `grantReach` · `stranded`) · รอบ AY: +1 `SpaServletTest.unusualCharacters` · integration **214** (รอบ AZ: +5 `AccessRequestIT.Notices`) — **+23 จาก `AccessRequestIT`** ขอ / อนุมัติ / ปฏิเสธ / ถอน + เคส policy ชนกัน (DENY · ชั้นบนปฏิเสธ · override · approve ไม่ปลด mask) บน Postgres จริง), frontend `npx jest` + `npx tsc --noEmit` + `vite build` รันใหม่ **2026-09-25** (**36 suites / 307 tests** เขียว — รอบ BA: `AccessTab.test.tsx` ใหม่ 4 · `AccessRequestsPage.test.tsx` ±0 สุทธิ · `accessRequests.test.ts` +1 · ดูข้อ BA.4, AZ.5, AY.5 และ AX.8 · tsc exit 0 · build 11.78s · `scripts/check-cursor-pointer.mjs` → *every &lt;button&gt; offers a hand*)
 
 > ⚠️ **`backend/dac-service/target/surefire-reports/com.mfec.dac.catalog.AssetStoreIT.txt` ยังแดงค้างอยู่ในโฟลเดอร์ — เป็นไฟล์เก่าจาก 2026-09-23 20:35 ก่อน commit `19b0503` ซึ่งคือ commit ที่แก้เคสนั้นพอดี** อย่าอ่านรายงานใน `target/` โดยไม่ดูเวลาไฟล์ — `mvn test` ไม่ล้างรายงานของคลาสที่รอบนี้ไม่ได้รัน
 
 | ชุด | จำนวน | คำสั่ง |
 |---|---|---|
-| Backend unit | dac-common 31 · dac-engine 277 · **dac-compiler-sql 51 (+17 — `RowEntitlementMaintainerTest`)** · dac-connector-openmetadata 91 · **dac-connector-source 25 (+6 — `SecureViewApplierTest`)** · dac-proxy 30 · **dac-service 186 (+6 — `ReviewedPlansTest`)** = **713** (dac-service **208** — +6 `StewardshipTest` · +11 `StewardshipGuardsTest` ข้อ BA · ก่อนหน้า **191** — +4 `AccessEligibilityTest` · +1 `SpaServletTest.unusualCharacters` ข้อ AY) | `./mvnw -o test` |
-| Backend integration (Testcontainers `postgres:16-alpine`) | **217 tests** — **`AccessRequestIT` 31 (+3 `Deciding` ข้อ BA.1a/BA.4 · +5 `Notices` ข้อ AZ.5 · 23 ข้อ AX.8)** · `AssetStoreIT` 7 · `CatalogQueryIT` 18 · `DataSourceStoreIT` 13 · `GovernanceStoreIT` 10 · `GrantCompositionIT` 17 · **`HomeLayoutStoreIT` 14 (+8 รอบนี้ — persona)** · `IdentityAdminStoreIT` 24 · `ImpactAnalysisIT` 8 · `PolicyBindingMaterializerIT` 10 · `PolicyOverviewIT` 24 · `PolicyStoreIT` 10 · **`SecureViewApplierIT` 11 (ใหม่รอบนี้ — อยู่ใน `dac-connector-source` ไม่ใช่ `dac-service`)** · **`SecureViewServiceIT` 15 (ใหม่รอบนี้)** · `SourceEngineRegistryIT` 5 | `./mvnw verify -Pintegration` (ทั้ง reactor) |
+| Backend unit | dac-common 31 · dac-engine 277 · **dac-compiler-sql 51 (+17 — `RowEntitlementMaintainerTest`)** · dac-connector-openmetadata 91 · **dac-connector-source 25 (+6 — `SecureViewApplierTest`)** · dac-proxy 30 · **dac-service 267** = **772** (dac-service **267** — +23 `StageEngineTest` · +12 `AccessWorkflowTest` · +5 `ApproverDirectoryTest` · +5 `AccessRequestResourceTest` · +14 `AccessWorkflowResourceTest` ข้อ BB · ก่อนหน้า **208** — +6 `StewardshipTest` · +11 `StewardshipGuardsTest` ข้อ BA · ก่อนหน้า **191** — +4 `AccessEligibilityTest` · +1 `SpaServletTest.unusualCharacters` ข้อ AY) | `./mvnw -o test` |
+| Backend integration (Testcontainers `postgres:16-alpine`) | **242 tests** — **`AccessRequestIT` 56 (+25 `Workflows` 17 · `Configuring` 4 · `Legacy` 4 ข้อ BB.6 · +3 `Deciding` ข้อ BA.1a/BA.4 · +5 `Notices` ข้อ AZ.5 · 23 ข้อ AX.8)** · `AssetStoreIT` 7 · `CatalogQueryIT` 18 · `DataSourceStoreIT` 13 · `GovernanceStoreIT` 10 · `GrantCompositionIT` 17 · **`HomeLayoutStoreIT` 14 (+8 รอบนี้ — persona)** · `IdentityAdminStoreIT` 24 · `ImpactAnalysisIT` 8 · `PolicyBindingMaterializerIT` 10 · `PolicyOverviewIT` 24 · `PolicyStoreIT` 10 · **`SecureViewApplierIT` 11 (ใหม่รอบนี้ — อยู่ใน `dac-connector-source` ไม่ใช่ `dac-service`)** · **`SecureViewServiceIT` 15 (ใหม่รอบนี้)** · `SourceEngineRegistryIT` 5 | `./mvnw verify -Pintegration` (ทั้ง reactor) |
 | Frontend | **36 suites / 307 tests** (รอบ BA: `AccessTab.test.tsx` ใหม่ 4 · `accessRequests.test.ts` +1 · `AccessRequestsPage.test.tsx` แทน 2 เคส Grant-for ด้วย 1 + stranded 1 · รอบ AZ: `AccessRequestsPage.test.tsx` 22 (+9) · `RequestNotices.test.tsx` ใหม่ 10 — ดูข้อ AZ.5 · รอบ AY: +10 `AriaRouter.test.tsx` · `AssetRequestAccess.test.tsx` 9 · +4 `AssetDetailPage.test.tsx` — ดูข้อ AY.5 · รอบ AX: +20 `SqlEditor.test.tsx` · +16 `RequestAccess.test.tsx` · +13 `AccessRequestsPage.test.tsx` · +5 `accessRequests.test.ts` · `sqlCompletion.test.ts` — ดูข้อ AX.8 · ก่อนหน้า: +7 `EnforcementPage.test.tsx` — dry run → apply ส่งแค่ reviewId · non-admin ไม่มีปุ่ม Apply / Roll back · apply ที่ถูกปฏิเสธล้าง review · rollback ต้องยืนยัน · +9 `policyFlow.test.ts` — ลำดับด่าน · selector ว่าง = 0 asset ไม่ใช่ทุก asset · subject ว่าง = `open` ไม่ใช่ `set` · "ไม่ผ่านด่าน" ต้องไม่อ่านว่า deny · +3 `PolicyFlowChart.test.tsx` — ไม่ส่ง `onEdit` ต้องไม่มีปุ่มใดๆ · ก่อนหน้านี้ +4 ใน `HomePersonasPage.test.tsx` — หน้าที่คนหนึ่งจัดหน้าจอให้อีกคน: admin เท่านั้นที่เห็น · ครบทั้ง 5 role ไม่ว่าจะตั้งไว้หรือยัง · ประโยค "starting point ไม่ใช่ override" · เซฟแล้วต้องลง role ที่เปิดอยู่เท่านั้น) | `npx jest` ใน `frontend/app` |
 
 `yarn type-check` · `yarn lint` · `yarn build` ผ่านหมด → **BUILD SUCCESS** ทั้งสองฝั่ง
@@ -381,7 +381,125 @@ M18 ก่อนเพิ่ม engine ตัวที่ 3 เสมอ
 
 ---
 
-## รอบนี้ — **ข้อ BA: ตรวจบั๊ก Access Control (ผู้ใช้สั่ง "ตรวจหา Bug Access Control") · เอาแถบขอบซ้ายสีน้ำเงินออกทั้งแอป · เอาช่อง "Grant for … days" ออกจากการ Approve**
+## รอบนี้ — **ข้อ BB: M9 slice 2a — Access Request Workflow Design Configuration (อนุมัติหลายขั้น · parallel / sequence · ALL / ANY / AT_LEAST n) + Configure ด้วยมือแยกจาก Approve**
+
+ผู้ใช้ขอ: *"กรณีไม่มีคนเป็น owner … ไม่เห็นขึ้นใน platform Admin Inbox เลย"* · *"เพิ่ม Feature ให้ ส่งต่อได้หลายๆคน เพิ่ม Access Request Workflow Design Configuration — Configure การขอเป็น หลาย Step ได้ ทำได้ทั้งแบบ parallel, Sequence (need approve from all, need approve from only one, ..)"* · *"ใน Dashboard ต้องสามารถระบุได้ว่าใครใกล้จะหมดสิทธิใน table ไหน อาจใส่ตัวนับถอยหลังได้"* · *"อยากให้เก็บ สถิติ จำนวนที่ขอใช้ table ไว้ด้วย"* · เรื่อง Reject ในแต่ละ stage: *"ให้เลือกได้ใน Configure"* · admin ตอบแทนทุก stage ได้: *"ต่อ"* · Configure แบบ Manual เป็น default — **Automatic อยู่ Roadmap เท่านั้น** · แล้วสั่ง *"ทำต่อได้เลยนะ เอาตาม Roadmap ทำไปเรื่อยๆ ต้องทดสอบให้ดีทุกขั้นตอน"*
+
+slice 2 แบ่งเป็นสามก้อน — **รอบนี้ทำ 2a จบ** · 2b (หน้า review: ข้อมูลผู้ขอ / impact / risk / suggestion / policy conflict — ทุกอย่างที่มันเสนอเป็น **draft** เท่านั้น) และ 2c (dashboard grant ใกล้หมดอายุ + นับถอยหลัง · สถิติคำขอต่อ table) ยังไม่เริ่ม
+
+### BB.1 โมเดล — step เรียงกัน · stage ใน step เดียวกันวิ่งพร้อมกัน
+
+```
+Step 1  ┌ Owner approval   ANY  · VETO    · [Owners of the table]
+        └ (stage อื่นใน step 1 ก็วิ่งพร้อมกันได้)
+Step 2  ┌ Security         ALL  · VETO    · [security_a]
+        └ Compliance       ANY  · QUORUM  · [compliance_a, analyst_b]
+→ APPROVED → (configurer กด Start) IN_PROGRESS → COMPLETED (GRANT / POLICY_UPDATED / POLICY_CREATED) หรือ Decline
+```
+
+- **Seat** (ใครคือคนถูกถาม): `USER` · `TEAM` (สมาชิกซ้อนกี่ชั้นก็ได้) · `ROLE` (คนที่ถือ app role เหนือ table นี้ — global หรือ scope ที่ครอบ table) · `ASSET_OWNERS` (owner จาก OM) · `DATA_STEWARD` / `DATA_CUSTODIAN` (จาก custom property `dataSteward` / `dataCustodian` ของ table ใน OM)
+- **Rule**: `ALL` (ทุกคนที่ถูกถาม) · `ANY` (คนเดียวพอ) · `AT_LEAST n`
+- **onReject** (ผู้ใช้สั่งให้เลือกได้ต่อ stage):
+  | | ALL | ANY | AT_LEAST n |
+  |---|---|---|---|
+  | `VETO` | reject ใครก็ได้ = stage ตก | reject ก่อนมีคน approve = ตก | reject ใครก็ได้ = ตก |
+  | `QUORUM` | (เหมือน VETO — ALL ขาดคนเดียวก็ไม่ครบแล้ว) | ตกเมื่อ **ทุกคน** reject | ตกเมื่อ approve ที่เหลือ **ไม่มีทางถึง n** แล้ว |
+  | `FIRST_RESPONSE` | ❌ ปฏิเสธตอนบันทึก (400) | คำตอบแรกตัดสิน ทางไหนก็ได้ | ❌ ปฏิเสธ (400) |
+- **stage ตก = request ตก (REJECTED)** ทันที · stage อื่นใน step เดียวกันที่ยังเปิดอยู่ถูกปิด (`CLOSED`)
+- **admin ตอบแทน stage ไหนก็ได้** — ถ้าไม่ได้อยู่ใน pool ของ stage นั้น คำตอบถูกบันทึกเป็น **override** และตัดสิน stage ทันที (ผู้ใช้ยืนยัน *"ต่อ"*)
+- **ไม่มีใครตัดสินคำขอของตัวเอง** — ผู้ขอถูกตัดออกจากทุก pool เสมอ (รวม admin ที่ขอเอง)
+- **pool ถูก resolve ตอน step นั้นเปิด** แล้ว freeze ไว้ใน `access_request_stage.pool` → *"ALL"* แปลว่าทุกคนที่ถูกถาม ไม่ใช่ตัวเลขที่ขยับตามคนเข้าออก team
+- **seat ไม่ resolve เป็นใครเลย → pool = platform admin** (`fallback = true`) — นี่คือตัวแก้ของเคสที่ผู้ใช้รายงาน *"ไม่มี owner → ไม่ขึ้นใน Inbox ของ admin"*
+- **pool มีคนแต่ไม่พอให้ rule ผ่านได้** (เช่น AT_LEAST 3 แต่มี 2 คน) → stage **stranded** รอ admin — หน้าขอสิทธิ์บอกผู้ขอตั้งแต่ก่อนกดส่ง
+- request **copy workflow ไว้ตอนสร้าง** (`workflow_id` + `workflow_name` + stage + `configurers`) → แก้ workflow ทีหลัง **ไม่เปลี่ยนกติกาของคำขอที่เดินอยู่แล้ว** (IT `keepsItsCopy`)
+- scope: workflow ผูกกับ FQN ใดก็ได้ (service / database / schema / table) — **ตัวที่ลึกที่สุดชนะ เทียบทีละ segment** ไม่ใช่ `LIKE` · `scope_fqn = null` = default ขององค์กร · ไม่มีเลย = **Built-in** (owner คนใดคนหนึ่ง แล้ว owner หรือ data custodian configure) · workflow ที่ `enabled = false` ถูกข้ามไปหาชั้นบน
+
+### BB.2 Approve ≠ ให้สิทธิ์ — Configure ด้วยมือ (MANUAL)
+
+- `APPROVED` ตอนนี้แปลว่า *"ผู้อนุมัติตอบ yes แล้ว รอคน configure"* — **ยังอ่านไม่ได้** (flow จริงยืนยันว่า query ยัง 403)
+- configurer (seat เหมือนกัน — default: `ASSET_OWNERS` + `DATA_CUSTODIAN`) กด **Start** → `IN_PROGRESS` + `assignee` → **Complete** เลือก:
+  - `GRANT` — เขียน grant ตามจำนวนวัน (**ไม่เกินที่ผู้ขอขอ** — เกิน = 400) · ตรงนี้คือที่ช่อง "Grant for … days" ย้ายมาอยู่ (ข้อ BA)
+  - `POLICY_UPDATED` / `POLICY_CREATED` — **แค่ชี้ไปที่ policy (`fulfilment_ref`) ไม่ activate อะไรเอง** ตามกติกา "suggestion เป็น draft เท่านั้น"
+  - หรือ **Decline** (configurer ปฏิเสธหลังอนุมัติ พร้อมเหตุผล)
+- ผู้ขอ withdraw ได้ทั้งก่อนและหลังอนุมัติ (ก่อน COMPLETED)
+- **Automatic configuration = Roadmap เท่านั้น** — `access_workflow.fulfilment` มี CHECK ให้เป็น `MANUAL` ได้ค่าเดียว
+
+### BB.3 Migration `V23__access_workflow.sql`
+
+| | |
+|---|---|
+| `access_workflow` | name · description · `scope_fqn` (unique บน `coalesce(scope_fqn,'')` = หนึ่ง workflow ต่อ scope รวม default) · enabled · `stages` jsonb · `configurers` jsonb · `fulfilment` = `MANUAL` |
+| `audit_access_workflow` | append-only — CREATE / UPDATE / DELETE พร้อม before / after |
+| `access_request` + | `workflow_id/name` · `configurers` · `configurer_pool` · `current_step` · `assignee/assigned_at` · `completed_by/at` · `fulfilment` · `fulfilment_ref` · `fulfilment_note` |
+| status | `PENDING / APPROVED / IN_PROGRESS / COMPLETED / REJECTED / WITHDRAWN` · **แถว APPROVED เดิมถูกย้ายเป็น `COMPLETED + GRANT`** (โดยคนที่ approve ตอนนั้น) · constraint ใหม่: มี grant ⇔ fulfilment = GRANT · COMPLETED ⇔ มี fulfilment + completed_by/at · IN_PROGRESS ⇔ มี assignee |
+| one-open index | ครอบ `PENDING / APPROVED / IN_PROGRESS` — ยังเป็นหนึ่งคำขอที่เปิดอยู่ต่อคนต่อ table |
+| `access_request_stage` | หนึ่งแถวต่อ stage ต่อ request · `pool` · `fallback` · `WAITING / OPEN / APPROVED / REJECTED / CLOSED` |
+| `access_request_vote` | หนึ่งคำตอบต่อคนต่อ stage · override ของ admin บันทึกว่าเป็น override |
+
+### BB.4 Backend
+
+| ไฟล์ | หน้าที่ |
+|---|---|
+| `access/AccessWorkflow.java` | record `Seat` / `Stage` / `Workflow` / `Draft` + validator (ชื่อ stage ห้ามซ้ำ · step เรียงใหม่ให้ชิดกันเป็น 1..n เอง (1, 3 → 1, 2) · AT_LEAST ต้องมี `minApprovals` 1–100 (หน้าจอตั้งต้นที่ 2) · FIRST_RESPONSE ต้องคู่ ANY · seat ≤ 25 ต่อ stage · USER / TEAM / ROLE ต้องมีชื่อ · ROLE ต้องเป็น app role ที่มีจริง) + `builtIn()` + `roleLabel()` |
+| `access/StageEngine.java` | **pure** — รับ stage + vote แล้วตอบ `PASSED / FAILED / OPEN / STRANDED` ตามตารางใน BB.1 |
+| `access/ApproverDirectory.java` | seat → คน (`Member{username, via}`) บน asset หนึ่งๆ · ตัดผู้ขอออก · ว่าง → admin (`fallback`) · อ่าน steward / custodian จาก custom property (string / entity reference / list) |
+| `access/WorkflowStore.java` | CRUD + audit + `effective(fqn)` (ลึกสุดชนะ ทีละ segment) |
+| `resources/AccessWorkflowResource.java` | `GET /v1/access-workflows` (admin · author · owner · auditor — คนอื่น 403) · `GET /effective/{fqn}` · `POST` 201 · `PUT /{id}` · `DELETE /{id}` 204 · `GET /{id}/history` · validation → 400 · scope ชน → 409 · **สร้าง/แก้ได้เฉพาะคนที่ `governs` scope นั้น** (default ขององค์กร = PLATFORM_ADMIN เท่านั้น) |
+| `access/AccessRequestStore.java` · `resources/AccessRequestResource.java` | เดินตาม stage · `/start` · `/complete {fulfilment, days, note}` · `/decline` · inbox บอก `mayDecide` / `mayConfigure` ต่อแถว · กระดิ่งแจ้งทุกครั้งที่ step เปลี่ยน / ถึงคิว configure |
+| `access/AccessEligibility.java` · `resources/QueryResource.java` | refusal ของ query และ `/eligibility/{fqn}` พก **`route`** = workflow ที่จะใช้ + stage + คนที่จะถูกถาม · `stranded` ถ้าไม่มีทางผ่าน |
+
+### BB.5 Frontend
+
+- **หน้าใหม่ `/settings/workflows`** (`AccessWorkflowsPage.tsx`) — การ์ด *Access workflows* ในกลุ่ม *People & platform access* ของ Settings · **ซ่อนจาก Requester** (จะโดน 403) · รายการ: default ขึ้นก่อน · Built-in แสดงเสมอ · ป้าย *Off* · ประวัติการแก้ต่อ workflow
+  - editor: ชื่อ · scope (ScopePicker ค้น catalog) · step → stage (rule / min / onReject — FIRST_RESPONSE ถูก disable เมื่อไม่ใช่ ANY และ reset เป็น VETO เอง) · seat (ค้นคน/ทีมจาก principal) · configurers · preview *"Step 2 runs Security and Compliance side by side"*
+  - Auditor อ่านได้อย่างเดียว ไม่มีปุ่ม
+- `RequestAccess` (หน้า Query) + `AssetRequestAccess` (หน้า asset) — บอก **"who decides"** เป็นลำดับ step ก่อนกดส่ง และบอก stranded
+- `AccessRequestsPage` — แถวบอก step ปัจจุบัน + stage ละคนละสถานะ · ปุ่ม Start / Complete (GRANT พร้อมจำนวนวัน · POLICY_UPDATED / POLICY_CREATED พร้อม ref) / Decline · กระดิ่ง (`useRequestNotices`, `TopNav`) นับงาน configure ด้วย
+- **ชื่อ role อ่านออก**: เดิมขึ้น *"Role AUDITOR"* → ตอนนี้ *"Role Auditor"* / *"Role Data owner"* ทั้ง backend (`AccessWorkflow.roleLabel`) และ frontend (`roleLabel` ใน `api/accessRequests.ts`) — กระทบ `via` ของ pool ในคำขอใหม่เท่านั้น (แถวเก่าเก็บข้อความเดิมไว้)
+
+### BB.6 Tests
+
+- Backend unit **dac-service 267** (+59): `StageEngineTest` 23 (ทุกช่องของตาราง BB.1 + override + stranded) · `AccessWorkflowTest` 12 · `ApproverDirectoryTest` 5 · `AccessRequestResourceTest` 5 · `AccessWorkflowResourceTest` 14
+- Integration **`AccessRequestIT` 56** (+25) บน Postgres จริง — `Workflows` (sequence · parallel · twoSeats · ANY/QUORUM · ANY/VETO · FIRST_RESPONSE · AT_LEAST/QUORUM · AT_LEAST/VETO · ALL rejects · adminOverride · fallback · strandedRule · seats · keepsItsCopy · scopes · denyAfterSteps · gateHidesTheRoute) · `Configuring` (startAndFinish · policyFulfilment — ไม่ activate policy · decline · withdrawBeforeConfigured) · `Legacy` (แถว V21 ที่ migrate มา: lazyPool · lazyConfigurers · stageless · newOwnerHearsNothingOld) · และ policy ชนกันยังครบเหมือนเดิม (DENY · ชั้นบนปฏิเสธ · override · approve ไม่ปลด mask)
+- `PolicyBindingMaterializerIT` / `PolicyOverviewIT` — แก้ `TRUNCATE` ให้ครอบตารางใหม่ (ไม่งั้น FK จาก `access_request_stage` ค้าง)
+- Frontend **37 suites / 347 tests** — ใหม่ `AccessWorkflowsPage.test.tsx` 17 · ปรับ `RequestAccess` / `AssetRequestAccess` / `AccessRequestsPage` / `RequestNotices`
+
+### BB.7 ทดสอบสดบน dev (`flow_workflow.py` ใน scratchpad)
+
+รันกับ app ที่ build จาก working tree นี้ (API :8080, UI `http://localhost:8090/Arak/`) — ผล **RESULT: ALL PASSED** · user dev: `analyst_a`, `analyst_b`, `owner_a`, `security_a`, `compliance_a` (รหัสผ่าน dev ส่งเป็น env `DEV_PW` เท่านั้น ไม่อยู่ในไฟล์ใด) — `security_a` / `compliance_a` สร้างใหม่รอบนี้เป็น local user ธรรมดา (role Requester)
+
+**Part A — `dtp-iprm.iprm.public.kb_likes` + workflow "Demo two-step"** (step 1 Owner approval ANY/VETO · step 2 Security ALL/VETO ‖ Compliance ANY/QUORUM [compliance_a, analyst_b] · configured by owner_a)
+| ขั้น | ผล |
+|---|---|
+| ออกแบบ | FIRST_RESPONSE + ALL → 400 · สร้าง → 201 · scope ซ้ำ → 409 "A workflow already covers … edit that one" · requester `GET /v1/access/workflows` → 403 · `effective` คืน Demo two-step |
+| ก่อนขอ | eligibility โชว์ route ครบ 2 step · `requestable` true · `stranded` false |
+| ขอ | analyst_a → PENDING · pool ของ step 1 = owner_a เท่านั้น (ตัดคนขอออก; owner อีกคนของ table ตัดออกจาก output เป็น `<another owner>`) |
+| step 1 | security_a approve ก่อนถึงคิว → **404** (ไม่ได้ถูกถาม = ไม่บอกว่ามี request) · owner_a approve → ADVANCE เปิด step 2 |
+| step 2 | analyst_b reject Compliance → ยัง `OPEN` (QUORUM: compliance_a ยังอนุมัติได้) · compliance_a approve → Compliance APPROVED · security_a approve → request **APPROVED** |
+| Configure | security_a กด start → 403 "Configured by owner_a" · query ยังถูกปฏิเสธ (approve ≠ ให้สิทธิ์) · owner_a start → IN_PROGRESS (assignee owner_a) · complete GRANT 3 วัน → COMPLETED + มีแถวใน `access_grant` |
+| audit | REQUEST · VOTE · ADVANCE · VOTE(reject) · VOTE · VOTE · APPROVE · START · COMPLETE |
+
+> ⚠️ **ข้อจำกัดของ dev data ไม่ใช่ bug:** query `kb_likes` หลังได้ grant ยังตอบ 403 "not a governed asset on this source" เพราะ source `arak-live-pg` คือ arakdb ไม่ใช่ service `dtp-iprm` ใน OM — table ของ dtp-iprm จึงไม่ถูก map กับ source ใดเลย proxy ปฏิเสธก่อนดู policy/grant (fail-closed ตามแบบ) → Part B พิสูจน์การอ่านจริงบน table ที่ map แล้ว
+
+**Part B — `demo-pg.salesdb.sales.customer` (ไม่มี owner) = เคสที่ผู้ใช้แจ้งว่าไม่ขึ้นใน Inbox ของ admin**
+| ขั้น | ผล |
+|---|---|
+| ก่อนขอ | analyst_b query → 403 (finance-subscription: expression ประเทศไม่ผ่าน) · refusal มี `requestable` true + `route` Built-in |
+| ขอ 5 วัน | 201 PENDING · stage `fallback` true · pool = `[admin]` · **อยู่ใน Inbox ของ admin พร้อม `mayDecide`** · กระดิ่งนับ (`inboxPending` 3) |
+| admin | approve → APPROVED (query ยัง 403) · start → IN_PROGRESS · GRANT 9 วัน → **400** "The request asked for 5 days; a grant can shorten that, not extend it" · GRANT 2 วัน → COMPLETED |
+| หลังได้สิทธิ์ | analyst_b query → **200 `[[1]]`** (count หลัง policy ของ table กรองแล้ว) |
+
+ข้อสังเกตเล็ก: refusal ของ table ที่ไม่มี owner คืน `approvers` ว่าง ขณะที่ route เขียน "Owners of the table" — ไม่ stranded เพราะ fallback ไป admin เกิดตอนสร้าง request (UI ขึ้นข้อความ "No owner is recorded for this table, so a platform administrator decides." อยู่แล้ว)
+
+ภาพหน้าจอ (Playwright, ไม่มี pageerror / 5xx): `/settings` การ์ด Access workflows เห็นเฉพาะ admin/steward (analyst_a ไม่เห็น) · `/settings/workflows` list + editor ของ Demo two-step · `/requests` ของ analyst_a แสดง Step 1 → Step 2 · in parallel พร้อมคะแนนเสียงทีละคน และ "owner_a granted access"
+
+### BB.8 ยังไม่ทำ / ต่อไป
+
+- **2b** หน้า review ของคำขอ: ข้อมูลผู้ขอ (attribute / group / role / สิทธิ์ที่มีอยู่) · impact · risk · suggestion ว่าต้องแก้/สร้าง policy ไหน · **คำเตือน policy conflict ตอน configure** — ทุกอย่างเป็น draft ห้าม activate เอง
+- **2c** `GET /v1/access/grants/expiring?withinDays=N` + หน้า dashboard นับถอยหลัง · สถิติคำขอต่อ table (ข้อมูลอยู่ใน `access_request` ครบแล้ว)
+- Automatic configuration (Roadmap) · recertification · break-glass · email/Teams
+
+## รอบก่อนหน้า — **ข้อ BA: ตรวจบั๊ก Access Control (ผู้ใช้สั่ง "ตรวจหา Bug Access Control") · เอาแถบขอบซ้ายสีน้ำเงินออกทั้งแอป · เอาช่อง "Grant for … days" ออกจากการ Approve**
 
 ผู้ใช้ขอ: *"ตรวจหา Bug Access Control และทำตาม milestone ต่อ"* · *"แถบแบบนี้ดูเหมือน AI ทำมากไป"* / *"ไม่เอาขอบด้านหน้าสีน้ำเงิน เพราะมันเหมือน AI เป็นคนทำ"* · *"ตรง grant for ไม่ต้องใส่ก็ได้อะ"*
 
@@ -4854,7 +4972,8 @@ estate ที่ใช้: `prod-mssql.SalesDB.dbo.{customer, order}` + **`prod-
 
 - ✅ **ข้อ AY เสร็จแล้ว** (Open in OpenMetadata ไม่ 500 · Request access มุมขวาบน · หัวหน้า asset แบบ OM · seed เคส demo) — ต่อด้วย **M9 slice 2** ข้างล่าง
 
-0. **ต่อทันที (ผู้ใช้สั่ง 2026-09-25) — M9 slice 2 ดูข้อ AX.9:** Approve = ตัดสินใจเท่านั้น → Fulfil ด้วยมือ (ออก grant / เพิ่มเข้า policy เดิม / สร้าง policy ใหม่เป็น Draft) โดย Owner · Steward · Custodian · หน้า review: ข้อมูลผู้ขอ + impact + risk + suggestion + conflict · ไอคอน Inbox + badge บน header
+0. ✅ **M9 slice 2a เสร็จ (ข้อ BB)** — workflow หลายขั้น + Configure ด้วยมือ · **ต่อทันที: 2b แล้ว 2c** (ดูข้อ BB.8) — ผู้ใช้สั่ง *"ทำต่อได้เลยนะ เอาตาม Roadmap ทำไปเรื่อยๆ ต้องทดสอบให้ดีทุกขั้นตอน"*
+0-เดิม. **(ส่วนที่เหลือของ AX.9 = 2b)** M9 slice 2 ดูข้อ AX.9: Approve = ตัดสินใจเท่านั้น → Fulfil ด้วยมือ (ออก grant / เพิ่มเข้า policy เดิม / สร้าง policy ใหม่เป็น Draft) โดย Owner · Steward · Custodian · หน้า review: ข้อมูลผู้ขอ + impact + risk + suggestion + conflict · ไอคอน Inbox + badge บน header
 0a. **ถัดไป:** Flowchart สำหรับอ่านระดับ table บนหน้า asset (ผู้ใช้ขอแล้ว — toggle text/diagram แบบ `PolicyFlowChart`, ค่าเริ่มต้นเป็นหน้าเดิม)
 0b. **M6 ⏸️ ON HOLD** — ห้ามเริ่มจนกว่าผู้ใช้จะสั่ง
 0c. **M16 (LLM ช่วยหา asset)** แยกเป็นงานของมันเอง ไม่ได้อยู่ใน Suggest รอบนี้ — Suggest รอบนี้เป็น rule-based ล้วน ไม่ส่งอะไรให้ LLM

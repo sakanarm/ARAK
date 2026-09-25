@@ -140,6 +140,7 @@ public class QueryResource {
         refusal.put("approvers", verdict.approvers());
         refusal.put("openRequestId", verdict.openRequestId());
         refusal.put("stranded", verdict.stranded());
+        refusal.put("route", verdict.route());
       } else if (e.deniedAsset() != null) {
         refusal.put("assetFqn", e.deniedAsset());
         refusal.put("requestable", false);
