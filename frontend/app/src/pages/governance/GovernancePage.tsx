@@ -70,6 +70,9 @@ export default function GovernancePage() {
   });
 
   const active = TABS.find((entry) => entry.key === tab) ?? TABS[0];
+  const roots = treeFor(data, tab)
+    .map((value) => prune(value, search.trim().toLowerCase()))
+    .filter((value): value is GovernanceValue => value !== null);
 
   return (
     <>
@@ -102,7 +105,7 @@ export default function GovernancePage() {
       <p className="tw:mt-3 tw:text-sm tw:text-tertiary">{active.blurb}</p>
 
       <div className="tw:mt-4 tw:flex tw:flex-wrap tw:items-center tw:gap-2">
-        <div className="tw:max-w-sm tw:flex-1">
+        <div className="tw:w-full tw:max-w-sm">
           <TextField
             ariaLabel="Filter"
             onChange={setSearch}
@@ -111,7 +114,7 @@ export default function GovernancePage() {
           />
         </div>
         {tab !== 'properties' && (
-          <div className="tw:flex tw:gap-2">
+          <div className="tw:ml-auto tw:flex tw:gap-2">
             <BulkButton
               icon={<Maximize01 className="tw:size-4" />}
               label="Expand all"
@@ -133,35 +136,60 @@ export default function GovernancePage() {
       )}
       {isLoading && <p className="tw:mt-6 tw:text-sm tw:text-tertiary">Loading…</p>}
 
-      <section className="tw:mt-6 tw:flex tw:flex-col tw:gap-2">
-        {tab === 'properties'
-          ? (data?.customProperties ?? [])
-              .filter((property) => matchesProperty(property, search))
-              .map((property) => (
-                <PropertyRow
-                  key={`${property.entityType}.${property.name}`}
-                  property={property}
-                />
-              ))
-          : treeFor(data, tab)
-              .map((value) => prune(value, search.trim().toLowerCase()))
-              .filter((value): value is GovernanceValue => value !== null)
-              .map((value) => (
-                <ValueRow
-                  bulk={bulk}
-                  forceOpen={search.trim().length > 0}
-                  key={value.fqn}
-                  tab={tab}
-                  value={value}
-                />
-              ))}
+      {data && tab === 'properties' && (
+        <section className="tw:mt-5 tw:overflow-hidden tw:rounded-xl tw:border tw:border-secondary tw:bg-primary">
+          <div className="tw:flex tw:items-center tw:gap-3 tw:border-b tw:border-secondary tw:bg-secondary_subtle tw:px-4 tw:py-2 tw:text-xs tw:font-medium tw:text-tertiary">
+            <span className="tw:w-56 tw:shrink-0">Property</span>
+            <span className="tw:w-44 tw:shrink-0">Applies to · type</span>
+            <span className="tw:flex-1">Values and description</span>
+          </div>
+          {(data.customProperties ?? [])
+            .filter((property) => matchesProperty(property, search))
+            .map((property) => (
+              <PropertyRow
+                key={`${property.entityType}.${property.name}`}
+                property={property}
+              />
+            ))}
+          {(data.customProperties ?? []).filter((property) => matchesProperty(property, search))
+            .length === 0 && (
+            <Empty>
+              {search.trim()
+                ? `No custom property matches “${search.trim()}”.`
+                : 'OpenMetadata defines no custom properties yet. Once a steward adds one to a table or column type, it appears here after the next sync.'}
+            </Empty>
+          )}
+        </section>
+      )}
 
-        {tab === 'domains' && (data?.dataProducts.length ?? 0) > 0 && (
-          <>
-            <h2 className="tw:mt-6 tw:text-sm tw:font-semibold tw:text-primary">
-              Data products
-            </h2>
-            {(data?.dataProducts ?? [])
+      {data && tab !== 'properties' && (
+        <VocabularyTable>
+          {roots.length === 0 && (
+            <Empty>
+              {search.trim()
+                ? `Nothing here matches “${search.trim()}”.`
+                : 'Nothing synced from OpenMetadata under this heading yet.'}
+            </Empty>
+          )}
+          {roots.map((value) => (
+              <ValueRow
+                bulk={bulk}
+                forceOpen={search.trim().length > 0}
+                key={value.fqn}
+                tab={tab}
+                value={value}
+              />
+            ))}
+        </VocabularyTable>
+      )}
+
+      {data && tab === 'domains' && data.dataProducts.length > 0 && (
+        <>
+          <h2 className="tw:mt-8 tw:text-md tw:font-semibold tw:text-primary">
+            Data products
+          </h2>
+          <VocabularyTable>
+            {data.dataProducts
               .filter((value) => matches(value, search.trim().toLowerCase()))
               .map((value) => (
                 <ValueRow
@@ -171,11 +199,33 @@ export default function GovernancePage() {
                   value={value}
                 />
               ))}
-          </>
-        )}
-      </section>
+          </VocabularyTable>
+        </>
+      )}
     </>
   );
+}
+
+/**
+ * One table for the whole tree: a header naming the two numbers once, and a
+ * row per value with its counts in fixed columns, so a column of zeros reads
+ * as a column instead of a scatter of cards.
+ */
+function VocabularyTable({ children }: { children: ReactNode }) {
+  return (
+    <section className="tw:mt-5 tw:overflow-hidden tw:rounded-xl tw:border tw:border-secondary tw:bg-primary">
+      <div className="tw:flex tw:items-center tw:gap-3 tw:border-b tw:border-secondary tw:bg-secondary_subtle tw:px-4 tw:py-2 tw:text-xs tw:font-medium tw:text-tertiary">
+        <span className="tw:flex-1">Name</span>
+        <span className="tw:w-36 tw:shrink-0 tw:text-right">Assets</span>
+        <span className="tw:w-24 tw:shrink-0 tw:text-right">Policies</span>
+      </div>
+      <div className="tw:divide-y tw:divide-secondary">{children}</div>
+    </section>
+  );
+}
+
+function Empty({ children }: { children: ReactNode }) {
+  return <p className="tw:px-4 tw:py-8 tw:text-center tw:text-sm tw:text-tertiary">{children}</p>;
 }
 
 /** A single "open/close everything" instruction, identified by when it was given. */
@@ -250,6 +300,19 @@ function facetOf(tab: string, value: GovernanceValue): string {
   return tab;
 }
 
+/** "3 tags", "1 sub-domain": what the children of a row are called on this tab. */
+function childLabel(tab: string, count: number): string {
+  const noun =
+    tab === 'classifications'
+      ? 'tag'
+      : tab === 'glossaries'
+        ? 'term'
+        : tab === 'domains'
+          ? 'sub-domain'
+          : 'item';
+  return `${count} ${noun}${count === 1 ? '' : 's'}`;
+}
+
 function ValueRow({
   value,
   tab,
@@ -273,16 +336,25 @@ function ValueRow({
   }, [bulk?.nonce]); // eslint-disable-line react-hooks/exhaustive-deps
   const expanded = forceOpen || open;
   const hasChildren = value.children.length > 0;
+  const label = value.displayName || value.name;
+  const description = plainText(value.description);
+  // A description that only repeats the name says nothing and doubles the row.
+  const describes =
+    description && description.trim().toLowerCase() !== label.trim().toLowerCase()
+      ? description
+      : '';
 
   return (
     <>
       <div
-        className="tw:flex tw:flex-wrap tw:items-center tw:gap-3 tw:rounded-lg tw:border tw:border-secondary tw:bg-primary tw:p-3"
-        style={{ marginLeft: depth * 20 }}>
+        className={`tw:flex tw:items-center tw:gap-3 tw:py-2.5 tw:pr-4 tw:hover:bg-secondary ${
+          depth === 0 && hasChildren ? 'tw:bg-secondary_subtle' : ''
+        }`}
+        style={{ paddingLeft: 16 + depth * 24 }}>
         {hasChildren ? (
           <button
             aria-label={expanded ? 'Collapse' : 'Expand'}
-            className="tw:cursor-pointer tw:text-tertiary"
+            className="tw:shrink-0 tw:cursor-pointer tw:rounded tw:text-tertiary tw:hover:text-primary"
             onClick={() => setOpen(!open)}
             type="button">
             {expanded ? (
@@ -292,15 +364,28 @@ function ValueRow({
             )}
           </button>
         ) : (
-          <span className="tw:w-4" />
+          <span className="tw:w-4 tw:shrink-0" />
         )}
 
         <div className="tw:min-w-0 tw:flex-1">
-          <div className="tw:flex tw:flex-wrap tw:items-center tw:gap-2">
-            <span className="tw:font-medium tw:text-primary">
-              {value.displayName || value.name}
+          <div className="tw:flex tw:flex-wrap tw:items-center tw:gap-x-2 tw:gap-y-0.5">
+            <span
+              className={`tw:text-sm tw:text-primary ${
+                depth === 0 ? 'tw:font-semibold' : 'tw:font-medium'
+              }`}
+              title={value.fqn}>
+              {label}
             </span>
-            <span className="tw:text-xs tw:text-tertiary">{value.fqn}</span>
+            {/* Below a root the tree already spells the path out; repeating
+                it in full on every row is what made a sub-domain unreadable. */}
+            {depth === 0 && value.fqn !== label && (
+              <span className="tw:text-xs tw:text-quaternary">{value.fqn}</span>
+            )}
+            {hasChildren && (
+              <span className="tw:rounded-full tw:bg-secondary tw:px-2 tw:py-0.5 tw:text-xs tw:text-tertiary">
+                {childLabel(tab, value.children.length)}
+              </span>
+            )}
             {value.disabled && (
               <Badge color="warning" size="sm" type="pill-color">
                 disabled
@@ -317,15 +402,15 @@ function ValueRow({
               </Badge>
             )}
           </div>
-          {plainText(value.description) && (
-            <p className="tw:mt-0.5 tw:truncate tw:text-xs tw:text-tertiary">
-              {plainText(value.description)}
-            </p>
+          {describes && (
+            <p className="tw:mt-0.5 tw:truncate tw:text-xs tw:text-tertiary">{describes}</p>
           )}
         </div>
 
         <Link
-          className="tw:text-sm tw:text-brand-secondary tw:hover:underline"
+          className={`tw:w-36 tw:shrink-0 tw:text-right tw:text-sm tw:tabular-nums tw:hover:underline ${
+            value.assets > 0 ? 'tw:text-brand-secondary' : 'tw:text-tertiary'
+          }`}
           to={`/catalog?facet=${encodeURIComponent(`${facet}:${value.fqn}`)}`}>
           {value.assets} asset{value.assets === 1 ? '' : 's'}
           {value.directAssets !== value.assets && (
@@ -334,8 +419,8 @@ function ValueRow({
         </Link>
 
         <span
-          className={`tw:w-28 tw:text-right tw:text-sm ${
-            value.policies > 0 ? 'tw:text-primary' : 'tw:text-tertiary'
+          className={`tw:w-24 tw:shrink-0 tw:text-right tw:text-sm tw:tabular-nums ${
+            value.policies > 0 ? 'tw:font-medium tw:text-primary' : 'tw:text-tertiary'
           }`}>
           {value.policies} polic{value.policies === 1 ? 'y' : 'ies'}
         </span>
@@ -367,23 +452,25 @@ function matchesProperty(property: CustomPropertyDef, search: string): boolean {
 
 function PropertyRow({ property }: { property: CustomPropertyDef }) {
   return (
-    <div className="tw:flex tw:flex-wrap tw:items-center tw:gap-3 tw:rounded-lg tw:border tw:border-secondary tw:bg-primary tw:p-3">
-      <span className="tw:font-medium tw:text-primary">{property.name}</span>
-      <Badge color="gray" size="sm" type="pill-color">
-        {property.entityType}
-      </Badge>
-      <Badge color="blue-light" size="sm" type="pill-color">
-        {property.dataType}
-        {property.multiSelect ? ' · multi' : ''}
-      </Badge>
-      {property.enumValues && (
-        <span className="tw:text-xs tw:text-tertiary">{property.enumValues}</span>
-      )}
-      {plainText(property.description) && (
-        <span className="tw:text-xs tw:text-tertiary">
-          {plainText(property.description)}
-        </span>
-      )}
+    <div className="tw:flex tw:items-start tw:gap-3 tw:border-t tw:border-secondary tw:px-4 tw:py-2.5 tw:first:border-t-0 tw:hover:bg-secondary">
+      <span className="tw:w-56 tw:shrink-0 tw:truncate tw:text-sm tw:font-medium tw:text-primary">
+        {property.name}
+      </span>
+      <span className="tw:flex tw:w-44 tw:shrink-0 tw:flex-wrap tw:gap-1">
+        <Badge color="gray" size="sm" type="pill-color">
+          {property.entityType}
+        </Badge>
+        <Badge color="blue-light" size="sm" type="pill-color">
+          {property.dataType}
+          {property.multiSelect ? ' · multi' : ''}
+        </Badge>
+      </span>
+      <span className="tw:min-w-0 tw:flex-1 tw:text-xs tw:text-tertiary">
+        {property.enumValues && <span className="tw:block">{property.enumValues}</span>}
+        {plainText(property.description) && (
+          <span className="tw:block tw:truncate">{plainText(property.description)}</span>
+        )}
+      </span>
     </div>
   );
 }

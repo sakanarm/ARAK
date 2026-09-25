@@ -619,7 +619,26 @@ M25 ทำแยกได้ (profile ผ่าน proxy ที่มีแล�
 
 ---
 
-## รอบนี้ — **ข้อ BK: เปิดคำขอเต็มหน้าที่ `/requests/REQ-000042` · ช่องค้นหาคำขอรอกด Enter** (M28 Agent ยังทำอยู่ — ยังไม่ commit)
+## รอบนี้ — **ข้อ BL: หน้า Governance จัดเป็นตารางเดียว คอลัมน์ตรงกัน** (Preauthorization กำลังทำ — ยังไม่ commit · M28 ยังไม่ commit)
+
+ผู้ใช้: *"หน้า Governance ยังจัดเรียงไม่ค่อยสวย"* — เดิมทุกค่าเป็นการ์ดแยกมีขอบของตัวเอง ลูกเยื้องด้วย margin · ตัวเลข assets / policies ลอยไม่ตรงคอลัมน์ · ปุ่ม Expand / Collapse ลอยกลางแถว · sub-domain โชว์ FQN ยาวซ้ำชื่อพ่อ + description ที่ซ้ำชื่อตัวเอง
+
+### BL.1 ที่เปลี่ยน (`GovernancePage.tsx` ไฟล์เดียว — frontend ล้วน)
+- `VocabularyTable`: การ์ดเดียวต่อแท็บ · หัวตาราง **Name / Assets / Policies** ครั้งเดียว · แถวคั่นด้วย `divide-y` · คอลัมน์ Assets `w-36` + Policies `w-24` ชิดขวา `tabular-nums` → ตัวเลขตรงกันทั้งหน้า
+- แถว: เยื้องด้วย `paddingLeft: 16 + depth*24` · root ตัวหนา · มี chip จำนวนลูก ("3 tags" / "4 sub-domains" / "2 terms") · hover เป็น `bg-secondary`
+- FQN แสดงเฉพาะ root (ถ้าต่างจากชื่อ) · แถวลูกย้าย FQN ไปเป็น tooltip (`title`) — tree บอก path อยู่แล้ว
+- description ที่ซ้ำชื่อ (ไม่สนตัวพิมพ์) ไม่แสดง · Assets = 0 เป็นสีเทา (ยังเป็นลิงก์ไป catalog เหมือนเดิม)
+- toolbar: ช่อง Filter ซ้าย · Expand all / Collapse all ชิดขวา (`ml-auto`)
+- Data products: ตารางแยกใต้หัวข้อของตัวเอง · Custom properties: ตาราง Property / Applies to · type / Values and description
+- empty state: ไม่มีอะไรตรง filter → *"Nothing here matches “x”."* · ไม่มี custom property → บอกว่ายังไม่มีใน OM
+- พฤติกรรมเดิมคงไว้ทั้งหมด: prune ตาม filter (เก็บพ่อของตัวที่ตรง) · expand/collapse all แบบ nonce · facet ของลิงก์ (classification vs tag / glossary vs term)
+
+### BL.2 ผลทดสอบ
+- tsc + build ผ่าน · jest **449/449** · screenshot 3 แท็บ (Classifications / Domains / Custom properties) ตรวจด้วยตา — คอลัมน์ตรง, sub-domain อ่านได้, empty state ขึ้น
+
+---
+
+## รอบก่อนหน้า — **ข้อ BK: เปิดคำขอเต็มหน้าที่ `/requests/REQ-000042` · ช่องค้นหาคำขอรอกด Enter** (M28 Agent ยังทำอยู่ — ยังไม่ commit)
 
 ผู้ใช้: *"อยากให้สามารถกดดู Ticket นั้นเต็มหน้าได้ เช่น Click เข้าไป หรือเอา URL ไปเปิด"* · *"ทำไมที่ Search ตรงนี้ พิมตัวนึงแล้วมันหาเลย ไม่รอกด enter"*
 
@@ -5824,6 +5843,7 @@ estate ที่ใช้: `prod-mssql.SalesDB.dbo.{customer, order}` + **`prod-
 - ✅ **ข้อ AY เสร็จแล้ว** (Open in OpenMetadata ไม่ 500 · Request access มุมขวาบน · หัวหน้า asset แบบ OM · seed เคส demo) — ต่อด้วย **M9 slice 2** ข้างล่าง
 
 0. ✅ **M10 เสร็จ (ข้อ BE)** — Query log ตามหน้าที่ (V25) + Access Control Dashboard · **ต่อไป:** M9 recertification · แนบไฟล์ในคำขอ · export / SIEM ของ M8
+0-BL. ✅ **ข้อ BL เสร็จ** — หน้า Governance เป็นตารางเดียว หัว Name / Assets / Policies คอลัมน์ตรงกัน · FQN ยาวของ sub-domain ย้ายเป็น tooltip · empty state · **ต่อไป:** Preauthorization Access Request (V30 + store เขียนแล้ว ยังไม่ commit) · AI ใน Catalog / global search · Dashboard ปรับแต่งได้ · M28
 0-BK. ✅ **ข้อ BK เสร็จ** — คำขอเปิดเต็มหน้าที่ `/requests/REQ-000042` (ปุ่ม Full page / ลิงก์เลข ticket / วาง URL) · ช่องค้นหาคำขอรอ Enter · **ต่อไป:** Preauthorization Access Request · Dashboard ปรับแต่งได้ (coverage แยกตาม classification + เลือก measure + จัด layout เอง) · M28
 0-BJ. ✅ **ข้อ BJ เสร็จ** — Catalog แสดง hierarchy: ปุ่ม List / Hierarchy (tree โหลดทีละชั้น) + แท็บ Databases / Schemas / Tables ในหน้า container · `?parent=` + `childCount` · **ต่อไป:** Preauthorization Access Request · M28 แชท agent
 0-BI. ✅ **ข้อ BI เสร็จ** — เลข Ticket ของคำขอ REQ-000042 (V28) ค้นหา / copy ได้ · **ต่อไป:** Preauthorization Access Request (ตาม tag / attribute ของ table → ให้ attribute ของคน หรือ group) · Catalog แสดง hierarchy (Database → Schema → Table) · M28 แชท agent
