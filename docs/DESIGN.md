@@ -335,6 +335,20 @@ AI output guard (PII ใน prompt / output / citation) · pre-filter สำห�
 `TOKENIZE` / `FPE` (FF1) แบบย้อนกลับได้ + `DETOKENIZE` ขอผ่าน access request · TLS บังคับทุก source · เข้ารหัส SQL ใน `audit_query` ได้ ·
 ไม่เข้ารหัสข้อมูลใน table ของลูกค้าแทนเขา (ข้อตัดสินใจที่ 8)
 
+### FR-16 Personal Security Health Dashboard — M23 ⬜ (ผู้ใช้ขอ 2026-09-25)
+ทุกคนเปิดได้ เห็นเฉพาะของตัวเอง: table ที่เข้าถึงได้ + ได้มาทางไหน (grant · policy · owner) + mask / row filter · grant ใกล้หมดอายุ + นับถอยหลัง ·
+query และการถูกปฏิเสธของตัวเอง · สิทธิ์ที่ไม่ได้ใช้ ≥ 90 วัน + คืนสิทธิ์เอง · checklist ความปลอดภัย (PII ที่ไม่ได้ใช้ · grant ไม่มีวันหมด · นอกเวลา · ความผิดปกติจาก M19) · ไม่โชว์ IP ดิบ
+
+### FR-17 Automated Query Risk Blocker — M24 ⬜ (ผู้ใช้ขอ 2026-09-25)
+ด่านหลัง rewrite ก่อน execute: กฎจาก AST (ไม่มี WHERE บน table ใหญ่ · cartesian join · `SELECT *` บน PII · PII จำนวนมาก) · `EXPLAIN` ประเมิน cost ·
+คะแนนความเสี่ยง → `ALLOW` / `WARN` / `REQUIRE_PURPOSE` / `BLOCK` ตั้งได้ใน Configure · LLM อธิบายจากโครงสร้างที่ตัด literal ออกแล้ว แต่ไม่เป็นคนตัดสิน ·
+ใช้ baseline ของ M19 · ผลลง `audit_query` · ต่อยอดของที่มีแล้ว (read-only · fail-closed · `MAX_ROWS` 5,000 · timeout 30 วินาที)
+
+### FR-18 On-Demand Test Data Synthesis — M25 ⬜ (ผู้ใช้ขอ 2026-09-25)
+profile สถิติผ่าน proxy ด้วยสิทธิ์ของคนขอ + Differential Privacy (ε ตั้งได้) · generate ใน ARAK (Gaussian copula → CTGAN / TVAE) รักษา PK / FK ·
+LLM เห็นแค่ชื่อ / คำอธิบาย column ไม่เห็นแถวจริง · ตรวจ exact / near match + membership inference ก่อนส่งมอบ · รายงาน ε + คะแนน fidelity / privacy แทนการอ้าง 100% ·
+ส่งออกเป็นไฟล์ หรือเขียนลง sandbox ที่ ARAK เป็นเจ้าของ (ข้อตัดสินใจที่ 8)
+
 ### FR-10 Non-Functional
 | # | | สถานะ |
 |---|---|---|
@@ -376,6 +390,9 @@ AI output guard (PII ใน prompt / output / citation) · pre-filter สำห�
 | **M20** | MAC เต็มรูปแบบ — sensitivity level ที่เรียงลำดับได้ (FR-12) | – | ⬜ |
 | **M21** | AI Data Access Control (FR-14) | – | ⬜ ต้องมี M14 |
 | **M22** | Encryption / Decryption ของข้อมูล — key rotation · Vault · decrypt-on-read · tokenization / FPE (FR-15) | – | ⬜ |
+| **M23** | Personal Security Health Dashboard (FR-16) | – | ⬜ ต้องมี M10 · ส่วนความผิดปกติต้องมี M19 |
+| **M24** | Automated Query Risk Blocker (FR-17) | – | ⬜ ต้องมี M10 · ส่วน AI ต้องมี M11 |
+| **M25** | On-Demand Test Data Synthesis (FR-18) | – | ⬜ |
 
 **ลำดับ:** M0 → M1 → M2 → M3 → (M4 ‖ M5 ‖ M6 ‖ M7) → M7b → M8
 หลัง M3 fix `PolicyDecision` แล้ว **compiler 3 ตัวทำขนานกันได้** — นี่คือผลตอบแทนของการลงทุนทำ Policy IR ตั้งแต่ต้น

@@ -50,6 +50,9 @@ Phase 1 รองรับ SQL Server + PostgreSQL · identity หลักค�
 | **M20 MAC เต็มรูปแบบ — sensitivity level ที่เรียงลำดับได้** | ⬜ **Roadmap ใหม่ — ผู้ใช้ถาม 2026-09-25 ว่า DAC / MAC / RBAC / ABAC มีครบไหม** · DAC ✅ (owner ให้ grant เอง + อนุมัติคำขอ) · RBAC ✅ (`role` / `team` / `group` / `user` / `assetOwner`) · ABAC ✅ (`attributes` · `expression` · `time` · `context.ipCidr` / `purpose`) · **MAC ⚠️ ได้บางส่วน** — เขียนเป็น ORG policy แบบ DENY ได้ (local ผ่อนไม่ได้ และ owner ให้ grant ทะลุไม่ได้) แต่ `gte` เทียบ clearance ด้วยการเรียงตัวอักษร (`Comparisons.compare`) จึงใช้ได้กับชื่ออย่าง `L1 < L2` เท่านั้น · `Public < Internal < Confidential < Secret` เรียงผิด และระดับของ table ยังไม่ผูกกับ clearance อัตโนมัติ · ดูข้อ AP.10 |
 | **M21 AI Data Access Control** | ⬜ **Roadmap ใหม่ — ผู้ใช้ขอ 2026-09-25** · คุมว่า AI model / agent ดึงข้อมูลอะไรได้ ตามตัวตน สิทธิ์ และบริบทของ **user ที่ agent ทำงานแทน** · เทียบ 6 ข้อที่ผู้ใช้ส่งมา: runtime authorization ✅ (ฝั่ง SQL) · identity binding ⚠️ · row/column ✅ แต่ vector chunk ❌ · classification ⚠️ (ใช้ของ OM) · redaction ✅ ในผลลัพธ์ query แต่ ❌ ใน prompt / output ของ LLM · centralized enforcement ⚠️ · **ช่องว่างหลัก: ยังไม่มีช่องทางให้ agent เรียก ARAK ในนาม user** → agent registry + delegated token (RFC 8693) + ARAK MCP server + AI output guard + filter สำหรับ vector store · ต้องมี M14 ก่อน · ดูข้อ AP.12 |
 | **M22 Encryption / Decryption ของข้อมูล** | ⬜ **Roadmap ใหม่ — ผู้ใช้ถาม 2026-09-25 ว่ามีระบบ Encryption / Decryption ไหม** · **ที่มีแล้วคุมแค่ความลับของระบบเอง ไม่ใช่ตัวข้อมูล:** credential ของ source และ LLM key ถูก seal ด้วย Fernet (`SecretBox` · `FERNET_KEY`) · MSSQL ต่อด้วย `encrypt=true` · mask `HASH` เป็น SHA-256 ทางเดียว ถอดกลับไม่ได้ · **ยังไม่มี:** ถอดรหัส column ที่ source เก็บแบบเข้ารหัสไว้ให้เฉพาะคนที่ policy อนุญาต · tokenization / FPE แบบย้อนกลับได้ · หมุนกุญแจ (key rotation) · Vault / Azure Key Vault ใช้จริง (ตอนนี้รับ reference แต่ resolve ไม่ได้) · TLS บังคับทุก source · เข้ารหัส SQL ที่เก็บใน audit · ดูข้อ AP.13 |
+| **M23 Personal Security Health Dashboard** | ⬜ **Roadmap ใหม่ — ผู้ใช้ขอ 2026-09-25** · หน้าส่วนตัวของแต่ละคน: ตอนนี้ฉันเข้าถึงอะไรได้บ้าง และปลอดภัยไหม · **ต่อยอดของที่มีแล้ว:** การ์ด Home "what applies to you" · grant ใกล้หมดอายุ + นับถอยหลัง (M9 slice 2c) · query log ของตัวเอง (M10) · **ใหม่:** รวมทุกช่องทางที่ทำให้เข้าถึงได้ (grant · policy ตาม role / team / attribute · owner) พร้อมระดับความอ่อนไหว · สิทธิ์ที่ไม่ได้ใช้ ≥ 90 วัน + ปุ่มคืนสิทธิ์ · คะแนน / checklist ความปลอดภัยส่วนตัว · การแจ้งเตือนความผิดปกติจาก M19 · ดูข้อ AP.14 |
+| **M24 Automated Query Risk Blocker** | ⬜ **Roadmap ใหม่ — ผู้ใช้ขอ 2026-09-25** · ประเมินความเสี่ยงของ SQL **ก่อนส่งไป database** แล้วเตือน / ขอเหตุผล / บล็อก · **ที่มีแล้ว:** read-only (SELECT อย่างเดียว) · fail-closed ถ้า parse หรือ resolve table ไม่ครบ · จำกัดแถว `MAX_ROWS` 5,000 · timeout 30 วินาที · **ใหม่:** กฎตรวจโครงสร้าง (ไม่มี WHERE บน table ใหญ่ · cartesian join · `SELECT *` บน PII · ดึง PII จำนวนมาก) · ประเมิน cost ด้วย `EXPLAIN` · คะแนนความเสี่ยง + นโยบาย WARN / REQUIRE_PURPOSE / BLOCK · LLM อธิบายความเสี่ยงจากโครงสร้างที่ตัดค่าจริงออกแล้ว · ดูข้อ AP.15 |
+| **M25 On-Demand Test Data Synthesis** | ⬜ **Roadmap ใหม่ — ผู้ใช้ขอ 2026-09-25** · สร้างข้อมูลจำลอง (synthetic data) จาก table จริงเพื่อใช้ทดสอบ / เทรนโมเดล · เรียนสถิติผ่าน proxy ด้วย Differential Privacy (ε กำหนดได้) · รักษาความสัมพันธ์ข้าม table ตาม PK / FK · ส่งออกเป็นไฟล์ หรือเขียนลง sandbox ที่ ARAK เป็นเจ้าของ · **ระวังคำโฆษณา:** "เหมือนจริง 100%" กับ "ปลอดภัย 100%" ทำพร้อมกันไม่ได้ — จะรายงานค่า ε และคะแนน fidelity / privacy ให้เห็นแทน · ดูข้อ AP.16 |
 
 **ที่รันอยู่ตอนนี้**
 | | |
@@ -74,7 +77,7 @@ Phase 1 รองรับ SQL Server + PostgreSQL · identity หลักค�
 
 ---
 
-## Roadmap ที่เพิ่มรอบนี้ — **M13 · M14 · M15 · M16 · M17 · M18 · M19 · M20 · M21 · M22** (ผู้ใช้ขอ 2026-09-24 · M19 / M20 / M21 / M22 / ไฟล์แนบของ M9 ขอ 2026-09-25)
+## Roadmap ที่เพิ่มรอบนี้ — **M13 · M14 · M15 · M16 · M17 · M18 · M19 · M20 · M21 · M22 · M23 · M24 · M25** (ผู้ใช้ขอ 2026-09-24 · M19–M25 / ไฟล์แนบของ M9 ขอ 2026-09-25)
 
 ผู้ใช้สั่งว่า *"ช่วยเพิ่ม Roadmap เพิ่ม Access Control ให้เรามีความพิเศษ"* แล้วให้มาสามข้อ
 แล้วขอเพิ่มข้อที่สี่ ห้า และหกตามมาในวันเดียวกัน (M16, M17, M18)
@@ -541,6 +544,48 @@ agent ขยายสิทธิ์ตัวเองไม่ได้ · ค�
 **ข้อที่ห้ามทำ** — ตามข้อตัดสินใจที่ 8 ARAK **ไม่ ALTER COLUMN / ไม่เข้ารหัสข้อมูลใน table ของลูกค้าแทนเขา** (ไม่เขียนข้อมูลลง source) · Always Encrypted และ DDM ของ MSSQL อยู่นอกขอบเขต ·
 กุญแจ · plaintext ที่ถอดแล้ว และ IP ของผู้ใช้ ห้ามอยู่ใน response ของ log ใดๆ
 
+### AP.14 M23 — Personal Security Health Dashboard (ผู้ใช้ขอ 2026-09-25)
+
+ผู้ใช้ขอ *"หน้าต่างแดชบอร์ดส่วนตัว ที่บอกว่าตอนนี้เรามีสิทธิ์เข้าถึงอะไรบ้างและปลอดภัยไหม"* · ต่างจาก M10 ตรงที่ M10 เป็นภาพรวมทั้งองค์กรสำหรับ admin / author / auditor ส่วน M23 **ทุกคนเปิดได้และเห็นแค่ของตัวเอง**
+
+| ส่วน | เนื้อหา | ของที่มีอยู่แล้ว |
+|---|---|---|
+| **ฉันเข้าถึงอะไรได้** | ทุก table ที่เข้าได้ พร้อมบอกว่า**ได้มาทางไหน** (grant ตรง · policy ตาม role / team / attribute · เป็น owner) · สิ่งที่ถูก mask หรือกรองแถว · ระดับความอ่อนไหว (PII · M20) | engine ตอบได้ทีละ table แล้ว (Simulator · explainability) · ต้องทำตัวรวบรวมทั้ง catalog แบบ cache |
+| **กำลังจะหมด** | grant ที่ใกล้หมดอายุ + นับถอยหลัง · ปุ่มขอต่ออายุ (M9) | ✅ M9 slice 2c (requester เห็นของตัวเองอยู่แล้ว) |
+| **ใช้จริงแค่ไหน** | query ของฉัน 30 วัน · ถูกปฏิเสธกี่ครั้งเพราะอะไร · **สิทธิ์ที่ไม่ได้ใช้ ≥ 90 วัน + ปุ่มคืนสิทธิ์เอง** | query log (M10) · `audit_decision` |
+| **ปลอดภัยไหม** | checklist แทนคะแนนลอยๆ: มีสิทธิ์ PII ที่ไม่ได้ใช้ · grant ไม่มีวันหมดอายุ · เข้าถึงนอกเวลาทำงาน · query นอก IP ปกติ · ความผิดปกติที่ M19 จับได้ · กิจกรรมล่าสุดในชื่อฉัน (ถ้าไม่ใช่ฉัน → แจ้ง security) | M19 (ยังไม่ทำ) |
+
+**กฎ** — เห็นเฉพาะของตัวเอง (principal = คนที่ login) · ห้ามโชว์ IP ดิบแม้จะเป็นของตัวเอง (โชว์ได้แค่ "เครือข่ายปกติ / ไม่ปกติ") · ไม่บอกว่ามี table ที่ตัวเองไม่มีสิทธิ์อยู่ · คืนสิทธิ์ = revoke grant ของตัวเอง + บันทึก audit
+
+### AP.15 M24 — Automated Query Risk Blocker (ผู้ใช้ขอ 2026-09-25)
+
+ผู้ใช้ขอให้ *"ตรวจสอบและสกัดกั้น Query ที่เสี่ยงเกินไป ก่อนที่คำสั่งจะรันใน Database"* — เตือนก่อนทำพัง (ดึงเยอะเกิน · ลืม WHERE) และกันข้อมูลรั่วแบบไม่ได้ตั้งใจ
+
+**ที่มีแล้วใน proxy (5.2):** SELECT อย่างเดียว · fail-closed เมื่อ parse หรือ resolve table ไม่ครบ · policy ถูกเขียนลงใน statement ก่อนส่ง · จำกัดแถว `MAX_ROWS` 5,000 (default 200) · timeout 30 วินาที
+
+**ที่จะทำ** — ด่านใหม่ **หลัง rewrite และก่อน execute** ใน `QueryService.run`:
+1. **กฎตรวจโครงสร้าง (deterministic ไม่ใช้ AI)** จาก AST ของ JSqlParser: ไม่มี WHERE / LIMIT บน table ใหญ่ (ขนาดจาก catalog หรือ `pg_class.reltuples`) · cartesian join / join ไม่มีเงื่อนไข · `SELECT *` บน table ที่มี PII · ดึง column PII จำนวนมาก · subquery ซ้อนลึก · `ORDER BY` บน table ใหญ่ที่ไม่มี index
+2. **ประเมิน cost ด้วย `EXPLAIN`** (ไม่ใช่ `EXPLAIN ANALYZE` — ห้ามรันจริง) บน statement ที่ rewrite แล้ว → estimated rows / cost
+3. **คะแนนความเสี่ยง + action ที่ admin ตั้งได้ใน Configure:** `ALLOW` · `WARN` (ต้องกดยืนยัน) · `REQUIRE_PURPOSE` (ต้องใส่เหตุผล → ลง audit) · `BLOCK` (เสนอให้ขอสิทธิ์พิเศษหรือแก้ query)
+4. **AI ช่วยอธิบาย (M11 gateway)** — ส่ง**โครงสร้างของ query ที่ตัดค่าจริงออกแล้ว** (literal → `?`) + metadata เท่านั้น ตามกฎ "LLM เห็นแค่ metadata" · LLM อธิบายและเสนอ query ที่ปลอดภัยกว่า **แต่ไม่เป็นคนตัดสิน** — การบล็อกมาจากกฎข้อ 1–3 เสมอ
+5. **เรียนจากพฤติกรรม** — ใช้ baseline ของ M19 (เช่น ปกติดึง 10 แถว วันนี้ 5,000 ตอนตี 3) มาเพิ่มคะแนน
+6. ผลการประเมินลง `audit_query` (คะแนน · กฎที่โดน · action) และเห็นใน query log / Dashboard (M10)
+
+### AP.16 M25 — On-Demand Test Data Synthesis (ผู้ใช้ขอ 2026-09-25)
+
+ผู้ใช้ขอ *"ระบบแปลงตารางจริงเป็นข้อมูลจำลอง (Synthetic Data) อัตโนมัติ"* ให้ Data Analyst / Dev เอาไปเทรนโมเดลหรือทดสอบ app ได้ทันที โดยไม่มีข้อมูลลูกค้าจริงหลุด (Differential Privacy + Generative AI)
+
+**ข้อที่ต้องบอกตรงๆ** — *"ความสัมพันธ์เหมือนตารางจริง 100%"* กับ *"ปลอดภัย 100%"* **เป็นไปพร้อมกันไม่ได้** · ยิ่งเหมือนจริงมาก ยิ่งเสี่ยงหลุดข้อมูลจริง (เช่น แถวที่มีลักษณะเฉพาะตัว) ·
+ระบบจะให้ตั้ง **ค่า ε ของ Differential Privacy** (ยิ่งต่ำ ยิ่งปลอดภัย แต่เหมือนจริงน้อยลง) และ**รายงานคะแนน fidelity และ privacy ทุกครั้ง** แทนการอ้าง 100%
+
+**การทำงาน**
+1. **Profile ผ่าน proxy** — อ่านสถิติ (distribution · ความสัมพันธ์ระหว่าง column · cardinality) ด้วย**สิทธิ์ของคนขอ** (column ที่ถูก mask ก็ได้สถิติของค่าที่ mask) · ใส่ noise แบบ DP ตั้งแต่ขั้นนี้
+2. **Generate** — โมเดลสถิติที่รันใน ARAK เอง (Gaussian copula ก่อน · CTGAN / TVAE ทีหลัง) · **รักษา PK / FK ข้าม table** จาก `tableConstraints` ของ OpenMetadata ·
+   LLM ใช้ได้แค่สร้างค่าที่ดูสมจริงจาก**ชื่อและคำอธิบายของ column** (ชื่อคน · ที่อยู่) — **ห้ามส่งแถวจริงให้ LLM**
+3. **ตรวจก่อนส่งมอบ** — ไม่มีแถวที่ตรงกับแถวจริง (exact / near match) · membership-inference test · คะแนน fidelity ต่อ column และต่อคู่ column
+4. **ส่งมอบ** — ดาวน์โหลด CSV / Parquet หรือเขียนลง **sandbox database ที่ลงทะเบียนไว้เป็นปลายทางของ synthetic data และ ARAK เป็นเจ้าของ object** (ตามข้อตัดสินใจที่ 8 — ไม่เขียนลง table ของลูกค้า)
+5. **คุมสิทธิ์** — ต้องมีสิทธิ์อ่าน table ต้นทางก่อน (ขอผ่าน M9 ได้) · ชุดข้อมูลติด label `synthetic` + ε + ที่มา · ทุกครั้งที่สร้างลง audit
+
 ### AP.8 ลำดับที่แนะนำ
 
 ```
@@ -561,6 +606,9 @@ M20       ทำแยกได้เลย  (engine มีครบแล้ว
 ไฟล์แนบ M9  ทำแยกได้เลย  (ต่อจาก access_request ที่มีแล้ว · ต้องมี volume ที่ backup ได้บน prod ก่อนเปิดใช้)
 M14 → M21 (agent เรียก ARAK ผ่าน public API · slice 7 ต้องมี M20 · slice 8 ต้องมี M19)
 M22 ข้อ 1 (key management) ก่อนข้ออื่น · ข้อ 3 `DETOKENIZE` ขอผ่าน M9 · ข้อ 4 แสดงผลใน Health ของ M10
+M10 → M23 (ใช้ query log ของ M10 · ส่วน "ปลอดภัยไหม" เต็มรูปแบบต้องมี M19)
+M10 → M24 (ข้อ 1–3 ทำได้เลยหลัง query log · ข้อ 4 ต้องมี M11 · ข้อ 5 ต้องมี M19)
+M25 ทำแยกได้ (profile ผ่าน proxy ที่มีแล้ว · sandbox ใช้ source registry ของ M18)
 
 2026-09-24 ผู้ใช้สั่งสลับลำดับ: **M18 ขึ้นก่อนทุกอย่าง และเริ่มที่ฝั่ง proxy**
   (`ปรับมาทำส่วนนี้ก่อนเลย เพื่อสร้างฐานให้แข็งแรง`) → เหตุผลอยู่ที่ AP.7a
