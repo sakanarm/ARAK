@@ -5,6 +5,8 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * What the assistant is allowed to say, and what it is allowed to be told
@@ -109,6 +111,163 @@ public final class AssistPrompts {
 
   public static String sqlUser(String question, String brief) {
     return "Tables:\n\n" + brief + "\n\nQuestion: " + question.trim();
+  }
+
+  // ------------------------------------------------------- fix and explain (M26)
+
+  /** How much of a database's error is passed on. The first line is the useful one. */
+  public static final int MAX_ERROR = 400;
+
+  /** How much of an explanation is shown. A paragraph and a few steps fit in this. */
+  public static final int MAX_EXPLANATION = 4000;
+
+  /**
+   * The standing instruction for repairing a statement that failed.
+   *
+   * <p>Only ever offered for a failure of the statement itself -- a typo, a
+   * missing schema, a construct the proxy cannot read, an error from the
+   * database. A refusal a policy made is not offered for repair at all, and the
+   * prompt says so as well: a model asked to "make this work" after a denial
+   * would reach for a different table holding the same data, which is the one
+   * suggestion this platform must never make.
+   */
+  public static String fixSystem(String engine) {
+    return "You repair one SQL SELECT statement for a "
+        + (notBlank(engine) ? engine : "SQL")
+        + " database. It failed, and you are given the error.\n"
+        + "Rules:\n"
+        + "- Answer with the corrected statement and nothing else. No prose, no fences, no"
+        + " explanation.\n"
+        + "- Exactly one statement. SELECT, or WITH followed by SELECT. Never INSERT, UPDATE,"
+        + " DELETE, MERGE, CREATE, ALTER, DROP, GRANT, REVOKE, TRUNCATE or CALL.\n"
+        + "- Change only what the error is about. Keep the columns, filters, grouping and"
+        + " ordering the writer chose.\n"
+        + "- Use only the tables and columns listed. Write table names exactly as they are"
+        + " listed, with their schema. Never invent a column.\n"
+        + "- The platform enforces access after you and may mask, hide or refuse. Never try to"
+        + " get around that: do not swap a table for another that holds the same data, and do"
+        + " not mask, hash or unmask anything yourself.\n"
+        + "- If you cannot tell what is wrong, or the fix needs a table or column that is not"
+        + " listed, answer with the single word UNANSWERABLE.";
+  }
+
+  public static String fixUser(String sql, String error, String brief) {
+    return "Tables:\n\n"
+        + (notBlank(brief) ? brief : "(none listed)")
+        + "\n\nStatement:\n\n"
+        + sql.trim()
+        + "\n\nError:\n\n"
+        + (notBlank(error) ? error : "(no message)");
+  }
+
+  /**
+   * The standing instruction for explaining a statement.
+   *
+   * <p>The model is shown the statement and the catalogue, never a result. It
+   * therefore explains what the statement asks for, not what it returned, and
+   * it is told that it cannot know what this reader will be shown.
+   */
+  public static String explainSystem(String engine) {
+    return "You explain one SQL statement for a "
+        + (notBlank(engine) ? engine : "SQL")
+        + " database to the person about to run it.\n"
+        + "Rules:\n"
+        + "- Plain prose. Start with one or two sentences on what the statement answers, then"
+        + " at most six short bullet points on how: which tables it reads, how they are"
+        + " joined, what it filters, groups and orders by, and what one row of the result"
+        + " means.\n"
+        + "- Keep it under 200 words. Do not repeat the statement back, and do not rewrite it.\n"
+        + "- Use the table and column descriptions listed to say what things mean. If the"
+        + " statement names a table or column that is not listed, say so.\n"
+        + "- If there is an obvious mistake -- a join with no condition, a filter that can"
+        + " never be true, a GROUP BY that does not match the SELECT -- say so in one line at"
+        + " the end.\n"
+        + "- You have not seen any data and must not guess values. Columns marked with a tag"
+        + " are governed: the platform may mask or hide them for this reader when it runs, so"
+        + " do not promise what they will show.";
+  }
+
+  public static String explainUser(String sql, String brief) {
+    StringBuilder out = new StringBuilder();
+    if (notBlank(brief)) {
+      out.append("Tables:\n\n").append(brief).append("\n\n");
+    }
+    return out.append("Statement:\n\n").append(sql.trim()).toString();
+  }
+
+  /** An explanation, trimmed and capped. It is shown as plain text, never as markup. */
+  public static String extractExplanation(String answer) {
+    if (answer == null) {
+      return "";
+    }
+    String text = answer.trim();
+    return text.length() <= MAX_EXPLANATION
+        ? text
+        : text.substring(0, MAX_EXPLANATION - 1).trim() + "…";
+  }
+
+  /**
+   * Whether two statements are the same once spacing, case and a trailing
+   * semicolon are set aside -- so that a "fix" that changed nothing is reported
+   * as nothing to change rather than offered as a suggestion.
+   */
+  public static boolean sameStatement(String a, String b) {
+    return squash(a).equals(squash(b));
+  }
+
+  private static String squash(String sql) {
+    String text = sql == null ? "" : sql.trim();
+    while (text.endsWith(";")) {
+      text = text.substring(0, text.length() - 1).trim();
+    }
+    return text.replaceAll("\\s+", " ").toLowerCase(Locale.ROOT);
+  }
+
+  private static final Pattern QUOTED = Pattern.compile("'((?:[^']|'')*)'|\"((?:[^\"]|\"\")*)\"");
+
+  /** A key and its value, as PostgreSQL reports them: {@code Key (id)=(42)}. */
+  private static final Pattern KEY_VALUE = Pattern.compile("\\)=\\([^)]*\\)");
+
+  /** Lines a PostgreSQL error adds after the message. DETAIL and WHERE can quote a row. */
+  private static final Pattern DETAIL_LINE =
+      Pattern.compile("(?m)^\\s*(Detail|DETAIL|Where|WHERE|Internal Query|Position|POSITION):.*$");
+
+  /**
+   * A database's error, with anything that could be a value from a row taken
+   * out before it goes near a gateway.
+   *
+   * <p>The rule that the assistant never sees a row covers the error too. The
+   * statement failed at the source, and a source reporting why it could not
+   * convert a value will quote the value: {@code invalid input syntax for type
+   * integer: "abc"} on PostgreSQL, {@code Conversion failed when converting the
+   * varchar value 'abc'} on SQL Server. So every quoted token that is not
+   * already in the statement or the catalogue brief -- a column name, a table
+   * name, a literal the writer typed -- is replaced with {@code '…'}, the detail
+   * lines that echo a row are dropped, and what is left is flattened to one
+   * short line. What survives is the shape of the error, which is what a repair
+   * needs.
+   */
+  public static String redactError(String error, String sql, String brief) {
+    if (error == null || error.isBlank()) {
+      return "";
+    }
+    String known = ((sql == null ? "" : sql) + "\n" + (brief == null ? "" : brief)).toLowerCase(Locale.ROOT);
+    String text = DETAIL_LINE.matcher(error).replaceAll("");
+    text = KEY_VALUE.matcher(text).replaceAll(")=(…)");
+
+    Matcher quoted = QUOTED.matcher(text);
+    StringBuilder out = new StringBuilder();
+    while (quoted.find()) {
+      boolean single = quoted.group(1) != null;
+      String inner = single ? quoted.group(1) : quoted.group(2);
+      String keep =
+          inner.isEmpty() || known.contains(inner.toLowerCase(Locale.ROOT))
+              ? quoted.group()
+              : (single ? "'…'" : "\"…\"");
+      quoted.appendReplacement(out, Matcher.quoteReplacement(keep));
+    }
+    quoted.appendTail(out);
+    return oneLine(out.toString(), MAX_ERROR);
   }
 
   // ------------------------------------------------------------ policy drafts

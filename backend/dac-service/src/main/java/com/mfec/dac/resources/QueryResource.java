@@ -126,6 +126,11 @@ public class QueryResource {
     } catch (QueryService.RejectedException e) {
       Map<String, Object> refusal = new LinkedHashMap<>();
       refusal.put("message", e.getMessage());
+      // Whether a corrected statement is worth offering (M26): true for a typo
+      // or a construct the proxy cannot read, false for anything a policy said.
+      // The console shows "Fix with AI" on the first kind only, so a refusal on
+      // access is answered with the owner, never with a rewording.
+      refusal.put("fixable", e.aboutStatement());
       // A refusal that names a table is the one refusal with a way forward: the
       // table has an owner, and the engine can say whether a grant from them
       // would open it. Only for the caller's own identity -- an administrator

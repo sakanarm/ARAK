@@ -204,66 +204,35 @@ export function Sidebar({
       </ul>
 
       {/*
-        Compact: one quiet line under the links -- the copyright on the left and
-        the way to rearrange the rail on the right, as an icon. Comfortable: the
-        rail as it always was, a full-width button and the notice under it.
-        Collapsed, either way, there is no width for the notice.
+        One footer for both sizes, so Customize is in the same place whichever
+        is chosen: a line under the links, the copyright on the left and the way
+        to rearrange the rail on the right, as an icon. Comfortable only draws
+        it a little larger. Collapsed there is no width for the notice.
       */}
-      {compact ? (
-        <div
-          className={`tw:mx-3 tw:mt-2 tw:flex tw:shrink-0 tw:items-center tw:border-t tw:border-secondary tw:pt-2 ${
-            collapsed ? 'tw:justify-center' : 'tw:gap-2 tw:pl-2.5'
-          }`}>
-          {!collapsed && (
-            <p
-              className="tw:min-w-0 tw:flex-1 tw:truncate tw:text-xs tw:text-quaternary"
-              title="© 2026 MFEC. All rights reserved.">
-              &copy; 2026 MFEC
-            </p>
-          )}
-          <button
-            aria-label="Customize rail"
-            className="tw:flex tw:size-8 tw:shrink-0 tw:items-center tw:justify-center tw:rounded-md tw:text-fg-quaternary tw:outline-focus-ring tw:transition tw:duration-100 tw:hover:bg-primary_hover tw:hover:text-fg-secondary tw:focus-visible:outline-2"
-            onClick={openCustomizer}
-            title="Customize rail"
-            type="button">
-            <Sliders01 aria-hidden className="tw:size-4" />
-          </button>
-        </div>
-      ) : (
-        <>
-          <div className="tw:shrink-0 tw:px-3 tw:pt-3">
-            <button
-              aria-label={collapsed ? 'Customize rail' : undefined}
-              className={`tw:flex tw:h-10 tw:items-center tw:rounded-lg tw:text-sm tw:font-medium tw:text-tertiary tw:outline-focus-ring tw:transition tw:duration-100 tw:hover:bg-primary_hover tw:hover:text-secondary tw:focus-visible:outline-2 ${
-                collapsed ? 'tw:w-11 tw:justify-center' : 'tw:w-full tw:gap-3 tw:px-3.5'
-              }`}
-              onClick={openCustomizer}
-              title={collapsed ? 'Customize rail' : undefined}
-              type="button">
-              <Sliders01 aria-hidden className="tw:size-5 tw:shrink-0 tw:text-fg-quaternary" />
-              {!collapsed && <span>Customize rail</span>}
-            </button>
-          </div>
-          {/*
-            Left-aligned on the same 3.5 gutter as the nav labels above it, so
-            the rail reads as one column. Centred, it floated free of
-            everything else in the rail and drew more attention than a
-            copyright line deserves.
-          */}
-          {!collapsed && (
-            <div className="tw:shrink-0 tw:px-3 tw:pt-3">
-              <div className="tw:mx-3.5 tw:h-px tw:bg-border-secondary" />
-              <p className="tw:px-3.5 tw:pt-4 tw:text-xs tw:font-semibold tw:text-tertiary">
-                &copy; 2026 MFEC
-              </p>
-              <p className="tw:px-3.5 tw:pt-0.5 tw:text-xs tw:text-quaternary">
-                All rights reserved
-              </p>
-            </div>
-          )}
-        </>
-      )}
+      <div
+        className={`tw:mx-3 tw:flex tw:shrink-0 tw:items-center tw:border-t tw:border-secondary ${
+          compact ? 'tw:mt-2 tw:pt-2' : 'tw:mt-3 tw:pt-3'
+        } ${collapsed ? 'tw:justify-center' : compact ? 'tw:gap-2 tw:pl-2.5' : 'tw:gap-2 tw:pl-3.5'}`}>
+        {!collapsed && (
+          <p
+            className={`tw:min-w-0 tw:flex-1 tw:truncate tw:text-quaternary ${
+              compact ? 'tw:text-xs' : 'tw:text-sm'
+            }`}
+            title="© 2026 MFEC. All rights reserved.">
+            &copy; 2026 MFEC
+          </p>
+        )}
+        <button
+          aria-label="Customize rail"
+          className={`tw:flex tw:shrink-0 tw:items-center tw:justify-center tw:rounded-md tw:text-fg-quaternary tw:outline-focus-ring tw:transition tw:duration-100 tw:hover:bg-primary_hover tw:hover:text-fg-secondary tw:focus-visible:outline-2 ${
+            compact ? 'tw:size-8' : 'tw:size-10'
+          }`}
+          onClick={openCustomizer}
+          title="Customize rail"
+          type="button">
+          <Sliders01 aria-hidden className={compact ? 'tw:size-4' : 'tw:size-5'} />
+        </button>
+      </div>
 
       {customizing && (
         <RailCustomizer

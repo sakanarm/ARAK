@@ -15,6 +15,9 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import org.jsoup.Jsoup;
+import org.jsoup.nodes.Document;
+import org.jsoup.nodes.Element;
+import org.jsoup.safety.Cleaner;
 import org.jsoup.safety.Safelist;
 
 /**
@@ -81,6 +84,13 @@ public class HomeLayoutValidator {
    * <p>Link and image URLs are held to {@code http}/{@code https}/{@code mailto}
    * by the safelist's protocol rules, which is what stops {@code javascript:} and
    * {@code data:} from arriving inside an {@code href}.
+   *
+   * <p>A {@code button} is admitted, always as {@code type="button"}: with no
+   * script and no form it can do nothing, so it is only a shape. A
+   * {@code class} is admitted on a link or a button, but only the names in
+   * {@link #HTML_CLASSES} survive -- an arbitrary class would reach the
+   * console's own utilities ({@code fixed}, {@code inset-0}, {@code z-50}) and
+   * build the same overlay the {@code style} ban exists to stop.
    */
   private static final Safelist HTML_SAFELIST =
       Safelist.basicWithImages()
@@ -89,7 +99,10 @@ public class HomeLayoutValidator {
           .addAttributes("table", "summary")
           .addAttributes("th", "colspan", "rowspan", "scope")
           .addAttributes("td", "colspan", "rowspan")
-          .addAttributes("a", "target")
+          .addAttributes("a", "target", "class")
+          .addTags("button")
+          .addAttributes("button", "class")
+          .addEnforcedAttribute("button", "type", "button")
           // Opened in a new tab, so the dashboard is not replaced by whatever
           // was linked; `noopener` because a page opened with `target=_blank`
           // can otherwise navigate the opener via `window.opener`.
@@ -233,7 +246,33 @@ public class HomeLayoutValidator {
       return "";
     }
     String bounded = html.length() > max ? html.substring(0, max) : html;
-    return Jsoup.clean(bounded, "", HTML_SAFELIST);
+    // What Jsoup.clean does, with one step between cleaning and writing out.
+    Document clean = new Cleaner(HTML_SAFELIST).clean(Jsoup.parseBodyFragment(bounded, ""));
+    for (Element element : clean.body().select("[class]")) {
+      keepKnownClasses(element);
+    }
+    return clean.body().html();
+  }
+
+  /**
+   * The classes an HTML widget may use: the console's own button styles,
+   * defined under {@code .arak-prose} and nowhere else, so none of them can
+   * position anything.
+   */
+  static final Set<String> HTML_CLASSES = Set.of("arak-button", "arak-button-secondary");
+
+  private static void keepKnownClasses(Element element) {
+    Set<String> kept = new java.util.LinkedHashSet<>();
+    for (String name : element.classNames()) {
+      if (HTML_CLASSES.contains(name)) {
+        kept.add(name);
+      }
+    }
+    if (kept.isEmpty()) {
+      element.removeAttr("class");
+    } else {
+      element.attr("class", String.join(" ", kept));
+    }
   }
 
   private List<Map<String, Object>> cleanLinks(Object raw) {

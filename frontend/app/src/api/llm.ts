@@ -256,3 +256,50 @@ export async function assistPolicy(ask: PolicyAsk): Promise<PolicyDraft> {
   const { data } = await apiClient.post<PolicyDraft>('/v1/llm/assist/policy', ask);
   return data;
 }
+
+// ------------------------------------------------------- fix and explain (M26)
+
+/** A refused statement and what the refusal said, for a corrected draft. */
+export interface FixAsk {
+  sql: string;
+  /** The refusal as the reader saw it. The server strips quoted values first. */
+  error: string;
+  sourceId: string;
+  engine?: string;
+  model?: string;
+}
+
+export interface ExplainAsk {
+  sql: string;
+  /** Optional: with a source the explanation can name the tables' columns. */
+  sourceId?: string;
+  engine?: string;
+  model?: string;
+}
+
+/** Plain text, never markup: the console renders it as text. */
+export interface SqlExplanation {
+  text: string;
+  model: string;
+  tables: string[];
+  personal: boolean;
+}
+
+/**
+ * A corrected statement for one the proxy refused.
+ *
+ * Offered only for a refusal the server marked `fixable` -- a typo, a bare
+ * table name, an error from the source -- never for one a policy made. What
+ * comes back is placed in the editor at most; the reader still runs it, and it
+ * is enforced like anything they typed.
+ */
+export async function assistFix(ask: FixAsk): Promise<SqlDraft> {
+  const { data } = await apiClient.post<SqlDraft>('/v1/llm/assist/fix', ask);
+  return data;
+}
+
+/** What a statement does, in a few sentences. The assistant sees no rows. */
+export async function assistExplain(ask: ExplainAsk): Promise<SqlExplanation> {
+  const { data } = await apiClient.post<SqlExplanation>('/v1/llm/assist/explain', ask);
+  return data;
+}

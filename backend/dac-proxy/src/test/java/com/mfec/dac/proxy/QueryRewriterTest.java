@@ -259,4 +259,45 @@ class QueryRewriterTest {
         .isInstanceOf(QueryRewriter.RefusedException.class)
         .hasMessageContaining("not a governed asset");
   }
+
+  // ------------------------------------------------------- fixable (M26)
+
+  private QueryRewriter.RefusedException refusalOf(String sql, PolicyDecision decision) {
+    try {
+      rewriter.rewrite(sql, governing(decision));
+    } catch (QueryRewriter.RefusedException e) {
+      return e;
+    }
+    throw new AssertionError("expected a refusal for " + sql);
+  }
+
+  @Test
+  void aRefusalOfTheStatementIsOneARewordingCouldGetPast() {
+    // The four a corrected statement can answer: a typo, a missing schema, a
+    // table that is not there, a subquery where the proxy does not look.
+    assertThat(refusalOf("SELEC * FROM x", allowed()).aboutStatement()).isTrue();
+    assertThat(refusalOf("SELECT * FROM customer", allowed()).aboutStatement()).isTrue();
+    assertThat(refusalOf("SELECT * FROM sales.orders", allowed()).aboutStatement()).isTrue();
+    assertThat(
+            refusalOf("SELECT 1 WHERE EXISTS (SELECT 1 FROM sales.customer)", allowed())
+                .aboutStatement())
+        .isTrue();
+  }
+
+  @Test
+  void aRefusalAPolicyMadeIsNeverOfferedForRewording() {
+    PolicyDecision denied = allowed().withAllowed(false);
+    assertThat(refusalOf("SELECT * FROM sales.customer", denied).aboutStatement()).isFalse();
+    // Nor is a write: there is no read-only statement it could be fixed into
+    // that means the same thing.
+    assertThat(refusalOf("DELETE FROM sales.customer", allowed()).aboutStatement()).isFalse();
+    assertThat(refusalOf("", allowed()).aboutStatement()).isFalse();
+  }
+
+  @Test
+  void theDefaultIsAboutTheStatementAndADenialIsNot() {
+    assertThat(new QueryRewriter.RefusedException("x").aboutStatement()).isTrue();
+    assertThat(new QueryRewriter.RefusedException("x", false).aboutStatement()).isFalse();
+    assertThat(new QueryRewriter.DeniedException("a.b.c.d", "x").aboutStatement()).isFalse();
+  }
 }

@@ -225,8 +225,10 @@ describe('Sidebar', () => {
     await waitFor(() => expect(fetchRail).toHaveBeenCalled());
     const nav = screen.getByRole('navigation', { name: 'Sections' });
     expect(nav).toHaveAttribute('data-density', 'comfortable');
-    // The full-width button of the original rail, not the footer icon.
-    expect(screen.getByRole('button', { name: 'Customize rail' })).toHaveTextContent('Customize rail');
+    // Customize is the footer icon at either size, so it never moves.
+    const customize = screen.getByRole('button', { name: 'Customize rail' });
+    expect(customize).toHaveTextContent('');
+    expect(customize.parentElement).toHaveTextContent('2026 MFEC');
 
     const dialog = await openCustomizer();
     const comfortable = within(dialog).getByRole('radio', { name: /Comfortable/ });
@@ -244,7 +246,9 @@ describe('Sidebar', () => {
     expect(saveRail.mock.calls[0][1]).toBe('compact');
     expect(saveRail.mock.calls[0][0]).toHaveLength(sectionsFor(hasRole).length);
     await waitFor(() => expect(nav).toHaveAttribute('data-density', 'compact'));
-    expect(screen.getByRole('button', { name: 'Customize rail' })).toHaveTextContent('');
+    expect(screen.getByRole('button', { name: 'Customize rail' }).parentElement).toHaveTextContent(
+      '2026 MFEC'
+    );
   });
 
   it('reads a saved Compact rail, and an unknown size as the default', async () => {

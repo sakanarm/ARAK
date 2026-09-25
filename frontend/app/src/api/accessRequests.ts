@@ -193,6 +193,11 @@ export interface Refusal {
   stranded?: boolean;
   /** The stages a request would walk, when the server said. */
   route?: Route | null;
+  /**
+   * Whether the statement itself is what failed, so a corrected one is worth
+   * suggesting (M26). Never true for a refusal a policy made.
+   */
+  fixable?: boolean;
 }
 
 /**

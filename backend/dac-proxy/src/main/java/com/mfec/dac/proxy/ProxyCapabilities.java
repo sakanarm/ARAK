@@ -106,7 +106,8 @@ public final class ProxyCapabilities {
             + describe(missing)
             + ", which the query proxy cannot express on "
             + engine.displayName()
-            + ". Enforce this asset through a secure view instead.");
+            + ". Enforce this asset through a secure view instead.",
+        false);
   }
 
   private static String describe(List<String> capabilities) {

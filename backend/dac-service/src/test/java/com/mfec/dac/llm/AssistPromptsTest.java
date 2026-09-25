@@ -339,4 +339,122 @@ class AssistPromptsTest {
       assertThat(AssistPrompts.mostRelevant(List.of(order(), customer()), "xyzzy", 1)).hasSize(1);
     }
   }
+
+  @Nested
+  @DisplayName("fix and explain (M26)")
+  class FixAndExplain {
+
+    private static final String SQL =
+        "SELECT id, emial FROM prod-pg.SalesDB.dbo.customer WHERE branch_code = 'BKK-01'";
+
+    private String brief() {
+      return AssistPrompts.schemaBrief(List.of(customer()));
+    }
+
+    @Test
+    @DisplayName("redacts a value PostgreSQL quotes back")
+    void redactsPostgresValue() {
+      String out =
+          AssistPrompts.redactError(
+              "ERROR: invalid input syntax for type integer: \"4111-1111\"", SQL, brief());
+      assertThat(out).isEqualTo("ERROR: invalid input syntax for type integer: \"…\"");
+    }
+
+    @Test
+    @DisplayName("redacts a value SQL Server quotes back")
+    void redactsSqlServerValue() {
+      String out =
+          AssistPrompts.redactError(
+              "Conversion failed when converting the varchar value 'A-9921' to data type int.",
+              SQL,
+              brief());
+      assertThat(out)
+          .isEqualTo("Conversion failed when converting the varchar value '…' to data type int.");
+    }
+
+    @Test
+    @DisplayName("keeps names and literals that are already in the statement or the catalogue")
+    void keepsKnownTokens() {
+      String out =
+          AssistPrompts.redactError(
+              "column \"emial\" does not exist; did you mean \"email\"? near 'BKK-01'",
+              SQL,
+              brief());
+      assertThat(out)
+          .contains("\"emial\"")
+          .contains("\"email\"")
+          .contains("'BKK-01'");
+    }
+
+    @Test
+    @DisplayName("drops the detail lines that echo a row, and a key's value")
+    void dropsDetail() {
+      String out =
+          AssistPrompts.redactError(
+              "ERROR: something failed\n  Detail: Failing row contains (7, x@example.test)\n"
+                  + "  Where: SQL function \"f\"\n  Position: 9\nKey (id)=(42) is odd",
+              SQL,
+              brief());
+      assertThat(out)
+          .startsWith("ERROR: something failed")
+          .doesNotContain("Failing row")
+          .doesNotContain("x@example.test")
+          .doesNotContain("Position")
+          .doesNotContain("42")
+          .contains("Key (id)=(…)");
+    }
+
+    @Test
+    @DisplayName("flattens and caps what is left")
+    void caps() {
+      String out = AssistPrompts.redactError("a\n\n b " + "x".repeat(2000), SQL, brief());
+      assertThat(out).doesNotContain("\n").startsWith("a b ");
+      assertThat(out.length()).isLessThanOrEqualTo(AssistPrompts.MAX_ERROR);
+      assertThat(AssistPrompts.redactError(null, SQL, brief())).isEmpty();
+    }
+
+    @Test
+    @DisplayName("the fix prompt carries statement, catalogue and error, and forbids working around access")
+    void fixPrompt() {
+      String user = AssistPrompts.fixUser(SQL, "column \"emial\" does not exist", brief());
+      assertThat(user)
+          .contains(SQL)
+          .contains("prod-pg.SalesDB.dbo.customer")
+          .contains("email varchar")
+          .contains("column \"emial\" does not exist");
+      assertThat(AssistPrompts.fixSystem("PostgreSQL"))
+          .contains("PostgreSQL")
+          .contains("Change only what the error is about")
+          .contains("do not swap a table for another")
+          .contains("UNANSWERABLE");
+    }
+
+    @Test
+    @DisplayName("the explain prompt carries the statement, and says no data was seen")
+    void explainPrompt() {
+      assertThat(AssistPrompts.explainUser(SQL, brief()))
+          .contains(SQL)
+          .contains("prod-pg.SalesDB.dbo.customer");
+      assertThat(AssistPrompts.explainUser(SQL, "")).startsWith("Statement:");
+      assertThat(AssistPrompts.explainSystem(null))
+          .contains("SQL database")
+          .contains("You have not seen any data");
+    }
+
+    @Test
+    @DisplayName("an explanation is trimmed and capped")
+    void explanation() {
+      assertThat(AssistPrompts.extractExplanation("  Reads customers.  ")).isEqualTo("Reads customers.");
+      assertThat(AssistPrompts.extractExplanation(null)).isEmpty();
+      assertThat(AssistPrompts.extractExplanation("y".repeat(10_000)).length())
+          .isLessThanOrEqualTo(AssistPrompts.MAX_EXPLANATION);
+    }
+
+    @Test
+    @DisplayName("the same statement is recognised through spacing, case and a semicolon")
+    void sameStatement() {
+      assertThat(AssistPrompts.sameStatement("SELECT  id\nFROM t;", "select id from t")).isTrue();
+      assertThat(AssistPrompts.sameStatement("SELECT id FROM t", "SELECT id FROM u")).isFalse();
+    }
+  }
 }

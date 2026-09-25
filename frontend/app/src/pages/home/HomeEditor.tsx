@@ -568,7 +568,11 @@ function WidgetConfig({
       return (
         <label className="tw:flex tw:flex-col tw:gap-1 tw:sm:col-span-2">
           <span className="tw:text-xs tw:text-tertiary">
-            HTML — scripts, styles and frames are removed when this is saved
+            HTML — scripts, styles, frames and forms are removed when this is saved. For a button
+            that opens a page, write{' '}
+            <code className="tw:font-mono">{'<a href="https://…" class="arak-button">Open</a>'}</code>; the
+            only classes kept are <code className="tw:font-mono">arak-button</code> and{' '}
+            <code className="tw:font-mono">arak-button-secondary</code>.
           </span>
           <textarea
             className={`${FIELD} tw:min-h-32 tw:font-mono tw:text-xs`}

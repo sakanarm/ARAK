@@ -3,7 +3,7 @@
 > เอกสารนี้คือ **บันทึกความจำของโปรเจกต์** — รวม requirement ทุกข้อ, การตัดสินใจที่ตกลงแล้ว, สถานะงานจริง ณ ปัจจุบัน และวิธีรันระบบ
 > ถ้าเปิดคุยรอบใหม่ (หรือคนใหม่เข้าทีม) ให้เริ่มอ่านจากไฟล์นี้ก่อน แล้วค่อยไปอ่าน [policy-spec.md](policy-spec.md) และ [adr/](adr/)
 >
-> อัปเดตล่าสุด: 2026-09-16 · สถานะ: M1 กำลังทำ (FR-1.5 เสร็จ) · Repo: https://github.com/sakanarm/ARAK (**public**)
+> อัปเดตล่าสุด: 2026-09-26 · สถานะ: M1 กำลังทำ (FR-1.5 เสร็จ) · Repo: https://github.com/sakanarm/ARAK (**public**)
 
 ---
 
@@ -357,6 +357,27 @@ profile สถิติผ่าน proxy ด้วยสิทธิ์ขอ�
 LLM เห็นแค่ชื่อ / คำอธิบาย column ไม่เห็นแถวจริง · ตรวจ exact / near match + membership inference ก่อนส่งมอบ · รายงาน ε + คะแนน fidelity / privacy แทนการอ้าง 100% ·
 ส่งออกเป็นไฟล์ หรือเขียนลง sandbox ที่ ARAK เป็นเจ้าของ (ข้อตัดสินใจที่ 8)
 
+### FR-19 ARAK Gateway — เครื่องมือภายนอกต่อตรง แต่ query วิ่งผ่าน ARAK — M29 ⬜ (ผู้ใช้ถาม 2026-09-26)
+*"ถ้า user จะไปต่อ Query tool ตัวอื่น แต่ตอน Query ต้องวิ่งผ่านเรา"* — DBeaver · Excel · Power BI · Tableau · database tool อื่นๆ ·
+ARAK ฟัง **PostgreSQL wire protocol (v3)** บน TLS (เช่น `:5439`) — ทุกตัวข้างบนมี PostgreSQL connector ในตัว (Power BI = Npgsql, Import และ DirectQuery ·
+Power BI Service ต้องมี On-premises Data Gateway · Excel = Power Query "From PostgreSQL" หรือ psqlODBC · Tableau / DBeaver / DataGrip / pgAdmin / psql = driver ปกติ) ·
+**login ด้วย Personal Access Token ของ ARAK** (user = username, password = token · เพิกถอนได้ · มีวันหมดอายุ) ไม่ใช่รหัส DB · ชื่อ database = source ·
+ทุก statement เข้า `QueryService` เส้นเดียวกับหน้า Query (rewrite + mask + RLS + audit ทุก byte เท่ากัน · query log บอก tool จาก `application_name`) ·
+**query ต่อ `pg_catalog` / `information_schema` ตอบจาก catalog ของ ARAK เฉพาะที่คนนั้นมีสิทธิ์ — ห้ามส่งต่อไป source** ·
+read-only: `BEGIN` / `SET` ตอบ OK · DML / DDL ปฏิเสธ (fail-closed) · row limit + timeout · extended protocol (prepared statement) + cancel + stream ·
+BI tool สร้าง `SELECT … FROM (SELECT …) "_"` ซ้อนหลายชั้น → rewriter ต้องรองรับ derived table ทุกตำแหน่งโดยไม่หลุด (M29b) · DirectQuery ยิงถี่ → result cache สั้น + concurrency limit ·
+SQL Server source: tool ส่ง SQL แบบ PG → แปลง dialect หรือทำ TDS แยก (M29c · SSMS ต้องใช้ TDS) ·
+**source ต้อง firewall ให้รับเฉพาะ ARAK** ไม่งั้น bypass ได้ (FR-6.3.1) ·
+ทางลัดสำหรับ Excel ก่อน gateway เสร็จ: saved query → feed link (CSV) + token — ใช้ได้เฉพาะ query ที่ save ไว้
+
+**ช่องทางเชื่อมต่อ — ทุกช่องลงที่ `QueryService` เส้นเดียวกัน ไม่มีช่องไหนมี enforcement ของตัวเอง**
+| ช่องทาง | ใช้อะไร | ใครใช้ | งาน |
+|---|---|---|---|
+| **JDBC** | driver PostgreSQL มาตรฐาน (pgjdbc) `jdbc:postgresql://<arak>:5439/<source>?sslmode=verify-full` | DBeaver · DataGrip · SQuirreL · Tableau (JDBC) · app Java | ได้จาก pgwire (M29a) — **ไม่ทำ driver ของเราเอง** (ต้องดูแลทุกเวอร์ชัน · driver มาตรฐานพูด pgwire ได้อยู่แล้ว) |
+| **ODBC** | psqlODBC (DSN) | Excel · Power BI (ODBC) · Tableau · Qlik · SAS | ได้จาก pgwire (M29a) · คู่มือตั้ง DSN + TLS |
+| **Connector** | Power BI custom connector (`.mez`, Power Query M) · Tableau connector (`.taco`) — เปลือกบาง ๆ บน pgwire เดิม | ผู้ใช้ BI ที่อยากเห็น "ARAK" ในรายการ source + ช่องใส่ token ที่ชัด | M29d · optional · ไม่มี code path ใหม่ฝั่ง server · Power BI Service ยังต้อง On-premises Data Gateway |
+| **API** | REST Query API ที่มีอยู่แล้ว (`POST /v1/query`, 5.2a) + **PAT เป็น Bearer** · saved query → CSV feed | Python / notebook · script · app ภายใน · Excel "From Web" | ต้องมี PAT (M29a) — ตอนนี้ใช้ได้แค่ session token ของหน้าเว็บ |
+
 ### FR-10 Non-Functional
 | # | | สถานะ |
 |---|---|---|
@@ -401,8 +422,9 @@ LLM เห็นแค่ชื่อ / คำอธิบาย column ไม�
 | **M23** | Personal Security Health Dashboard (FR-16) | – | ⬜ ต้องมี M10 · ส่วนความผิดปกติต้องมี M19 |
 | **M24** | Automated Query Risk Blocker (FR-17) | – | ⬜ ต้องมี M10 · ส่วน AI ต้องมี M11 |
 | **M25** | On-Demand Test Data Synthesis (FR-18) | – | ⬜ |
-| **M26** | LLM Fix with AI (query ที่พัง) + Explain query — SQL + error + metadata เท่านั้น · ผลเป็นข้อเสนอใน editor | – | ⬜ ต้องมี M11 |
+| **M26** | LLM Fix with AI (query ที่พัง) + Explain query — SQL + error + metadata เท่านั้น · ผลเป็นข้อเสนอใน editor | – | ✅ 2026-09-26 — `POST /v1/llm/assist/fix` + `/explain` · refusal มี `fixable` (ไม่เคย true กับ refusal ที่ policy ตัดสิน) · error ตัดค่าที่ quote ออกก่อนส่ง LLM · ปุ่ม Explain + Fix with AI ในหน้า Query · ไม่ run เอง |
 | **M27** | ขอสิทธิ์ในนามกลุ่ม | – | ⬜ ต่อยอด M9 |
+| **M29** | **ARAK Gateway** — ให้ DBeaver / Excel / Power BI / Tableau / pgAdmin ต่อตรงแต่ query วิ่งผ่าน ARAK (FR-19 · 5.2b) · M29a pgwire + PAT + pg_catalog emulation (PG source) · M29b SQL ที่ BI tool สร้าง (subquery ซ้อน) + result cache · M29c SQL Server source (แปลง dialect หรือ TDS) · M29d Power BI / Tableau connector (optional) · JDBC/ODBC = driver PG มาตรฐาน · API = `/v1/query` + PAT | 3–4 wk | ⬜ ผู้ใช้ถาม 2026-09-26 · ต่อยอด M7 |
 | **M28** | Conversational ARAK Agent — แชทใน mascot + Catalog · ค้น catalog · ตอบ SQL syntax · เขียน query · พาไปหน้าในแอพ · metadata เท่านั้น · ไม่ apply อะไรเอง | – | ⬜ ต้องมี M11 · ต่อยอด M16 + M26 |
 
 **ลำดับ:** M0 → M1 → M2 → M3 → (M4 ‖ M5 ‖ M6 ‖ M7) → M7b → M8

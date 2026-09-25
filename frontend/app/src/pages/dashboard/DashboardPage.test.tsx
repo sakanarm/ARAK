@@ -201,6 +201,18 @@ describe('DashboardPage', () => {
     expect(screen.getByRole('button', { name: /Sensitive label/ })).toHaveTextContent('Finance');
   });
 
+  it('puts the label on the card it scopes, not above the whole page', async () => {
+    fetchDashboard.mockResolvedValue(dashboard());
+    renderPage();
+    await screen.findByRole('region', { name: 'Key figures' });
+    const picker = screen.getByRole('button', { name: /Sensitive label/ });
+    expect(section('Coverage')).toContainElement(picker);
+    const header = screen.getByRole('heading', { name: 'Access control dashboard' }).closest('header')!;
+    expect(header).not.toContainElement(picker);
+    // The window still sits in the header: every card reads it.
+    expect(within(header as HTMLElement).getByRole('button', { name: /Window/ })).toBeInTheDocument();
+  });
+
   it('falls back to thirty days when the address asks for a window it does not offer', async () => {
     fetchDashboard.mockResolvedValue(dashboard());
     renderPage('/dashboard?days=12');
@@ -291,7 +303,7 @@ describe('DashboardPage', () => {
     renderPage();
     await screen.findByRole('region', { name: 'Key figures' });
 
-    const coverage = section('Coverage of PII');
+    const coverage = section('Coverage');
     expect(within(coverage).getByRole('img', { name: '75% of sensitive tables protected' })).toBeInTheDocument();
     expect(within(coverage).getByText('Protected by a data policy').nextSibling).toHaveTextContent('3');
     expect(within(coverage).getByText('Unprotected, and people can get in').nextSibling).toHaveTextContent('1');
@@ -307,7 +319,7 @@ describe('DashboardPage', () => {
     );
     renderPage();
     await screen.findByRole('region', { name: 'Key figures' });
-    expect(section('Coverage of PII')).toHaveTextContent('No table or column in the catalogue carries PII');
+    expect(section('Coverage')).toHaveTextContent('No table or column in the catalogue carries PII');
     expect(screen.getByText('No table carries PII')).toBeInTheDocument();
   });
 

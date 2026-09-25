@@ -95,22 +95,32 @@ public class QueryService {
   /** The statement was not run, and the message says why in the caller's terms. */
   public static class RejectedException extends RuntimeException {
     private final String deniedAsset;
+    private final boolean aboutStatement;
 
     public RejectedException(String message) {
-      this(message, null);
+      this(message, null, false);
     }
 
     /**
      * @param deniedAsset the asset whose decision said no, when that is why;
      *     null for every other kind of refusal
+     * @param aboutStatement true when the statement itself is what failed -- it
+     *     did not parse, named a table badly, or the source could not run it --
+     *     so a corrected statement is worth suggesting. Never true for a
+     *     refusal a policy made (M26).
      */
-    public RejectedException(String message, String deniedAsset) {
+    public RejectedException(String message, String deniedAsset, boolean aboutStatement) {
       super(message);
       this.deniedAsset = deniedAsset;
+      this.aboutStatement = aboutStatement && deniedAsset == null;
     }
 
     public String deniedAsset() {
       return deniedAsset;
+    }
+
+    public boolean aboutStatement() {
+      return aboutStatement;
     }
   }
 
@@ -186,7 +196,8 @@ public class QueryService {
       audit(principal, source.id(), sql, null, "REJECTED", e.getMessage(), null, null, clientIp, touched, runBy);
       throw new RejectedException(
           e.getMessage(),
-          e instanceof QueryRewriter.DeniedException denied ? denied.assetFqn() : null);
+          e instanceof QueryRewriter.DeniedException denied ? denied.assetFqn() : null,
+          e.aboutStatement());
     } catch (RuntimeException e) {
       // Governing a table reference reads the catalog and evaluates policy, so
       // it can fail for reasons the rewriter never names. Whatever the cause,
@@ -234,7 +245,8 @@ public class QueryService {
       // The source's message can name objects the caller is not entitled to
       // know exist, so it goes to the log and a shorter one goes back.
       LOG.warn("Query against {} failed: {}", source.name(), e.toString());
-      throw new RejectedException("The source rejected the enforced statement: " + e.getMessage());
+      throw new RejectedException(
+          "The source rejected the enforced statement: " + e.getMessage(), null, true);
     }
 
     audit(

@@ -102,9 +102,10 @@ export default function DashboardPage() {
                 Access control dashboard
               </h1>
               <p className="tw:mt-1 tw:max-w-2xl tw:text-pretty tw:text-sm tw:text-tertiary">
-                How much of the data labelled <span className="tw:font-medium tw:text-secondary">{label}</span>{' '}
-                a policy protects, who can reach it, what the query proxy ran and refused, and what
-                wants a decision.
+                How much of the sensitive data a policy protects, who can reach it, what the query proxy
+                ran and refused, and what wants a decision. The window applies to every card; the label on{' '}
+                <span className="tw:font-medium tw:text-secondary">Coverage</span> picks which data counts as
+                sensitive.
                 {data && (
                   <span className="tw:text-quaternary"> Updated {relativeTime(data.generatedAt)}.</span>
                 )}
@@ -112,7 +113,6 @@ export default function DashboardPage() {
             </div>
           </div>
           <div className="tw:flex tw:flex-wrap tw:items-center tw:gap-2">
-            <LabelField onCommit={(value) => update({ label: value === 'PII' ? '' : value })} value={label} />
             <Select
               ariaLabel="Window"
               className="tw:w-44"
@@ -136,13 +136,25 @@ export default function DashboardPage() {
           <Loading />
         </section>
       ) : (
-        <Body data={data} fetchedAt={dashboard.dataUpdatedAt} />
+        <Body
+          data={data}
+          fetchedAt={dashboard.dataUpdatedAt}
+          onLabel={(value) => update({ label: value === 'PII' ? '' : value })}
+        />
       )}
     </div>
   );
 }
 
-function Body({ data, fetchedAt }: { data: Dashboard; fetchedAt: number }) {
+function Body({
+  data,
+  fetchedAt,
+  onLabel,
+}: {
+  data: Dashboard;
+  fetchedAt: number;
+  onLabel: (label: string) => void;
+}) {
   const days = data.days;
   return (
     <>
@@ -150,7 +162,7 @@ function Body({ data, fetchedAt }: { data: Dashboard; fetchedAt: number }) {
 
       <div className="tw:grid tw:gap-4 tw:lg:grid-cols-3">
         <AttentionCard className="tw:lg:col-span-2" data={data} />
-        <CoverageCard data={data} />
+        <CoverageCard data={data} onLabel={onLabel} />
       </div>
 
       <div className="tw:grid tw:gap-4 tw:lg:grid-cols-3">
@@ -479,7 +491,12 @@ function ActionLink({ action }: { action: { label: string; to: string } }) {
 
 // ----------------------------------------------------------------- coverage
 
-function CoverageCard({ data }: { data: Dashboard }) {
+/**
+ * The label is chosen here, not in the page header: it scopes this card, the
+ * "Protected by policy" figure and the tables list below, and nothing else --
+ * a picker above the whole page read as if it filtered every chart.
+ */
+function CoverageCard({ data, onLabel }: { data: Dashboard; onLabel: (label: string) => void }) {
   const { coverage } = data;
   const unprotected = coverage.sensitive - coverage.protectedTables;
   const closed = unprotected - coverage.exposed;
@@ -491,7 +508,10 @@ function CoverageCard({ data }: { data: Dashboard }) {
   const covered = percent(coverage.protectedTables, coverage.sensitive);
 
   return (
-    <Widget count={coverage.sensitive} title={`Coverage of ${data.label}`}>
+    <Widget
+      count={coverage.sensitive}
+      title="Coverage"
+      tools={<LabelField onCommit={onLabel} value={data.label} />}>
       {coverage.sensitive === 0 ? (
         <WidgetEmpty
           icon={ShieldTick}
@@ -1240,7 +1260,7 @@ function LabelField({ value, onCommit }: { value: string; onCommit: (value: stri
   return (
     <Select
       ariaLabel="Sensitive label"
-      className="tw:w-56"
+      className="tw:w-44 tw:min-w-0"
       onChange={(next) => {
         if (next !== value) onCommit(next);
       }}

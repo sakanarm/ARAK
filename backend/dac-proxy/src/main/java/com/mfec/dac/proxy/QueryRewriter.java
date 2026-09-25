@@ -91,8 +91,26 @@ public final class QueryRewriter {
 
   /** The statement will not be sent, and why — the message reaches the caller. */
   public static class RefusedException extends RuntimeException {
+    private final boolean aboutStatement;
+
     public RefusedException(String message) {
+      this(message, true);
+    }
+
+    /**
+     * @param aboutStatement true when a different statement could get past this
+     *     -- a typo, a bare table name, a construct the proxy does not read --
+     *     and false when a policy or the platform itself said no, which no
+     *     rewording should ever be offered as a way around
+     */
+    public RefusedException(String message, boolean aboutStatement) {
       super(message);
+      this.aboutStatement = aboutStatement;
+    }
+
+    /** Whether rewriting the statement is a sensible thing to suggest (M26). */
+    public boolean aboutStatement() {
+      return aboutStatement;
     }
   }
 
@@ -108,7 +126,7 @@ public final class QueryRewriter {
     private final String assetFqn;
 
     public DeniedException(String assetFqn, String message) {
-      super(message);
+      super(message, false);
       this.assetFqn = assetFqn;
     }
 
@@ -127,7 +145,7 @@ public final class QueryRewriter {
 
   public Rewritten rewrite(String sql, Governance governance) {
     if (sql == null || sql.isBlank()) {
-      throw new RefusedException("No SQL was sent");
+      throw new RefusedException("No SQL was sent", false);
     }
     Statement statement;
     try {
@@ -141,7 +159,8 @@ public final class QueryRewriter {
     }
     if (!(statement instanceof Select select)) {
       throw new RefusedException(
-          "Only SELECT is allowed through the query proxy; this deployment is read-only (FR-6.3)");
+          "Only SELECT is allowed through the query proxy; this deployment is read-only (FR-6.3)",
+          false);
     }
 
     Set<String> cteNames = new LinkedHashSet<>();
@@ -313,7 +332,7 @@ public final class QueryRewriter {
     DecisionSql.Result result = compiler.render(asset.decision(), asset.columns(), innerAlias);
     if (result.columns().isEmpty()) {
       throw new RefusedException(
-          "Every column of " + asset.fqn() + " is hidden from this principal");
+          "Every column of " + asset.fqn() + " is hidden from this principal", false);
     }
     unenforceable.addAll(result.unenforceable());
     if (result.where() != null || !result.labels().equals(asset.columns())) {
@@ -346,7 +365,8 @@ public final class QueryRewriter {
       // is our bug, not the caller's, and the statement must not be sent on the
       // assumption that the database is more forgiving.
       throw new RefusedException(
-          "The enforced form of " + asset.fqn() + " could not be built; the query was not run");
+          "The enforced form of " + asset.fqn() + " could not be built; the query was not run",
+          false);
     }
 
     ParenthesedSelect derived = new ParenthesedSelect();
@@ -374,7 +394,7 @@ public final class QueryRewriter {
     try {
       CCJSqlParserUtil.parse(rewritten);
     } catch (JSQLParserException e) {
-      throw new RefusedException("The rewritten statement did not parse; it was not run");
+      throw new RefusedException("The rewritten statement did not parse; it was not run", false);
     }
 
     for (String name : referenced) {

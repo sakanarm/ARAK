@@ -133,6 +133,45 @@ class HomeLayoutValidatorTest {
     }
 
     @Test
+    @DisplayName("keeps a button, which can do nothing without a script or a form")
+    void keepsButton() {
+      String out = html("<button class=\"my-custom-button\" onclick=\"alert(1)\">Click</button>");
+      assertThat(out).isEqualTo("<button type=\"button\">Click</button>");
+    }
+
+    @Test
+    @DisplayName("a button cannot be made to submit anything")
+    void buttonIsNeverSubmit() {
+      String out = html("<button type=\"submit\" formaction=\"https://example.com\">Go</button>");
+      assertThat(out).contains("type=\"button\"");
+      assertThat(out).doesNotContain("submit").doesNotContain("formaction");
+    }
+
+    @Test
+    @DisplayName("keeps the console's button classes on a link and a button")
+    void keepsKnownClasses() {
+      String out =
+          html("<a class=\"arak-button\" href=\"https://example.com/runbook\">Runbook</a>"
+              + "<button class=\"arak-button-secondary\">Later</button>");
+      assertThat(out).contains("class=\"arak-button\"");
+      assertThat(out).contains("class=\"arak-button-secondary\"");
+      assertThat(out).contains("target=\"_blank\"");
+    }
+
+    @Test
+    @DisplayName("drops every other class, which could reach the console's own layout")
+    void dropsOtherClasses() {
+      // The overlay the style ban stops, built out of utilities instead.
+      String out =
+          html("<a class=\"tw:fixed tw:inset-0 tw:z-50 arak-button fixed inset-0\" "
+              + "href=\"https://example.com\">x</a><p class=\"arak-button\">p</p>");
+      assertThat(out).contains("class=\"arak-button\"");
+      assertThat(out).doesNotContain("fixed").doesNotContain("inset").doesNotContain("z-50");
+      // A paragraph was never given class, so not even an allowed name stays.
+      assertThat(out).contains("<p>p</p>");
+    }
+
+    @Test
     @DisplayName("truncates before cleaning, so the result is still well formed")
     void truncates() {
       String out = html("<p>" + "x".repeat(30_000) + "</p>");

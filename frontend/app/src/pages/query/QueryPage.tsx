@@ -33,6 +33,13 @@ import {
 import { download, exportName, toCsv, toXlsx } from '../../lib/tabular';
 import { Select, TextField } from '../policies/controls';
 import RequestAccess from './RequestAccess';
+import {
+  ExplainButton,
+  ExplanationCard,
+  FixWithAi,
+  useAssistReady,
+  useSqlExplanation,
+} from './QueryAssist';
 import SchemaExplorer from './SchemaExplorer';
 import SqlEditor, { type SqlCompletionSource } from './SqlEditor';
 import { asCompletionTable, type CompletionTable } from './sqlCompletion';
@@ -152,6 +159,11 @@ export default function QueryPage() {
   const drafted = useAssistStore((state) => state.sql);
   const takeSql = useAssistStore((state) => state.takeSql);
   const engine = usable.find((source) => source.id === effectiveSource)?.engine;
+
+  // Explain and Fix with AI (M26). Drawn only for an account that has an
+  // assistant; neither runs anything, and the assistant never sees a row.
+  const assistReady = useAssistReady();
+  const { explain, about: explained } = useSqlExplanation();
 
   // What the editor suggests: the same catalog page the Explorer beside it
   // shows, by the same key, so the two cannot offer different tables and the
@@ -332,6 +344,16 @@ export default function QueryPage() {
               {run.isPending ? 'Running…' : 'Run'}
             </Button>
 
+            {assistReady && (
+              <ExplainButton
+                disabled={sql.trim().length === 0}
+                onClick={() =>
+                  explain.mutate({ sql: latest.current.sql, sourceId: effectiveSource, engine })
+                }
+                pending={explain.isPending}
+              />
+            )}
+
             <Select
               ariaLabel="Source"
               className="tw:w-56"
@@ -427,6 +449,15 @@ export default function QueryPage() {
             )}
           </p>
 
+          <ExplanationCard
+            about={explained}
+            current={sql}
+            error={explain.error}
+            explanation={explain.data}
+            onDismiss={() => explain.reset()}
+            pending={explain.isPending}
+          />
+
           <div className="tw:flex tw:min-h-0 tw:flex-1 tw:flex-col" ref={setPaneNode}>
             <div
               className="tw:flex tw:shrink-0"
@@ -444,6 +475,19 @@ export default function QueryPage() {
 
             <ResultPanel
               error={run.error}
+              fix={
+                assistReady
+                  ? {
+                      engine,
+                      // Into the editor, and the old refusal goes: it was about
+                      // the statement that has just been replaced. Not run.
+                      onUse: (text) => {
+                        setSql(text);
+                        run.reset();
+                      },
+                    }
+                  : undefined
+              }
               isPending={run.isPending}
               ran={ran.current}
               result={result}
@@ -713,10 +757,13 @@ function ResultPanel({
   tab,
   setTab,
   ran,
+  fix,
 }: {
   result: QueryResult | undefined;
   error: unknown;
   isPending: boolean;
+  /** Present when the reader has an assistant to ask for a corrected statement. */
+  fix?: { engine?: string; onUse: (sql: string) => void };
   /** The statement the error is about, for a request made from it. */
   ran?: { sql: string; purpose: string; sourceId: string };
   tab: 'results' | 'sql' | 'details';
@@ -744,6 +791,16 @@ function ResultPanel({
             purpose={ran?.purpose || null}
             refusal={refusal}
             sourceId={ran?.sourceId || null}
+            sql={ran?.sql ?? ''}
+          />
+        )}
+        {refusal && fix && (
+          <FixWithAi
+            engine={fix.engine}
+            key={`fix:${refusal.message}`}
+            onUse={fix.onUse}
+            refusal={refusal}
+            sourceId={ran?.sourceId ?? ''}
             sql={ran?.sql ?? ''}
           />
         )}

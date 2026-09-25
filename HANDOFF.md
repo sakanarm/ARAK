@@ -1,6 +1,6 @@
 # HANDOFF — ARAK (Data Access Control Platform)
 
-> อัปเดต: 2026-09-25 · commit ล่าสุดที่ push สำเร็จ `0029375` · **local นำหน้าอยู่หลาย commit — `git push` ยังค้าง ดู What Didn't Work** · repo https://github.com/sakanarm/ARAK (**public**)
+> อัปเดต: 2026-09-26 · commit ล่าสุดที่ push สำเร็จ `0029375` · **local นำหน้าอยู่หลาย commit — `git push` ยังค้าง ดู What Didn't Work** · repo https://github.com/sakanarm/ARAK (**public**)
 >
 > อ่านคู่กับ **[docs/DESIGN.md](docs/DESIGN.md)** — ไฟล์นั้นคือ requirement + feature catalogue + สถานะครบทุกข้อ
 > ไฟล์นี้บอกเฉพาะ "ทำถึงไหน จะไปต่อยังไง อะไรที่ลองแล้วไม่เวิร์ค"
@@ -619,7 +619,58 @@ M25 ทำแยกได้ (profile ผ่าน proxy ที่มีแล�
 
 ---
 
-## รอบนี้ — **ข้อ BF: Rail ด้านซ้ายที่แต่ละคนจัดเองได้ (V26) + เลือกขนาดได้ Comfortable / Compact (V27) · Enforcement และ System ย้ายเข้า Settings · Suggest พร้อม % · กดดูสมาชิก/attribute ของกลุ่ม · Dashboard เลือก label · 🐛 Query ถูกปฏิเสธว่า "could not be parsed" ทุกตัว**
+## รอบนี้ — **ข้อ BG: M26 Fix with AI + Explain query · HTML widget มีปุ่มได้ · Dashboard ย้าย label picker ไปไว้ในการ์ด Coverage · M29 ARAK Gateway ลง Roadmap**
+
+### BG.1 M26 — *"อยากให้มีปุ่ม ให้ LLM มา Correct ให้"* · *"อยากให้มีปุ่มให้ LLM AI อธิบาย Query ให้ได้ด้วย"*
+
+หลัก: **LLM เห็น SQL + ชื่อตาราง/column จาก catalog เท่านั้น ไม่เห็นแถว** · ผลเป็นข้อเสนอใน editor · ไม่ run เอง · SQL ที่แก้แล้วยังต้องผ่าน proxy เหมือนพิมพ์เอง ·
+**Fix ไม่ถูกเสนอกับ refusal ที่ policy ตัดสิน** (ไม่งั้นกลายเป็น LLM ช่วยหาทางอ้อมสิทธิ์)
+
+**Backend**
+- `QueryRewriter.RefusedException` มี `aboutStatement()` — `true` = statement เองผิด (parse ไม่ได้ · ไม่ qualify schema · ไม่ใช่ asset ที่รู้จัก · subquery ในตำแหน่งที่ proxy ไม่ rewrite · form ของ SELECT ที่ไม่รองรับ) ·
+  `false` = platform/policy ตัดสิน (`DeniedException` · ไม่ใช่ SELECT · ทุก column ถูกซ่อน · enforced form สร้างไม่ได้ · rewritten statement parse ไม่ได้ · `ProxyCapabilities` "Enforce this asset through a secure view instead" · ไม่มี SQL)
+- `QueryService.RejectedException(message, deniedAsset, aboutStatement)` — `aboutStatement && deniedAsset == null` เสมอ (denial ไม่มีทาง fixable แม้สร้างด้วย true) · error จาก source = fixable
+- `QueryResource` ใส่ `"fixable"` ใน body ของ 403
+- `LlmAssistResource`:
+  - `POST /v1/llm/assist/fix {sql, error, sourceId, engine?, model?}` → `SqlDraft` — validate SQL (ว่าง / เกิน 20,000 ตัว) · sourceId บังคับ · error ผ่าน `AssistPrompts.redactError` ก่อนส่ง · คำตอบที่ไม่ใช่ read-only ถูกทิ้ง (LOG.warn) · คำตอบเดิมเป๊ะ → problem "did not find anything to change" · UNANSWERABLE → problem
+  - `POST /v1/llm/assist/explain {sql, sourceId?, engine?, model?}` → `{text, model, tables, personal}` — ไม่มี sourceId ก็อธิบายได้ (ไม่เรียก catalog) · คำตอบว่าง → 503 · ตัดที่ 4,000 ตัว
+  - `draftFrom` ใช้ร่วมกับ `/sql` (extractSql · isRefusal · looksReadOnly)
+- `AssistPrompts.redactError` — **error ของ DB มักสะท้อนค่าจากแถว** (`invalid input syntax for type integer: "4111-…"` · `Failing row contains (…)` · `Key (id)=(42)`) → ค่าใน quote ที่ไม่อยู่ใน SQL หรือ catalog brief ถูกแทนด้วย `'…'` / `"…"` · บรรทัด `Detail:` / `Where:` / `Internal Query:` / `Position:` ถูกตัด · `Key (x)=(…)` · รวมเป็นบรรทัดเดียว ≤ 400 ตัว
+- prompt ของ fix สั่ง "Change only what the error is about" · "do not swap a table for another that holds the same data, and do not mask, hash or unmask anything yourself" · explain สั่ง "You have not seen any data and must not guess values"
+
+**Frontend**
+- `api/llm.ts` `assistFix` / `assistExplain` · `Refusal.fixable`
+- `pages/query/QueryAssist.tsx` (ใหม่) — `useAssistReady` (key `['llm-me']` เดียวกับ dock) · `ExplainButton` + `ExplanationCard` (แสดงเป็น **text เท่านั้น** `whitespace-pre-wrap` ไม่เคยเป็น HTML · บอกเมื่อ editor เปลี่ยนไปจาก statement ที่อธิบาย · ปิดได้) · `FixWithAi` (ขึ้นเฉพาะ `refusal.fixable` · ส่ง statement ที่ถูกปฏิเสธ ไม่ใช่ที่อยู่ใน editor ตอนนี้ · "Use this" ใส่ editor + ล้าง refusal เก่า · ไม่ run · "Dismiss")
+- QueryPage: ปุ่ม **Explain** ข้าง Run (เฉพาะคนที่มี assistant) · การ์ดอธิบายอยู่เหนือ editor · Fix with AI ใต้ refusal
+
+**Tests** — `LlmAssistResourceTest` 16 (Mockito: สิ่งที่ออกไปหา LLM ไม่มี "4111" / email / "Failing row" · ชื่อที่ผู้อ่านรู้อยู่แล้วคงไว้ · ทิ้ง write · ปิด assistant → 403 ไม่ถึง client · gateway ล่ม → 503) ·
+`QueryRefusalFixableTest` 3 · `AssistPromptsTest` +9 · `QueryRewriterTest` +3 · `QueryAssist.test.tsx` 11
+
+### BG.2 HTML widget ไม่ render ปุ่ม — *"ทำไม HTML ไม่ Render อะ ตอนแสดงในหน้า Home"*
+สาเหตุ: `HomeLayoutValidator` สร้าง HTML ใหม่จาก allowlist ของ jsoup ตอน save · ไม่มี `<button>` และไม่มี `class` → `<button class="my-custom-button">คลิกที่นี่</button>` เหลือแค่ข้อความ
+แก้: `<button>` ได้ (บังคับ `type="button"` — ไม่มี script ไม่มี form จึงทำอะไรไม่ได้ เป็นแค่รูปทรง) · `class` ได้บน `a` / `button` **เฉพาะ `arak-button` / `arak-button-secondary`** (กรองหลัง clean ด้วย `Cleaner` แล้ว `keepKnownClasses`) ·
+**ห้ามเปิด class อิสระ** — จะเข้าถึง utility ของ console (`fixed` `inset-0` `z-50`) แล้วสร้าง overlay ครอบหน้าได้เหมือน `style` ที่แบนอยู่ · CSS อยู่ใน `.arak-prose` (index.css) · hint ใน editor บอกว่าปุ่มที่กดแล้วไปหน้าอื่นให้เขียน `<a href="https://…" class="arak-button">` ·
+tests `HomeLayoutValidatorTest.Html` +4 (keepsButton · buttonIsNeverSubmit · keepsKnownClasses · dropsOtherClasses)
+
+### BG.3 Dashboard label picker — *"เลือกแล้วไป Filter ตรงไหนอะ มันควรอยู่ตรงจุดนั้นๆไหม"*
+label มีผลแค่ "Protected by policy" · hint "on sensitive tables" · การ์ด Coverage · "Tables carrying X" — ที่เหลือใช้แค่ window · picker เดิมอยู่หัวหน้าจึงดูเหมือน filter ทั้งหน้า ·
+ย้ายไปอยู่ในหัวการ์ด **Coverage** (`Widget` มี prop `tools` ใหม่) · หัวหน้าเหลือแค่ window และคำอธิบายบอกว่า label บน Coverage เลือกว่าข้อมูลไหนนับเป็น sensitive · test ใหม่ "puts the label on the card it scopes"
+
+### BG.4 M29 ARAK Gateway ลง Roadmap — *"ถ้า user จะไปต่อ Query tool ตัวอื่น แต่ตอน Query ต้องวิ่งผ่านเรา"* (DBeaver · Excel · Power BI · Tableau · อื่นๆ)
+ยังไม่ได้เขียนโค้ด — design อยู่ใน DESIGN.md FR-19: pgwire บน TLS · login ด้วย PAT · database = source · ทุก statement เข้า `QueryService` เดิม · pg_catalog ตอบจาก catalog ของ ARAK ตามสิทธิ์ · read-only · firewall source · M29a/b/c/d ·
+ช่องทาง (*"JDBC, ODBC, Connector, API"*): JDBC / ODBC = driver PostgreSQL มาตรฐานต่อ pgwire (ไม่ทำ driver เอง) · Connector = `.mez` Power BI / `.taco` Tableau เปลือกบนตัวเดิม (M29d) · API = `POST /v1/query` + PAT
+
+### BG.4a Rail — *"Mode Comfortable ตัว Customized Rail ก็ต้องอยู่ที่เดียวกันกับโหมด Compact สิ"*
+เดิม Comfortable มีปุ่ม "Customize rail" เต็มความกว้างเหนือ copyright · Compact เป็น icon ท้ายบรรทัด copyright → ตำแหน่งเปลี่ยนตามขนาดที่เลือก ·
+ตอนนี้ footer เดียวทั้งสองขนาด: เส้นคั่น · `© 2026 MFEC` ซ้าย · icon Customize ขวา — Comfortable แค่ใหญ่กว่า (ปุ่ม 40px icon 20px ตัวอักษร sm) · `Rail.test.tsx` ตรวจว่า icon อยู่บรรทัดเดียวกับ copyright ทั้งสองขนาด
+
+### BG.5 ผลทดสอบ
+- backend `./mvnw -o verify -Pintegration` — **BUILD SUCCESS · 1,196 tests · 0 failures** (เดิม 1,161 + ใหม่ 35) · live dev app: parse refusal `fixable: true` · DELETE `fixable: false` · `/assist/fix` + `/explain` ตอบจาก gateway จริง · Home HTML เก็บ `<button type="button">` + `class="arak-button"` ทิ้ง `tw:fixed` / onclick · ไม่มี key ip ใน response (`scratchpad/live_bg.py`)
+- frontend `tsc` ผ่าน · jest **43 suites / 435 tests** ผ่าน · `VITE_BASE=/Arak/ npm run build` ผ่าน
+
+---
+
+## รอบก่อนหน้า — **ข้อ BF: Rail ด้านซ้ายที่แต่ละคนจัดเองได้ (V26) + เลือกขนาดได้ Comfortable / Compact (V27) · Enforcement และ System ย้ายเข้า Settings · Suggest พร้อม % · กดดูสมาชิก/attribute ของกลุ่ม · Dashboard เลือก label · 🐛 Query ถูกปฏิเสธว่า "could not be parsed" ทุกตัว**
 
 ผู้ใช้สั่งหลายข้อต่อกันในรอบเดียว — ข้อที่ทำเสร็จและทดสอบแล้วอยู่ในหัวข้อนี้ ข้อที่ยังค้างอยู่ใน BF.9
 

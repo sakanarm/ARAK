@@ -20,12 +20,15 @@ export function Widget({
   title,
   count,
   action,
+  tools,
   children,
   className = '',
 }: {
   title: string;
   count?: ReactNode;
   action?: { label: string; to: string };
+  /** A control that scopes only this card, drawn in its title row. */
+  tools?: ReactNode;
   children: ReactNode;
   className?: string;
 }) {
@@ -41,6 +44,7 @@ export function Widget({
             </span>
           )}
         </h2>
+        {tools}
         {action && (
           <Link
             className="tw:flex tw:shrink-0 tw:items-center tw:gap-1 tw:text-xs tw:font-semibold tw:text-brand-secondary tw:hover:underline"
