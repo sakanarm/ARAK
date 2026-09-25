@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { apiClient } from './client';
+import type { Policy } from '../generated/entity/policy/policy';
 
 /**
  * Asking for a table, and moving the ask through its workflow (FR-7).
@@ -336,6 +337,167 @@ export async function declineRequest(id: string, note: string): Promise<AccessRe
 
 export async function withdrawRequest(id: string): Promise<AccessRequest> {
   const { data } = await apiClient.post<AccessRequest>(`/v1/access-requests/${id}/withdraw`);
+  return data;
+}
+
+// ------------------------------------------------------------------ review
+
+export type RiskLevel = 'LOW' | 'MEDIUM' | 'HIGH';
+export type ConflictSeverity = 'BLOCKER' | 'WARNING' | 'INFO';
+export type ColumnFateKind = 'VISIBLE' | 'MASKED' | 'HIDDEN';
+export type SuggestionKind = 'GRANT' | 'UPDATE_POLICY' | 'CREATE_POLICY_DRAFT' | 'DECLINE';
+
+export interface ColumnFate {
+  name: string;
+  dataType: string | null;
+  fate: ColumnFateKind;
+  /** The masking function, when masked. */
+  masking: string | null;
+  /** The policy that masks or hides it. */
+  policy: string | null;
+  /** Masked on some rows only (a cell mask). */
+  conditional: boolean;
+  sensitive: boolean;
+  sensitiveTags: string[];
+}
+
+export interface RowFilter {
+  kind: string;
+  description: string;
+  policy: string | null;
+}
+
+export interface ReviewReason {
+  policy: string;
+  effect: string;
+  matched: boolean;
+  scopeLevel: string | null;
+  explanation: string | null;
+}
+
+/** One reading of what the requester would see. `columns` means something only when allowed. */
+export interface ReviewAccess {
+  allowed: boolean;
+  blockedBy: string | null;
+  blockedByPolicyId: string | null;
+  columns: ColumnFate[];
+  rowFilters: RowFilter[];
+  reasons: ReviewReason[];
+  unenforceable: string[];
+}
+
+export interface ReviewRequester {
+  username: string;
+  displayName: string | null;
+  email: string | null;
+  /** False when the person has been removed since they asked. */
+  known: boolean;
+  enabled: boolean;
+  source: string | null;
+  appRoles: string[];
+  memberships: { name: string; displayName: string | null; kind: string; source: string }[];
+  attributes: { key: string; value: string; source: string }[];
+  grantsHere: {
+    id: string;
+    grantedTo: string;
+    viaGroup: boolean;
+    validUntil: string | null;
+    grantedBy: string | null;
+  }[];
+  /** Other tables they hold a live grant on: counted, never listed. */
+  grantsElsewhere: number;
+  earlier: {
+    id: string;
+    status: RequestStatus;
+    requestedDays: number | null;
+    createdAt: string;
+    decidedBy: string | null;
+    note: string | null;
+    fulfilment: Fulfilment | null;
+  }[];
+  recentRequests: number;
+  recentRejected: number;
+}
+
+export interface ReviewTable {
+  fqn: string;
+  known: boolean;
+  tiers: string[];
+  domains: string[];
+  owners: Approver[];
+  columns: number;
+  sensitiveColumns: number;
+}
+
+export interface PolicyCheck {
+  id: string;
+  name: string | null;
+  displayName: string | null;
+  lifecycleState: string | null;
+  environment: string | null;
+  version: number;
+  /** It reaches this table where requests are decided, so activating it would apply here. */
+  bound: boolean;
+}
+
+export interface ReviewConflict {
+  severity: ConflictSeverity;
+  code: string;
+  detail: string;
+  policyId: string | null;
+  policyName: string | null;
+}
+
+/** One way of answering. Offered, never taken: a draft is not saved, let alone activated. */
+export interface ReviewSuggestion {
+  kind: SuggestionKind;
+  title: string;
+  detail: string;
+  days: number | null;
+  policyId: string | null;
+  draft: Policy | null;
+}
+
+/**
+ * What a reviewer reads before answering: who asked, what a grant would
+ * open column by column, what stands in its way, and ways to answer.
+ */
+export interface AccessReview {
+  requestId: string;
+  assetFqn: string;
+  status: RequestStatus;
+  requestedDays: number | null;
+  purpose: string | null;
+  reviewedAt: string;
+  /** The request recorded where it came from. The address itself is never sent. */
+  addressKnown: boolean;
+  requester: ReviewRequester;
+  table: ReviewTable;
+  now: ReviewAccess;
+  ifGranted: ReviewAccess;
+  ifPolicy: ReviewAccess | null;
+  policy: PolicyCheck | null;
+  risk: { level: RiskLevel; factors: { level: RiskLevel; code: string; detail: string }[] };
+  conflicts: ReviewConflict[];
+  suggestions: ReviewSuggestion[];
+}
+
+/**
+ * The review of one request, for the people deciding or configuring it; the
+ * requester is refused one (403), anybody else is told it does not exist.
+ *
+ * @param policyId a policy the reader is thinking of configuring it with:
+ *     the review then says whether that policy reaches the table and would
+ *     let them in. It is only read, never activated.
+ */
+export async function fetchAccessReview(
+  id: string,
+  policyId?: string | null
+): Promise<AccessReview> {
+  const { data } = await apiClient.get<AccessReview>(
+    `/v1/access-requests/${encodeURIComponent(id)}/review`,
+    { params: policyId ? { policyId } : {} }
+  );
   return data;
 }
 

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { AlertTriangle, CheckCircle, XCircle } from '@untitledui/icons';
 import { Chip as Badge } from '../../components/chips';
 import { Button } from '@openmetadata/ui-core-components/components/base/buttons/button';
@@ -113,7 +113,14 @@ export default function PolicyBuilderPage() {
   // opens. Subscription and data policies are different jobs; choosing between
   // them inside step one of a form is where that distinction goes to be missed.
   const kind = params.get('kind');
+  // A draft suggested by an access request's review arrives in the
+  // navigation state. It fills the form and nothing more: it is saved only
+  // when the author presses "Create draft", and activated only through the
+  // lifecycle, like any other policy.
+  const location = useLocation();
+  const suggested = isNew ? suggestedDraft(location.state) : null;
   const [draft, setDraft] = useState<Policy>(() => {
+    if (suggested) return { ...EMPTY, ...suggested.draft };
     // A data policy still opens on the organisation, where masking by tag is
     // written once and covers everything. Only the subscription default moved
     // down to the table.
@@ -136,7 +143,12 @@ export default function PolicyBuilderPage() {
     if (first) setEngine((current) => current ?? first);
   }, [engines]);
   const [saveError, setSaveError] = useState<string | null>(null);
-  const [assistNote, setAssistNote] = useState<string | null>(null);
+  const [assistNote, setAssistNote] = useState<string | null>(() =>
+    suggested
+      ? `Drafted from an access request for ${suggested.assetFqn ?? 'a table'}. Nothing is saved`
+        + ' until you create the draft, and it stays a draft until it is activated from its page.'
+      : null
+  );
 
   // The assistant drafts a whole document, so this page publishes that it is
   // open and then waits. It never asks for one: a policy nobody asked for
@@ -689,6 +701,23 @@ function Stat({ label, value }: { label: string; value: number }) {
       <dd className="tw:text-lg tw:font-semibold tw:text-primary">{value}</dd>
     </div>
   );
+}
+
+/** The draft an access request's review offered, if that is how the page was opened. */
+function suggestedDraft(state: unknown): { draft: Partial<Policy>; assetFqn: string | null } | null {
+  if (!state || typeof state !== 'object') return null;
+  const { draft, from } = state as { draft?: unknown; from?: { assetFqn?: unknown } };
+  if (!draft || typeof draft !== 'object') return null;
+  // An id or a lifecycle state would make the form look like an existing,
+  // perhaps active, policy. A suggestion is neither.
+  const { id: _id, lifecycleState: _state, ...rest } = draft as Partial<Policy> & {
+    id?: unknown;
+    lifecycleState?: unknown;
+  };
+  return {
+    draft: rest,
+    assetFqn: typeof from?.assetFqn === 'string' ? from.assetFqn : null,
+  };
 }
 
 /**

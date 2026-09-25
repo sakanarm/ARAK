@@ -45,6 +45,7 @@ import { fetchPolicies } from '../../api/policies';
 import { useAuthStore } from '../../auth/authStore';
 import { FIELD } from '../policies/controls';
 import { countLabel, tableName, useRequestNotices } from './useRequestNotices';
+import { AccessColumns, ConflictList, RequestReview, useAccessReview } from './RequestReview';
 
 /**
  * Asking for a table, and moving the ask through its workflow (FR-7).
@@ -608,6 +609,8 @@ function RequestDetail({ request, side }: { request: AccessRequest; side: Side }
           </details>
         )}
 
+        {!own && open && <RequestReview requestId={request.id} />}
+
         <div>
           <div className="tw:flex tw:flex-wrap tw:items-baseline tw:justify-between tw:gap-2">
             <h3 className="tw:text-xs tw:font-semibold tw:tracking-wide tw:text-quaternary tw:uppercase">
@@ -1121,6 +1124,22 @@ function Configure({ request }: { request: AccessRequest }) {
     retry: false,
   });
 
+  // The same review the panel above reads: when a grant cannot open the table
+  // the server refuses one, so the button says so first. A policy being
+  // considered is checked against the table as it is chosen -- read, never
+  // activated.
+  const review = useAccessReview(request.id, null, taken);
+  const grantBlocker = review.data?.conflicts.find((c) => c.code === 'GRANT_BLOCKED') ?? null;
+  const chosen = policyId.trim();
+  const policyCheck = useAccessReview(
+    request.id,
+    chosen || null,
+    taken && byPolicy && UUID.test(chosen)
+  );
+  const policyConflicts = (policyCheck.data?.conflicts ?? []).filter((c) =>
+    c.code.startsWith('POLICY_')
+  );
+
   const start = useMutation({ mutationFn: () => startRequest(request.id), onSuccess: done });
   const complete = useMutation({
     mutationFn: () =>
@@ -1144,7 +1163,9 @@ function Configure({ request }: { request: AccessRequest }) {
     (dayCount === null
       ? asked !== null
       : !Number.isInteger(dayCount) || dayCount < 1 || dayCount > (asked ?? 365));
-  const ready = byPolicy ? policyId.trim() !== '' && note.trim() !== '' : !daysWrong;
+  const ready = byPolicy
+    ? policyId.trim() !== '' && note.trim() !== ''
+    : !daysWrong && !grantBlocker;
   const busy = start.isPending || complete.isPending || decline.isPending;
   const failure = start.error ?? complete.error ?? decline.error;
 
@@ -1198,25 +1219,28 @@ function Configure({ request }: { request: AccessRequest }) {
           </div>
 
           {!byPolicy ? (
-            <label className="tw:flex tw:flex-col tw:gap-1.5 tw:text-sm tw:font-medium tw:text-secondary">
-              Grant for (days)
-              <input
-                aria-invalid={daysWrong || undefined}
-                aria-label="Grant days"
-                className={`${FIELD} tw:w-40 tw:bg-primary`}
-                max={asked ?? 365}
-                min={1}
-                onChange={(event) => setDays(event.target.value)}
-                placeholder={asked === null ? 'Until revoked' : undefined}
-                type="number"
-                value={days}
-              />
-              <span className="tw:text-xs tw:font-normal tw:text-tertiary">
-                {asked === null
-                  ? 'They asked until revoked. Leave it empty for that, or set up to 365 days.'
-                  : `They asked for ${duration(asked)}. You can shorten it, not extend it.`}
-              </span>
-            </label>
+            <div className="tw:flex tw:flex-col tw:gap-2">
+              <label className="tw:flex tw:flex-col tw:gap-1.5 tw:text-sm tw:font-medium tw:text-secondary">
+                Grant for (days)
+                <input
+                  aria-invalid={daysWrong || undefined}
+                  aria-label="Grant days"
+                  className={`${FIELD} tw:w-40 tw:bg-primary`}
+                  max={asked ?? 365}
+                  min={1}
+                  onChange={(event) => setDays(event.target.value)}
+                  placeholder={asked === null ? 'Until revoked' : undefined}
+                  type="number"
+                  value={days}
+                />
+                <span className="tw:text-xs tw:font-normal tw:text-tertiary">
+                  {asked === null
+                    ? 'They asked until revoked. Leave it empty for that, or set up to 365 days.'
+                    : `They asked for ${duration(asked)}. You can shorten it, not extend it.`}
+                </span>
+              </label>
+              {grantBlocker && <ConflictList conflicts={[grantBlocker]} />}
+            </div>
           ) : (
             <div className="tw:flex tw:flex-col tw:gap-1.5">
               <label className="tw:flex tw:flex-col tw:gap-1.5 tw:text-sm tw:font-medium tw:text-secondary">
@@ -1244,6 +1268,20 @@ function Configure({ request }: { request: AccessRequest }) {
                   </select>
                 )}
               </label>
+              {policyCheck.isFetching && (
+                <p className="tw:text-xs tw:text-tertiary">Checking the policy against this table…</p>
+              )}
+              {policyConflicts.length > 0 && <ConflictList conflicts={policyConflicts} />}
+              {policyCheck.data?.ifPolicy && policyCheck.data.policy?.bound && (
+                <details className="tw:rounded-lg tw:border tw:border-secondary tw:bg-primary tw:text-sm">
+                  <summary className="tw:cursor-pointer tw:px-3 tw:py-2 tw:font-medium tw:text-secondary tw:hover:text-primary">
+                    What they would see with it active
+                  </summary>
+                  <div className="tw:border-t tw:border-secondary tw:px-3 tw:pb-3">
+                    <AccessColumns access={policyCheck.data.ifPolicy} />
+                  </div>
+                </details>
+              )}
               <Hint>
                 ARAK only records which policy you changed. It does not activate it: the policy is
                 reviewed and switched on from its own page, like any other.
@@ -1316,6 +1354,8 @@ function Withdraw({ request }: { request: AccessRequest }) {
     </div>
   );
 }
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function duration(days: number | null): string {
   if (days === null) return 'Until revoked';

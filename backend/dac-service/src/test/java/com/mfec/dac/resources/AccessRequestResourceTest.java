@@ -17,10 +17,12 @@ import static org.mockito.Mockito.when;
 import com.mfec.dac.access.AccessEligibility;
 import com.mfec.dac.access.AccessRequestStore;
 import com.mfec.dac.access.AccessRequestStore.RequestException;
+import com.mfec.dac.access.AccessReview;
 import jakarta.ws.rs.BadRequestException;
 import jakarta.ws.rs.ForbiddenException;
 import jakarta.ws.rs.NotFoundException;
 import jakarta.ws.rs.WebApplicationException;
+import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -81,6 +83,91 @@ class AccessRequestResourceTest {
             () -> resource.decline(id, new AccessRequestResource.Decision(null, "no", null), as(SALES_OWNER)))
         .isInstanceOfSatisfying(
             WebApplicationException.class, e -> assertThat(e.getResponse().getStatus()).isEqualTo(409));
+  }
+
+  AccessRequestStore.StoredRequest request(String status, boolean mayConfigure) {
+    AccessRequestStore.StoredRequest request = mock(AccessRequestStore.StoredRequest.class);
+    when(request.status()).thenReturn(status);
+    when(request.mayConfigure()).thenReturn(mayConfigure);
+    when(request.requesterUsername()).thenReturn("analyst_a");
+    return request;
+  }
+
+  final AccessReview review = mock(AccessReview.class);
+  final AccessRequestResource reviewing =
+      new AccessRequestResource(store, mock(AccessEligibility.class), review);
+
+  @Test
+  @DisplayName("a grant that a policy would still defeat is refused with 409, and nothing is written")
+  void grantThatWouldNotOpen() {
+    AccessRequestStore.StoredRequest request = request("APPROVED", true);
+    when(store.find(eq(id), any())).thenReturn(request);
+    when(review.grantWouldNotOpen(request)).thenReturn(Optional.of("country-deny: country is not TH"));
+
+    assertThatThrownBy(
+            () ->
+                reviewing.complete(
+                    id, new AccessRequestResource.Configure("GRANT", 3, null, null), as(SALES_OWNER)))
+        .isInstanceOfSatisfying(
+            WebApplicationException.class,
+            e -> {
+              assertThat(e.getResponse().getStatus()).isEqualTo(409);
+              assertThat(e.getResponse().getEntity().toString())
+                  .contains("Still refusing: country-deny: country is not TH", "Policy updated");
+            });
+    verify(store, never()).complete(any(), any(), any());
+  }
+
+  @Test
+  @DisplayName("a grant that would open the table goes through; policy answers are not checked here")
+  void grantThatOpens() {
+    AccessRequestStore.StoredRequest request = request("IN_PROGRESS", true);
+    when(store.find(eq(id), any())).thenReturn(request);
+    when(review.grantWouldNotOpen(request)).thenReturn(Optional.empty());
+
+    reviewing.complete(id, new AccessRequestResource.Configure("GRANT", 3, null, null), as(SALES_OWNER));
+    verify(store).complete(eq(id), any(), any());
+
+    reviewing.complete(
+        id,
+        new AccessRequestResource.Configure("POLICY_UPDATED", null, UUID.randomUUID().toString(), null),
+        as(SALES_OWNER));
+    verify(review).grantWouldNotOpen(request);
+  }
+
+  @Test
+  @DisplayName("somebody who may not configure it now gets the store's answer, not the grant check")
+  void grantCheckOnlyForTheConfigurer() {
+    AccessRequestStore.StoredRequest request = request("IN_PROGRESS", false);
+    when(store.find(eq(id), any())).thenReturn(request);
+    when(store.complete(eq(id), any(), any()))
+        .thenThrow(new RequestException(RequestException.Kind.CONFLICT, "owner_o is configuring this request"));
+
+    assertThatThrownBy(
+            () ->
+                reviewing.complete(
+                    id, new AccessRequestResource.Configure("GRANT", 3, null, null), as(SALES_OWNER)))
+        .isInstanceOfSatisfying(
+            WebApplicationException.class,
+            e -> assertThat(e.getResponse().getEntity().toString()).contains("owner_o is configuring"));
+    verify(review, never()).grantWouldNotOpen(any());
+  }
+
+  @Test
+  @DisplayName("a review names its policy by id; anything else is 400")
+  void reviewPolicyId() {
+    assertThatThrownBy(() -> reviewing.review(id, "not-a-uuid", as(SALES_OWNER)))
+        .isInstanceOf(BadRequestException.class);
+    UUID policy = UUID.randomUUID();
+    reviewing.review(id, policy.toString(), as(SALES_OWNER));
+    verify(review).review(eq(id), eq(new AccessRequestStore.Actor("sales_owner", false)), eq(policy));
+    reviewing.review(id, " ", as(SALES_OWNER));
+    verify(review).review(eq(id), any(), isNull());
+
+    when(review.review(eq(id), any(), isNull()))
+        .thenThrow(new RequestException(RequestException.Kind.FORBIDDEN, "not for the requester"));
+    assertThatThrownBy(() -> reviewing.review(id, null, as(SALES_OWNER)))
+        .isInstanceOf(ForbiddenException.class);
   }
 
   @Test

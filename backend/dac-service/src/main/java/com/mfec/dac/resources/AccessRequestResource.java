@@ -2,6 +2,7 @@ package com.mfec.dac.resources;
 
 import com.mfec.dac.access.AccessEligibility;
 import com.mfec.dac.access.AccessRequestStore;
+import com.mfec.dac.access.AccessReview;
 import com.mfec.dac.auth.AuthenticatedUser;
 import com.mfec.dac.auth.Secured;
 import jakarta.servlet.http.HttpServletRequest;
@@ -24,6 +25,7 @@ import jakarta.ws.rs.core.SecurityContext;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.function.Supplier;
 
@@ -48,10 +50,21 @@ public class AccessRequestResource {
 
   private final AccessRequestStore requests;
   private final AccessEligibility eligibility;
+  private final AccessReview review;
 
   public AccessRequestResource(AccessRequestStore requests, AccessEligibility eligibility) {
+    this(requests, eligibility, null);
+  }
+
+  /**
+   * @param review null leaves out the review and the check that a grant would
+   *     open the table; only tests that exercise neither pass null
+   */
+  public AccessRequestResource(
+      AccessRequestStore requests, AccessEligibility eligibility, AccessReview review) {
     this.requests = requests;
     this.eligibility = eligibility;
+    this.review = review;
   }
 
   /** What a requester sends. {@code days} null means "until revoked". */
@@ -132,7 +145,8 @@ public class AccessRequestResource {
                         ask.purpose(),
                         ask.days(),
                         ask.attemptedSql(),
-                        ask.deniedBy()),
+                        ask.deniedBy(),
+                        clientIp(http)),
                     actor(caller)));
     return Response.status(Response.Status.CREATED).entity(created).build();
   }
@@ -223,6 +237,28 @@ public class AccessRequestResource {
   }
 
   /**
+   * What the people deciding a request should know before they answer it:
+   * who asked, what a grant would let them read column by column, the risk,
+   * what stands in the way and what they might do instead (M9 slice 2b).
+   *
+   * <p>Read-only. With {@code policyId}, also what the requester could read
+   * with that policy in force -- asked of the engine, never by activating it.
+   * The requester gets 403, a stranger the same 404 as the request itself.
+   */
+  @GET
+  @Path("/{id}/review")
+  public AccessReview.Review review(
+      @PathParam("id") UUID id,
+      @QueryParam("policyId") String policyId,
+      @Context SecurityContext security) {
+    if (review == null) {
+      throw new NotFoundException();
+    }
+    UUID policy = uuidOrNull(policyId);
+    return guarded(() -> review.review(id, actor(caller(security)), policy));
+  }
+
+  /**
    * Approves the caller's stages of the current step. The last step passing
    * makes the request APPROVED, which is not yet access: it then waits to be
    * configured.
@@ -284,6 +320,9 @@ public class AccessRequestResource {
       throw new BadRequestException("Say how it was configured");
     }
     AuthenticatedUser caller = caller(security);
+    if ("GRANT".equalsIgnoreCase(body.fulfilment())) {
+      refuseAGrantThatWouldNotOpen(id, actor(caller));
+    }
     return guarded(
         () ->
             requests.complete(
@@ -313,6 +352,49 @@ public class AccessRequestResource {
   }
 
   // --------------------------------------------------------------- plumbing
+
+  /**
+   * Refuses to finish a request as a grant when the grant would not let the
+   * requester read the table -- a DENY, or a higher layer's policy, still
+   * refuses them. Such a grant is not harmless: it waits, and opens the table
+   * the day that other policy is relaxed for some unrelated reason, for a
+   * request nobody would be deciding then. There is no override; change the
+   * policy and finish as "Policy updated", or decline.
+   *
+   * <p>Only asked of somebody who may configure the request now, so anyone
+   * else still gets the store's own answer (not yours, already answered).
+   */
+  private void refuseAGrantThatWouldNotOpen(UUID id, AccessRequestStore.Actor actor) {
+    if (review == null) {
+      return;
+    }
+    AccessRequestStore.StoredRequest request = guarded(() -> requests.find(id, actor));
+    boolean configurable =
+        "APPROVED".equals(request.status()) || "IN_PROGRESS".equals(request.status());
+    if (!configurable || !request.mayConfigure()) {
+      return;
+    }
+    Optional<String> blocker = review.grantWouldNotOpen(request);
+    if (blocker.isPresent()) {
+      throw conflict(
+          "A grant would not let "
+              + request.requesterUsername()
+              + " read this table. Still refusing: "
+              + blocker.get()
+              + ". Change that policy and finish as \"Policy updated\", or decline.");
+    }
+  }
+
+  private static UUID uuidOrNull(String raw) {
+    if (raw == null || raw.isBlank()) {
+      return null;
+    }
+    try {
+      return UUID.fromString(raw.trim());
+    } catch (IllegalArgumentException e) {
+      throw new BadRequestException("policyId is not an id");
+    }
+  }
 
   static AccessRequestStore.Actor actor(AuthenticatedUser user) {
     return new AccessRequestStore.Actor(user.username(), user.isPlatformAdmin());

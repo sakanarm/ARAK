@@ -2,7 +2,12 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, useLocation } from 'react-router-dom';
 import AccessRequestsPage from './AccessRequestsPage';
-import type { AccessRequest, RequestNotices, StageView } from '../../api/accessRequests';
+import type {
+  AccessRequest,
+  AccessReview,
+  RequestNotices,
+  StageView,
+} from '../../api/accessRequests';
 
 const fetchInbox = jest.fn();
 const fetchMine = jest.fn();
@@ -15,6 +20,7 @@ const start = jest.fn();
 const complete = jest.fn();
 const decline = jest.fn();
 const fetchPols = jest.fn();
+const fetchReview = jest.fn();
 
 jest.mock('../../api/accessRequests', () => {
   const actual = jest.requireActual('../../api/accessRequests');
@@ -30,6 +36,7 @@ jest.mock('../../api/accessRequests', () => {
     startRequest: (...args: unknown[]) => start(...args),
     completeRequest: (...args: unknown[]) => complete(...args),
     declineRequest: (...args: unknown[]) => decline(...args),
+    fetchAccessReview: (...args: unknown[]) => fetchReview(...args),
   };
 });
 
@@ -110,14 +117,71 @@ function approved(overrides: Partial<AccessRequest> = {}): AccessRequest {
   });
 }
 
+/** A review with nothing in the way: they cannot read it today, a grant opens it. */
+function review(overrides: Partial<AccessReview> = {}): AccessReview {
+  const refused = {
+    allowed: false,
+    blockedBy: 'no policy allows it',
+    blockedByPolicyId: null,
+    columns: [],
+    rowFilters: [],
+    reasons: [],
+    unenforceable: [],
+  };
+  return {
+    requestId: 'req-1',
+    assetFqn: FQN,
+    status: 'PENDING',
+    requestedDays: 30,
+    purpose: 'fraud-analysis',
+    reviewedAt: '2026-09-24T04:00:00Z',
+    addressKnown: true,
+    requester: {
+      username: 'analyst_a',
+      displayName: null,
+      email: null,
+      known: true,
+      enabled: true,
+      source: 'local',
+      appRoles: [],
+      memberships: [],
+      attributes: [],
+      grantsHere: [],
+      grantsElsewhere: 0,
+      earlier: [],
+      recentRequests: 0,
+      recentRejected: 0,
+    },
+    table: {
+      fqn: FQN,
+      known: true,
+      tiers: [],
+      domains: [],
+      owners: [],
+      columns: 0,
+      sensitiveColumns: 0,
+    },
+    now: refused,
+    ifGranted: { ...refused, allowed: true, blockedBy: null },
+    ifPolicy: null,
+    policy: null,
+    risk: { level: 'LOW', factors: [] },
+    conflicts: [],
+    suggestions: [],
+    ...overrides,
+  };
+}
+
 function notices(overrides: Partial<RequestNotices> = {}): RequestNotices {
   return { unseen: 0, inboxPending: 0, minePending: 0, seenAt: null, items: [], ...overrides };
 }
 
 let location = '';
+let state: unknown = null;
 function Where() {
   const here = useLocation();
   location = here.pathname + here.search;
+  state = here.state;
   return null;
 }
 
@@ -152,12 +216,15 @@ beforeEach(() => {
     complete,
     decline,
     fetchPols,
+    fetchReview,
   ].forEach((fn) => fn.mockReset());
   fetchInbox.mockResolvedValue([]);
   fetchMine.mockResolvedValue([]);
   fetchNotices.mockResolvedValue(notices());
   fetchPols.mockResolvedValue([]);
+  fetchReview.mockResolvedValue(review());
   location = '';
+  state = null;
 });
 
 describe('AccessRequestsPage tabs', () => {
@@ -806,6 +873,343 @@ describe('AccessRequestsPage configuring', () => {
     const card = await detail();
     expect(within(card).getByText('declined to configure it')).toBeInTheDocument();
     expect(within(card).getByText('The table is being retired')).toBeInTheDocument();
+  });
+});
+
+describe('AccessRequestsPage review', () => {
+  const POLICY = '0b6f3c1e-2f4a-4c8e-9d1a-5e7b8c9d0a1b';
+  const refused = review().now;
+
+  function panel() {
+    return screen.findByRole('region', { name: 'Review' });
+  }
+
+  it('says who asks, what a grant would show them, and how risky it is', async () => {
+    fetchInbox.mockResolvedValue([request()]);
+    fetchReview.mockResolvedValue(
+      review({
+        requester: {
+          ...review().requester,
+          displayName: 'Analyst A',
+          email: 'analyst_a@example.test',
+          memberships: [{ name: 'analysts', displayName: null, kind: 'group', source: 'local' }],
+          attributes: [{ key: 'clearance', value: 'L1', source: 'local' }],
+          recentRequests: 2,
+          recentRejected: 1,
+          earlier: [
+            {
+              id: 'old',
+              status: 'REJECTED',
+              requestedDays: 30,
+              createdAt: '2026-09-01T03:00:00Z',
+              decidedBy: 'owner_a',
+              note: 'Ask your lead first',
+              fulfilment: null,
+            },
+          ],
+        },
+        table: {
+          ...review().table,
+          owners: [{ type: 'user', name: 'owner_a', direct: true, inheritedFrom: null }],
+          columns: 2,
+          sensitiveColumns: 1,
+        },
+        ifGranted: {
+          ...refused,
+          allowed: true,
+          blockedBy: null,
+          columns: [
+            {
+              name: 'id',
+              dataType: 'INT',
+              fate: 'VISIBLE',
+              masking: null,
+              policy: null,
+              conditional: false,
+              sensitive: false,
+              sensitiveTags: [],
+            },
+            {
+              name: 'email',
+              dataType: 'VARCHAR',
+              fate: 'MASKED',
+              masking: 'NULLIFY',
+              policy: 'mask-pii',
+              conditional: false,
+              sensitive: true,
+              sensitiveTags: ['PII.Sensitive'],
+            },
+          ],
+          rowFilters: [{ kind: 'ATTRIBUTE', description: 'branch_code = L1', policy: 'by-branch' }],
+        },
+        risk: {
+          level: 'HIGH',
+          factors: [{ level: 'HIGH', code: 'OPEN_ENDED', detail: 'They asked until revoked.' }],
+        },
+        conflicts: [
+          {
+            severity: 'INFO',
+            code: 'MASKS_REMAIN',
+            detail: 'email stays masked by mask-pii even with a grant.',
+            policyId: 'pol-7',
+            policyName: 'mask-pii',
+          },
+        ],
+      })
+    );
+    renderPage('/requests?tab=inbox');
+
+    const reviewed = await panel();
+    expect(await within(reviewed).findByText('High risk')).toBeInTheDocument();
+    expect(within(reviewed).getByText('Analyst A')).toBeInTheDocument();
+    expect(within(reviewed).getByText('analyst_a@example.test')).toBeInTheDocument();
+    expect(within(reviewed).getByText('analysts')).toBeInTheDocument();
+    expect(within(reviewed).getByText('clearance = L1')).toBeInTheDocument();
+    expect(within(reviewed).getByText('2 other requests, 1 rejected')).toBeInTheDocument();
+    expect(
+      within(reviewed).getByRole('list', { name: 'Earlier requests for this table' })
+    ).toHaveTextContent('rejected');
+    expect(within(reviewed).getByText('owner_a')).toBeInTheDocument();
+    expect(within(reviewed).getByText('2 · 1 sensitive')).toBeInTheDocument();
+    expect(within(reviewed).getByText(/^Refused/)).toHaveTextContent('no policy allows it');
+
+    const rows = within(reviewed).getAllByRole('row');
+    expect(rows[1]).toHaveTextContent('id');
+    expect(rows[1]).toHaveTextContent('In clear');
+    expect(rows[2]).toHaveTextContent('Masked · nullify');
+    expect(rows[2]).toHaveTextContent('PII.Sensitive');
+    expect(rows[2]).toHaveTextContent('mask-pii');
+    expect(within(reviewed).getByRole('list', { name: 'Row filters' })).toHaveTextContent(
+      'branch_code = L1'
+    );
+    expect(within(reviewed).getByText('They asked until revoked.')).toBeInTheDocument();
+
+    const conflict = within(reviewed).getByRole('list', { name: 'Conflicts' });
+    expect(within(conflict).getByRole('listitem')).toHaveAttribute('data-code', 'MASKS_REMAIN');
+    expect(within(conflict).getByRole('link', { name: 'Open mask-pii' })).toHaveAttribute(
+      'href',
+      '/policies/pol-7'
+    );
+    expect(fetchReview).toHaveBeenCalledWith('req-1', null);
+  });
+
+  it('draws no review on one’s own request, nor on one already answered', async () => {
+    fetchMine.mockResolvedValue([request({ mayDecide: false })]);
+    fetchInbox.mockResolvedValue([request({ status: 'COMPLETED', mayDecide: false })]);
+    renderPage('/requests?tab=mine');
+    await detail();
+    expect(screen.queryByRole('region', { name: 'Review' })).toBeNull();
+
+    fireEvent.click(screen.getByRole('tab', { name: /Inbox/ }));
+    fireEvent.click(await screen.findByRole('radio', { name: 'Completed' }));
+    await detail();
+    expect(screen.queryByRole('region', { name: 'Review' })).toBeNull();
+    expect(fetchReview).not.toHaveBeenCalled();
+  });
+
+  it('says so when the review cannot be read, and still lets the owner answer', async () => {
+    fetchInbox.mockResolvedValue([request()]);
+    fetchReview.mockRejectedValue(new Error('The review could not be built.'));
+    renderPage('/requests?tab=inbox');
+
+    expect(await within(await panel()).findByRole('alert')).toHaveTextContent(
+      'The review could not be built.'
+    );
+    expect(screen.getByRole('button', { name: 'Approve' })).toBeInTheDocument();
+  });
+
+  it('opens a suggested group policy as an unsaved draft, and saves nothing', async () => {
+    const draft = { name: 'analysts-read-customer', lifecycleState: 'DRAFT' };
+    fetchInbox.mockResolvedValue([request()]);
+    fetchReview.mockResolvedValue(
+      review({
+        suggestions: [
+          {
+            kind: 'CREATE_POLICY_DRAFT',
+            title: 'Let the whole group read it',
+            detail: '2 other members of analysts already hold grants here.',
+            days: null,
+            policyId: null,
+            draft: draft as unknown as AccessReview['suggestions'][number]['draft'],
+          },
+          {
+            kind: 'UPDATE_POLICY',
+            title: 'Change the policy that refuses it',
+            detail: 'no-l1 refuses clearance L1.',
+            days: null,
+            policyId: 'pol-3',
+            draft: null,
+          },
+        ],
+      })
+    );
+    renderPage('/requests?tab=inbox');
+
+    const reviewed = await panel();
+    expect(
+      await within(reviewed).findByText(/Nothing here saves or activates a policy/)
+    ).toBeInTheDocument();
+    expect(within(reviewed).getByRole('link', { name: 'Open the policy' })).toHaveAttribute(
+      'href',
+      '/policies/pol-3'
+    );
+    fireEvent.click(within(reviewed).getByRole('button', { name: 'Open as draft policy' }));
+
+    await waitFor(() => expect(location).toBe('/policies/new'));
+    expect(state).toEqual({ draft, from: { requestId: 'req-1', assetFqn: FQN } });
+    expect(approve).not.toHaveBeenCalled();
+    expect(complete).not.toHaveBeenCalled();
+  });
+
+  it('will not complete a grant the policies would still refuse, and says which one', async () => {
+    fetchInbox.mockResolvedValue([approved({ status: 'IN_PROGRESS', assignee: 'me' })]);
+    fetchReview.mockResolvedValue(
+      review({
+        conflicts: [
+          {
+            severity: 'BLOCKER',
+            code: 'GRANT_BLOCKED',
+            detail: 'no-l1 refuses them, so a grant would not open the table.',
+            policyId: 'pol-3',
+            policyName: 'no-l1',
+          },
+        ],
+      })
+    );
+    renderPage('/requests?tab=inbox');
+
+    const configure = await screen.findByRole('region', { name: 'Configure the request' });
+    const blocker = await within(configure).findByText(/a grant would not open the table/);
+    expect(blocker.closest('li')).toHaveAttribute('data-code', 'GRANT_BLOCKED');
+    expect(within(configure).getByRole('button', { name: 'Complete' })).toBeDisabled();
+
+    // Configuring by policy is still open: that is how the refusal is answered.
+    fireEvent.click(within(configure).getByRole('radio', { name: /I updated a policy/ }));
+    expect(within(configure).queryByText(/a grant would not open the table/)).toBeNull();
+  });
+
+  it('shows why the server refused a grant', async () => {
+    fetchInbox.mockResolvedValue([approved({ status: 'IN_PROGRESS', assignee: 'me' })]);
+    complete.mockRejectedValue(
+      new Error('Still refusing: no-l1. Policy updated, or configure it by policy instead.')
+    );
+    renderPage('/requests?tab=inbox');
+
+    const configure = await screen.findByRole('region', { name: 'Configure the request' });
+    const done = within(configure).getByRole('button', { name: 'Complete' });
+    await waitFor(() => expect(fetchReview).toHaveBeenCalled());
+    fireEvent.click(done);
+    expect(await screen.findByRole('alert')).toHaveTextContent('Still refusing: no-l1.');
+  });
+
+  it('checks a chosen policy against the table, and only reads it', async () => {
+    fetchInbox.mockResolvedValue([approved({ status: 'IN_PROGRESS', assignee: 'me' })]);
+    fetchPols.mockResolvedValue([
+      {
+        id: POLICY,
+        document: { name: 'Ledger readers' },
+        lifecycleState: 'DRAFT',
+        environment: 'prod',
+        version: 1,
+        createdBy: 'me',
+        updatedBy: null,
+        updatedAt: null,
+      },
+    ]);
+    fetchReview.mockImplementation((_id: string, policyId: string | null) =>
+      Promise.resolve(
+        policyId
+          ? review({
+              policy: {
+                id: POLICY,
+                name: 'Ledger readers',
+                displayName: null,
+                lifecycleState: 'DRAFT',
+                environment: 'prod',
+                version: 1,
+                bound: true,
+              },
+              ifPolicy: {
+                ...refused,
+                allowed: true,
+                blockedBy: null,
+                columns: [
+                  {
+                    name: 'amount',
+                    dataType: 'NUMERIC',
+                    fate: 'VISIBLE',
+                    masking: null,
+                    policy: null,
+                    conditional: false,
+                    sensitive: false,
+                    sensitiveTags: [],
+                  },
+                ],
+              },
+              conflicts: [
+                {
+                  severity: 'WARNING',
+                  code: 'POLICY_NOT_ACTIVE',
+                  detail: 'Ledger readers is a draft: it changes nothing until it is activated.',
+                  policyId: POLICY,
+                  policyName: 'Ledger readers',
+                },
+                {
+                  severity: 'INFO',
+                  code: 'MASKS_REMAIN',
+                  detail: 'Masks stay on.',
+                  policyId: null,
+                  policyName: null,
+                },
+              ],
+            })
+          : review()
+      )
+    );
+    complete.mockResolvedValue(approved({ status: 'COMPLETED' }));
+    renderPage('/requests?tab=inbox');
+
+    const configure = await screen.findByRole('region', { name: 'Configure the request' });
+    fireEvent.click(within(configure).getByRole('radio', { name: /I updated a policy/ }));
+    const select = await within(configure).findByRole('combobox', { name: 'Policy' });
+    await within(configure).findByRole('option', { name: 'Ledger readers (draft)' });
+    fireEvent.change(select, { target: { value: POLICY } });
+
+    const found = await within(configure).findByText(/it changes nothing until it is activated/);
+    expect(found.closest('li')).toHaveAttribute('data-code', 'POLICY_NOT_ACTIVE');
+    // Only what bears on the policy is repeated here.
+    expect(within(configure).queryByText('Masks stay on.')).toBeNull();
+    expect(fetchReview).toHaveBeenCalledWith('req-1', POLICY);
+    expect(within(configure).getByText('What they would see with it active')).toBeInTheDocument();
+    expect(within(configure).getByText('amount')).toBeInTheDocument();
+
+    // A warning, not a refusal: the policy is theirs to finish on its own page.
+    fireEvent.change(within(configure).getByLabelText('Configuration note'), {
+      target: { value: 'Drafted a readers policy' },
+    });
+    fireEvent.click(within(configure).getByRole('button', { name: 'Complete' }));
+    await waitFor(() =>
+      expect(complete).toHaveBeenCalledWith('req-1', {
+        fulfilment: 'POLICY_UPDATED',
+        days: null,
+        policyId: POLICY,
+        note: 'Drafted a readers policy',
+      })
+    );
+  });
+
+  it('does not ask about a policy id that is still being typed', async () => {
+    fetchInbox.mockResolvedValue([approved({ status: 'IN_PROGRESS', assignee: 'me' })]);
+    fetchPols.mockRejectedValue(new Error('Forbidden'));
+    renderPage('/requests?tab=inbox');
+
+    const configure = await screen.findByRole('region', { name: 'Configure the request' });
+    fireEvent.click(within(configure).getByRole('radio', { name: /I created a policy/ }));
+    fireEvent.change(await within(configure).findByLabelText('Policy id'), {
+      target: { value: '0b6f3c1e' },
+    });
+    await waitFor(() => expect(fetchReview).toHaveBeenCalled());
+    expect(fetchReview.mock.calls.every(([, policyId]) => policyId === null)).toBe(true);
   });
 });
 

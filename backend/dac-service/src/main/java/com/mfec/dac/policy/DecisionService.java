@@ -12,6 +12,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 import org.jdbi.v3.core.Jdbi;
 
 /**
@@ -257,10 +258,73 @@ public class DecisionService {
         });
   }
 
+  /**
+   * The decision this principal would get if one more policy were in force: a
+   * draft somebody wrote or changed to answer an access request, asked about
+   * before anybody activates it.
+   *
+   * <p>The candidate joins the stack only where it is bound to the asset, as
+   * activating it would bind it; one that does not reach the asset changes
+   * nothing, and {@link Candidate#bound()} says so instead of letting an
+   * unchanged decision pass for the policy's verdict. A candidate that is
+   * already active is simply part of the stack.
+   *
+   * <p>Never cached, for the reason {@link #decideAsIfGranted} is not: this is
+   * a world that does not exist yet. And nothing here writes: asking whether a
+   * draft would open a table is not a way of opening it.
+   */
+  public Candidate decideWithCandidate(Ask ask, UUID candidate) {
+    Instant now = ask.when();
+    return jdbi.withHandle(
+        handle -> {
+          Principal who = principals.find(handle, ask.principal()).orElse(null);
+          if (who == null) {
+            return new Candidate(
+                denied(ask, now, "No principal named " + ask.principal() + " is known to the platform"),
+                false);
+          }
+          AssetContext asset = contexts.load(handle, ask.assetFqn()).orElse(null);
+          if (asset == null) {
+            return new Candidate(
+                denied(
+                    ask,
+                    now,
+                    "No asset " + ask.assetFqn() + " is in the metadata cache, so no policy governs it"),
+                false);
+          }
+          List<PolicyStore.StoredPolicy> stored =
+              policies.activeForIncluding(ask.assetFqn(), ask.environment(), candidate);
+          boolean bound = false;
+          for (PolicyStore.StoredPolicy one : stored) {
+            if (candidate.equals(one.id())) {
+              bound = true;
+              // Read as it would be once activated. The copy is this call's own,
+              // freshly read, so nothing stored or cached sees the change.
+              one.document().setLifecycleState(Policy.LifecycleState.ACTIVE);
+            }
+          }
+          List<Policy> documents = withGrants(handle, ask, now, stored);
+          RequestContext context =
+              RequestContext.at(now).fromIp(ask.ip()).forPurpose(ask.purpose());
+          return new Candidate(engine.evaluate(who, asset, context, documents), bound);
+        });
+  }
+
+  /**
+   * A decision made with a candidate policy in the stack.
+   *
+   * @param bound the candidate reaches the asset, so the decision includes it;
+   *     false means the decision is the asset's as it stands
+   */
+  public record Candidate(PolicyDecision decision, boolean bound) {}
+
   /** Every policy document that speaks to this asset at this moment, grants included. */
   private List<Policy> stack(org.jdbi.v3.core.Handle handle, Ask ask, Instant now) {
-    List<PolicyStore.StoredPolicy> stored =
-        policies.activeFor(ask.assetFqn(), ask.environment());
+    return withGrants(handle, ask, now, policies.activeFor(ask.assetFqn(), ask.environment()));
+  }
+
+  private List<Policy> withGrants(
+      org.jdbi.v3.core.Handle handle, Ask ask, Instant now, List<PolicyStore.StoredPolicy> stored) {
     List<Policy> documents = new ArrayList<>(stored.size() + 1);
     for (PolicyStore.StoredPolicy one : stored) {
       documents.add(one.document());

@@ -244,7 +244,25 @@ public class AccessRequestStore {
       String purpose,
       Integer requestedDays,
       String attemptedSql,
-      String deniedBy) {}
+      String deniedBy,
+      String requesterIp) {
+
+    /** A request whose address is not known, as before the review needed one. */
+    public NewRequest(
+        String assetFqn,
+        UUID requesterId,
+        String requesterUsername,
+        UUID dataSourceId,
+        String reason,
+        String purpose,
+        Integer requestedDays,
+        String attemptedSql,
+        String deniedBy) {
+      this(
+          assetFqn, requesterId, requesterUsername, dataSourceId, reason, purpose,
+          requestedDays, attemptedSql, deniedBy, null);
+    }
+  }
 
   /**
    * The person reading or acting, reduced to what deciding needs.
@@ -328,6 +346,44 @@ public class AccessRequestStore {
   }
 
   /** The open request this person already has on this asset, if any. */
+  /**
+   * The address a request was sent from, for the review's decisions only; null
+   * when it is not known.
+   */
+  public String askedFrom(UUID id) {
+    return jdbi.withHandle(
+        handle ->
+            handle
+                .createQuery("SELECT requester_ip FROM access_request WHERE id = :id")
+                .bind("id", id)
+                .mapTo(String.class)
+                .findOne()
+                .orElse(null));
+  }
+
+  /**
+   * The same person's other requests for the same table, newest first, for a
+   * reviewer deciding this one: whether it was asked before and how that ended.
+   */
+  public List<StoredRequest> earlier(StoredRequest request, int limit) {
+    return jdbi.withHandle(
+        handle ->
+            handle
+                .createQuery(
+                    """
+                    SELECT * FROM access_request
+                    WHERE asset_fqn = :fqn AND lower(requester_username) = lower(:username)
+                      AND id <> :id
+                    ORDER BY created_at DESC LIMIT :limit
+                    """)
+                .bind("fqn", request.assetFqn())
+                .bind("username", request.requesterUsername())
+                .bind("id", request.id())
+                .bind("limit", clamp(limit))
+                .map(this::map)
+                .list());
+  }
+
   public Optional<StoredRequest> openRequest(String assetFqn, String requesterUsername) {
     return jdbi.withHandle(
         handle ->
@@ -518,11 +574,11 @@ public class AccessRequestStore {
                       INSERT INTO access_request
                         (asset_fqn, requester_id, requester_username, data_source_id,
                          reason, purpose, requested_days, attempted_sql, denied_by,
-                         workflow_id, workflow_name, configurers, current_step)
+                         workflow_id, workflow_name, configurers, current_step, requester_ip)
                       VALUES
                         (:fqn, :who, :username, :source, :reason, :purpose, :days,
                          :sql, :deniedBy, :workflowId, :workflowName,
-                         CAST(:configurers AS jsonb), :step)
+                         CAST(:configurers AS jsonb), :step, :ip)
                       RETURNING id
                       """)
                   .bind("fqn", fqn)
@@ -538,6 +594,7 @@ public class AccessRequestStore {
                   .bind("workflowName", workflow.name())
                   .bind("configurers", write(workflow.configurers()))
                   .bind("step", firstStep(workflow))
+                  .bind("ip", truncate(request.requesterIp(), 64))
                   .mapTo(UUID.class)
                   .one();
 

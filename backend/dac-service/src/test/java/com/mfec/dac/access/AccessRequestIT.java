@@ -2,6 +2,7 @@ package com.mfec.dac.access;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.tuple;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
@@ -14,6 +15,7 @@ import com.mfec.dac.access.AccessWorkflow.Stage;
 import com.mfec.dac.catalog.AssetStore;
 import com.mfec.dac.engine.EngineConfig;
 import com.mfec.dac.engine.PolicyEngine;
+import com.mfec.dac.identity.PrincipalQuery;
 import com.mfec.dac.om.crawl.AssetCrawler;
 import com.mfec.dac.om.crawl.CrawledAsset;
 import com.mfec.dac.om.facet.ExtractedFacet;
@@ -30,9 +32,11 @@ import com.mfec.dac.schema.api.ResolvedRowPredicate;
 import com.mfec.dac.schema.entity.policy.AssetSelector;
 import com.mfec.dac.schema.entity.policy.AttributeCondition;
 import com.mfec.dac.schema.entity.policy.ColumnRule;
+import com.mfec.dac.schema.entity.policy.ContextRule;
 import com.mfec.dac.schema.entity.policy.DataPolicy;
 import com.mfec.dac.schema.entity.policy.FacetCondition;
 import com.mfec.dac.schema.entity.policy.Policy;
+import com.mfec.dac.schema.entity.policy.PrincipalMatch;
 import com.mfec.dac.schema.entity.policy.SubjectRule;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
@@ -1589,6 +1593,308 @@ class AccessRequestIT {
       assertThat(verdict.readable()).isFalse();
       assertThat(verdict.requestable()).isFalse();
     }
+  }
+
+  // ------------------------------------------------------------ reviewing
+
+  @Nested
+  @DisplayName("reviewing a request before answering it")
+  class Reviewing {
+
+    private AccessReview review() {
+      return new AccessReview(
+          jdbi,
+          decisions,
+          requests,
+          policies,
+          new PrincipalQuery(jdbi),
+          new AssetContextLoader(json),
+          grants);
+    }
+
+    @Test
+    @DisplayName("a DENY a grant cannot pass is a blocker that names the policy, and the grant is refused")
+    void grantBlocked() {
+      activate(orgAllow("everyone", null));
+      activate(orgDeny("no-l1", "L1"));
+      AccessRequestStore.StoredRequest made = ask("analyst_a", CUSTOMER, 7);
+
+      AccessReview.Review seen = review().review(made.id(), OWNER, null);
+
+      assertThat(seen.now().allowed()).isFalse();
+      assertThat(seen.ifGranted().allowed()).isFalse();
+      assertThat(seen.ifGranted().blockedBy()).startsWith("no-l1");
+      AccessReview.Conflict first = seen.conflicts().get(0);
+      assertThat(first.code()).isEqualTo("GRANT_BLOCKED");
+      assertThat(first.severity()).isEqualTo("BLOCKER");
+      assertThat(first.policyId()).isEqualTo(policyNamed("no-l1"));
+      assertThat(seen.suggestions())
+          .extracting(AccessReview.Suggestion::kind)
+          .containsExactly("UPDATE_POLICY");
+      assertThat(seen.suggestions().get(0).policyId()).isEqualTo(policyNamed("no-l1"));
+
+      assertThat(review().grantWouldNotOpen(requests.find(made.id(), OWNER)))
+          .hasValueSatisfying(blocker -> assertThat(blocker).startsWith("no-l1"));
+    }
+
+    @Test
+    @DisplayName("what a grant opens, column by column: the mask that stays, and who owns the table")
+    void columns() {
+      activate(orgMaskEmail("mask-pii"));
+      AccessRequestStore.StoredRequest made = ask("analyst_a", CUSTOMER, 14);
+
+      AccessReview.Review seen = review().review(made.id(), OWNER, null);
+
+      assertThat(seen.now().allowed()).isFalse();
+      assertThat(seen.ifGranted().allowed()).isTrue();
+      assertThat(seen.ifGranted().columns())
+          .extracting(AccessReview.ColumnFate::name, AccessReview.ColumnFate::fate)
+          .containsExactly(tuple("id", "VISIBLE"), tuple("email", "MASKED"));
+      AccessReview.ColumnFate email = seen.ifGranted().columns().get(1);
+      assertThat(email.policy()).isEqualTo("mask-pii");
+      assertThat(email.masking()).isEqualTo("NULLIFY");
+      assertThat(email.sensitive()).isTrue();
+      assertThat(email.sensitiveTags()).contains("PII.Sensitive");
+      assertThat(seen.conflicts())
+          .extracting(AccessReview.Conflict::code)
+          .containsExactly("MASKS_REMAIN");
+      assertThat(seen.risk().level()).isEqualTo("LOW");
+      assertThat(seen.risk().factors())
+          .extracting(AccessReview.Factor::code)
+          .containsExactlyInAnyOrder("SENSITIVE_PROTECTED", "NO_PURPOSE");
+      assertThat(seen.table().owners())
+          .extracting(AccessRequestStore.Approver::name)
+          .containsExactly("owner_o");
+      assertThat(seen.table().columns()).isEqualTo(2);
+      assertThat(seen.table().sensitiveColumns()).isEqualTo(1);
+      assertThat(seen.requester().attributes())
+          .extracting(AccessReview.Attribute::key, AccessReview.Attribute::value)
+          .contains(tuple("clearance", "L1"));
+      assertThat(review().grantWouldNotOpen(requests.find(made.id(), OWNER))).isEmpty();
+    }
+
+    @Test
+    @DisplayName("sensitive columns in clear for an open-ended ask: high risk, and a short grant offered first")
+    void sensitiveInClear() {
+      AccessRequestStore.StoredRequest made = ask("analyst_a", CUSTOMER, null);
+
+      AccessReview.Review seen = review().review(made.id(), OWNER, null);
+
+      assertThat(seen.ifGranted().sensitiveInClear())
+          .extracting(AccessReview.ColumnFate::name)
+          .containsExactly("email");
+      assertThat(seen.risk().level()).isEqualTo("HIGH");
+      assertThat(seen.risk().factors())
+          .extracting(AccessReview.Factor::code)
+          .contains("SENSITIVE_IN_CLEAR", "OPEN_ENDED");
+      assertThat(seen.suggestions())
+          .extracting(AccessReview.Suggestion::kind, AccessReview.Suggestion::days)
+          .containsExactly(tuple("GRANT", AccessReview.SHORTER_DAYS), tuple("GRANT", null));
+    }
+
+    @Test
+    @DisplayName("the requester may not read the review; a stranger is told there is no such request")
+    void who() {
+      AccessRequestStore.StoredRequest made = ask("analyst_a", CUSTOMER, 7);
+
+      assertThatThrownBy(() -> review().review(made.id(), ANALYST_A, null))
+          .satisfies(
+              e -> assertThat(kind(e)).isEqualTo(AccessRequestStore.RequestException.Kind.FORBIDDEN));
+      assertThatThrownBy(() -> review().review(made.id(), ANALYST_B, null))
+          .satisfies(
+              e -> assertThat(kind(e)).isEqualTo(AccessRequestStore.RequestException.Kind.NOT_FOUND));
+      assertThat(review().review(made.id(), ADMIN, null).requester().username())
+          .isEqualTo("analyst_a");
+    }
+
+    @Test
+    @DisplayName("a draft policy that would open the table is said to, and stays a draft")
+    void draftPolicyOpens() {
+      UUID draft = draft(tableAllow("ledger-analyst-a", LEDGER, "analyst_a"));
+      AccessRequestStore.StoredRequest made = ask("analyst_a", LEDGER, 7);
+
+      AccessReview.Review seen = review().review(made.id(), TEAM_MEMBER, draft);
+
+      assertThat(seen.policy().lifecycleState()).isEqualTo("DRAFT");
+      assertThat(seen.policy().bound()).isTrue();
+      assertThat(seen.ifPolicy().allowed()).isTrue();
+      assertThat(seen.conflicts())
+          .extracting(AccessReview.Conflict::code)
+          .containsExactly("POLICY_NOT_ACTIVE", "POLICY_OPENS");
+      // Asked about, not done: nothing was activated and nobody reads the table.
+      assertThat(policies.find(draft).orElseThrow().lifecycleState()).isEqualTo("DRAFT");
+      assertThat(read("analyst_a", LEDGER)).isFalse();
+    }
+
+    @Test
+    @DisplayName("a policy that misses the table is a blocker; one for somebody else still refuses")
+    void policyMisses() {
+      UUID elsewhere = draft(tableAllow("orphan-analyst-a", ORPHAN, "analyst_a"));
+      UUID someoneElse = draft(tableAllow("ledger-analyst-b", LEDGER, "analyst_b"));
+      AccessRequestStore.StoredRequest made = ask("analyst_a", LEDGER, 7);
+
+      assertThat(review().review(made.id(), TEAM_MEMBER, elsewhere).conflicts())
+          .extracting(AccessReview.Conflict::code)
+          .containsExactly("POLICY_NOT_BOUND");
+      assertThat(review().review(made.id(), TEAM_MEMBER, someoneElse).conflicts())
+          .extracting(AccessReview.Conflict::code)
+          .containsExactly("POLICY_NOT_ACTIVE", "POLICY_STILL_REFUSES");
+      assertThat(review().review(made.id(), TEAM_MEMBER, UUID.randomUUID()).conflicts())
+          .extracting(AccessReview.Conflict::code)
+          .containsExactly("POLICY_NOT_FOUND");
+    }
+
+    @Test
+    @DisplayName("when others in the requester's group hold grants, a draft policy for the group is offered")
+    void peers() {
+      jdbi.useHandle(
+          handle -> {
+            person(handle, "analyst_c", "L1");
+            handle.execute(
+                """
+                INSERT INTO principal (principal_type, username, source, enabled)
+                VALUES ('GROUP', 'analysts', 'local', true)
+                """);
+            handle.execute(
+                """
+                INSERT INTO group_member (group_id, member_id, source)
+                SELECT g.id, m.id, 'local' FROM principal g, principal m
+                WHERE g.username = 'analysts'
+                  AND m.username IN ('analyst_a', 'analyst_b', 'analyst_c')
+                """);
+          });
+      for (String peer : List.of("analyst_b", "analyst_c")) {
+        grants.grant(
+            new GrantStore.NewGrant(
+                LEDGER, idOf(peer), Instant.now().minusSeconds(60), null, "month end", "finance_lead"));
+      }
+      AccessRequestStore.StoredRequest made = ask("analyst_a", LEDGER, 7);
+
+      AccessReview.Review seen = review().review(made.id(), TEAM_MEMBER, null);
+
+      AccessReview.Suggestion offered =
+          seen.suggestions().stream()
+              .filter(s -> s.kind().equals("CREATE_POLICY_DRAFT"))
+              .findFirst()
+              .orElseThrow();
+      assertThat(offered.detail()).startsWith("2 other members of analysts");
+      Policy document = offered.draft();
+      assertThat(document.getSubject().getPrincipals().get(0).getGroup()).isEqualTo("analysts");
+      assertThat(document.getScopeFqn()).isEqualTo(LEDGER);
+      // Others' grants are counted in the group, not listed as the requester's.
+      assertThat(seen.requester().grantsHere()).isEmpty();
+      assertThat(seen.requester().grantsElsewhere()).isZero();
+      // The draft is valid as it stands, and saving it makes a DRAFT, nothing more.
+      PolicyStore.StoredPolicy saved = policies.create(document, "finance_lead");
+      assertThat(saved.lifecycleState()).isEqualTo("DRAFT");
+      assertThat(read("analyst_a", LEDGER)).isFalse();
+    }
+
+    @Test
+    @DisplayName("an earlier refusal on this table is listed, and counts against the ask")
+    void history() {
+      AccessRequestStore.StoredRequest first = ask("analyst_a", LEDGER, 7);
+      requests.reject(first.id(), TEAM_MEMBER, "Not this quarter");
+      AccessRequestStore.StoredRequest again = ask("analyst_a", LEDGER, 7);
+
+      AccessReview.Review seen = review().review(again.id(), TEAM_MEMBER, null);
+
+      assertThat(seen.requester().earlier())
+          .singleElement()
+          .satisfies(past -> assertThat(past.status()).isEqualTo("REJECTED"));
+      assertThat(seen.requester().recentRequests()).isEqualTo(1);
+      assertThat(seen.requester().recentRejected()).isEqualTo(1);
+      assertThat(seen.risk().factors())
+          .extracting(AccessReview.Factor::code)
+          .contains("REJECTED_BEFORE");
+    }
+
+    @Test
+    @DisplayName("the address a request came from decides an ipCidr rule, and is never shown")
+    void address() throws Exception {
+      activate(orgAllow("everyone", null));
+      Policy guest = subscription("no-guest-network", Policy.Effect.DENY);
+      guest.setSubject(
+          new SubjectRule().withContext(new ContextRule().withIpCidr(List.of("198.51.100.0/24"))));
+      activate(guest);
+
+      AccessRequestStore.StoredRequest outside =
+          requests.create(
+              withIp(newRequest("analyst_a", CUSTOMER, "month end", 7), "198.51.100.7"), ANALYST_A);
+      AccessRequestStore.StoredRequest inside =
+          requests.create(
+              withIp(newRequest("analyst_b", CUSTOMER, "month end", 7), "192.0.2.10"), ANALYST_B);
+
+      assertThat(requests.askedFrom(inside.id())).isEqualTo("192.0.2.10");
+      AccessReview.Review far = review().review(outside.id(), OWNER, null);
+      AccessReview.Review near = review().review(inside.id(), OWNER, null);
+      assertThat(far.addressKnown()).isTrue();
+      assertThat(far.conflicts())
+          .extracting(AccessReview.Conflict::code)
+          .contains("GRANT_BLOCKED");
+      assertThat(near.now().allowed()).isTrue();
+      assertThat(near.conflicts())
+          .extracting(AccessReview.Conflict::code)
+          .contains("ALREADY_READS");
+
+      String written =
+          json.writeValueAsString(far)
+              + json.writeValueAsString(near)
+              + json.writeValueAsString(requests.find(inside.id(), OWNER))
+              + json.writeValueAsString(requests.find(outside.id(), OWNER));
+      assertThat(written).doesNotContain("192.0.2.10").doesNotContain("198.51.100.7");
+    }
+  }
+
+  private static AccessRequestStore.NewRequest withIp(AccessRequestStore.NewRequest r, String ip) {
+    return new AccessRequestStore.NewRequest(
+        r.assetFqn(),
+        r.requesterId(),
+        r.requesterUsername(),
+        r.dataSourceId(),
+        r.reason(),
+        r.purpose(),
+        r.requestedDays(),
+        r.attemptedSql(),
+        r.deniedBy(),
+        ip);
+  }
+
+  /** Saved and bound, never activated. */
+  private UUID draft(Policy document) {
+    document.setEnvironment(Policy.Environment.fromValue(DecisionService.DEFAULT_ENVIRONMENT));
+    UUID id = policies.create(document, "alice").id();
+    materializer.materialize(id);
+    return id;
+  }
+
+  private static Policy tableAllow(String name, String fqn, String user) {
+    FacetCondition table = new FacetCondition();
+    table.setFacet(FacetCondition.FacetType.TABLE);
+    table.setOperator(ResolvedRowPredicate.FacetOperator.EQ);
+    table.setValue(fqn);
+    AssetSelector selector = new AssetSelector();
+    selector.setCondition(table);
+    Policy document = new Policy();
+    document.setName(name);
+    document.setPolicyType(Policy.PolicyType.SUBSCRIPTION);
+    document.setEffect(Policy.Effect.ALLOW);
+    document.setScopeLevel(ResolvedColumnMask.ScopeLevel.TABLE);
+    document.setScopeFqn(fqn);
+    document.setSelector(selector);
+    document.setSubject(
+        new SubjectRule().withPrincipals(List.of(new PrincipalMatch().withUser(user))));
+    return document;
+  }
+
+  private static UUID policyNamed(String name) {
+    return jdbi.withHandle(
+        handle ->
+            handle
+                .createQuery("SELECT id FROM policy WHERE name = :name")
+                .bind("name", name)
+                .mapTo(UUID.class)
+                .one());
   }
 
   // ------------------------------------------------------------------ fixture

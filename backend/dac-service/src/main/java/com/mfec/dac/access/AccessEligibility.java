@@ -92,14 +92,20 @@ public class AccessEligibility {
    * pass; otherwise whatever the engine said about composing the layers.
    */
   static String blocker(PolicyDecision decision) {
+    DecisionReason reason = blocking(decision);
+    return reason == null ? "the policy decision" : named(reason);
+  }
+
+  /** The reason {@link #blocker} names, or null when no single policy is to blame. */
+  static DecisionReason blocking(PolicyDecision decision) {
     List<DecisionReason> reasons = decision.getReasons();
     if (reasons == null) {
-      return "the policy decision";
+      return null;
     }
     for (DecisionReason reason : reasons) {
       if (Boolean.TRUE.equals(reason.getMatched())
           && reason.getEffect() == DecisionReason.Effect.DENY) {
-        return named(reason);
+        return reason;
       }
     }
     // A named policy before the engine's own "(composition)" line, which says
@@ -111,11 +117,11 @@ public class AccessEligibility {
             && name != null
             && !name.startsWith("grant:")
             && (!namedOnly || !name.startsWith("("))) {
-          return named(reason);
+          return reason;
         }
       }
     }
-    return "the policy decision";
+    return null;
   }
 
   private static String named(DecisionReason reason) {

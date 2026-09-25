@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import PolicyBuilderPage from './PolicyBuilderPage';
 
@@ -76,4 +76,72 @@ test('choosing an environment the engine does not read says so', async () => {
   fireEvent.click(await screen.findByRole('option', { name: /dev/i }));
 
   expect(await screen.findByText(/never enforced/i)).toBeInTheDocument();
+});
+
+/*
+ * A request's review can suggest a policy for a whole group. It arrives here
+ * as navigation state and fills the form -- nothing more. Saving it is the
+ * author's press of "Create draft", and it lands as a draft like any other.
+ */
+test('a policy suggested by an access request fills the form and is saved as a new draft', async () => {
+  const fqn = 'demo-pg.salesdb.sales.customer';
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(
+    <QueryClientProvider client={client}>
+      <MemoryRouter
+        initialEntries={[
+          {
+            pathname: '/policies/new',
+            state: {
+              draft: {
+                // Neither may survive: the form would pass for an existing, active policy.
+                id: 'stale-id',
+                lifecycleState: 'ACTIVE',
+                name: 'analysts-reads-customer',
+                displayName: 'analysts reads customer',
+                policyType: 'SUBSCRIPTION',
+                scopeLevel: 'TABLE',
+                scopeFqn: fqn,
+                selector: { condition: { facet: 'table', operator: 'eq', value: fqn } },
+                subject: { principals: [{ group: 'analysts' }] },
+                effect: 'ALLOW',
+                environment: 'prod',
+              },
+              from: { requestId: 'req-1', assetFqn: fqn },
+            },
+          },
+        ]}>
+        <Routes>
+          <Route element={<PolicyBuilderPage />} path="/policies/new" />
+        </Routes>
+      </MemoryRouter>
+    </QueryClientProvider>
+  );
+
+  expect(
+    await screen.findByText(new RegExp(`Drafted from an access request for ${fqn}`))
+  ).toBeInTheDocument();
+  expect(screen.getByDisplayValue('analysts-reads-customer')).toBeInTheDocument();
+  // Opening it saved nothing.
+  expect(createPolicy).not.toHaveBeenCalled();
+  expect(transitionPolicy).not.toHaveBeenCalled();
+
+  fireEvent.click(screen.getByRole('button', { name: 'Create draft' }));
+  await waitFor(() => expect(createPolicy).toHaveBeenCalledTimes(1));
+  const saved = createPolicy.mock.calls[0][0];
+  expect(saved).toMatchObject({
+    name: 'analysts-reads-customer',
+    scopeFqn: fqn,
+    subject: { principals: [{ group: 'analysts' }] },
+  });
+  expect(saved).not.toHaveProperty('id');
+  expect(saved).not.toHaveProperty('lifecycleState');
+  expect(transitionPolicy).not.toHaveBeenCalled();
+});
+
+test('a plain new policy carries no note about a request', async () => {
+  renderNew();
+
+  await screen.findByRole('button', { name: /environment/i });
+  expect(screen.queryByText(/Drafted from an access request/)).not.toBeInTheDocument();
 });

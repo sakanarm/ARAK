@@ -1,0 +1,12 @@
+-- M9 slice 2b: the address a request was sent from.
+--
+-- Reviewing a request asks the engine what a grant would let the requester
+-- read, and a policy may name the networks it applies from (ipCidr). Asked
+-- without an address, such a policy answers "no" for everybody, and the review
+-- would report a refusal the requester never meets. The address they asked from
+-- is the closest honest stand-in for the one they will query from.
+--
+-- Kept to the review: it is not shown on the request, and nothing but the
+-- engine reads it. Null for requests made before this column existed, which
+-- are reviewed without an address, as they were decided.
+ALTER TABLE access_request ADD COLUMN requester_ip text;

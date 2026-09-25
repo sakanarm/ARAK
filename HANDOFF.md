@@ -36,7 +36,7 @@ Phase 1 รองรับ SQL Server + PostgreSQL · identity หลักค�
 | **M7 Query API (5.2a)** | 🚧 ~80% — **`POST /v1/query` + Query console ใช้งานได้จริงรอบนี้** · rewrite → RLS + mask + hidden column → execute → audit ครบ · พิสูจน์กับ Postgres จริงแล้วทั้ง allow / RLS / mask / refuse · เหลือ direct-access detector (FR-6.3.1) และ result cache |
 | **M7b Cross-mode consistency** | ⬜ — ต้องมี M5/M6 ก่อน |
 | **M8 Audit + Ops** | 🚧 ~35% — **FR-7 ปิดครบวงรอบนี้ (grant ตรงระดับ table + auto-revoke + audit trail + หน้าจอ) ดูข้อ AD.1** · `audit_query` / `audit_decision` / `audit_policy_change` เขียนจริงแล้วและอ่านได้ · **`evaluation_ms` มีค่าแล้ว (ข้อ AE.5)** · **ยังไม่มี audit ของการ configure** (เปลี่ยน data source / OM settings ไม่ถูกบันทึกที่ไหนเลย) · ยังไม่มี compliance report / drift detector / auto-revoke / SIEM export |
-| **M9 Access Request Management** | 🚧 **~55% — slice 2a จบรอบนี้ (ข้อ BB)** · slice 1 (ข้อ AX): `access_request` (V21) + ขอ / inbox / approve / reject / withdraw + audit · **slice 2a:** Access Request Workflow ออกแบบได้ต่อ scope (default องค์กร / service / database / schema / table) — หลาย step เรียงกัน, stage ใน step เดียวกันวิ่งพร้อมกัน, กติกา ALL / ANY / AT_LEAST n, Reject เลือกได้ต่อ stage (VETO / QUORUM / FIRST_RESPONSE), ผู้อนุมัติเป็น owner / steward / custodian / role / team / คน · admin ตอบแทนทุก stage ได้ · table ไม่มี owner → ตกไปหา platform admin **และขึ้นใน Inbox + กระดิ่งแล้ว** · Approve ≠ ให้สิทธิ์: APPROVED → IN_PROGRESS → COMPLETED (GRANT ไม่เกินวันที่ขอ / POLICY_UPDATED / POLICY_CREATED อ้างถึง policy เท่านั้น) หรือ Decline โดยผู้ configure · หน้า `/settings/workflows` (V23) · **ต่อไป:** 2b หน้า review (ข้อมูลผู้ขอ / impact / risk / suggestion / policy conflict — draft เท่านั้น) · 2c dashboard grant ใกล้หมดอายุ + นับถอยหลัง · สถิติคำขอต่อ table · ยังไม่ทำ: Automatic configuration (Roadmap) · recertification · break-glass · notification ทาง email/Teams |
+| **M9 Access Request Management** | 🚧 **~65% — slice 2b จบรอบนี้ (ข้อ BC)** · slice 1 (ข้อ AX): `access_request` (V21) + ขอ / inbox / approve / reject / withdraw + audit · **slice 2a:** Access Request Workflow ออกแบบได้ต่อ scope (default องค์กร / service / database / schema / table) — หลาย step เรียงกัน, stage ใน step เดียวกันวิ่งพร้อมกัน, กติกา ALL / ANY / AT_LEAST n, Reject เลือกได้ต่อ stage (VETO / QUORUM / FIRST_RESPONSE), ผู้อนุมัติเป็น owner / steward / custodian / role / team / คน · admin ตอบแทนทุก stage ได้ · table ไม่มี owner → ตกไปหา platform admin **และขึ้นใน Inbox + กระดิ่งแล้ว** · Approve ≠ ให้สิทธิ์: APPROVED → IN_PROGRESS → COMPLETED (GRANT ไม่เกินวันที่ขอ / POLICY_UPDATED / POLICY_CREATED อ้างถึง policy เท่านั้น) หรือ Decline โดยผู้ configure · หน้า `/settings/workflows` (V23) · **slice 2b:** หน้า review ของคำขอ `GET /v1/access-requests/{id}/review` — ผู้ขอ (attribute / group / role / grant / ประวัติ) · grant จะเปิด column ไหน (visible / masked / hidden + sensitive) · row filter · risk LOW/MEDIUM/HIGH + เหตุผล · conflict (BLOCKER / WARNING / INFO) · suggestion (DECLINE / GRANT / UPDATE_POLICY / CREATE_POLICY_DRAFT — **draft เท่านั้น ไม่มีอะไร activate เอง**) · เช็ค policy ที่จะใช้ configure แบบอ่านอย่างเดียว · **GRANT ที่ policy ยังปฏิเสธ → 409** · IP ของคำขอ (V24) ใช้ตัดสิน ipCidr แต่ไม่เคยออกใน response · **ต่อไป:** 2c dashboard grant ใกล้หมดอายุ + นับถอยหลัง · สถิติคำขอต่อ table · ยังไม่ทำ: Automatic configuration (Roadmap) · recertification · break-glass · notification ทาง email/Teams |
 | **M10 Access Control Dashboard** | ⬜ **Phase 2 — ออกแบบแล้ว ยังไม่เริ่ม** · หน้าเดียวที่ตอบว่า "ตอนนี้องค์กรคุมข้อมูลได้ดีแค่ไหน" · 4 แถว: **Coverage** (asset ที่มี tag PII แต่ไม่มี policy คุ้มครอง / % ของ asset ที่ enforce แล้ว) · **Exposure** (ใครเข้าถึง PII ได้บ้าง · grant ที่ใกล้หมดอายุ · สิทธิ์ที่ไม่ได้ใช้เกิน 90 วัน) · **Activity** (query ต่อวัน แยก EXECUTED/REJECTED/FAILED · top principal · top asset · เหตุผลที่ถูกปฏิเสธบ่อยที่สุด) · **Health** (enforcement state ต่อ source · drift · รอบ sync ล่าสุด · p95 ของ decision) — **ข้อมูลมีอยู่ครบแล้วทั้งหมด** (`audit_query`, `audit_decision`, `asset_facet`, `policy_binding`, `access_grant`, `enforcement_state`) → งานคือ query + หน้าจอ ไม่ต้อง migrate — ดูแบบเต็มที่ข้อ AM.4 |
 | **M11 LLM Assist** | 🚧 **~60%** — ตารางนี้เคยเขียนว่า "ยังไม่เริ่ม" ซึ่งไม่จริงแล้ว · **per-user gateway ใช้งานได้จริง** — แต่ละคนใส่ base URL + key ของตัวเองในหน้า Settings และเลือกเองว่าจะเปิดใช้ไหม (`llm_user_setting.base_url` + `api_key_cipher` Fernet · key ไม่เคยถูกส่งกลับ ตอบแค่ `hasOwnKey`) · `llm_provider.allow_personal` เป็น kill switch · ⚠️ `LlmResource.putUser` ตัดสิทธิ์ admin ให้แก้ได้แค่ `enabled` — **ไม่มีใครเขียน gateway ของคนอื่นได้ ห้ามผ่อน** · ทดสอบสดผ่านแล้ว (21 models + completion ด้วย key ของ `analyst_a` เอง) · เหลือฟีเจอร์จริงสองตัว: **NL→SQL** และ **ร่าง policy** ที่ออกมาเป็น `DRAFT` เท่านั้น (FR-2.6 — LLM ไม่มีสิทธิ์ activate เอง) — ดูข้อ AO.8/AO.9 |
 | **M12 Home ที่จัดเอง** | ✅ **เสร็จ — milestone ใหม่ ไม่อยู่ในแผนเดิม** · หน้าแรกจัดวางเองได้ต่อ account · 5 preset · 14 widget type (กราฟวาดเป็น SVG มือ ไม่มี chart library) · วาง **HTML / Note / Link / Video** ได้ · `V13__home_layout.sql` — ไม่มีแถว = default (ลบแถว = reset) · **default คนละใบตาม role**: governance ได้หน้าเดิม · Requestor ได้หน้า Search · ⚠️ **HTML ที่คนพิมพ์เอง = stored XSS** → `HomeLayoutValidator` ล้างทั้ง**ตอนเขียนและตอนอ่าน** **ห้ามมีทางเขียน `home_layout` ที่ไม่ผ่านตัวนี้** · **M12b persona เสร็จแล้ว** (`V19__home_role_layout.sql`) — admin จัดหน้าแรกให้แต่ละ Platform Role ได้ที่ `/settings/home` · resolve แบบ **personal → role (แรงสุดที่ถือ) → built-in** · **persona ไม่เคยทับหน้าที่คนจัดเอง** · ⚠️ เป็น**ที่แรกที่ markup ของคนหนึ่งถูก render ใน session ของอีกคนโดยตั้งใจ** → `@Secured("PLATFORM_ADMIN")` + ล้างผ่าน `HomeLayoutValidator` ทั้งเขียนและอ่าน — ดูข้อ AN และ AS |
@@ -56,15 +56,15 @@ Phase 1 รองรับ SQL Server + PostgreSQL · identity หลักค�
 | App DB (docker `dac-appdb`, postgres:16-alpine) | `:5432` db/user `dac` |
 | OpenMetadata ของทีม | `2.0.1` — sync ผ่าน **ingestion-bot JWT** (ดู What Didn't Work) |
 
-เทสต์ทั้งหมดเขียว — **backend unit + integration รันครบเมื่อ 2026-09-25 → `./mvnw -o verify -Pintegration` BUILD SUCCESS · unit 772 · integration 242 · Failures 0 Errors 0** (รอบ BB: +59 unit ใน dac-service — `StageEngineTest` 23 · `AccessWorkflowTest` 12 · `ApproverDirectoryTest` 5 · `AccessRequestResourceTest` 5 · `AccessWorkflowResourceTest` 14 · integration **242** (+25 `AccessRequestIT` `Workflows` / `Configuring` / `Legacy`) · frontend **37 suites / 347 tests** (+`AccessWorkflowsPage.test.tsx` 17) · ดูข้อ BB.6 · รอบ BA: +6 `StewardshipTest` · +11 `StewardshipGuardsTest` · integration **217** (+3 `AccessRequestIT.Deciding` `ownerTypeMatters` · `grantReach` · `stranded`) · รอบ AY: +1 `SpaServletTest.unusualCharacters` · integration **214** (รอบ AZ: +5 `AccessRequestIT.Notices`) — **+23 จาก `AccessRequestIT`** ขอ / อนุมัติ / ปฏิเสธ / ถอน + เคส policy ชนกัน (DENY · ชั้นบนปฏิเสธ · override · approve ไม่ปลด mask) บน Postgres จริง), frontend `npx jest` + `npx tsc --noEmit` + `vite build` รันใหม่ **2026-09-25** (**36 suites / 307 tests** เขียว — รอบ BA: `AccessTab.test.tsx` ใหม่ 4 · `AccessRequestsPage.test.tsx` ±0 สุทธิ · `accessRequests.test.ts` +1 · ดูข้อ BA.4, AZ.5, AY.5 และ AX.8 · tsc exit 0 · build 11.78s · `scripts/check-cursor-pointer.mjs` → *every &lt;button&gt; offers a hand*)
+เทสต์ทั้งหมดเขียว — **backend unit + integration รันครบเมื่อ 2026-09-25 → `./mvnw -o verify -Pintegration` BUILD SUCCESS · unit 793 · integration 251 · Failures 0 Errors 0** (รอบ BC: +21 unit ใน dac-service — `AccessReviewTest` 17 ใหม่ · `AccessRequestResourceTest` +4 · integration **251** (+9 `AccessRequestIT` `Reviewing`) · frontend **37 suites / 357 tests** (+8 `AccessRequestsPage.test.tsx` · +2 `PolicyBuilderPage.test.tsx`) · ดูข้อ BC.6 · รอบ BB: +59 unit ใน dac-service — `StageEngineTest` 23 · `AccessWorkflowTest` 12 · `ApproverDirectoryTest` 5 · `AccessRequestResourceTest` 5 · `AccessWorkflowResourceTest` 14 · integration **242** (+25 `AccessRequestIT` `Workflows` / `Configuring` / `Legacy`) · frontend **37 suites / 347 tests** (+`AccessWorkflowsPage.test.tsx` 17) · ดูข้อ BB.6 · รอบ BA: +6 `StewardshipTest` · +11 `StewardshipGuardsTest` · integration **217** (+3 `AccessRequestIT.Deciding` `ownerTypeMatters` · `grantReach` · `stranded`) · รอบ AY: +1 `SpaServletTest.unusualCharacters` · integration **214** (รอบ AZ: +5 `AccessRequestIT.Notices`) — **+23 จาก `AccessRequestIT`** ขอ / อนุมัติ / ปฏิเสธ / ถอน + เคส policy ชนกัน (DENY · ชั้นบนปฏิเสธ · override · approve ไม่ปลด mask) บน Postgres จริง), frontend `npx jest` + `npx tsc --noEmit` + `vite build` รันใหม่ **2026-09-25** (**36 suites / 307 tests** เขียว — รอบ BA: `AccessTab.test.tsx` ใหม่ 4 · `AccessRequestsPage.test.tsx` ±0 สุทธิ · `accessRequests.test.ts` +1 · ดูข้อ BA.4, AZ.5, AY.5 และ AX.8 · tsc exit 0 · build 11.78s · `scripts/check-cursor-pointer.mjs` → *every &lt;button&gt; offers a hand*)
 
 > ⚠️ **`backend/dac-service/target/surefire-reports/com.mfec.dac.catalog.AssetStoreIT.txt` ยังแดงค้างอยู่ในโฟลเดอร์ — เป็นไฟล์เก่าจาก 2026-09-23 20:35 ก่อน commit `19b0503` ซึ่งคือ commit ที่แก้เคสนั้นพอดี** อย่าอ่านรายงานใน `target/` โดยไม่ดูเวลาไฟล์ — `mvn test` ไม่ล้างรายงานของคลาสที่รอบนี้ไม่ได้รัน
 
 | ชุด | จำนวน | คำสั่ง |
 |---|---|---|
-| Backend unit | dac-common 31 · dac-engine 277 · **dac-compiler-sql 51 (+17 — `RowEntitlementMaintainerTest`)** · dac-connector-openmetadata 91 · **dac-connector-source 25 (+6 — `SecureViewApplierTest`)** · dac-proxy 30 · **dac-service 267** = **772** (dac-service **267** — +23 `StageEngineTest` · +12 `AccessWorkflowTest` · +5 `ApproverDirectoryTest` · +5 `AccessRequestResourceTest` · +14 `AccessWorkflowResourceTest` ข้อ BB · ก่อนหน้า **208** — +6 `StewardshipTest` · +11 `StewardshipGuardsTest` ข้อ BA · ก่อนหน้า **191** — +4 `AccessEligibilityTest` · +1 `SpaServletTest.unusualCharacters` ข้อ AY) | `./mvnw -o test` |
-| Backend integration (Testcontainers `postgres:16-alpine`) | **242 tests** — **`AccessRequestIT` 56 (+25 `Workflows` 17 · `Configuring` 4 · `Legacy` 4 ข้อ BB.6 · +3 `Deciding` ข้อ BA.1a/BA.4 · +5 `Notices` ข้อ AZ.5 · 23 ข้อ AX.8)** · `AssetStoreIT` 7 · `CatalogQueryIT` 18 · `DataSourceStoreIT` 13 · `GovernanceStoreIT` 10 · `GrantCompositionIT` 17 · **`HomeLayoutStoreIT` 14 (+8 รอบนี้ — persona)** · `IdentityAdminStoreIT` 24 · `ImpactAnalysisIT` 8 · `PolicyBindingMaterializerIT` 10 · `PolicyOverviewIT` 24 · `PolicyStoreIT` 10 · **`SecureViewApplierIT` 11 (ใหม่รอบนี้ — อยู่ใน `dac-connector-source` ไม่ใช่ `dac-service`)** · **`SecureViewServiceIT` 15 (ใหม่รอบนี้)** · `SourceEngineRegistryIT` 5 | `./mvnw verify -Pintegration` (ทั้ง reactor) |
-| Frontend | **36 suites / 307 tests** (รอบ BA: `AccessTab.test.tsx` ใหม่ 4 · `accessRequests.test.ts` +1 · `AccessRequestsPage.test.tsx` แทน 2 เคส Grant-for ด้วย 1 + stranded 1 · รอบ AZ: `AccessRequestsPage.test.tsx` 22 (+9) · `RequestNotices.test.tsx` ใหม่ 10 — ดูข้อ AZ.5 · รอบ AY: +10 `AriaRouter.test.tsx` · `AssetRequestAccess.test.tsx` 9 · +4 `AssetDetailPage.test.tsx` — ดูข้อ AY.5 · รอบ AX: +20 `SqlEditor.test.tsx` · +16 `RequestAccess.test.tsx` · +13 `AccessRequestsPage.test.tsx` · +5 `accessRequests.test.ts` · `sqlCompletion.test.ts` — ดูข้อ AX.8 · ก่อนหน้า: +7 `EnforcementPage.test.tsx` — dry run → apply ส่งแค่ reviewId · non-admin ไม่มีปุ่ม Apply / Roll back · apply ที่ถูกปฏิเสธล้าง review · rollback ต้องยืนยัน · +9 `policyFlow.test.ts` — ลำดับด่าน · selector ว่าง = 0 asset ไม่ใช่ทุก asset · subject ว่าง = `open` ไม่ใช่ `set` · "ไม่ผ่านด่าน" ต้องไม่อ่านว่า deny · +3 `PolicyFlowChart.test.tsx` — ไม่ส่ง `onEdit` ต้องไม่มีปุ่มใดๆ · ก่อนหน้านี้ +4 ใน `HomePersonasPage.test.tsx` — หน้าที่คนหนึ่งจัดหน้าจอให้อีกคน: admin เท่านั้นที่เห็น · ครบทั้ง 5 role ไม่ว่าจะตั้งไว้หรือยัง · ประโยค "starting point ไม่ใช่ override" · เซฟแล้วต้องลง role ที่เปิดอยู่เท่านั้น) | `npx jest` ใน `frontend/app` |
+| Backend unit | dac-common 31 · dac-engine 277 · **dac-compiler-sql 51 (+17 — `RowEntitlementMaintainerTest`)** · dac-connector-openmetadata 91 · **dac-connector-source 25 (+6 — `SecureViewApplierTest`)** · dac-proxy 30 · **dac-service 288** = **793** (dac-service **288** — +17 `AccessReviewTest` · +4 `AccessRequestResourceTest` ข้อ BC · ก่อนหน้า **267** — +23 `StageEngineTest` · +12 `AccessWorkflowTest` · +5 `ApproverDirectoryTest` · +5 `AccessRequestResourceTest` · +14 `AccessWorkflowResourceTest` ข้อ BB · ก่อนหน้า **208** — +6 `StewardshipTest` · +11 `StewardshipGuardsTest` ข้อ BA · ก่อนหน้า **191** — +4 `AccessEligibilityTest` · +1 `SpaServletTest.unusualCharacters` ข้อ AY) | `./mvnw -o test` |
+| Backend integration (Testcontainers `postgres:16-alpine`) | **251 tests** — **`AccessRequestIT` 65 (+9 `Reviewing` ข้อ BC.6 · +25 `Workflows` 17 · `Configuring` 4 · `Legacy` 4 ข้อ BB.6 · +3 `Deciding` ข้อ BA.1a/BA.4 · +5 `Notices` ข้อ AZ.5 · 23 ข้อ AX.8)** · `AssetStoreIT` 7 · `CatalogQueryIT` 18 · `DataSourceStoreIT` 13 · `GovernanceStoreIT` 10 · `GrantCompositionIT` 17 · **`HomeLayoutStoreIT` 14 (+8 รอบนี้ — persona)** · `IdentityAdminStoreIT` 24 · `ImpactAnalysisIT` 8 · `PolicyBindingMaterializerIT` 10 · `PolicyOverviewIT` 24 · `PolicyStoreIT` 10 · **`SecureViewApplierIT` 11 (ใหม่รอบนี้ — อยู่ใน `dac-connector-source` ไม่ใช่ `dac-service`)** · **`SecureViewServiceIT` 15 (ใหม่รอบนี้)** · `SourceEngineRegistryIT` 5 | `./mvnw verify -Pintegration` (ทั้ง reactor) |
+| Frontend | **37 suites / 357 tests** (รอบ BC: `AccessRequestsPage.test.tsx` +8 · `PolicyBuilderPage.test.tsx` +2 · รอบ BB: `AccessWorkflowsPage.test.tsx` ใหม่ 17 · รอบ BA: `AccessTab.test.tsx` ใหม่ 4 · `accessRequests.test.ts` +1 · `AccessRequestsPage.test.tsx` แทน 2 เคส Grant-for ด้วย 1 + stranded 1 · รอบ AZ: `AccessRequestsPage.test.tsx` 22 (+9) · `RequestNotices.test.tsx` ใหม่ 10 — ดูข้อ AZ.5 · รอบ AY: +10 `AriaRouter.test.tsx` · `AssetRequestAccess.test.tsx` 9 · +4 `AssetDetailPage.test.tsx` — ดูข้อ AY.5 · รอบ AX: +20 `SqlEditor.test.tsx` · +16 `RequestAccess.test.tsx` · +13 `AccessRequestsPage.test.tsx` · +5 `accessRequests.test.ts` · `sqlCompletion.test.ts` — ดูข้อ AX.8 · ก่อนหน้า: +7 `EnforcementPage.test.tsx` — dry run → apply ส่งแค่ reviewId · non-admin ไม่มีปุ่ม Apply / Roll back · apply ที่ถูกปฏิเสธล้าง review · rollback ต้องยืนยัน · +9 `policyFlow.test.ts` — ลำดับด่าน · selector ว่าง = 0 asset ไม่ใช่ทุก asset · subject ว่าง = `open` ไม่ใช่ `set` · "ไม่ผ่านด่าน" ต้องไม่อ่านว่า deny · +3 `PolicyFlowChart.test.tsx` — ไม่ส่ง `onEdit` ต้องไม่มีปุ่มใดๆ · ก่อนหน้านี้ +4 ใน `HomePersonasPage.test.tsx` — หน้าที่คนหนึ่งจัดหน้าจอให้อีกคน: admin เท่านั้นที่เห็น · ครบทั้ง 5 role ไม่ว่าจะตั้งไว้หรือยัง · ประโยค "starting point ไม่ใช่ override" · เซฟแล้วต้องลง role ที่เปิดอยู่เท่านั้น) | `npx jest` ใน `frontend/app` |
 
 `yarn type-check` · `yarn lint` · `yarn build` ผ่านหมด → **BUILD SUCCESS** ทั้งสองฝั่ง
 
@@ -381,7 +381,145 @@ M18 ก่อนเพิ่ม engine ตัวที่ 3 เสมอ
 
 ---
 
-## รอบนี้ — **ข้อ BB: M9 slice 2a — Access Request Workflow Design Configuration (อนุมัติหลายขั้น · parallel / sequence · ALL / ANY / AT_LEAST n) + Configure ด้วยมือแยกจาก Approve**
+## รอบนี้ — **ข้อ BC: M9 slice 2b — หน้า Review ของคำขอ (ผู้ขอ · impact · risk · suggestion · policy conflict) + กัน GRANT ที่เปิดไม่ได้จริง**
+
+ผู้ใช้สั่ง *"ทำต่อได้เลยนะ เอาตาม Roadmap ทำไปเรื่อยๆ ต้องทดสอบให้ดีทุกขั้นตอน"* แล้ว *"ต่อ"* → ทำ 2b ตามข้อ BB.8 จบรอบนี้ · 2c (grant ใกล้หมดอายุ + นับถอยหลัง · สถิติคำขอต่อ table) เป็นรอบถัดไป
+
+หลักของรอบนี้: **review เป็นเครื่องช่วยคิดของคนตัดสิน ไม่ใช่คนตัดสินแทน** — ทุกอย่างที่มันเสนอเป็นแค่ข้อเสนอ · policy ที่ถูกเช็คไม่ถูกแก้ ไม่ถูก activate ไม่ถูก cache · draft policy ที่มันร่างให้เปิดใน Policy Builder เป็น **DRAFT** เท่านั้น ต้องมีคนกด save / ส่งอนุมัติเองตามทางปกติ
+
+### BC.1 `GET /v1/access-requests/{id}/review[?policyId=<uuid>]`
+
+- **ใครอ่านได้**: คนที่เห็นคำขอนั้นอยู่แล้วตามกติกาเดิมของ `AccessRequestStore.find` (คนใน pool · configurer · platform admin) **ยกเว้นผู้ขอ** · **ผู้ขอเอง → 403** *"A review is for the people deciding a request, not for the person who asked"* (ไม่ให้รู้ล่วงหน้าว่าต้องไปเถียงกับ policy ไหน) · คนที่ไม่เกี่ยว → **404** เหมือน GET ปกติ (ไม่บอกว่ามีคำขอ) · `policyId` ที่ไม่ใช่ UUID → 400 *"policyId is not an id"*
+- **อ่านอย่างเดียวล้วน** — ไม่มี write ใดๆ ไม่ขยับ status ไม่เขียน audit
+- คืน record `Review`:
+  | field | ความหมาย |
+  |---|---|
+  | `requester` | username · known / enabled · attribute · group · role (+scope) · **grant ที่ถืออยู่** · คำขอก่อนหน้าบน table นี้ใน 90 วัน (status + วันที่) |
+  | `table` | FQN · owners · tier · domain · known (อยู่ใน metadata cache ไหม) |
+  | `now` | engine ตัดสินวันนี้ว่าอะไร (allowed + reason) |
+  | `ifGranted` | ถ้าให้ grant ตามที่ขอ: allowed ไหม · **ชะตาของทุก column** (`VISIBLE` / `MASKED` + fn + policy ที่ mask / `HIDDEN`) · sensitive ไหม · row filter ในภาษาคน |
+  | `ifPolicy` / `policy` | เฉพาะเมื่อส่ง `policyId` — ถ้า policy นั้น **active และ bind กับ table นี้** จะเห็นอะไร |
+  | `risk` | `LOW` / `MEDIUM` / `HIGH` + factor ที่ทำให้เป็นแบบนั้น |
+  | `conflicts` | สิ่งที่ขัดกัน — `BLOCKER` / `WARNING` / `INFO` |
+  | `suggestions` | ทางที่ทำได้ เรียงตามที่ควรลองก่อน |
+  | `addressKnown` | **boolean เท่านั้น** — บอกว่ามี IP ของคำขอเก็บไว้ ไม่เคยคืนตัว IP |
+- **ifGranted คำนวณจริงด้วย engine** — `DecisionService.decideAsIfGranted` ใส่ grant สมมุติเข้าไปในรอบตัดสินนั้นรอบเดียว (ไม่เขียน `access_grant`) · `ifPolicy` ใช้ `DecisionService.decideWithCandidate(ask, policyId)` → `Candidate(decision, bound)` ที่ดึง policy ผ่าน `PolicyStore.activeForIncluding` ที่มีอยู่แล้ว — ตัดสินเหมือน policy นั้น active อยู่ **ไม่ cache ไม่ write**
+- **risk factor**:
+  | code | ระดับ | เมื่อไร |
+  |---|---|---|
+  | `REQUESTER_UNKNOWN` / `REQUESTER_DISABLED` | HIGH | ผู้ขอไม่อยู่ใน directory แล้ว / ถูกปิด |
+  | `SENSITIVE_IN_CLEAR` | HIGH | grant จะเปิด column sensitive (tag PII/Sensitive/… ที่ `Confirmed` · tag ที่ specific ที่สุดนับ · `Suggested` ไม่นับ) แบบไม่ mask |
+  | `SENSITIVE_PROTECTED` | LOW | มี column sensitive แต่ยัง mask / hide อยู่ทุกตัวหลัง grant |
+  | `OPEN_ENDED` / `VERY_LONG` / `LONG` | HIGH / HIGH / MEDIUM | ขอแบบไม่มีวันหมด / > 90 วัน / > 30 วัน |
+  | `TIER1` | MEDIUM | table เป็น Tier 1 |
+  | `REJECTED_BEFORE` | MEDIUM | เคยถูกปฏิเสธบน table นี้ใน 90 วัน |
+  | `NO_PURPOSE` | LOW | ไม่ใส่ purpose |
+  | `TABLE_UNKNOWN` | MEDIUM | table ไม่อยู่ใน metadata cache เลยโชว์ column ไม่ได้ |
+- **conflict code**:
+  | code | ระดับ | ความหมาย |
+  |---|---|---|
+  | `ALREADY_READS` | WARNING | อ่านได้อยู่แล้ววันนี้ |
+  | `LIVE_GRANT` | INFO | มี grant ที่ยังไม่หมดบน table นี้อยู่แล้ว |
+  | `GRANT_BLOCKED` | **BLOCKER** | grant ก็ไม่ช่วย — มี policy (เช่น DENY) ที่ grant ผ่านไม่ได้ · **ระบุ id ของ policy นั้น** |
+  | `MASKS_REMAIN` | INFO | ได้ grant แล้วยังมี column ถูก mask (บอก column + policy) |
+  | `ROW_FILTERED` | INFO | ได้ grant แล้วยังเห็นแค่บางแถว (บอก policy) |
+  | `POLICY_NOT_FOUND` | BLOCKER | `policyId` ไม่มีอยู่ |
+  | `POLICY_NOT_BOUND` | BLOCKER | policy นั้นไม่ครอบ table นี้ (หรือคนละ environment — เช่น draft ตัวอย่างที่เป็น env `dev` ขณะ default = `prod`) |
+  | `POLICY_NOT_ACTIVE` | INFO | policy นั้นยังไม่ active — ผลที่เห็นคือ *"ถ้า active"* |
+  | `POLICY_STILL_REFUSES` | WARNING | ถ้า policy นั้น active ผู้ขอก็ยังอ่านไม่ได้ |
+  | `POLICY_OPENS` | INFO | ถ้า policy นั้น active ผู้ขอจะอ่านได้ |
+- **suggestion** (ไม่มีตัวไหน apply เอง):
+  - `DECLINE` — อ่านได้อยู่แล้ว ไม่ต้องทำอะไร
+  - `GRANT` — ให้ตามที่ขอ · ถ้าจะเปิด column sensitive แบบไม่ mask และขอเกิน 7 วัน → เสนอ **grant 7 วันก่อน** แล้วค่อยตามจำนวนที่ขอ
+  - `UPDATE_POLICY` — เมื่อ `GRANT_BLOCKED` · บอก id ของ policy ที่ต้องแก้ แล้วจบคำขอเป็น "Policy updated"
+  - `CREATE_POLICY_DRAFT` — เฉพาะเมื่อมีคนใน group เดียวกับผู้ขอ **อย่างน้อย 2 คน** ถือ grant บน table นี้อยู่แล้ว (สัญญาณว่าควรเป็น policy ไม่ใช่ grant รายคน) · ร่าง subscription ALLOW `group = <group>` · TABLE scope · ชื่อ slug ปลอดภัย · **ส่งไป Policy Builder เป็น DRAFT เท่านั้น**
+
+### BC.2 กัน GRANT ที่เปิดไม่ได้จริง (server-side)
+
+- `POST /v1/access-requests/{id}/complete` แบบ `GRANT` → ก่อนเขียน grant เรียก `AccessReview.grantWouldNotOpen(request)` (= `decideAsIfGranted` + `AccessEligibility.blocking(decision)`) · ถ้ายังถูกปฏิเสธ → **409** *"A grant would not let analyst_b read this table. Still refusing: <policy>: <reason>. Change that policy and finish as \"Policy updated\", or decline."* · **ไม่มีแถว grant ไม่ขยับ status ไม่เขียน audit**
+- เหตุผล: ก่อนหน้านี้ configurer กด Complete GRANT ได้แม้ DENY จะทำให้ grant ไร้ผล → คำขอขึ้น COMPLETED แต่ผู้ขอยังอ่านไม่ได้ = โกหกทั้งสองฝั่ง
+- เช็คเฉพาะคนที่ configure ได้จริง — คนอื่นได้คำตอบเดิมของ store (403 "Configured by …") ไม่ได้เห็นผลของ grant check (`grantCheckOnlyForTheConfigurer`)
+- `POLICY_UPDATED` / `POLICY_CREATED` **ไม่ถูกเช็ค** ตรงนี้ — มันแค่อ้างถึง policy (ตามข้อ BB.2) review ในหน้า Configure เตือนให้แทน
+- `AccessEligibility.blocker()` แตกเป็น `blocking(PolicyDecision)` คืน `DecisionReason` หรือ null → ใช้ร่วมกันทั้งตอนขอ (eligibility) ตอน review และตอน complete
+
+### BC.3 Migration `V24__access_request_ip.sql`
+
+- `ALTER TABLE access_request ADD COLUMN requester_ip text` — IP ที่คำขอถูกส่งมา (`request.getRemoteAddr()` ไม่เชื่อ X-Forwarded-For) · ให้ engine ใช้ตัดสิน rule `context.ipCidr` ตอน review / grant check เหมือนผู้ขอ query จากที่เดิม (`AccessRequestStore.askedFrom(id)`)
+- **ไม่เคยออกไปใน response ใดๆ** — create / GET / inbox / mine / review ตรวจแล้วทั้ง unit, IT และ live · review บอกแค่ `addressKnown`
+- คำขอเก่าก่อน V24 = null → ตัดสินแบบไม่รู้ IP (เหมือน query ที่ไม่มี address)
+
+### BC.4 Backend
+
+- `access/AccessReview.java` (ใหม่) — ประกอบ review: ผู้ขอ · table · now / ifGranted / ifPolicy · risk · conflict · suggestion · `grantWouldNotOpen` · ค่าคงที่ `LONG_DAYS 30` · `VERY_LONG_DAYS 90` · `SHORTER_DAYS 7` · `PEERS_FOR_POLICY 2` · `HISTORY_WINDOW 90 วัน`
+- `policy/DecisionService.java` — `decideWithCandidate` + `Candidate` · `decideAsIfGranted` · refactor `withGrants` ให้ใช้ร่วมกัน · ไม่แตะ cache ของ decision ปกติ
+- `access/AccessEligibility.java` — `blocking(PolicyDecision)`
+- `access/AccessRequestStore.java` — เก็บ `requester_ip` ตอนสร้าง · `askedFrom(id)` · SELECT ของ view ทุกตัวไม่ดึง column นี้
+- `resources/AccessRequestResource.java` — `GET /{id}/review` · `refuseAGrantThatWouldNotOpen` ก่อน complete GRANT
+- `DacApplication.java` — ต่อ `AccessReview` เข้า resource
+
+### BC.5 Frontend
+
+- `api/accessRequests.ts` — type `AccessReview` / `ReviewConflict` / `ReviewSuggestion` / `ColumnFate` ... + `fetchAccessReview(id, policyId?)`
+- `pages/requests/RequestReview.tsx` (ใหม่) — panel **"Before you answer"** (region `Review`) บนคำขอที่ไม่ใช่ของตัวเองและยังเปิดอยู่: chip risk + factor · ผู้ขอ (attribute / group / role / grant ที่ถือ / คำขอก่อนหน้า) · ตาราง column *"What a grant would open"* (Visible / Masked by … / Hidden · ติดป้าย sensitive) · row filter · conflict list (`ul[aria-label=Conflicts]` · `li[data-code]`) · suggestion พร้อมปุ่ม · footer *"Suggestions only — nothing here changes a policy or a grant."*
+- `pages/requests/AccessRequestsPage.tsx` —
+  - ผู้ขอไม่เห็น panel review เลย
+  - หน้า Configure: เลือก **Grant access** แล้วมี `GRANT_BLOCKED` → โชว์ blocker + **Complete disabled** (server ก็ปฏิเสธ 409 อยู่ดี)
+  - เลือก **I updated a policy / I created a policy** + เลือก policy → เรียก review พร้อม `policyId` → โชว์ ConflictList ของ policy นั้น + `<details>` *"What they would see with it active"* · Complete disabled แค่จนกว่าจะพิมพ์ note ที่บังคับ (warning ไม่ block — คนตัดสินรู้ดีกว่า)
+  - ปุ่ม **"Open as draft policy"** ของ `CREATE_POLICY_DRAFT` → `navigate('/policies/new', { state: { draft } })`
+- `pages/policies/PolicyBuilderPage.tsx` — รับ draft จาก location state → เติมฟอร์ม + ข้อความ *"Drafted from an access request"* · ยังต้องกด save เอง และบันทึกเป็น DRAFT
+- ไม่ได้รัน prettier (ไม่มี config — ดู memory) · ไม่มีแถบ `border-l-4` สีฟ้า · ใช้ layout เดิมของหน้า requests
+
+### BC.6 Tests
+
+| ชุด | เพิ่ม | ครอบอะไร |
+|---|---|---|
+| `AccessReviewTest` (ใหม่) | **17** | tag ที่ specific ที่สุดนับ · คำ / classification ที่แปลว่า sensitive · `Suggested` ไม่นับ · ทุก column มีชะตา + mask บอก policy · refusal บอกชื่อ + id policy · row filter ภาษาคน · DENY = GRANT_BLOCKED + UPDATE_POLICY · sensitive in clear = HIGH + เสนอ 7 วันก่อน · mask ที่เหลือเป็น info · ความยาว / tier / ประวัติ / identity ดัน risk · อ่านได้อยู่แล้ว = DECLINE · peer ถือ grant = draft policy ที่ไม่ active · policy ไม่ครอบ table = blocker · draft ที่จะเปิดได้บอกว่าเปิด และยัง draft · policy ที่ยังปฏิเสธ = warning · policy ไม่มีจริง = blocker · slug ปลอดภัย |
+| `AccessRequestResourceTest` | +4 | GRANT ที่ policy ยังปฏิเสธ → 409 ไม่เขียนอะไร · GRANT ที่เปิดได้ผ่าน (policy mode ไม่เช็คตรงนี้) · คนที่ configure ไม่ได้ได้คำตอบของ store · `policyId` ผิดรูป → 400 |
+| `AccessRequestIT` `@Nested Reviewing` | +9 (รวม **65**) | DENY = blocker ที่บอก policy และ grant ถูกปฏิเสธ · column-by-column + owner · sensitive + open-ended = HIGH + grant สั้นก่อน · ผู้ขอ 403 / คนนอก 404 · draft ที่จะเปิดได้ยัง draft · policy ไม่ครอบ / ของคนอื่นยังปฏิเสธ · peer ใน group → draft · refusal ก่อนหน้านับ · **IP ตัดสิน rule ipCidr แต่ไม่เคยถูกโชว์** |
+| `AccessRequestsPage.test.tsx` | +8 | บอกผู้ขอ / สิ่งที่ grant จะเปิด / risk · ไม่วาด review บนคำขอของตัวเองหรือที่ตอบแล้ว · อ่าน review ไม่ได้ก็ยังตอบได้ · draft group policy เปิดแบบไม่ save · ไม่ให้ complete grant ที่ policy ยังปฏิเสธ + บอกตัวไหน · โชว์เหตุผลที่ server ปฏิเสธ (409) · เช็ค policy ที่เลือกแบบอ่านอย่างเดียว · ไม่ยิงถามขณะยังพิมพ์ id ไม่ครบ |
+| `PolicyBuilderPage.test.tsx` | +2 | policy ที่คำขอเสนอเติมฟอร์มและ save เป็น draft ใหม่ · policy ใหม่ธรรมดาไม่มีข้อความเรื่องคำขอ |
+
+**ผลรวม (2026-09-25):** `./mvnw -o verify -Pintegration` **BUILD SUCCESS** · unit **793** (dac-service **288**) · integration **251** · รวม **1044** · Failures 0 Errors 0 · frontend `npx jest src` **37 suites / 357 tests** ผ่าน · `tsc --noEmit` สะอาด · `VITE_BASE=/Arak/ npm run build` ผ่าน
+
+### BC.7 ทดสอบสดบน dev (`flow_review.py` phase a / b + `review-shot.mjs` ใน scratchpad)
+
+รันกับ app ที่ build จาก working tree นี้ (API :8080, UI `http://localhost:8090/Arak/`) — ทั้งสอง phase **RESULT: ALL PASSED** · table `demo-pg.salesdb.sales.customer` (ไม่มี owner → admin ตัดสิน) · ผู้ขอ `analyst_b` (L2, SG) · รหัสผ่าน dev ส่งเป็น env `DEV_PW` เท่านั้น
+
+**Phase a — review ก่อนตอบ และ grant ที่ DENY ทำให้ไร้ผล**
+| ขั้น | ผล |
+|---|---|
+| ก่อนขอ | analyst_b query → 403 (finance-subscription ไม่ผ่าน) |
+| ขอ 5 วัน | 201 PENDING · `requester_ip` ถูกเก็บ (loopback) · **ไม่มี address ใน response ของ create / GET ของผู้ขอ / inbox ของ admin** |
+| review (admin) | 200 · ไม่มี address · `addressKnown` true · requester analyst_b · `now` ปฏิเสธ / `ifGranted` เปิดได้ · risk **HIGH** [`SENSITIVE_IN_CLEAR`, `REJECTED_BEFORE`] · 9 column `VISIBLE` ทั้งหมด (analyst_b เป็น L2 จึงไม่โดน mask) · row filter `sales-branch-rls` · conflicts [`ROW_FILTERED`] · suggestion [`GRANT`] |
+| ใครอ่านได้ | ผู้ขอ → **403** "A review is for the people deciding a request…" · analyst_a (ไม่เกี่ยว) → **404** · `policyId=not-an-id` → **400** · UUID สุ่ม → `POLICY_NOT_FOUND` |
+| เช็ค policy | `example-owner` (DRAFT, env dev) → `POLICY_NOT_BOUND` · `finance-subscription` (ACTIVE) → `POLICY_STILL_REFUSES` · **state + version ของทุก policy ไม่เปลี่ยน · คำขอยัง PENDING** |
+| approve → start | APPROVED → IN_PROGRESS · สร้าง DENY `demo-review-deny-analyst-b` (user = analyst_b) แล้ว activate |
+| review หลัง DENY | `GRANT_BLOCKED` *"A grant would not let analyst_b read this table. Still refusing: demo-review-deny-analyst-b: subject rule satisfied"* + suggestion `UPDATE_POLICY` |
+| complete GRANT 2 วัน | **409** *"… Change that policy and finish as \"Policy updated\", or decline."* · **ไม่มีแถว `access_grant`** · ยัง IN_PROGRESS |
+
+**Phase b — เอา DENY ออก แล้ว grant เดิมผ่าน**
+| ขั้น | ผล |
+|---|---|
+| disable DENY | 200 · review เหลือ [`ROW_FILTERED`] ไม่มี blocker |
+| complete GRANT 2 วัน | 200 **COMPLETED** |
+| หลังได้สิทธิ์ | analyst_b query → **200 `[[1]]`** · DENY ถูก archive เก็บกวาด |
+| audit (`audit_access_request`) | REQUEST · VOTE · APPROVE · START · COMPLETE — **ครั้งที่โดน 409 ไม่เขียนอะไร** |
+
+ภาพหน้าจอ (Playwright `review-shot.mjs`, ไม่มี pageerror / 5xx — เก็บใน `shots-rv/` ของ scratchpad ไม่ commit):
+- `rv-review-panel.png` — panel "Before you answer" · chip risk **Medium** (หลัง DENY: grant เปิดไม่ได้แล้วจึงไม่มี `SENSITIVE_IN_CLEAR`) · `GRANT_BLOCKED` · footer "Suggestions only"
+- `rv-configure-blocked.png` — Configure แบบ Grant access: blocker ซ้ำอยู่ตรงปุ่ม · **Complete disabled**
+- `rv-configure-policy.png` — I updated a policy → เลือก finance-subscription → conflict ของ policy นั้น + `<details>` "What they would see with it active" · Complete disabled จนกว่าจะพิมพ์ note
+- `rv-requester.png` — analyst_b เปิดคำขอของตัวเอง: **ไม่มี panel review**
+- `rv-review-blocked.png` — ทั้งหน้า
+
+### BC.8 ยังไม่ทำ / ต่อไป
+
+- **2c (ต่อทันที)** `GET /v1/access/grants/expiring?withinDays=N` + card dashboard *"ใครใกล้หมดสิทธิ์ใน table ไหน"* พร้อมนับถอยหลัง · **สถิติคำขอต่อ table** (จำนวนขอ / อนุมัติ / ปฏิเสธ / เวลาที่ใช้ตัดสิน — ข้อมูลอยู่ใน `access_request` ครบแล้ว) สำหรับทำ Dashboard ตามที่ผู้ใช้ขอ
+- ปุ่ม *"Open as draft policy"* ยังไม่เคยเห็นสดเพราะ dev data ไม่มีคนใน group เดียวกันถือ grant บน table เดียวกัน ≥ 2 คน — jest + IT ครอบแล้ว
+- `audit_policy_change` ยังไม่ถูกเขียน (เรื่องเดิมข้อ M17 / AP.5 — ไม่ได้เกิดจากรอบนี้; ประวัติ policy อยู่ใน `policy_version`)
+- Automatic configuration (Roadmap) · recertification · break-glass · email/Teams · review ด้วย LLM (M16 — แยกต่างหาก และ LLM เห็นแค่ metadata ไม่เคย activate policy)
+
+## รอบก่อนหน้า — **ข้อ BB: M9 slice 2a — Access Request Workflow Design Configuration (อนุมัติหลายขั้น · parallel / sequence · ALL / ANY / AT_LEAST n) + Configure ด้วยมือแยกจาก Approve**
 
 ผู้ใช้ขอ: *"กรณีไม่มีคนเป็น owner … ไม่เห็นขึ้นใน platform Admin Inbox เลย"* · *"เพิ่ม Feature ให้ ส่งต่อได้หลายๆคน เพิ่ม Access Request Workflow Design Configuration — Configure การขอเป็น หลาย Step ได้ ทำได้ทั้งแบบ parallel, Sequence (need approve from all, need approve from only one, ..)"* · *"ใน Dashboard ต้องสามารถระบุได้ว่าใครใกล้จะหมดสิทธิใน table ไหน อาจใส่ตัวนับถอยหลังได้"* · *"อยากให้เก็บ สถิติ จำนวนที่ขอใช้ table ไว้ด้วย"* · เรื่อง Reject ในแต่ละ stage: *"ให้เลือกได้ใน Configure"* · admin ตอบแทนทุก stage ได้: *"ต่อ"* · Configure แบบ Manual เป็น default — **Automatic อยู่ Roadmap เท่านั้น** · แล้วสั่ง *"ทำต่อได้เลยนะ เอาตาม Roadmap ทำไปเรื่อยๆ ต้องทดสอบให้ดีทุกขั้นตอน"*
 
@@ -4972,7 +5110,7 @@ estate ที่ใช้: `prod-mssql.SalesDB.dbo.{customer, order}` + **`prod-
 
 - ✅ **ข้อ AY เสร็จแล้ว** (Open in OpenMetadata ไม่ 500 · Request access มุมขวาบน · หัวหน้า asset แบบ OM · seed เคส demo) — ต่อด้วย **M9 slice 2** ข้างล่าง
 
-0. ✅ **M9 slice 2a เสร็จ (ข้อ BB)** — workflow หลายขั้น + Configure ด้วยมือ · **ต่อทันที: 2b แล้ว 2c** (ดูข้อ BB.8) — ผู้ใช้สั่ง *"ทำต่อได้เลยนะ เอาตาม Roadmap ทำไปเรื่อยๆ ต้องทดสอบให้ดีทุกขั้นตอน"*
+0. ✅ **M9 slice 2b เสร็จ (ข้อ BC)** — หน้า review + กัน GRANT ที่เปิดไม่ได้ · ✅ slice 2a (ข้อ BB) · **ต่อทันที: 2c** (ดูข้อ BC.8 — grant ใกล้หมดอายุ + นับถอยหลัง · สถิติคำขอต่อ table) — ผู้ใช้สั่ง *"ทำต่อได้เลยนะ เอาตาม Roadmap ทำไปเรื่อยๆ ต้องทดสอบให้ดีทุกขั้นตอน"*
 0-เดิม. **(ส่วนที่เหลือของ AX.9 = 2b)** M9 slice 2 ดูข้อ AX.9: Approve = ตัดสินใจเท่านั้น → Fulfil ด้วยมือ (ออก grant / เพิ่มเข้า policy เดิม / สร้าง policy ใหม่เป็น Draft) โดย Owner · Steward · Custodian · หน้า review: ข้อมูลผู้ขอ + impact + risk + suggestion + conflict · ไอคอน Inbox + badge บน header
 0a. **ถัดไป:** Flowchart สำหรับอ่านระดับ table บนหน้า asset (ผู้ใช้ขอแล้ว — toggle text/diagram แบบ `PolicyFlowChart`, ค่าเริ่มต้นเป็นหน้าเดิม)
 0b. **M6 ⏸️ ON HOLD** — ห้ามเริ่มจนกว่าผู้ใช้จะสั่ง
