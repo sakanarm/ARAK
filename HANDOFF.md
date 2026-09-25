@@ -36,7 +36,7 @@ Phase 1 รองรับ SQL Server + PostgreSQL · identity หลักค�
 | **M7 Query API (5.2a)** | 🚧 ~80% — **`POST /v1/query` + Query console ใช้งานได้จริงรอบนี้** · rewrite → RLS + mask + hidden column → execute → audit ครบ · พิสูจน์กับ Postgres จริงแล้วทั้ง allow / RLS / mask / refuse · เหลือ direct-access detector (FR-6.3.1) และ result cache |
 | **M7b Cross-mode consistency** | ⬜ — ต้องมี M5/M6 ก่อน |
 | **M8 Audit + Ops** | 🚧 ~35% — **FR-7 ปิดครบวงรอบนี้ (grant ตรงระดับ table + auto-revoke + audit trail + หน้าจอ) ดูข้อ AD.1** · `audit_query` / `audit_decision` / `audit_policy_change` เขียนจริงแล้วและอ่านได้ · **`evaluation_ms` มีค่าแล้ว (ข้อ AE.5)** · **ยังไม่มี audit ของการ configure** (เปลี่ยน data source / OM settings ไม่ถูกบันทึกที่ไหนเลย) · ยังไม่มี compliance report / drift detector / auto-revoke / SIEM export |
-| **M9 Access Request Management** | 🚧 **~65% — slice 2b จบรอบนี้ (ข้อ BC)** · slice 1 (ข้อ AX): `access_request` (V21) + ขอ / inbox / approve / reject / withdraw + audit · **slice 2a:** Access Request Workflow ออกแบบได้ต่อ scope (default องค์กร / service / database / schema / table) — หลาย step เรียงกัน, stage ใน step เดียวกันวิ่งพร้อมกัน, กติกา ALL / ANY / AT_LEAST n, Reject เลือกได้ต่อ stage (VETO / QUORUM / FIRST_RESPONSE), ผู้อนุมัติเป็น owner / steward / custodian / role / team / คน · admin ตอบแทนทุก stage ได้ · table ไม่มี owner → ตกไปหา platform admin **และขึ้นใน Inbox + กระดิ่งแล้ว** · Approve ≠ ให้สิทธิ์: APPROVED → IN_PROGRESS → COMPLETED (GRANT ไม่เกินวันที่ขอ / POLICY_UPDATED / POLICY_CREATED อ้างถึง policy เท่านั้น) หรือ Decline โดยผู้ configure · หน้า `/settings/workflows` (V23) · **slice 2b:** หน้า review ของคำขอ `GET /v1/access-requests/{id}/review` — ผู้ขอ (attribute / group / role / grant / ประวัติ) · grant จะเปิด column ไหน (visible / masked / hidden + sensitive) · row filter · risk LOW/MEDIUM/HIGH + เหตุผล · conflict (BLOCKER / WARNING / INFO) · suggestion (DECLINE / GRANT / UPDATE_POLICY / CREATE_POLICY_DRAFT — **draft เท่านั้น ไม่มีอะไร activate เอง**) · เช็ค policy ที่จะใช้ configure แบบอ่านอย่างเดียว · **GRANT ที่ policy ยังปฏิเสธ → 409** · IP ของคำขอ (V24) ใช้ตัดสิน ipCidr แต่ไม่เคยออกใน response · **ต่อไป:** 2c dashboard grant ใกล้หมดอายุ + นับถอยหลัง · สถิติคำขอต่อ table · ยังไม่ทำ: Automatic configuration (Roadmap) · recertification · break-glass · notification ทาง email/Teams |
+| **M9 Access Request Management** | 🚧 **~75% — slice 2c จบรอบนี้ (ข้อ BD)** · slice 1 (ข้อ AX): `access_request` (V21) + ขอ / inbox / approve / reject / withdraw + audit · **slice 2a:** Access Request Workflow ออกแบบได้ต่อ scope (default องค์กร / service / database / schema / table) — หลาย step เรียงกัน, stage ใน step เดียวกันวิ่งพร้อมกัน, กติกา ALL / ANY / AT_LEAST n, Reject เลือกได้ต่อ stage (VETO / QUORUM / FIRST_RESPONSE), ผู้อนุมัติเป็น owner / steward / custodian / role / team / คน · admin ตอบแทนทุก stage ได้ · table ไม่มี owner → ตกไปหา platform admin **และขึ้นใน Inbox + กระดิ่งแล้ว** · Approve ≠ ให้สิทธิ์: APPROVED → IN_PROGRESS → COMPLETED (GRANT ไม่เกินวันที่ขอ / POLICY_UPDATED / POLICY_CREATED อ้างถึง policy เท่านั้น) หรือ Decline โดยผู้ configure · หน้า `/settings/workflows` (V23) · **slice 2b:** หน้า review ของคำขอ `GET /v1/access-requests/{id}/review` — ผู้ขอ (attribute / group / role / grant / ประวัติ) · grant จะเปิด column ไหน (visible / masked / hidden + sensitive) · row filter · risk LOW/MEDIUM/HIGH + เหตุผล · conflict (BLOCKER / WARNING / INFO) · suggestion (DECLINE / GRANT / UPDATE_POLICY / CREATE_POLICY_DRAFT — **draft เท่านั้น ไม่มีอะไร activate เอง**) · เช็ค policy ที่จะใช้ configure แบบอ่านอย่างเดียว · **GRANT ที่ policy ยังปฏิเสธ → 409** · IP ของคำขอ (V24) ใช้ตัดสิน ipCidr แต่ไม่เคยออกใน response · · **slice 2c:** Dashboard `GET /v1/access/grants/expiring` — ใครใกล้หมดสิทธิ์ใน table ไหน + **นับถอยหลังทีละวินาทีจากนาฬิกา server** (admin / author / auditor เห็นทุกแถว · owner เห็น table ของตัวเอง · requester เห็นของตัวเอง) · `GET /v1/access-requests/stats` — สถิติคำขอต่อ table (asked / open / granted / rejected / declined / withdrawn / คนขอ / median เวลาตอบ) นับจาก `access_request` ตรงๆ ไม่มีตารางนับแยก · การ์ด Home ใหม่ 2 ใบ · **ต่อไป:** recertification (access review รอบ 90 วัน) · ยังไม่ทำ: Automatic configuration (Roadmap) · recertification · break-glass · notification ทาง email/Teams |
 | **M10 Access Control Dashboard** | ⬜ **Phase 2 — ออกแบบแล้ว ยังไม่เริ่ม** · หน้าเดียวที่ตอบว่า "ตอนนี้องค์กรคุมข้อมูลได้ดีแค่ไหน" · 4 แถว: **Coverage** (asset ที่มี tag PII แต่ไม่มี policy คุ้มครอง / % ของ asset ที่ enforce แล้ว) · **Exposure** (ใครเข้าถึง PII ได้บ้าง · grant ที่ใกล้หมดอายุ · สิทธิ์ที่ไม่ได้ใช้เกิน 90 วัน) · **Activity** (query ต่อวัน แยก EXECUTED/REJECTED/FAILED · top principal · top asset · เหตุผลที่ถูกปฏิเสธบ่อยที่สุด) · **Health** (enforcement state ต่อ source · drift · รอบ sync ล่าสุด · p95 ของ decision) — **ข้อมูลมีอยู่ครบแล้วทั้งหมด** (`audit_query`, `audit_decision`, `asset_facet`, `policy_binding`, `access_grant`, `enforcement_state`) → งานคือ query + หน้าจอ ไม่ต้อง migrate — ดูแบบเต็มที่ข้อ AM.4 |
 | **M11 LLM Assist** | 🚧 **~60%** — ตารางนี้เคยเขียนว่า "ยังไม่เริ่ม" ซึ่งไม่จริงแล้ว · **per-user gateway ใช้งานได้จริง** — แต่ละคนใส่ base URL + key ของตัวเองในหน้า Settings และเลือกเองว่าจะเปิดใช้ไหม (`llm_user_setting.base_url` + `api_key_cipher` Fernet · key ไม่เคยถูกส่งกลับ ตอบแค่ `hasOwnKey`) · `llm_provider.allow_personal` เป็น kill switch · ⚠️ `LlmResource.putUser` ตัดสิทธิ์ admin ให้แก้ได้แค่ `enabled` — **ไม่มีใครเขียน gateway ของคนอื่นได้ ห้ามผ่อน** · ทดสอบสดผ่านแล้ว (21 models + completion ด้วย key ของ `analyst_a` เอง) · เหลือฟีเจอร์จริงสองตัว: **NL→SQL** และ **ร่าง policy** ที่ออกมาเป็น `DRAFT` เท่านั้น (FR-2.6 — LLM ไม่มีสิทธิ์ activate เอง) — ดูข้อ AO.8/AO.9 |
 | **M12 Home ที่จัดเอง** | ✅ **เสร็จ — milestone ใหม่ ไม่อยู่ในแผนเดิม** · หน้าแรกจัดวางเองได้ต่อ account · 5 preset · 14 widget type (กราฟวาดเป็น SVG มือ ไม่มี chart library) · วาง **HTML / Note / Link / Video** ได้ · `V13__home_layout.sql` — ไม่มีแถว = default (ลบแถว = reset) · **default คนละใบตาม role**: governance ได้หน้าเดิม · Requestor ได้หน้า Search · ⚠️ **HTML ที่คนพิมพ์เอง = stored XSS** → `HomeLayoutValidator` ล้างทั้ง**ตอนเขียนและตอนอ่าน** **ห้ามมีทางเขียน `home_layout` ที่ไม่ผ่านตัวนี้** · **M12b persona เสร็จแล้ว** (`V19__home_role_layout.sql`) — admin จัดหน้าแรกให้แต่ละ Platform Role ได้ที่ `/settings/home` · resolve แบบ **personal → role (แรงสุดที่ถือ) → built-in** · **persona ไม่เคยทับหน้าที่คนจัดเอง** · ⚠️ เป็น**ที่แรกที่ markup ของคนหนึ่งถูก render ใน session ของอีกคนโดยตั้งใจ** → `@Secured("PLATFORM_ADMIN")` + ล้างผ่าน `HomeLayoutValidator` ทั้งเขียนและอ่าน — ดูข้อ AN และ AS |
@@ -56,15 +56,15 @@ Phase 1 รองรับ SQL Server + PostgreSQL · identity หลักค�
 | App DB (docker `dac-appdb`, postgres:16-alpine) | `:5432` db/user `dac` |
 | OpenMetadata ของทีม | `2.0.1` — sync ผ่าน **ingestion-bot JWT** (ดู What Didn't Work) |
 
-เทสต์ทั้งหมดเขียว — **backend unit + integration รันครบเมื่อ 2026-09-25 → `./mvnw -o verify -Pintegration` BUILD SUCCESS · unit 793 · integration 251 · Failures 0 Errors 0** (รอบ BC: +21 unit ใน dac-service — `AccessReviewTest` 17 ใหม่ · `AccessRequestResourceTest` +4 · integration **251** (+9 `AccessRequestIT` `Reviewing`) · frontend **37 suites / 357 tests** (+8 `AccessRequestsPage.test.tsx` · +2 `PolicyBuilderPage.test.tsx`) · ดูข้อ BC.6 · รอบ BB: +59 unit ใน dac-service — `StageEngineTest` 23 · `AccessWorkflowTest` 12 · `ApproverDirectoryTest` 5 · `AccessRequestResourceTest` 5 · `AccessWorkflowResourceTest` 14 · integration **242** (+25 `AccessRequestIT` `Workflows` / `Configuring` / `Legacy`) · frontend **37 suites / 347 tests** (+`AccessWorkflowsPage.test.tsx` 17) · ดูข้อ BB.6 · รอบ BA: +6 `StewardshipTest` · +11 `StewardshipGuardsTest` · integration **217** (+3 `AccessRequestIT.Deciding` `ownerTypeMatters` · `grantReach` · `stranded`) · รอบ AY: +1 `SpaServletTest.unusualCharacters` · integration **214** (รอบ AZ: +5 `AccessRequestIT.Notices`) — **+23 จาก `AccessRequestIT`** ขอ / อนุมัติ / ปฏิเสธ / ถอน + เคส policy ชนกัน (DENY · ชั้นบนปฏิเสธ · override · approve ไม่ปลด mask) บน Postgres จริง), frontend `npx jest` + `npx tsc --noEmit` + `vite build` รันใหม่ **2026-09-25** (**36 suites / 307 tests** เขียว — รอบ BA: `AccessTab.test.tsx` ใหม่ 4 · `AccessRequestsPage.test.tsx` ±0 สุทธิ · `accessRequests.test.ts` +1 · ดูข้อ BA.4, AZ.5, AY.5 และ AX.8 · tsc exit 0 · build 11.78s · `scripts/check-cursor-pointer.mjs` → *every &lt;button&gt; offers a hand*)
+เทสต์ทั้งหมดเขียว — **backend unit + integration รันครบเมื่อ 2026-09-25 → `./mvnw -o verify -Pintegration` BUILD SUCCESS · unit 813 · integration 261 · Failures 0 Errors 0** (รอบ BD: +20 unit ใน dac-service — `AccessDashboardResourceTest` 15 ใหม่ · `HomeLayoutValidatorTest` +4 · `HomeLayoutStoreTest` +1 · integration **261** (+10 `AccessDashboardIT` ใหม่) · frontend **38 suites / 369 tests** (+12 `accessWidgets.test.tsx` ใหม่) · ดูข้อ BD.5 · รอบ BC: +21 unit ใน dac-service — `AccessReviewTest` 17 ใหม่ · `AccessRequestResourceTest` +4 · integration **251** (+9 `AccessRequestIT` `Reviewing`) · frontend **37 suites / 357 tests** (+8 `AccessRequestsPage.test.tsx` · +2 `PolicyBuilderPage.test.tsx`) · ดูข้อ BC.6 · รอบ BB: +59 unit ใน dac-service — `StageEngineTest` 23 · `AccessWorkflowTest` 12 · `ApproverDirectoryTest` 5 · `AccessRequestResourceTest` 5 · `AccessWorkflowResourceTest` 14 · integration **242** (+25 `AccessRequestIT` `Workflows` / `Configuring` / `Legacy`) · frontend **37 suites / 347 tests** (+`AccessWorkflowsPage.test.tsx` 17) · ดูข้อ BB.6 · รอบ BA: +6 `StewardshipTest` · +11 `StewardshipGuardsTest` · integration **217** (+3 `AccessRequestIT.Deciding` `ownerTypeMatters` · `grantReach` · `stranded`) · รอบ AY: +1 `SpaServletTest.unusualCharacters` · integration **214** (รอบ AZ: +5 `AccessRequestIT.Notices`) — **+23 จาก `AccessRequestIT`** ขอ / อนุมัติ / ปฏิเสธ / ถอน + เคส policy ชนกัน (DENY · ชั้นบนปฏิเสธ · override · approve ไม่ปลด mask) บน Postgres จริง), frontend `npx jest` + `npx tsc --noEmit` + `vite build` รันใหม่ **2026-09-25** (**36 suites / 307 tests** เขียว — รอบ BA: `AccessTab.test.tsx` ใหม่ 4 · `AccessRequestsPage.test.tsx` ±0 สุทธิ · `accessRequests.test.ts` +1 · ดูข้อ BA.4, AZ.5, AY.5 และ AX.8 · tsc exit 0 · build 11.78s · `scripts/check-cursor-pointer.mjs` → *every &lt;button&gt; offers a hand*)
 
 > ⚠️ **`backend/dac-service/target/surefire-reports/com.mfec.dac.catalog.AssetStoreIT.txt` ยังแดงค้างอยู่ในโฟลเดอร์ — เป็นไฟล์เก่าจาก 2026-09-23 20:35 ก่อน commit `19b0503` ซึ่งคือ commit ที่แก้เคสนั้นพอดี** อย่าอ่านรายงานใน `target/` โดยไม่ดูเวลาไฟล์ — `mvn test` ไม่ล้างรายงานของคลาสที่รอบนี้ไม่ได้รัน
 
 | ชุด | จำนวน | คำสั่ง |
 |---|---|---|
-| Backend unit | dac-common 31 · dac-engine 277 · **dac-compiler-sql 51 (+17 — `RowEntitlementMaintainerTest`)** · dac-connector-openmetadata 91 · **dac-connector-source 25 (+6 — `SecureViewApplierTest`)** · dac-proxy 30 · **dac-service 288** = **793** (dac-service **288** — +17 `AccessReviewTest` · +4 `AccessRequestResourceTest` ข้อ BC · ก่อนหน้า **267** — +23 `StageEngineTest` · +12 `AccessWorkflowTest` · +5 `ApproverDirectoryTest` · +5 `AccessRequestResourceTest` · +14 `AccessWorkflowResourceTest` ข้อ BB · ก่อนหน้า **208** — +6 `StewardshipTest` · +11 `StewardshipGuardsTest` ข้อ BA · ก่อนหน้า **191** — +4 `AccessEligibilityTest` · +1 `SpaServletTest.unusualCharacters` ข้อ AY) | `./mvnw -o test` |
-| Backend integration (Testcontainers `postgres:16-alpine`) | **251 tests** — **`AccessRequestIT` 65 (+9 `Reviewing` ข้อ BC.6 · +25 `Workflows` 17 · `Configuring` 4 · `Legacy` 4 ข้อ BB.6 · +3 `Deciding` ข้อ BA.1a/BA.4 · +5 `Notices` ข้อ AZ.5 · 23 ข้อ AX.8)** · `AssetStoreIT` 7 · `CatalogQueryIT` 18 · `DataSourceStoreIT` 13 · `GovernanceStoreIT` 10 · `GrantCompositionIT` 17 · **`HomeLayoutStoreIT` 14 (+8 รอบนี้ — persona)** · `IdentityAdminStoreIT` 24 · `ImpactAnalysisIT` 8 · `PolicyBindingMaterializerIT` 10 · `PolicyOverviewIT` 24 · `PolicyStoreIT` 10 · **`SecureViewApplierIT` 11 (ใหม่รอบนี้ — อยู่ใน `dac-connector-source` ไม่ใช่ `dac-service`)** · **`SecureViewServiceIT` 15 (ใหม่รอบนี้)** · `SourceEngineRegistryIT` 5 | `./mvnw verify -Pintegration` (ทั้ง reactor) |
-| Frontend | **37 suites / 357 tests** (รอบ BC: `AccessRequestsPage.test.tsx` +8 · `PolicyBuilderPage.test.tsx` +2 · รอบ BB: `AccessWorkflowsPage.test.tsx` ใหม่ 17 · รอบ BA: `AccessTab.test.tsx` ใหม่ 4 · `accessRequests.test.ts` +1 · `AccessRequestsPage.test.tsx` แทน 2 เคส Grant-for ด้วย 1 + stranded 1 · รอบ AZ: `AccessRequestsPage.test.tsx` 22 (+9) · `RequestNotices.test.tsx` ใหม่ 10 — ดูข้อ AZ.5 · รอบ AY: +10 `AriaRouter.test.tsx` · `AssetRequestAccess.test.tsx` 9 · +4 `AssetDetailPage.test.tsx` — ดูข้อ AY.5 · รอบ AX: +20 `SqlEditor.test.tsx` · +16 `RequestAccess.test.tsx` · +13 `AccessRequestsPage.test.tsx` · +5 `accessRequests.test.ts` · `sqlCompletion.test.ts` — ดูข้อ AX.8 · ก่อนหน้า: +7 `EnforcementPage.test.tsx` — dry run → apply ส่งแค่ reviewId · non-admin ไม่มีปุ่ม Apply / Roll back · apply ที่ถูกปฏิเสธล้าง review · rollback ต้องยืนยัน · +9 `policyFlow.test.ts` — ลำดับด่าน · selector ว่าง = 0 asset ไม่ใช่ทุก asset · subject ว่าง = `open` ไม่ใช่ `set` · "ไม่ผ่านด่าน" ต้องไม่อ่านว่า deny · +3 `PolicyFlowChart.test.tsx` — ไม่ส่ง `onEdit` ต้องไม่มีปุ่มใดๆ · ก่อนหน้านี้ +4 ใน `HomePersonasPage.test.tsx` — หน้าที่คนหนึ่งจัดหน้าจอให้อีกคน: admin เท่านั้นที่เห็น · ครบทั้ง 5 role ไม่ว่าจะตั้งไว้หรือยัง · ประโยค "starting point ไม่ใช่ override" · เซฟแล้วต้องลง role ที่เปิดอยู่เท่านั้น) | `npx jest` ใน `frontend/app` |
+| Backend unit | dac-common 31 · dac-engine 277 · **dac-compiler-sql 51 (+17 — `RowEntitlementMaintainerTest`)** · dac-connector-openmetadata 91 · **dac-connector-source 25 (+6 — `SecureViewApplierTest`)** · dac-proxy 30 · **dac-service 308** = **813** (dac-service **308** — +15 `AccessDashboardResourceTest` · +4 `HomeLayoutValidatorTest` · +1 `HomeLayoutStoreTest` ข้อ BD · ก่อนหน้า **288** — +17 `AccessReviewTest` · +4 `AccessRequestResourceTest` ข้อ BC · ก่อนหน้า **267** — +23 `StageEngineTest` · +12 `AccessWorkflowTest` · +5 `ApproverDirectoryTest` · +5 `AccessRequestResourceTest` · +14 `AccessWorkflowResourceTest` ข้อ BB · ก่อนหน้า **208** — +6 `StewardshipTest` · +11 `StewardshipGuardsTest` ข้อ BA · ก่อนหน้า **191** — +4 `AccessEligibilityTest` · +1 `SpaServletTest.unusualCharacters` ข้อ AY) | `./mvnw -o test` |
+| Backend integration (Testcontainers `postgres:16-alpine`) | **261 tests** — **`AccessDashboardIT` 10 (ใหม่ ข้อ BD.5)** · **`AccessRequestIT` 65 (+9 `Reviewing` ข้อ BC.6 · +25 `Workflows` 17 · `Configuring` 4 · `Legacy` 4 ข้อ BB.6 · +3 `Deciding` ข้อ BA.1a/BA.4 · +5 `Notices` ข้อ AZ.5 · 23 ข้อ AX.8)** · `AssetStoreIT` 7 · `CatalogQueryIT` 18 · `DataSourceStoreIT` 13 · `GovernanceStoreIT` 10 · `GrantCompositionIT` 17 · **`HomeLayoutStoreIT` 14 (+8 รอบนี้ — persona)** · `IdentityAdminStoreIT` 24 · `ImpactAnalysisIT` 8 · `PolicyBindingMaterializerIT` 10 · `PolicyOverviewIT` 24 · `PolicyStoreIT` 10 · **`SecureViewApplierIT` 11 (ใหม่รอบนี้ — อยู่ใน `dac-connector-source` ไม่ใช่ `dac-service`)** · **`SecureViewServiceIT` 15 (ใหม่รอบนี้)** · `SourceEngineRegistryIT` 5 | `./mvnw verify -Pintegration` (ทั้ง reactor) |
+| Frontend | **38 suites / 369 tests** (รอบ BD: `accessWidgets.test.tsx` ใหม่ 12 · รอบ BC: `AccessRequestsPage.test.tsx` +8 · `PolicyBuilderPage.test.tsx` +2 · รอบ BB: `AccessWorkflowsPage.test.tsx` ใหม่ 17 · รอบ BA: `AccessTab.test.tsx` ใหม่ 4 · `accessRequests.test.ts` +1 · `AccessRequestsPage.test.tsx` แทน 2 เคส Grant-for ด้วย 1 + stranded 1 · รอบ AZ: `AccessRequestsPage.test.tsx` 22 (+9) · `RequestNotices.test.tsx` ใหม่ 10 — ดูข้อ AZ.5 · รอบ AY: +10 `AriaRouter.test.tsx` · `AssetRequestAccess.test.tsx` 9 · +4 `AssetDetailPage.test.tsx` — ดูข้อ AY.5 · รอบ AX: +20 `SqlEditor.test.tsx` · +16 `RequestAccess.test.tsx` · +13 `AccessRequestsPage.test.tsx` · +5 `accessRequests.test.ts` · `sqlCompletion.test.ts` — ดูข้อ AX.8 · ก่อนหน้า: +7 `EnforcementPage.test.tsx` — dry run → apply ส่งแค่ reviewId · non-admin ไม่มีปุ่ม Apply / Roll back · apply ที่ถูกปฏิเสธล้าง review · rollback ต้องยืนยัน · +9 `policyFlow.test.ts` — ลำดับด่าน · selector ว่าง = 0 asset ไม่ใช่ทุก asset · subject ว่าง = `open` ไม่ใช่ `set` · "ไม่ผ่านด่าน" ต้องไม่อ่านว่า deny · +3 `PolicyFlowChart.test.tsx` — ไม่ส่ง `onEdit` ต้องไม่มีปุ่มใดๆ · ก่อนหน้านี้ +4 ใน `HomePersonasPage.test.tsx` — หน้าที่คนหนึ่งจัดหน้าจอให้อีกคน: admin เท่านั้นที่เห็น · ครบทั้ง 5 role ไม่ว่าจะตั้งไว้หรือยัง · ประโยค "starting point ไม่ใช่ override" · เซฟแล้วต้องลง role ที่เปิดอยู่เท่านั้น) | `npx jest` ใน `frontend/app` |
 
 `yarn type-check` · `yarn lint` · `yarn build` ผ่านหมด → **BUILD SUCCESS** ทั้งสองฝั่ง
 
@@ -381,7 +381,125 @@ M18 ก่อนเพิ่ม engine ตัวที่ 3 เสมอ
 
 ---
 
-## รอบนี้ — **ข้อ BC: M9 slice 2b — หน้า Review ของคำขอ (ผู้ขอ · impact · risk · suggestion · policy conflict) + กัน GRANT ที่เปิดไม่ได้จริง**
+## รอบนี้ — **ข้อ BD: M9 slice 2c — Dashboard "ใครใกล้หมดสิทธิ์ใน table ไหน" (นับถอยหลังทีละวินาที) + สถิติคำขอต่อ table**
+
+ผู้ใช้ขอไว้สองข้อ: *"ใน Dashboard ต้องสามารถระบุได้ว่าใครใกล้จะหมดสิทธิใน table ไหน อาจใส่ตัวนับถอยหลังได้"* และ *"อยากให้เก็บ สถิติ จำนวนที่ขอใช้ table ไว้ด้วย เผื่อเอาไว้ทำ Dashboard"* · ตามด้วย *"ทำต่อได้เลยนะ เอาตาม Roadmap ทำไปเรื่อยๆ ต้องทดสอบให้ดีทุกขั้นตอน"* / *"ต่อ"* → ทำ 2c ตามข้อ BC.8 จบรอบนี้
+
+หลักของรอบนี้:
+- **อ่านอย่างเดียว** — ทั้งสอง endpoint ไม่เขียนอะไรเลย ไม่เขียน audit ไม่แตะ grant
+- **ไม่มีตารางนับแยก** — สถิตินับจาก `access_request` ตรงๆ เพราะคำขอไม่เคยถูกลบ (ถอน / ปฏิเสธเป็นแค่ status) ประวัติที่ counter จะเก็บมีอยู่แล้วครบ และ counter คืออีกของหนึ่งที่เพี้ยนจากแถวจริงได้ → **ไม่มี migration ใหม่** (ยังเป็น V1–V24)
+- **ใครเห็นอะไรใช้กติกา stewardship เดิม** — ไม่มีกติกาใหม่
+
+### BD.1 `GET /v1/access/grants/expiring?withinDays=14&limit=100`
+
+- คืน `Expiring { now, withinDays, total, grants[] }` · `now` = นาฬิกาของ server (หน้าเว็บนับถอยหลังจากค่านี้ ดู BD.4) · `total` = จำนวนที่ผู้เรียกเห็นได้ทั้งหมด · `grants` ถูกตัดที่ `limit`
+- `ExpiringGrant`: `id · assetFqn · principalId · username · displayName · principalType (USER/GROUP) · source (manual/request) · requestId · validFrom · validUntil · grantedBy · mine · mayRevoke`
+  - `mine` = grant นี้ถึงตัวผู้เรียก ไม่ว่าจะให้ตรงหรือผ่าน group (ซ้อนกี่ชั้นก็ได้ — `GrantStore.reachableFrom(username)` เดิน `group_member` แบบ recursive แบบเดียวกับ `heldBy` / `reaches`)
+  - `mayRevoke` = ผู้เรียก **governs** table นั้น (admin · POLICY_AUTHOR · DATA_OWNER ที่ scope ครอบ) · auditor = false เสมอ
+- **"ใกล้หมด" = live ตามที่ engine ถือ** (`GrantStore.expiring(now, until)`): ไม่ถูก revoke · เริ่มแล้ว (`valid_from <= now`) · ยังไม่หมด (`valid_until > now`) · หมดภายในช่วง (`valid_until <= now + withinDays`) · principal ยัง enabled · grant แบบไม่มีวันหมด **ไม่เคยอยู่ในนี้** · grant ที่หมดไปแล้วแต่ job ยังไม่ tombstone **ไม่อยู่ในนี้** (engine เลิกยอมรับแล้ว นับถอยหลังติดลบก็คือโกหก) · เรียงจากหมดก่อน
+- **ใครเห็นแถวไหน**:
+  | ผู้เรียก | เห็น |
+  |---|---|
+  | PLATFORM_ADMIN / POLICY_AUTHOR / AUDITOR (`overseesEverything`) | ทุกแถว |
+  | DATA_OWNER | แถวบน table ที่ scope ของตัวเองครอบ + ของตัวเอง |
+  | คนอื่น (REQUESTER) | **เฉพาะ grant ที่ถึงตัวเอง** (`mine`) |
+  - เหตุผล: รายการ grant ทั้งองค์กรที่เรียงตามวันหมดคือแผนที่ว่าสัปดาห์หน้าต้องไปขอใคร → ให้เฉพาะคนที่หน้าที่คืออ่านมัน
+- ตรวจ input: `withinDays` 1–365 · `limit` 1–500 · นอกช่วง → **400** · ไม่มี token → 401
+
+### BD.2 `GET /v1/access-requests/stats?days=90&assetFqn=&limit=50`
+
+- คืน `Stats { since, days, total, totals, tables[] }` · `totals = { tables, asked, open, completed, rejected, declined, withdrawn }` รวมจากแถวที่ผู้เรียกเห็น
+- ต่อ table (`RequestStatistics.TableStats`): `asked · open (PENDING/APPROVED/IN_PROGRESS) · completed · rejected · declined · withdrawn · requesters (คนไม่ซ้ำ) · medianHoursToClose · lastAskedAt` · เรียง asked มากสุดก่อน → ขอล่าสุดก่อน → FQN
+- **rejected กับ declined นับแยก** เพราะความหมายต่างกันสำหรับคนอ่าน dashboard: *rejected* = approver บอกว่าคนนี้ไม่ควรได้ (`status = REJECTED AND completed_by IS NULL`) · *declined* = configurer ปฏิเสธหลังอนุมัติแล้ว เพราะทำตามที่ขอไม่ได้ (`completed_by IS NOT NULL`) → table ที่ declined เยอะไม่ได้ถูกขอเกิน แต่ **configure ยาก**
+- `medianHoursToClose` = median ของ (`coalesce(completed_at, decided_at) - created_at`) เฉพาะคำขอที่จบด้วยคำตอบ (COMPLETED / REJECTED) · ปัดทศนิยม 1 ตำแหน่ง · **null** ถ้ายังไม่มีคำขอไหนในช่วงที่จบ (ไม่อ้างตัวเลขที่ไม่มี)
+- SQL เดียว `count(*) FILTER` + `percentile_cont(0.5)` ใช้ index `(asset_fqn, created_at)` ที่มีอยู่แล้ว
+- **ใครเห็น**: admin / POLICY_AUTHOR / AUDITOR นับทุก table · DATA_OWNER นับเฉพาะ table ที่ oversee · คนอื่นได้ **คำตอบว่าง (200)** ไม่ใช่ 403 → card บอกได้ว่า "ไม่มีอะไรสำหรับคุณ" โดยหน้าไม่ถือเป็น error · table ไหนคนอื่นขอบ่อย ใครโดนปฏิเสธบ่อย ไม่ใช่เรื่องของผู้ขอ
+- `assetFqn` = กรองเหลือ table เดียว (owner ขอ table ที่ไม่ได้ oversee → ว่าง) · `days` 1–3650 · `limit` 1–500 · นอกช่วง → 400
+- **ไม่มี IP** — `requester_ip` (V24) ไม่ถูก select และไม่อยู่ในคำตอบใดๆ ของทั้งสอง endpoint (ตรวจทั้ง unit, IT และ live)
+
+### BD.3 Backend
+
+- `access/GrantStore.java` — `expiring(now, until)` · `reachableFrom(username)`
+- `access/RequestStatistics.java` (ใหม่) — `TableStats` · `perTable(since, fqn)` · `MAX_DAYS 3650`
+- `resources/AccessResource.java` — `GET /grants/expiring` + record `ExpiringGrant` / `Expiring` · `MAX_WITHIN_DAYS 365` · `MAX_EXPIRING 500`
+- `resources/AccessRequestResource.java` — `GET /stats` + record `Stats` / `StatsTotals` · ไม่มี statistics ต่อ (unit test บางชุด) → 404
+- `DacApplication.java` — ต่อ `RequestStatistics` เข้า resource
+- `home/HomeLayout.java` — `WidgetType.EXPIRING_ACCESS` (ทุก role) · `ACCESS_REQUEST_STATS` (**governance** = ถูกกรองออกจากหน้าของ requester · เป็นแค่เมนูตามหลักเดิมของ `governance()` ขอบเขตจริงคือ endpoint ที่คืนว่างให้ requester)
+- `home/HomeLayoutValidator.java` — config ของสองการ์ด **clamp ไม่ใช่ปฏิเสธ** (เหมือนตัวเลขอื่นในหน้า Home): `withinDays` 1–90 (default 14) · `days` 7–365 (default 90) · `limit` 3–20 (default 8) · key อื่นที่การ์ดไม่อ่านถูกทิ้ง
+- `home/HomeLayoutStore.java` — default layout:
+  - `DEFAULT` (governance): `expiring-access` ใต้ Governance coverage (คอลัมน์ซ้าย) · `request-stats` ใต้ Sources (คอลัมน์ขวา)
+  - `REQUESTER_DEFAULT`: `expiring-access` ใต้ Search — ผู้ขอเห็น grant ของตัวเองที่ใกล้หมด จะได้ไม่มารู้ในวันที่หมด
+  - **คนที่เคย save หน้าเองแล้วไม่ได้การ์ดใหม่อัตโนมัติ** (ตามหลักเดิมของ home layout — หน้าที่คนจัดเองไม่ถูกแก้ให้) → เพิ่มเองได้จาก *Edit this page → Add a panel*
+
+### BD.4 Frontend
+
+- `api/access.ts` — `ExpiringGrant` / `ExpiringGrants` + `fetchExpiringGrants(withinDays, limit)`
+- `api/accessRequests.ts` — `TableRequestStats` / `RequestStatsTotals` / `RequestStats` + `fetchRequestStats(days, limit)`
+- `api/home.ts` — widget type ใหม่สองตัว
+- `pages/home/widgets.tsx`:
+  - **"Access ending soon"** (`ExpiringAccessWidget`) — แต่ละแถว: ชื่อคนถือ · ป้าย **You** (ของตัวเอง) / **Group** · FQN ลิงก์ไป `/catalog/<fqn>?tab=access` · **นับถอยหลัง** (`role="timer"`) + วันเวลาที่หมด · refetch ทุก 60 วิ · ตัวเลขบนหัว "2 of 23" เมื่อถูกตัด · ว่าง = *"No access you can see ends in the next N days."*
+  - **นับจากนาฬิกา server ไม่ใช่เครื่อง browser** — `useServerClock` เอา `now` ที่ server ส่งมา + เวลาที่ผ่านไปตั้งแต่ได้คำตอบ (`Date.now() - dataUpdatedAt`) ใช้เครื่องตัวเองแค่วัด "ผ่านไปกี่วินาที" · browser ที่นาฬิกาเพี้ยนไปหนึ่งวันยังเห็นเวลาที่เหลือถูก
+  - รูปแบบ: `2d 04:12:09` / `05:00:03` / `Ended` · สี: < 24 ชม. แดง · < 72 ชม. ส้ม · นอกนั้นเทา
+  - **"Requests per table"** (`RequestStatsWidget`, governance) — ตัวเลขบน: Asked (N tables · D days) · Still open · Granted · Refused (= rejected + declined พร้อมบอกแยก) · แถวละ table: ชื่อ (ลิงก์ catalog) + จำนวน + **แถบซ้อนสี** (ยาว = สัดส่วนเทียบ table ที่ถูกขอมากสุด · สี = จบแบบไหน · `role="img"` + aria-label เช่น "1 granted, 1 open") + "N people · median Xh to answer · last …" + legend · ว่าง = *"No table you oversee has been asked for in the last N days."*
+  - export `countdown` / `urgencyOf` / `segmentsOf` / `hoursLabel` ไว้ test
+- `pages/home/HomeEditor.tsx` — ช่องตั้งค่าของสองการ์ด: ช่วงวัน (ending soon 1–90 · stats 7–365) + Rows 3–20
+- ไม่ได้รัน prettier · ไม่มีแถบ `border-l-4` สีฟ้า · ใช้ `Widget` / `Stat` / `WidgetEmpty` เดิมของหน้า Home
+
+### BD.5 Tests
+
+| ชุด | เพิ่ม | ครอบอะไร |
+|---|---|---|
+| `AccessDashboardResourceTest` (ใหม่) | **15** | Expiring: ส่ง now + ช่วง · admin เห็นหมด · auditor เห็นหมดแต่ revoke ไม่ได้ · requester เห็นของตัวเอง (รวมผ่าน group) · owner เห็น table ตัวเอง · limit ตัดแต่ total ไม่ตัด · ตัวเลขผิด 400 · Stats: admin / auditor นับทั้งหมด · owner นับของตัวเอง · requester ได้ว่าง · table เดียว · limit · ตัวเลขผิด 400 · ไม่มี statistics → 404 |
+| `AccessDashboardIT` (ใหม่, Testcontainers) | **10** | Expiring: เรียงหมดก่อน · ตัด revoked / ยังไม่เริ่ม / หมดแล้ว / ไม่มีวันหมด / เกินช่วง / principal ถูกปิด · ขอบช่วงพอดี · ชื่อคนถือ · Reach: เดิน group ซ้อน · ชื่อไม่มีจริง = ว่าง · Statistics: นับจากประวัติ · แยก rejected / declined / withdrawn / open · median เฉพาะที่จบ · ช่วงวัน · table เดียว |
+| `HomeLayoutValidatorTest` `@Nested Access cards` | +4 | default 14 วันเมื่อไม่ระบุ · clamp ช่วง / จำนวนแถว · ทิ้ง key แปลกปลอม · stats default 90 วันและไม่ต่ำกว่า 7 |
+| `HomeLayoutStoreTest` | +1 (+ แก้ 1) | หน้า governance = หน้าเดิม + การ์ด access ถูกที่ · หน้า requester มีการ์ด ending soon |
+| `accessWidgets.test.tsx` (ใหม่) | **12** | countdown / urgency / segments / hoursLabel · spec (stats = governance) · **นับจากนาฬิกา server ขณะ browser เร็วไป 1 วัน** (02:00:00 → 01:59:57 หลัง 3 วิ) · ป้าย You / Group · ลิงก์ · "2 of 23" · ว่าง · stats: ตัวเลขรวม · แถบ + aria-label · กว้าง 50% · median ไม่อ้างเมื่อไม่มี · ว่าง |
+
+**ผลรวม (2026-09-25):** `./mvnw -o verify -Pintegration` **BUILD SUCCESS** · unit **813** (dac-service **308**) · integration **261** · รวม **1074** · Failures 0 Errors 0 · frontend `npx jest src` **38 suites / 369 tests** ผ่าน · `tsc --noEmit` สะอาด · `VITE_BASE=/Arak/ npm run build` ผ่าน
+
+### BD.6 ทดสอบสดบน dev (`live_2c.py` + `dash-shot.mjs` + `dash-editor.mjs` ใน scratchpad)
+
+รันกับ app ที่ build จาก working tree นี้ (API :8080, UI `http://localhost:8090/Arak/`) · รหัสผ่าน dev ส่งเป็น env `DEV_PW` เท่านั้น · **ผล: 0 failure** (42 check)
+
+**เตรียม dev data** — รอบแรก owner_a ได้ 403 / ว่างทั้งหมด เพราะ owner_a มีแค่แถวใน `asset_owner` (ความเป็น owner จาก OpenMetadata) แต่ **ไม่มี app role `DATA_OWNER` + scope** ซึ่ง stewardship ต้องใช้ → backend ทำถูกแล้ว ข้อมูล dev ขาด · แก้ด้วย `POST /v1/principals/{id}/roles` (ทาง admin ปกติ มี reason + audit):
+- owner_a → `DATA_OWNER` scope `dtp-iprm.iprm.public.products` และ `dtp-iprm.iprm.public.kb_likes`
+- compliance_a → `AUDITOR` (เพื่อทดสอบคนที่เห็นทุกอย่างแต่แก้ไม่ได้)
+
+**Expiring** — owner_a สร้าง grant 3 ชม. ให้ analyst_b บน products (201) แล้วถามทุก role:
+| ผู้เรียก | total | เห็น | mine | mayRevoke |
+|---|---|---|---|---|
+| admin | 4 | products/analyst_b (3 ชม.) · customer/analyst_b · kb_likes/analyst_a · products/analyst_a — เรียงหมดก่อน | – | true ทุกแถว |
+| owner_a (DATA_OWNER) | 3 | เฉพาะ products / kb_likes | – | true ทุกแถว |
+| analyst_a | 2 | ของตัวเองเท่านั้น | true | false |
+| analyst_b | 2 | ของตัวเองเท่านั้น (รวม grant 3 ชม. ใหม่) | true | false |
+| compliance_a (AUDITOR) | 4 | เท่ากับ admin ทุก id | – | **false ทุกแถว** |
+- `limit=1` → 1 แถว แต่ total ยัง 4 · `withinDays=1` เหลือแค่ grant 3 ชม. · `withinDays` 0 / 366 และ `limit` 0 / 501 → 400 · ไม่มี token → 401
+
+**Stats (90 วัน)**
+| ผู้เรียก | ผล |
+|---|---|
+| admin | 6 tables · asked 20 = open 2 + completed 11 + rejected 3 + declined 0 + withdrawn 4 · customer 12 มากสุด · ผลรวมทุก table ตรงกับ totals · แต่ละ table outcome รวมได้ asked · median `null` บน table ที่ยังไม่มีคำขอไหนจบ |
+| owner_a | 2 tables (kb_likes 3 · products 2) เท่านั้น · ขอ `assetFqn` = customer (ไม่ได้ own) → ว่าง |
+| analyst_a / analyst_b | **200 ว่าง** (ไม่ใช่ 403) |
+| compliance_a (AUDITOR) | เท่ากับ admin ทุกแถว |
+- `assetFqn=customer` (admin) → table เดียว · `days` 0 / 3651 และ `limit` 0 / 501 → 400
+- **ไม่มี field ip / remote ในคำตอบใดๆ** ของทั้งสอง endpoint ทุก role
+
+**หน้าจอ (Playwright, pageerror + 5xx = 0)** — เก็บใน scratchpad ไม่ commit:
+- `dash-owner_a.png` — หน้า default ของ governance: **Access ending soon** 3 แถว (`02:58:52` สีแดง · `2d 18:05:42` สีส้ม · `4d 16:40:38` สีเทา) · **Requests per table** (5 asked · 2 tables · แถบ kb_likes เขียวเต็ม / products เขียวครึ่ง + เทา withdrawn) · timer เดินจริง (2 วิ → `02:58:50`)
+- `dash-analyst_b-expiring.png` — หน้า requester: การ์ด ending soon 2 แถว ป้าย **You** ทั้งคู่ · **ไม่มีการ์ด stats**
+- `dash-compliance_a.png` — auditor: เห็น 4 แถว + stats 6 table (aria-label เช่น "6 granted, 3 rejected, 3 withdrawn")
+- admin / analyst_a มีหน้าที่ save เองไว้แล้ว → ไม่ได้การ์ดใหม่อัตโนมัติ (ถูกตามหลัก) · `dash-admin-editor-added.png` — *Edit this page → Add a panel* มีทั้งสองการ์ดให้เลือก · เพิ่ม ending soon แล้วพรีวิวขึ้น 4 timer พร้อมช่อง 1–90 วัน / 3–20 แถว · กด **Cancel** แล้วหน้ากลับเป็นเดิม และ `home_layout` ของ admin ในฐานข้อมูล **ไม่เปลี่ยน**
+
+### BD.7 ยังไม่ทำ / ต่อไป
+
+- ปุ่ม **Revoke** บนการ์ด ending soon — ตอนนี้ `mayRevoke` ส่งมาแล้วแต่การ์ดยังไม่ใช้ (ลิงก์ไปแท็บ Access ของ table ซึ่งมีปุ่ม revoke อยู่แล้ว) · **ขอต่ออายุ** (renew) จากการ์ดของผู้ขอเอง
+- แจ้งเตือนผู้ถือก่อนหมด (กระดิ่ง / email / Teams) — ตอนนี้มีแค่บน dashboard
+- สถิติตามช่วงเวลา (กราฟรายสัปดาห์) · export CSV
+- ที่ค้างจากข้อ BC.8: ปุ่ม *"Open as draft policy"* ยังไม่เคยเห็นสด · `audit_policy_change` · Automatic configuration · recertification · break-glass · review ด้วย LLM (M16 — แยกต่างหาก)
+- **M9 ที่เหลือ**: recertification / access review รอบ 90 วัน · break-glass · notification ออกนอกระบบ
+
+## รอบก่อนหน้า — **ข้อ BC: M9 slice 2b — หน้า Review ของคำขอ (ผู้ขอ · impact · risk · suggestion · policy conflict) + กัน GRANT ที่เปิดไม่ได้จริง**
 
 ผู้ใช้สั่ง *"ทำต่อได้เลยนะ เอาตาม Roadmap ทำไปเรื่อยๆ ต้องทดสอบให้ดีทุกขั้นตอน"* แล้ว *"ต่อ"* → ทำ 2b ตามข้อ BB.8 จบรอบนี้ · 2c (grant ใกล้หมดอายุ + นับถอยหลัง · สถิติคำขอต่อ table) เป็นรอบถัดไป
 
@@ -5110,7 +5228,7 @@ estate ที่ใช้: `prod-mssql.SalesDB.dbo.{customer, order}` + **`prod-
 
 - ✅ **ข้อ AY เสร็จแล้ว** (Open in OpenMetadata ไม่ 500 · Request access มุมขวาบน · หัวหน้า asset แบบ OM · seed เคส demo) — ต่อด้วย **M9 slice 2** ข้างล่าง
 
-0. ✅ **M9 slice 2b เสร็จ (ข้อ BC)** — หน้า review + กัน GRANT ที่เปิดไม่ได้ · ✅ slice 2a (ข้อ BB) · **ต่อทันที: 2c** (ดูข้อ BC.8 — grant ใกล้หมดอายุ + นับถอยหลัง · สถิติคำขอต่อ table) — ผู้ใช้สั่ง *"ทำต่อได้เลยนะ เอาตาม Roadmap ทำไปเรื่อยๆ ต้องทดสอบให้ดีทุกขั้นตอน"*
+0. ✅ **M9 slice 2c เสร็จ (ข้อ BD)** — Dashboard ใครใกล้หมดสิทธิ์ + นับถอยหลัง · สถิติคำขอต่อ table · ✅ slice 2b (ข้อ BC) · ✅ slice 2a (ข้อ BB) · **ต่อไป:** M9 ที่เหลือ — recertification / access review · break-glass · notification ออกนอกระบบ (ดูข้อ BD.7) — ผู้ใช้สั่ง *"ทำต่อได้เลยนะ เอาตาม Roadmap ทำไปเรื่อยๆ ต้องทดสอบให้ดีทุกขั้นตอน"*
 0-เดิม. **(ส่วนที่เหลือของ AX.9 = 2b)** M9 slice 2 ดูข้อ AX.9: Approve = ตัดสินใจเท่านั้น → Fulfil ด้วยมือ (ออก grant / เพิ่มเข้า policy เดิม / สร้าง policy ใหม่เป็น Draft) โดย Owner · Steward · Custodian · หน้า review: ข้อมูลผู้ขอ + impact + risk + suggestion + conflict · ไอคอน Inbox + badge บน header
 0a. **ถัดไป:** Flowchart สำหรับอ่านระดับ table บนหน้า asset (ผู้ใช้ขอแล้ว — toggle text/diagram แบบ `PolicyFlowChart`, ค่าเริ่มต้นเป็นหน้าเดิม)
 0b. **M6 ⏸️ ON HOLD** — ห้ามเริ่มจนกว่าผู้ใช้จะสั่ง

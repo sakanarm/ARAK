@@ -508,6 +508,49 @@ function WidgetConfig({
       );
     }
 
+    case 'EXPIRING_ACCESS':
+    case 'ACCESS_REQUEST_STATS': {
+      // The ranges mirror HomeLayoutValidator, which clamps whatever is sent.
+      const range =
+        widget.type === 'EXPIRING_ACCESS'
+          ? { key: 'withinDays', label: 'Ending within (days, 1–90)', min: 1, max: 90, fallback: 14 }
+          : { key: 'days', label: 'Counted over (days, 7–365)', min: 7, max: 365, fallback: 90 };
+      const span =
+        typeof widget.config?.[range.key] === 'number'
+          ? (widget.config[range.key] as number)
+          : range.fallback;
+      const limit =
+        typeof widget.config?.limit === 'number' ? widget.config.limit : 8;
+      return (
+        <div className="tw:grid tw:grid-cols-2 tw:gap-2">
+          <label className="tw:flex tw:flex-col tw:gap-1">
+            <span className="tw:text-xs tw:text-tertiary">{range.label}</span>
+            <input
+              className={FIELD}
+              max={range.max}
+              min={range.min}
+              onChange={(event) =>
+                patch({ [range.key]: Number(event.target.value) })
+              }
+              type="number"
+              value={span}
+            />
+          </label>
+          <label className="tw:flex tw:flex-col tw:gap-1">
+            <span className="tw:text-xs tw:text-tertiary">Rows (3–20)</span>
+            <input
+              className={FIELD}
+              max={20}
+              min={3}
+              onChange={(event) => patch({ limit: Number(event.target.value) })}
+              type="number"
+              value={limit}
+            />
+          </label>
+        </div>
+      );
+    }
+
     case 'NOTE':
       return (
         <label className="tw:flex tw:flex-col tw:gap-1 tw:sm:col-span-2">

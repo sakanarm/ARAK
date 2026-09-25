@@ -248,6 +248,53 @@ class HomeLayoutValidatorTest {
   }
 
   @Nested
+  @DisplayName("Access cards")
+  class AccessCards {
+
+    private Map<String, Object> config(WidgetType type, Map<String, Object> raw) {
+      return validator.clean(with(type, raw)).widgets().get(0).config();
+    }
+
+    @Test
+    @DisplayName("gives the expiring-grants card a two-week window when none is set")
+    void expiringDefaults() {
+      assertThat(config(WidgetType.EXPIRING_ACCESS, Map.of()))
+          .containsExactly(Map.entry("withinDays", 14), Map.entry("limit", 8));
+    }
+
+    @Test
+    @DisplayName("keeps the expiring-grants window and length inside what the page can show")
+    void expiringClamps() {
+      assertThat(config(WidgetType.EXPIRING_ACCESS, Map.of("withinDays", 900, "limit", 1)))
+          .containsExactly(Map.entry("withinDays", 90), Map.entry("limit", 3));
+      assertThat(config(WidgetType.EXPIRING_ACCESS, Map.of("withinDays", -3, "limit", 99)))
+          .containsExactly(Map.entry("withinDays", 1), Map.entry("limit", 20));
+    }
+
+    @Test
+    @DisplayName("drops what the expiring-grants card does not read")
+    void expiringDropsStray() {
+      assertThat(
+              config(
+                  WidgetType.EXPIRING_ACCESS,
+                  Map.of("withinDays", "7", "html", "<script>x</script>")))
+          .containsOnlyKeys("withinDays", "limit")
+          .containsEntry("withinDays", 7);
+    }
+
+    @Test
+    @DisplayName("counts requests over ninety days unless told otherwise, and never under a week")
+    void statsDefaultsAndClamps() {
+      assertThat(config(WidgetType.ACCESS_REQUEST_STATS, Map.of()))
+          .containsExactly(Map.entry("days", 90), Map.entry("limit", 8));
+      assertThat(config(WidgetType.ACCESS_REQUEST_STATS, Map.of("days", 1, "limit", 50)))
+          .containsExactly(Map.entry("days", 7), Map.entry("limit", 20));
+      assertThat(config(WidgetType.ACCESS_REQUEST_STATS, Map.of("days", 5000)))
+          .containsEntry("days", 365);
+    }
+  }
+
+  @Nested
   @DisplayName("Layout structure")
   class Structure {
 

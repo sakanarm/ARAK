@@ -87,6 +87,12 @@ public final class HomeLayout {
     CHART_POLICIES_BY_SCOPE,
     CHART_SOURCES_BY_MODE,
 
+    // Access over time (M9 slice 2c). Who is about to lose access, which is
+    // everybody's business about their own grants; and which tables are asked
+    // for, which is the business of the people who look after them.
+    EXPIRING_ACCESS,
+    ACCESS_REQUEST_STATS,
+
     // Authored content.
     LINKS,
     HTML,
@@ -116,7 +122,8 @@ public final class HomeLayout {
                 PLATFORM,
                 CHART_POLICIES_BY_STATE,
                 CHART_POLICIES_BY_SCOPE,
-                CHART_SOURCES_BY_MODE ->
+                CHART_SOURCES_BY_MODE,
+                ACCESS_REQUEST_STATS ->
             true;
         default -> false;
       };

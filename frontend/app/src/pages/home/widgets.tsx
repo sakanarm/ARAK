@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import {
@@ -9,6 +9,7 @@ import {
   Code01,
   CpuChip01,
   Database01,
+  Hourglass01,
   Link01,
   MessageTextSquare01,
   PieChart01,
@@ -16,6 +17,7 @@ import {
   Server01,
   ShieldTick,
   Tag01,
+  Ticket01,
   User03,
   VideoRecorder,
 } from '@untitledui/icons';
@@ -25,6 +27,10 @@ import { fetchCatalogSummary, fetchSystemVersion } from '../../api/client';
 import { fetchVocabulary } from '../../api/governance';
 import { fetchPolicies } from '../../api/policies';
 import { fetchSources } from '../../api/sources';
+import { fetchExpiringGrants } from '../../api/access';
+import type { ExpiringGrant } from '../../api/access';
+import { fetchRequestStats } from '../../api/accessRequests';
+import type { TableRequestStats } from '../../api/accessRequests';
 import { engineLabel, useSourceEngines } from '../../engines';
 import { KIND_GROUPS, hitHref, search } from '../../api/search';
 import type { HomeLink, HomeWidget, HomeWidgetType } from '../../api/home';
@@ -162,6 +168,26 @@ export const WIDGET_SPECS: WidgetSpec[] = [
     defaultConfig: { shape: 'BARS' },
   },
   {
+    type: 'EXPIRING_ACCESS',
+    label: 'Access ending soon',
+    blurb: 'Who is about to lose access to which table, with a countdown.',
+    icon: Hourglass01,
+    // Not governance: a requester's page carries it too, where it lists only
+    // the grants that reach them, so nobody finds out on the morning it lapses.
+    governance: false,
+    authored: false,
+    defaultConfig: { withinDays: 14, limit: 8 },
+  },
+  {
+    type: 'ACCESS_REQUEST_STATS',
+    label: 'Requests per table',
+    blurb: 'How often each table is asked for, and how those asks ended.',
+    icon: Ticket01,
+    governance: true,
+    authored: false,
+    defaultConfig: { days: 90, limit: 8 },
+  },
+  {
     type: 'LINKS',
     label: 'Links',
     blurb: 'A list of addresses your team keeps going back to.',
@@ -244,6 +270,10 @@ export function HomeWidgetView({ widget }: { widget: HomeWidget }) {
     case 'CHART_POLICIES_BY_SCOPE':
     case 'CHART_SOURCES_BY_MODE':
       return <ChartWidget widget={widget} />;
+    case 'EXPIRING_ACCESS':
+      return <ExpiringAccessWidget widget={widget} />;
+    case 'ACCESS_REQUEST_STATS':
+      return <RequestStatsWidget widget={widget} />;
     case 'LINKS':
       return <LinksWidget widget={widget} />;
     case 'NOTE':
@@ -703,6 +733,312 @@ function ChartWidget({ widget }: { widget: HomeWidget }) {
       {loading ? <Loading /> : <Chart empty={empty} shape={shape} slices={slices} />}
     </Widget>
   );
+}
+
+// ----------------------------------------------------------------- access
+
+/** A fetched instant, read against the clock that measured it. */
+function useServerClock(serverNow: string | undefined, fetchedAt: number) {
+  const [tick, setTick] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = window.setInterval(() => setTick(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
+  // The server said "now" at the moment the answer landed; carry that forward
+  // by however long the page has been open since, on the browser's own clock.
+  // Only the elapsed time is trusted locally, never the browser's absolute time.
+  const base = serverNow ? new Date(serverNow).getTime() : Number.NaN;
+  return Number.isNaN(base) ? tick : base + (tick - fetchedAt);
+}
+
+function ExpiringAccessWidget({ widget }: { widget: HomeWidget }) {
+  const withinDays = numberConfig(widget, 'withinDays', 14);
+  const limit = numberConfig(widget, 'limit', 8);
+  const { data, dataUpdatedAt } = useQuery({
+    queryKey: ['access', 'expiring', withinDays, limit],
+    queryFn: () => fetchExpiringGrants(withinDays, limit),
+    retry: false,
+    // A lapsed grant drops out of the answer; a minute is soon enough for
+    // the list to notice, and the countdown itself ticks every second.
+    refetchInterval: 60_000,
+  });
+  const now = useServerClock(data?.now, dataUpdatedAt);
+
+  const grants = data?.grants ?? [];
+  const count =
+    data === undefined
+      ? 0
+      : data.total > grants.length
+        ? `${grants.length} of ${data.total}`
+        : data.total;
+
+  return (
+    <Widget
+      action={{ label: 'Requests', to: '/requests' }}
+      count={count}
+      title={headingOf(widget)}>
+      {data === undefined ? (
+        <Loading />
+      ) : grants.length === 0 ? (
+        <WidgetEmpty
+          icon={Hourglass01}
+          line={`No access you can see ends in the next ${withinDays} ${
+            withinDays === 1 ? 'day' : 'days'
+          }.`}
+        />
+      ) : (
+        <ul className="tw:divide-y tw:divide-secondary">
+          {grants.map((grant) => (
+            <ExpiringRow grant={grant} key={grant.id} now={now} />
+          ))}
+        </ul>
+      )}
+    </Widget>
+  );
+}
+
+function ExpiringRow({ grant, now }: { grant: ExpiringGrant; now: number }) {
+  const left = new Date(grant.validUntil).getTime() - now;
+  const tone = urgencyOf(left);
+  const holder = grant.displayName || grant.username;
+  const group = grant.principalType === 'GROUP';
+
+  return (
+    <li className="tw:flex tw:items-start tw:gap-3 tw:py-3">
+      <span className="tw:min-w-0 tw:flex-1">
+        <span className="tw:flex tw:flex-wrap tw:items-center tw:gap-2">
+          <span className="tw:truncate tw:text-sm tw:font-medium tw:text-primary">
+            {holder}
+          </span>
+          {grant.mine && (
+            <Badge color="brand" size="sm" type="pill-color">
+              You
+            </Badge>
+          )}
+          {group && (
+            <Badge color="gray" size="sm" type="pill-color">
+              Group
+            </Badge>
+          )}
+        </span>
+        <Link
+          className="tw:mt-0.5 tw:block tw:truncate tw:text-xs tw:text-tertiary tw:hover:text-secondary tw:hover:underline"
+          title={grant.assetFqn}
+          to={`/catalog/${encodeURIComponent(grant.assetFqn)}?tab=access`}>
+          {grant.assetFqn}
+        </Link>
+      </span>
+      <span className="tw:flex tw:shrink-0 tw:flex-col tw:items-end tw:gap-0.5">
+        <span
+          aria-label={`Ends in ${countdown(left)}`}
+          className={`tw:rounded-md tw:px-2 tw:py-0.5 tw:font-mono tw:text-xs tw:font-medium tw:tabular-nums ${URGENCY_CLASS[tone]}`}
+          role="timer">
+          {countdown(left)}
+        </span>
+        <span className="tw:text-xs tw:text-quaternary">
+          {new Date(grant.validUntil).toLocaleString(undefined, {
+            dateStyle: 'medium',
+            timeStyle: 'short',
+          })}
+        </span>
+      </span>
+    </li>
+  );
+}
+
+export type Urgency = 'ended' | 'today' | 'soon' | 'later';
+
+/** Under a day is today's problem; under three days is this week's. */
+export function urgencyOf(msLeft: number): Urgency {
+  if (msLeft <= 0) {
+    return 'ended';
+  }
+  if (msLeft < 24 * 3_600_000) {
+    return 'today';
+  }
+  if (msLeft < 3 * 24 * 3_600_000) {
+    return 'soon';
+  }
+  return 'later';
+}
+
+const URGENCY_CLASS: Record<Urgency, string> = {
+  ended: 'tw:bg-secondary tw:text-tertiary',
+  today: 'tw:bg-utility-error-50 tw:text-utility-error-700',
+  soon: 'tw:bg-utility-warning-50 tw:text-utility-warning-700',
+  later: 'tw:bg-secondary tw:text-secondary',
+};
+
+/**
+ * "3d 04:12:09", or "04:12:09" inside the last day.
+ *
+ * Seconds are shown throughout: the card is the one place a person watches
+ * access run out, and a clock that only moves once a minute reads as stuck.
+ */
+export function countdown(msLeft: number): string {
+  if (msLeft <= 0) {
+    return 'Ended';
+  }
+  const total = Math.floor(msLeft / 1000);
+  const days = Math.floor(total / 86_400);
+  const hours = Math.floor((total % 86_400) / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  const seconds = total % 60;
+  const clock = [hours, minutes, seconds]
+    .map((part) => String(part).padStart(2, '0'))
+    .join(':');
+  return days > 0 ? `${days}d ${clock}` : clock;
+}
+
+function RequestStatsWidget({ widget }: { widget: HomeWidget }) {
+  const days = numberConfig(widget, 'days', 90);
+  const limit = numberConfig(widget, 'limit', 8);
+  const { data } = useQuery({
+    queryKey: ['access-requests', 'stats', days, limit],
+    queryFn: () => fetchRequestStats(days, limit),
+    retry: false,
+  });
+
+  const tables = data?.tables ?? [];
+  const widest = Math.max(1, ...tables.map((table) => table.asked));
+
+  return (
+    <Widget
+      action={{ label: 'Requests', to: '/requests' }}
+      count={data?.total ?? 0}
+      title={headingOf(widget)}>
+      {data === undefined ? (
+        <Loading />
+      ) : tables.length === 0 ? (
+        <WidgetEmpty
+          icon={Ticket01}
+          line={`No table you oversee has been asked for in the last ${days} days.`}
+        />
+      ) : (
+        <>
+          <div className="tw:grid tw:grid-cols-2 tw:gap-6 tw:sm:grid-cols-4">
+            <Stat
+              hint={`${data.totals.tables.toLocaleString()} tables · ${days} days`}
+              label="Asked"
+              value={data.totals.asked.toLocaleString()}
+            />
+            <Stat label="Still open" value={data.totals.open.toLocaleString()} />
+            <Stat label="Granted" value={data.totals.completed.toLocaleString()} />
+            <Stat
+              hint={`${data.totals.rejected} rejected · ${data.totals.declined} declined`}
+              label="Refused"
+              value={(data.totals.rejected + data.totals.declined).toLocaleString()}
+            />
+          </div>
+          <ul className="tw:mt-5 tw:flex tw:flex-col tw:gap-3.5">
+            {tables.map((table) => (
+              <StatsRow key={table.assetFqn} table={table} widest={widest} />
+            ))}
+          </ul>
+          <ul
+            aria-label="Legend"
+            className="tw:mt-4 tw:flex tw:flex-wrap tw:gap-x-4 tw:gap-y-1 tw:text-xs tw:text-tertiary">
+            {OUTCOMES.map((outcome) => (
+              <li className="tw:flex tw:items-center tw:gap-1.5" key={outcome.key}>
+                <span
+                  aria-hidden
+                  className="tw:size-2 tw:rounded-full"
+                  style={{ backgroundColor: outcome.colour }}
+                />
+                {outcome.label}
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+    </Widget>
+  );
+}
+
+function StatsRow({ table, widest }: { table: TableRequestStats; widest: number }) {
+  const segments = segmentsOf(table);
+  const name = table.assetFqn.split('.').pop() ?? table.assetFqn;
+  const facts = [
+    `${table.requesters} ${table.requesters === 1 ? 'person' : 'people'}`,
+    table.medianHoursToClose === null
+      ? null
+      : `median ${hoursLabel(table.medianHoursToClose)} to answer`,
+    `last ${relativeTime(table.lastAskedAt)}`,
+  ].filter(Boolean);
+
+  return (
+    <li>
+      <div className="tw:flex tw:items-baseline tw:justify-between tw:gap-3">
+        <Link
+          className="tw:min-w-0 tw:truncate tw:text-sm tw:font-medium tw:text-primary tw:hover:underline"
+          title={table.assetFqn}
+          to={`/catalog/${encodeURIComponent(table.assetFqn)}`}>
+          {name}
+        </Link>
+        <span className="tw:shrink-0 tw:text-sm tw:font-medium tw:text-primary tw:tabular-nums">
+          {table.asked.toLocaleString()}
+        </span>
+      </div>
+      {/*
+        The bar's length is the table's share of the busiest one; its colours
+        are how those asks ended. Both at once, so a table that is asked for
+        often and mostly refused stands out without a second chart.
+      */}
+      <div
+        aria-label={segments
+          .map((segment) => `${segment.value} ${segment.label.toLowerCase()}`)
+          .join(', ')}
+        className="tw:mt-1.5 tw:h-1.5 tw:w-full tw:overflow-hidden tw:rounded-full tw:bg-secondary"
+        role="img">
+        <div
+          className="tw:flex tw:h-full"
+          style={{ width: `${Math.round((table.asked / widest) * 100)}%` }}>
+          {segments.map((segment) => (
+            <div
+              key={segment.key}
+              style={{
+                width: `${(segment.value / table.asked) * 100}%`,
+                backgroundColor: segment.colour,
+              }}
+            />
+          ))}
+        </div>
+      </div>
+      <p className="tw:mt-1 tw:truncate tw:text-xs tw:text-tertiary">
+        {facts.join(' · ')}
+      </p>
+    </li>
+  );
+}
+
+type Outcome = 'completed' | 'open' | 'rejected' | 'declined' | 'withdrawn';
+
+const OUTCOMES: { key: Outcome; label: string; colour: string }[] = [
+  { key: 'completed', label: 'Granted', colour: 'var(--color-success-500, #17b26a)' },
+  { key: 'open', label: 'Open', colour: 'var(--color-brand-500, #2e90fa)' },
+  { key: 'rejected', label: 'Rejected', colour: 'var(--color-error-500, #f04438)' },
+  { key: 'declined', label: 'Declined', colour: 'var(--color-warning-500, #f79009)' },
+  { key: 'withdrawn', label: 'Withdrawn', colour: 'var(--color-gray-400, #98a2b3)' },
+];
+
+/** The outcomes a table's bar is drawn from, in legend order, empty ones left out. */
+export function segmentsOf(
+  table: TableRequestStats
+): { key: Outcome; label: string; colour: string; value: number }[] {
+  return OUTCOMES.map((outcome) => ({ ...outcome, value: table[outcome.key] })).filter(
+    (segment) => segment.value > 0
+  );
+}
+
+/** Hours as a person says them: minutes under one, days past two. */
+export function hoursLabel(hours: number): string {
+  if (hours < 1) {
+    return `${Math.max(1, Math.round(hours * 60))}m`;
+  }
+  if (hours < 48) {
+    return `${Number.isInteger(hours) ? hours : hours.toFixed(1)}h`;
+  }
+  return `${(hours / 24).toFixed(1)}d`;
 }
 
 // -------------------------------------------------------- authored widgets

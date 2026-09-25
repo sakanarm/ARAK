@@ -3,8 +3,10 @@ package com.mfec.dac.resources;
 import com.mfec.dac.access.AccessEligibility;
 import com.mfec.dac.access.AccessRequestStore;
 import com.mfec.dac.access.AccessReview;
+import com.mfec.dac.access.RequestStatistics;
 import com.mfec.dac.auth.AuthenticatedUser;
 import com.mfec.dac.auth.Secured;
+import com.mfec.dac.auth.Stewardship;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.ws.rs.BadRequestException;
 import jakarta.ws.rs.Consumes;
@@ -22,6 +24,10 @@ import jakarta.ws.rs.core.Context;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import jakarta.ws.rs.core.SecurityContext;
+import java.time.Clock;
+import java.time.Duration;
+import java.time.Instant;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -51,20 +57,37 @@ public class AccessRequestResource {
   private final AccessRequestStore requests;
   private final AccessEligibility eligibility;
   private final AccessReview review;
+  private final RequestStatistics statistics;
+  private final Clock clock;
 
   public AccessRequestResource(AccessRequestStore requests, AccessEligibility eligibility) {
     this(requests, eligibility, null);
+  }
+
+  public AccessRequestResource(
+      AccessRequestStore requests, AccessEligibility eligibility, AccessReview review) {
+    this(requests, eligibility, review, null, Clock.systemUTC());
   }
 
   /**
    * @param review null leaves out the review and the check that a grant would
    *     open the table; only tests that exercise neither pass null
    */
+  /**
+   * @param statistics null leaves out the per-table counts; only tests that do
+   *     not read them pass null
+   */
   public AccessRequestResource(
-      AccessRequestStore requests, AccessEligibility eligibility, AccessReview review) {
+      AccessRequestStore requests,
+      AccessEligibility eligibility,
+      AccessReview review,
+      RequestStatistics statistics,
+      Clock clock) {
     this.requests = requests;
     this.eligibility = eligibility;
     this.review = review;
+    this.statistics = statistics;
+    this.clock = clock;
   }
 
   /** What a requester sends. {@code days} null means "until revoked". */
@@ -207,6 +230,81 @@ public class AccessRequestResource {
       @Context SecurityContext security,
       @Context HttpServletRequest http) {
     return eligibility.check(caller(security).username(), fqn, clientIp(http), purpose);
+  }
+
+  /**
+   * The counts across every table in the answer.
+   *
+   * @param tables how many tables were asked for at least once
+   */
+  public record StatsTotals(
+      int tables, int asked, int open, int completed, int rejected, int declined, int withdrawn) {}
+
+  /**
+   * Per-table request counts over the last {@code days}.
+   *
+   * @param since the start of the window
+   * @param total how many tables there are before {@code limit} cut the list
+   */
+  public record Stats(
+      Instant since,
+      int days,
+      int total,
+      StatsTotals totals,
+      List<RequestStatistics.TableStats> tables) {}
+
+  /**
+   * How often each table is asked for, and how those asks ended (M9 slice 2c).
+   *
+   * <p>For the people who look after tables, not the people asking for them:
+   * an administrator, policy author or auditor counts every table; a data owner
+   * counts the tables they own; anyone else gets an empty answer rather than a
+   * refusal, so a dashboard card can say "nothing here for you" without the
+   * page treating it as an error. Which tables other people keep asking for,
+   * and who keeps getting refused, is not a requester's business.
+   */
+  @GET
+  @Path("/stats")
+  public Stats stats(
+      @QueryParam("days") @DefaultValue("90") int days,
+      @QueryParam("assetFqn") String assetFqn,
+      @QueryParam("limit") @DefaultValue("50") int limit,
+      @Context SecurityContext security) {
+    AuthenticatedUser caller = caller(security);
+    if (statistics == null) {
+      throw new NotFoundException("Request statistics are not available here");
+    }
+    if (days < 1 || days > RequestStatistics.MAX_DAYS) {
+      throw new BadRequestException(
+          "days must be between 1 and " + RequestStatistics.MAX_DAYS + "; got " + days);
+    }
+    if (limit < 1 || limit > MAX_CHECK) {
+      throw new BadRequestException("limit must be between 1 and " + MAX_CHECK + "; got " + limit);
+    }
+    String fqn = assetFqn == null || assetFqn.isBlank() ? null : assetFqn.trim();
+    Instant since = clock.instant().minus(Duration.ofDays(days));
+    boolean everything = Stewardship.overseesEverything(caller);
+    List<RequestStatistics.TableStats> visible = new ArrayList<>();
+    for (RequestStatistics.TableStats table : statistics.perTable(since, fqn)) {
+      if (everything || Stewardship.oversees(caller, table.assetFqn())) {
+        visible.add(table);
+      }
+    }
+    int asked = 0, open = 0, completed = 0, rejected = 0, declined = 0, withdrawn = 0;
+    for (RequestStatistics.TableStats table : visible) {
+      asked += table.asked();
+      open += table.open();
+      completed += table.completed();
+      rejected += table.rejected();
+      declined += table.declined();
+      withdrawn += table.withdrawn();
+    }
+    return new Stats(
+        since,
+        days,
+        visible.size(),
+        new StatsTotals(visible.size(), asked, open, completed, rejected, declined, withdrawn),
+        List.copyOf(visible.subList(0, Math.min(limit, visible.size()))));
   }
 
   /**

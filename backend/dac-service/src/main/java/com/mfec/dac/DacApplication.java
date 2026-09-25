@@ -5,6 +5,7 @@ import com.mfec.dac.access.GrantExpiryJob;
 import com.mfec.dac.access.AccessEligibility;
 import com.mfec.dac.access.AccessRequestStore;
 import com.mfec.dac.access.AccessReview;
+import com.mfec.dac.access.RequestStatistics;
 import com.mfec.dac.access.WorkflowStore;
 import com.mfec.dac.access.GrantStore;
 import com.mfec.dac.home.HomeLayoutStore;
@@ -372,7 +373,13 @@ public class DacApplication extends Application<DacConfiguration> {
             jdbi, decisionService, accessRequests, policyStore, principalQuery, contexts, grants);
     environment
         .jersey()
-        .register(new AccessRequestResource(accessRequests, eligibility, accessReview));
+        .register(
+            new AccessRequestResource(
+                accessRequests,
+                eligibility,
+                accessReview,
+                new RequestStatistics(jdbi),
+                java.time.Clock.systemUTC()));
     environment.jersey().register(new AccessWorkflowResource(accessWorkflows));
     environment.jersey().register(
         new QueryResource(

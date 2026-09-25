@@ -20,8 +20,12 @@ import jakarta.ws.rs.core.Context;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import jakarta.ws.rs.core.SecurityContext;
+import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -43,12 +47,24 @@ import java.util.UUID;
 @Secured
 public class AccessResource {
 
+  /** The widest look-ahead one call may ask for: a year. */
+  static final int MAX_WITHIN_DAYS = 365;
+
+  /** At most this many grants in one answer, which is several dashboards' worth. */
+  static final int MAX_EXPIRING = 500;
+
   private final AccessQuery access;
   private final GrantStore grants;
+  private final Clock clock;
 
   public AccessResource(AccessQuery access, GrantStore grants) {
+    this(access, grants, Clock.systemUTC());
+  }
+
+  AccessResource(AccessQuery access, GrantStore grants, Clock clock) {
     this.access = access;
     this.grants = grants;
+    this.clock = clock;
   }
 
   /**
@@ -93,6 +109,99 @@ public class AccessResource {
   @Path("/principals/{username}")
   public List<GrantStore.StoredGrant> held(@PathParam("username") String username) {
     return grants.heldBy(username);
+  }
+
+  /**
+   * One grant that is about to end, as a dashboard shows it (M9 slice 2c).
+   *
+   * @param mine the grant reaches the caller, directly or through a group
+   * @param mayRevoke the caller governs the table, so the card can offer to end
+   *     it now rather than let it run out
+   */
+  public record ExpiringGrant(
+      UUID id,
+      String assetFqn,
+      UUID principalId,
+      String username,
+      String displayName,
+      String principalType,
+      String source,
+      UUID requestId,
+      Instant validFrom,
+      Instant validUntil,
+      String grantedBy,
+      boolean mine,
+      boolean mayRevoke) {}
+
+  /**
+   * The grants ending within a window.
+   *
+   * @param now the instant the window was measured from, so a countdown on the
+   *     page starts from the server's clock and not the browser's
+   * @param total how many there are before {@code limit} cut the list
+   */
+  public record Expiring(Instant now, int withinDays, int total, List<ExpiringGrant> grants) {}
+
+  /**
+   * Who is about to lose access to which table (M9 slice 2c).
+   *
+   * <p>Every grant still live now that ends within {@code withinDays}, soonest
+   * first. What a caller sees follows who they are: an administrator, policy
+   * author or auditor sees every such grant; anyone else sees the grants that
+   * reach them -- so a requester's dashboard can warn them before their access
+   * lapses -- and the grants on tables they own or oversee, which are the ones
+   * they can renew or end. The list of who holds what is open elsewhere to any
+   * signed-in person ({@code /assets/{fqn}}), but that is one table a reader
+   * chose; a list of every grant across the estate, ordered by when it runs
+   * out, is a map of who to ask next week, and is kept to the people whose job
+   * it is to read one.
+   */
+  @GET
+  @Path("/grants/expiring")
+  public Expiring expiring(
+      @QueryParam("withinDays") @DefaultValue("14") int withinDays,
+      @QueryParam("limit") @DefaultValue("100") int limit,
+      @Context SecurityContext security) {
+    AuthenticatedUser caller = caller(security);
+    if (withinDays < 1 || withinDays > MAX_WITHIN_DAYS) {
+      throw new BadRequestException(
+          "withinDays must be between 1 and " + MAX_WITHIN_DAYS + "; got " + withinDays);
+    }
+    if (limit < 1 || limit > MAX_EXPIRING) {
+      throw new BadRequestException(
+          "limit must be between 1 and " + MAX_EXPIRING + "; got " + limit);
+    }
+    Instant now = clock.instant();
+    Instant until = now.plus(Duration.ofDays(withinDays));
+    Set<UUID> reachesMe = grants.reachableFrom(caller.username());
+    boolean everything = Stewardship.overseesEverything(caller);
+    List<ExpiringGrant> visible = new ArrayList<>();
+    for (GrantStore.StoredGrant grant : grants.expiring(now, until)) {
+      boolean mine = reachesMe.contains(grant.principalId());
+      if (!everything && !mine && !Stewardship.oversees(caller, grant.assetFqn())) {
+        continue;
+      }
+      visible.add(
+          new ExpiringGrant(
+              grant.id(),
+              grant.assetFqn(),
+              grant.principalId(),
+              grant.username(),
+              grant.displayName(),
+              grant.principalType(),
+              grant.source(),
+              grant.requestId(),
+              grant.validFrom(),
+              grant.validUntil(),
+              grant.grantedBy(),
+              mine,
+              Stewardship.governs(caller, grant.assetFqn())));
+    }
+    return new Expiring(
+        now,
+        withinDays,
+        visible.size(),
+        List.copyOf(visible.subList(0, Math.min(limit, visible.size()))));
   }
 
   /**

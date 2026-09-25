@@ -29,11 +29,15 @@ import org.jdbi.v3.core.Jdbi;
 public class HomeLayoutStore {
 
   /**
-   * The page as it was before anybody could rearrange it.
+   * The page as it was before anybody could rearrange it, plus the two access
+   * cards of M9 slice 2c.
    *
-   * <p>Deliberately the same content and the same order as the hand-written page
-   * this replaced. Somebody who never opens the editor should not be able to
-   * tell that one exists.
+   * <p>The first five are deliberately the same content and the same order as
+   * the hand-written page this replaced, so somebody who never opens the editor
+   * cannot tell that one exists. The access cards were added the way the class
+   * comment promises a new widget arrives -- for everybody who never
+   * customised -- each at the foot of the column that already held its kind:
+   * grants ending soon under coverage, request counts under sources.
    */
   public static final Layout DEFAULT =
       new Layout(
@@ -41,7 +45,17 @@ public class HomeLayoutStore {
           List.of(
               widget("recent-policies", WidgetType.RECENT_POLICIES, 0, Map.of("limit", 5)),
               widget("coverage", WidgetType.GOVERNANCE_COVERAGE, 0, Map.of()),
+              widget(
+                  "expiring-access",
+                  WidgetType.EXPIRING_ACCESS,
+                  0,
+                  Map.of("withinDays", 14, "limit", 8)),
               widget("sources", WidgetType.SOURCES, 1, Map.of("limit", 5)),
+              widget(
+                  "request-stats",
+                  WidgetType.ACCESS_REQUEST_STATS,
+                  1,
+                  Map.of("days", 90, "limit", 8)),
               widget("vocabulary", WidgetType.VOCABULARY, 1, Map.of()),
               widget("platform", WidgetType.PLATFORM, 1, Map.of())));
 
@@ -49,8 +63,10 @@ public class HomeLayoutStore {
    * The page for somebody who came here to find data, not to govern it.
    *
    * <p>Search first and full width, because that is the whole errand: a
-   * requester knows a table name or a tag and wants the asset page. What
-   * follows is the vocabulary they would browse by when they do not know the
+   * requester knows a table name or a tag and wants the asset page. Then
+   * their own grants that are about to run out, so the day access lapses is
+   * not the day they find out. What follows is the vocabulary they would
+   * browse by when they do not know the
    * name, and the shape of the catalogue they are searching — nothing that
    * reports on policies they cannot write or sources they cannot register.
    *
@@ -63,6 +79,11 @@ public class HomeLayoutStore {
           Preset.SINGLE,
           List.of(
               widget("search", WidgetType.SEARCH, 0, Map.of()),
+              widget(
+                  "expiring-access",
+                  WidgetType.EXPIRING_ACCESS,
+                  0,
+                  Map.of("withinDays", 14, "limit", 8)),
               widget("vocabulary", WidgetType.VOCABULARY, 0, Map.of()),
               widget(
                   "assets-by-type",

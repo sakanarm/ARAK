@@ -646,3 +646,52 @@ export async function fetchRequestNotices(limit = 20): Promise<RequestNotices> {
 export async function markRequestNoticesSeen(): Promise<void> {
   await apiClient.post('/v1/access-requests/notifications/seen');
 }
+
+/**
+ * How often one table was asked for in the window, and how the asks ended.
+ *
+ * `rejected` is an approver's no; `declined` is the configurer's, after
+ * approval. `medianHoursToClose` is null when nothing in the window has ended.
+ */
+export interface TableRequestStats {
+  assetFqn: string;
+  asked: number;
+  open: number;
+  completed: number;
+  rejected: number;
+  declined: number;
+  withdrawn: number;
+  requesters: number;
+  medianHoursToClose: number | null;
+  lastAskedAt: string | null;
+}
+
+export interface RequestStatsTotals {
+  tables: number;
+  asked: number;
+  open: number;
+  completed: number;
+  rejected: number;
+  declined: number;
+  withdrawn: number;
+}
+
+/**
+ * Requests per table (M9 slice 2c). Counted over the tables the reader
+ * oversees; a requester gets an empty answer, not an error. `total` and
+ * `totals` are before `limit` cut the list.
+ */
+export interface RequestStats {
+  since: string;
+  days: number;
+  total: number;
+  totals: RequestStatsTotals;
+  tables: TableRequestStats[];
+}
+
+export async function fetchRequestStats(days = 90, limit = 50): Promise<RequestStats> {
+  const { data } = await apiClient.get<RequestStats>('/v1/access-requests/stats', {
+    params: { days, limit },
+  });
+  return data;
+}

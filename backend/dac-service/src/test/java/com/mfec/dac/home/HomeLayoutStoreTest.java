@@ -124,24 +124,47 @@ class HomeLayoutStoreTest {
     }
 
     @Test
-    @DisplayName("the governance page is the page that shipped")
+    @DisplayName("the governance page is the page that shipped, plus the access cards")
     void governanceDefaultIsUnchanged() {
       // Somebody who never opens the editor should not be able to tell that
       // one exists, so this default is pinned to what the hand-written page
-      // held, in the column it held it in.
+      // held, in the column it held it in -- with the two access cards of M9
+      // slice 2c each at the foot of the column that held its kind.
       assertThat(HomeLayoutStore.DEFAULT.preset()).isEqualTo(Preset.WIDE_LEFT);
       assertThat(HomeLayoutStore.DEFAULT.widgets())
           .extracting(Widget::type)
           .containsExactly(
               WidgetType.RECENT_POLICIES,
               WidgetType.GOVERNANCE_COVERAGE,
+              WidgetType.EXPIRING_ACCESS,
               WidgetType.SOURCES,
+              WidgetType.ACCESS_REQUEST_STATS,
               WidgetType.VOCABULARY,
               WidgetType.PLATFORM);
       assertThat(HomeLayoutStore.DEFAULT.widgets())
           .filteredOn(widget -> widget.column() == 0)
           .extracting(Widget::id)
-          .containsExactly("recent-policies", "coverage");
+          .containsExactly("recent-policies", "coverage", "expiring-access");
+    }
+
+    @Test
+    @DisplayName("a requester's page warns them before their own access runs out")
+    void requesterDefaultCarriesExpiringAccess() {
+      assertThat(HomeLayoutStore.REQUESTER_DEFAULT.widgets())
+          .extracting(Widget::type)
+          .containsExactly(
+              WidgetType.SEARCH,
+              WidgetType.EXPIRING_ACCESS,
+              WidgetType.VOCABULARY,
+              WidgetType.CHART_ASSETS_BY_TYPE);
+      // Grants ending soon are everybody's business about their own grants;
+      // which tables other people ask for is not, so that card stays off.
+      assertThat(WidgetType.EXPIRING_ACCESS.governance()).isFalse();
+      assertThat(WidgetType.ACCESS_REQUEST_STATS.governance()).isTrue();
+      assertThat(HomeLayoutStore.forRole(HomeLayoutStore.DEFAULT, false).widgets())
+          .extracting(Widget::type)
+          .contains(WidgetType.EXPIRING_ACCESS)
+          .doesNotContain(WidgetType.ACCESS_REQUEST_STATS);
     }
   }
 }

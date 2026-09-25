@@ -33,6 +33,9 @@ export type HomeWidgetType =
   | 'CHART_POLICIES_BY_STATE'
   | 'CHART_POLICIES_BY_SCOPE'
   | 'CHART_SOURCES_BY_MODE'
+  // Access: grants about to lapse, and how often each table is asked for.
+  | 'EXPIRING_ACCESS'
+  | 'ACCESS_REQUEST_STATS'
   // Authored content.
   | 'LINKS'
   | 'HTML'

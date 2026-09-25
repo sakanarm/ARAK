@@ -188,3 +188,53 @@ export async function revokeGrant(
   );
   return data;
 }
+
+/**
+ * One grant whose window closes soon (M9 slice 2c).
+ *
+ * @param mine the reader holds it, themselves or through a group they are in
+ * @param mayRevoke the reader governs the table, so the row can offer revoke
+ */
+export interface ExpiringGrant {
+  id: string;
+  assetFqn: string;
+  principalId: string;
+  username: string;
+  displayName: string | null;
+  principalType: string | null;
+  source: 'manual' | 'request';
+  requestId: string | null;
+  validFrom: string | null;
+  validUntil: string;
+  grantedBy: string;
+  mine: boolean;
+  mayRevoke: boolean;
+}
+
+/**
+ * Who is about to lose access, soonest first.
+ *
+ * `now` is the server's clock. A countdown is measured from it rather than from
+ * the browser's, so a laptop whose clock is ten minutes out does not tell
+ * somebody they have longer than they do.
+ *
+ * `total` counts every grant the reader may see in the window, before
+ * `limit` cut the list, so a card can say "8 of 23".
+ */
+export interface ExpiringGrants {
+  now: string;
+  withinDays: number;
+  total: number;
+  grants: ExpiringGrant[];
+}
+
+export async function fetchExpiringGrants(
+  withinDays = 14,
+  limit = 100
+): Promise<ExpiringGrants> {
+  const { data } = await apiClient.get<ExpiringGrants>(
+    '/v1/access/grants/expiring',
+    { params: { withinDays, limit } }
+  );
+  return data;
+}

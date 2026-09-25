@@ -193,6 +193,37 @@ public class GrantStore {
   }
 
   /**
+   * The principals a grant can reach this person through: themselves and every
+   * group they are in, however deep. Empty when nobody has that name.
+   */
+  public java.util.Set<UUID> reachableFrom(String username) {
+    if (username == null || username.isBlank()) {
+      return java.util.Set.of();
+    }
+    return jdbi.withHandle(
+        handle ->
+            java.util.Set.copyOf(
+                handle
+                    .createQuery(
+                        """
+                        WITH RECURSIVE me AS (
+                          SELECT id FROM principal WHERE lower(username) = lower(:username)
+                        ),
+                        reachable AS (
+                            SELECT id AS principal_id FROM me
+                          UNION
+                            SELECT m.group_id
+                            FROM group_member m
+                            JOIN reachable r ON m.member_id = r.principal_id
+                        )
+                        SELECT principal_id FROM reachable
+                        """)
+                    .bind("username", username)
+                    .mapTo(UUID.class)
+                    .list()));
+  }
+
+  /**
    * Whether a grant to {@code principalId} would reach {@code username}: it is
    * them, or a group they belong to directly or through another group.
    *
@@ -225,6 +256,41 @@ public class GrantStore {
                 .bind("principal", principalId)
                 .mapTo(Boolean.class)
                 .one());
+  }
+
+  /**
+   * Every grant that is live at {@code now} and ends by {@code until}, soonest
+   * first (M9 slice 2c).
+   *
+   * <p>Live means what the engine means by it -- not revoked, started, and not
+   * yet ended -- so a grant the expiry job has not tombstoned yet but that has
+   * already lapsed is not "ending soon": it has ended, and a countdown that went
+   * below zero would be telling a dashboard reader something the engine stopped
+   * honouring an hour ago. Open-ended grants never end, so they are never here.
+   * A disabled principal's grant is left out for the same reason: the engine
+   * already ignores it.
+   */
+  public List<StoredGrant> expiring(Instant now, Instant until) {
+    return jdbi.withHandle(
+        handle ->
+            handle
+                .createQuery(
+                    """
+                    SELECT g.*, p.username, p.display_name, p.principal_type, p.source AS principal_source
+                    FROM access_grant g
+                    JOIN principal p ON p.id = g.principal_id
+                    WHERE g.revoked_at IS NULL
+                      AND p.enabled
+                      AND g.valid_from <= :now
+                      AND g.valid_until IS NOT NULL
+                      AND g.valid_until > :now
+                      AND g.valid_until <= :until
+                    ORDER BY g.valid_until, g.asset_fqn, p.username
+                    """)
+                .bind("now", now)
+                .bind("until", until)
+                .map(GrantStore::map)
+                .list());
   }
 
   public Optional<StoredGrant> find(UUID id) {

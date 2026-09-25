@@ -197,6 +197,21 @@ public class HomeLayoutValidator {
         int limit = integer(in.get("limit"), 5);
         out.put("limit", Math.max(3, Math.min(limit, 12)));
       }
+      case EXPIRING_ACCESS -> {
+        // Clamped rather than refused, like every other number here: a card
+        // that looks two years ahead is not wrong, only not what the server
+        // will count, and saying so by moving the number is kinder than a 400.
+        int within = integer(in.get("withinDays"), 14);
+        out.put("withinDays", Math.max(1, Math.min(within, 90)));
+        int limit = integer(in.get("limit"), 8);
+        out.put("limit", Math.max(3, Math.min(limit, 20)));
+      }
+      case ACCESS_REQUEST_STATS -> {
+        int days = integer(in.get("days"), 90);
+        out.put("days", Math.max(7, Math.min(days, 365)));
+        int limit = integer(in.get("limit"), 8);
+        out.put("limit", Math.max(3, Math.min(limit, 20)));
+      }
       default -> {
         // Reading widgets carry no settings. Anything sent for them is dropped
         // rather than stored, so the row never holds a field nothing reads.
