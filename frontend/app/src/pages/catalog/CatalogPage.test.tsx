@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import CatalogPage from './CatalogPage';
 import type { AssetSummary, FacetRow } from '../../api/client';
@@ -50,6 +50,7 @@ function asset(overrides: Partial<AssetSummary>): AssetSummary {
     certification: null,
     dataSource: 'prod-pg',
     columnCount: 5,
+    childCount: 0,
     taggedColumnCount: 2,
     facets: [],
     owners: [],
@@ -184,4 +185,63 @@ test('asks for as many assets per page as the URL says', async () => {
   await waitFor(() =>
     expect(fetchAssets).toHaveBeenLastCalledWith(expect.objectContaining({ limit: 50 }))
   );
+});
+
+describe('hierarchy', () => {
+  const page = (items: AssetSummary[]) => ({ items, total: items.length, limit: 500, offset: 0 });
+  const service = asset({ id: 's', fqn: 'prod-pg', name: 'prod-pg', assetType: 'SERVICE', parentFqn: null, columnCount: 0, childCount: 2 });
+  const sales = asset({ id: 'd1', fqn: 'prod-pg.SalesDB', name: 'SalesDB', assetType: 'DATABASE', parentFqn: 'prod-pg', columnCount: 0, childCount: 1 });
+  const hr = asset({ id: 'd2', fqn: 'prod-pg.HrDB', name: 'HrDB', assetType: 'DATABASE', parentFqn: 'prod-pg', columnCount: 0, childCount: 0 });
+  const dbo = asset({ id: 'sc', fqn: 'prod-pg.SalesDB.dbo', name: 'dbo', assetType: 'SCHEMA', parentFqn: 'prod-pg.SalesDB', columnCount: 0, childCount: 1 });
+
+  beforeEach(() => {
+    fetchAssets.mockImplementation((query: { assetType?: string; parent?: string }) => {
+      if (query.assetType === 'SERVICE') return Promise.resolve(page([service]));
+      if (query.parent === 'prod-pg') return Promise.resolve(page([sales, hr]));
+      if (query.parent === 'prod-pg.SalesDB') return Promise.resolve(page([dbo]));
+      if (query.parent === 'prod-pg.SalesDB.dbo') return Promise.resolve(page([asset({})]));
+      return Promise.resolve(page([asset({})]));
+    });
+  });
+
+  test('walks service, database, schema and table one level at a time', async () => {
+    renderPage('/catalog?view=tree');
+
+    const tree = await screen.findByRole('tree', { name: 'Catalog hierarchy' });
+    // The only service opens by itself; its two databases wait to be asked.
+    expect(await within(tree).findByRole('treeitem', { name: 'SalesDB' })).toHaveAttribute('aria-expanded', 'false');
+    expect(within(tree).getByRole('treeitem', { name: 'prod-pg' })).toHaveAttribute('aria-expanded', 'true');
+    expect(within(tree).getByText('2 databases')).toBeInTheDocument();
+    // An empty database has nothing to open.
+    expect(within(tree).getByRole('treeitem', { name: 'HrDB' })).not.toHaveAttribute('aria-expanded');
+    expect(fetchAssets).not.toHaveBeenCalledWith(expect.objectContaining({ parent: 'prod-pg.SalesDB' }));
+
+    fireEvent.click(within(tree).getByRole('button', { name: 'Expand SalesDB' }));
+
+    // The lone schema opens in turn and shows its table, which links to its page.
+    const table = await within(tree).findByRole('link', { name: 'customer' });
+    expect(table).toHaveAttribute('href', `/catalog/${encodeURIComponent('prod-pg.SalesDB.dbo.customer')}`);
+    expect(fetchAssets).toHaveBeenCalledWith({ parent: 'prod-pg.SalesDB', limit: 500 });
+    expect(within(tree).getByRole('treeitem', { name: 'customer' })).toHaveAttribute('aria-level', '4');
+    // The filtered list is not asked for while the tree is shown.
+    expect(fetchAssets).not.toHaveBeenCalledWith(expect.objectContaining({ offset: 0 }));
+  });
+
+  test('switches between the list and the tree, and a search goes back to the list', async () => {
+    renderPage();
+    await screen.findByText('customer');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Hierarchy' }));
+    expect(await screen.findByRole('tree', { name: 'Catalog hierarchy' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Hierarchy' })).toHaveAttribute('aria-pressed', 'true');
+
+    fireEvent.change(screen.getByLabelText('Search the catalog'), { target: { value: 'cust' } });
+    fireEvent.submit(screen.getByRole('button', { name: 'Search' }));
+
+    await waitFor(() => expect(screen.queryByRole('tree')).not.toBeInTheDocument());
+    expect(screen.getByRole('button', { name: 'List' })).toHaveAttribute('aria-pressed', 'true');
+    await waitFor(() =>
+      expect(fetchAssets).toHaveBeenLastCalledWith(expect.objectContaining({ search: 'cust' }))
+    );
+  });
 });

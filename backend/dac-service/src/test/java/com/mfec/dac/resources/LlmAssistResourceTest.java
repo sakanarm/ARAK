@@ -77,7 +77,7 @@ class LlmAssistResourceTest {
     CatalogQuery.AssetSummary summary =
         new CatalogQuery.AssetSummary(
             UUID.randomUUID(), CUSTOMER, "customer", "customer", "TABLE", "demo-pg.salesdb.sales",
-            "One row per customer", null, null, "demo-pg", 3, 1, List.of(), List.of());
+            "One row per customer", null, null, "demo-pg", 3, 1, List.of(), List.of(), 0);
     when(catalog.assets(any(), eq("TABLE"), any(), any(), eq(SOURCE), anyInt(), anyInt()))
         .thenReturn(new CatalogQuery.AssetPage(List.of(summary), 1, 300, 0));
     when(catalog.asset(CUSTOMER))

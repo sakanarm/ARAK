@@ -58,6 +58,10 @@ public class CatalogResource {
    * A malformed one is a 400, unlike a facet, because the caller did not type
    * it -- it came from a picker, and quietly widening the list to every
    * database in the catalog is the failure this filter exists to prevent.
+   *
+   * <p>{@code parent} narrows to what sits directly under one asset -- the
+   * schemas of a database, the tables of a schema -- which is how the
+   * hierarchy is walked one branch at a time.
    */
   @GET
   @Path("/assets")
@@ -67,6 +71,7 @@ public class CatalogResource {
       @QueryParam("facet") List<String> facets,
       @QueryParam("owner") String owner,
       @QueryParam("sourceId") String sourceId,
+      @QueryParam("parent") String parent,
       @QueryParam("limit") @jakarta.ws.rs.DefaultValue("50") int limit,
       @QueryParam("offset") @jakarta.ws.rs.DefaultValue("0") int offset) {
 
@@ -84,7 +89,7 @@ public class CatalogResource {
         throw new BadRequestException("sourceId must be the UUID of a registered source");
       }
     }
-    return catalog.assets(search, assetType, parsed, owner, source, limit, offset);
+    return catalog.assets(search, assetType, parsed, owner, source, parent, limit, offset);
   }
 
   /**

@@ -12,11 +12,13 @@ import type { FacetRow } from '../../api/client';
 import type { AppliedPolicy } from '../../api/policies';
 
 const fetchAsset = jest.fn();
+const fetchAssets = jest.fn();
 const fetchPoliciesForAsset = jest.fn();
 
 jest.mock('../../api/client', () => ({
   apiErrorMessage: (_error: unknown, fallback: string) => fallback,
   fetchAsset: (...args: unknown[]) => fetchAsset(...args),
+  fetchAssets: (...args: unknown[]) => fetchAssets(...args),
 }));
 
 // The request button has its own tests; here it only has to stay out of the way.
@@ -82,6 +84,7 @@ const DETAIL = {
     certification: null,
     dataSource: 'prod-pg',
     columnCount: 2,
+    childCount: 0,
     taggedColumnCount: 1,
     facets: [],
     owners: [],
@@ -149,7 +152,7 @@ const DETAIL = {
  */
 function renderPage(
   fqn = 'prod-pg.SalesDB.dbo.customer',
-  tab?: 'access' | 'policies' | 'columns' | 'audit'
+  tab?: 'contents' | 'access' | 'policies' | 'columns' | 'audit'
 ) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const query = tab ? `?tab=${tab}` : '';
@@ -169,6 +172,7 @@ beforeEach(() => {
   fetchAsset.mockResolvedValue(DETAIL);
   fetchPoliciesForAsset.mockReset();
   fetchPoliciesForAsset.mockResolvedValue([]);
+  fetchAssets.mockReset();
 });
 
 test('the two kinds of policy are answered separately', async () => {
@@ -399,4 +403,98 @@ test('an asset nobody owns says so in the header', async () => {
   renderPage();
 
   expect(await screen.findByText('No owner')).toBeInTheDocument();
+});
+
+describe('a schema', () => {
+  const SCHEMA = {
+    ...DETAIL,
+    asset: {
+      ...DETAIL.asset,
+      id: '22222222-2222-2222-2222-222222222222',
+      fqn: 'prod-pg.SalesDB.dbo',
+      name: 'dbo',
+      assetType: 'SCHEMA',
+      parentFqn: 'prod-pg.SalesDB',
+      columnCount: 0,
+      taggedColumnCount: 0,
+      childCount: 2,
+    },
+    columns: [],
+  };
+  const table = (name: string, description: string | null, columnCount: number) => ({
+    ...SCHEMA.asset,
+    id: `t-${name}`,
+    fqn: `prod-pg.SalesDB.dbo.${name}`,
+    name,
+    assetType: 'TABLE',
+    parentFqn: 'prod-pg.SalesDB.dbo',
+    description,
+    columnCount,
+    childCount: 0,
+    facets: name === 'customer' ? [facet({})] : [],
+  });
+
+  beforeEach(() => {
+    fetchAsset.mockResolvedValue(SCHEMA);
+    fetchAssets.mockResolvedValue({
+      items: [table('customer', 'Everyone who bought', 5), table('orders', null, 7)],
+      total: 2,
+      limit: 500,
+      offset: 0,
+    });
+  });
+
+  test('has a Tables tab listing what is in it, and no Columns tab', async () => {
+    renderPage('prod-pg.SalesDB.dbo');
+
+    const tab = await screen.findByRole('tab', { name: /Tables/ });
+    expect(tab).toHaveTextContent('2');
+    expect(screen.queryByRole('tab', { name: /Columns/ })).not.toBeInTheDocument();
+    expect(screen.getByText('Contains').parentElement).toHaveTextContent('2 tables');
+
+    fireEvent.click(tab);
+
+    const link = await screen.findByRole('link', { name: 'customer' });
+    expect(link).toHaveAttribute('href', `/catalog/${encodeURIComponent('prod-pg.SalesDB.dbo.customer')}`);
+    expect(fetchAssets).toHaveBeenCalledWith({ parent: 'prod-pg.SalesDB.dbo', limit: 500 });
+    expect(screen.getByText('2 tables in this schema')).toBeInTheDocument();
+    expect(screen.getByText('7 columns')).toBeInTheDocument();
+    expect(screen.getByText('Everyone who bought')).toBeInTheDocument();
+  });
+
+  test('filters its tables by name or description', async () => {
+    renderPage('prod-pg.SalesDB.dbo', 'contents');
+
+    await screen.findByRole('link', { name: 'customer' });
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Filter tables' }), {
+      target: { value: 'ORD' },
+    });
+    expect(screen.queryByRole('link', { name: 'customer' })).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'orders' })).toBeInTheDocument();
+
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Filter tables' }), {
+      target: { value: 'bought' },
+    });
+    expect(screen.getByRole('link', { name: 'customer' })).toBeInTheDocument();
+
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Filter tables' }), {
+      target: { value: 'nope' },
+    });
+    expect(screen.getByText('Nothing here matches “nope”.')).toBeInTheDocument();
+  });
+
+  test('says so when the crawl found nothing under it', async () => {
+    fetchAssets.mockResolvedValue({ items: [], total: 0, limit: 500, offset: 0 });
+    renderPage('prod-pg.SalesDB.dbo', 'contents');
+
+    expect(await screen.findByText('The crawl found nothing under this schema.')).toBeInTheDocument();
+  });
+});
+
+test('a table has no contents tab, and a link to one opens the overview', async () => {
+  renderPage(undefined, 'contents');
+
+  expect(await screen.findByRole('tab', { name: /Overview/ })).toHaveAttribute('aria-selected', 'true');
+  expect(screen.queryByRole('tab', { name: /Tables|Schemas|Databases/ })).not.toBeInTheDocument();
+  expect(fetchAssets).not.toHaveBeenCalled();
 });

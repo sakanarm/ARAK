@@ -250,6 +250,50 @@ class CatalogQueryIT {
   }
 
   @Test
+  @DisplayName("walk the hierarchy one level at a time, each branch saying how much is under it")
+  void walksTheHierarchy() {
+    // A database lists its schemas, a schema its tables -- and nothing deeper,
+    // so opening a database does not pull in every table under it.
+    assertThat(catalog.assets(null, null, List.of(), null, null, SERVICE, 50, 0).items())
+        .extracting(CatalogQuery.AssetSummary::fqn)
+        .containsExactly(DATABASE);
+    assertThat(catalog.assets(null, null, List.of(), null, null, DATABASE, 50, 0).items())
+        .extracting(CatalogQuery.AssetSummary::fqn)
+        .containsExactly(SCHEMA);
+    CatalogQuery.AssetPage tables =
+        catalog.assets(null, null, List.of(), null, null, SCHEMA, 50, 0);
+    assertThat(tables.items()).extracting(CatalogQuery.AssetSummary::fqn)
+        .containsExactly(CUSTOMER, ORDER);
+    assertThat(tables.total()).isEqualTo(2);
+    // Other filters still apply inside a branch.
+    assertThat(catalog.assets("custom", null, List.of(), null, null, SCHEMA, 50, 0).items())
+        .extracting(CatalogQuery.AssetSummary::fqn)
+        .containsExactly(CUSTOMER);
+    assertThat(catalog.assets(null, null, List.of(), null, null, CUSTOMER, 50, 0).items())
+        .isEmpty();
+
+    assertThat(catalog.assets(null, null, List.of(), null, null, 50, 0).items())
+        .extracting(CatalogQuery.AssetSummary::childCount)
+        .containsExactly(1, 1, 2, 0, 0);
+    assertThat(catalog.asset(SCHEMA).orElseThrow().asset().childCount()).isEqualTo(2);
+  }
+
+  @Test
+  @DisplayName("stop counting a child once a later crawl retires it")
+  void countsOnlyCurrentChildren() {
+    crawl(Instant.now().plusSeconds(60), List.of(
+        container(SERVICE, "SERVICE", null, "prod-mssql"),
+        container(DATABASE, "DATABASE", SERVICE, "SalesDB"),
+        container(SCHEMA, "SCHEMA", DATABASE, "dbo"),
+        customer()));
+
+    assertThat(catalog.asset(SCHEMA).orElseThrow().asset().childCount()).isEqualTo(1);
+    assertThat(catalog.assets(null, null, List.of(), null, null, SCHEMA, 50, 0).items())
+        .extracting(CatalogQuery.AssetSummary::fqn)
+        .containsExactly(CUSTOMER);
+  }
+
+  @Test
   @DisplayName("search on name and on FQN, not only on one of them")
   void searches() {
     assertThat(catalog.assets("custom", null, List.of(), null, null, 50, 0).items())

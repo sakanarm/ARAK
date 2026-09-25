@@ -170,6 +170,8 @@ export interface AssetSummary {
   taggedColumnCount: number;
   facets: FacetRow[];
   owners: AssetOwner[];
+  /** What sits directly under it: a database's schemas, a schema's tables. */
+  childCount: number;
 }
 
 export interface AssetPage {
@@ -224,6 +226,8 @@ export interface AssetQuery {
   owner?: string;
   /** Narrows to what one registered source can serve; its UUID, not its name. */
   sourceId?: string;
+  /** Only what sits directly under this FQN -- one branch of the hierarchy. */
+  parent?: string;
   limit?: number;
   offset?: number;
 }
@@ -237,6 +241,7 @@ export async function fetchAssets(query: AssetQuery): Promise<AssetPage> {
   if (query.assetType) params.set('type', query.assetType);
   if (query.owner) params.set('owner', query.owner);
   if (query.sourceId) params.set('sourceId', query.sourceId);
+  if (query.parent) params.set('parent', query.parent);
   for (const facet of query.facets ?? []) params.append('facet', facet);
   params.set('limit', String(query.limit ?? 50));
   params.set('offset', String(query.offset ?? 0));

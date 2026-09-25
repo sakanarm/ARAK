@@ -35,6 +35,7 @@ import { AccessTab } from './AccessTab';
 import { AssetAccessAction } from './AssetRequestAccess';
 import { AuditTab } from './AuditTab';
 import { Field, Panel } from './panels';
+import { ChildrenPanel, childLabel, childrenTitle, isContainer } from './hierarchy';
 import { plainText } from '../../lib/text';
 import { isAncestor, leaf, segments } from '../../lib/fqn';
 
@@ -122,6 +123,13 @@ export default function AssetDetailPage() {
   }
 
   const { asset, columns, customProperties } = data;
+  const container = isContainer(asset.assetType);
+  // A link to a table's "contents" or a schema's "columns" -- a tab this kind
+  // of asset does not have -- opens on the overview instead of on nothing.
+  const shown: TabId =
+    (tab === 'contents' && !container) || (tab === 'columns' && container)
+      ? 'overview'
+      : tab;
   const look = lookFor(asset.assetType);
   const grouped = groupFacets(data.facets);
   const properties = Object.entries(customProperties ?? {});
@@ -224,16 +232,28 @@ export default function AssetDetailPage() {
             )}
           </Stat>
           <Stat label="Source">{asset.dataSource ?? <None />}</Stat>
-          <Stat label="Columns">
-            {asset.columnCount > 0 ? asset.columnCount : <None />}
-          </Stat>
+          {container ? (
+            <Stat label="Contains">{childLabel(asset.assetType, asset.childCount ?? 0)}</Stat>
+          ) : (
+            <Stat label="Columns">
+              {asset.columnCount > 0 ? asset.columnCount : <None />}
+            </Stat>
+          )}
         </dl>
       </header>
 
-      <AssetTabs columnCount={columns.length} onChange={openTab} value={tab} />
+      <AssetTabs
+        assetType={asset.assetType}
+        childCount={asset.childCount ?? 0}
+        columnCount={columns.length}
+        onChange={openTab}
+        value={shown}
+      />
 
       <div className="tw:mt-6">
-        {tab === 'overview' && (
+        {shown === 'contents' && <ChildrenPanel asset={asset} />}
+
+        {shown === 'overview' && (
           <div className="tw:grid tw:gap-6 tw:lg:grid-cols-3">
             <section className="tw:lg:col-span-2 tw:space-y-6">
               <Panel title="Governance">
@@ -294,11 +314,11 @@ export default function AssetDetailPage() {
           </div>
         )}
 
-        {tab === 'access' && <AccessTab fqn={asset.fqn} />}
+        {shown === 'access' && <AccessTab fqn={asset.fqn} />}
 
-        {tab === 'policies' && <Policies fqn={asset.fqn} />}
+        {shown === 'policies' && <Policies fqn={asset.fqn} />}
 
-        {tab === 'columns' && (
+        {shown === 'columns' && (
           <Panel
             subtitle={`${columns.length} columns · ${
               columns.filter((column) => columnFacets(column.facets).length > 0)
@@ -330,7 +350,7 @@ export default function AssetDetailPage() {
           </Panel>
         )}
 
-        {tab === 'audit' && <AuditTab fqn={asset.fqn} />}
+        {shown === 'audit' && <AuditTab fqn={asset.fqn} />}
       </div>
 
     </>
@@ -339,6 +359,9 @@ export default function AssetDetailPage() {
 
 const TABS = [
   { value: 'overview', label: 'Overview' },
+  // Named for what it holds -- Databases, Schemas, Tables -- and only on a
+  // service, database or schema, the way OpenMetadata's container pages open.
+  { value: 'contents', label: 'Contents' },
   { value: 'access', label: 'Access' },
   { value: 'policies', label: 'Policies' },
   { value: 'columns', label: 'Columns' },
@@ -370,11 +393,22 @@ function AssetTabs({
   value,
   onChange,
   columnCount,
+  assetType,
+  childCount,
 }: {
   value: TabId;
   onChange: (next: TabId) => void;
   columnCount: number;
+  assetType: string;
+  childCount: number;
 }) {
+  const container = isContainer(assetType);
+  // A container holds assets, not columns; a table holds columns, not assets.
+  const tabs = TABS.filter((tab) =>
+    tab.value === 'contents' ? container : tab.value === 'columns' ? !container : true
+  );
+  const count = (tab: TabId) =>
+    tab === 'columns' ? columnCount : tab === 'contents' ? childCount : 0;
   return (
     <div className="tw:mt-4 tw:rounded-xl tw:border tw:border-secondary tw:bg-primary tw:px-3 tw:shadow-xs">
       {/* `overflow-y-hidden` is not decoration. Setting only `overflow-x`
@@ -385,8 +419,9 @@ function AssetTabs({
         aria-label="Asset"
         className="tw:flex tw:gap-2 tw:overflow-x-auto tw:overflow-y-hidden"
         role="tablist">
-        {TABS.map((tab) => {
+        {tabs.map((tab) => {
           const active = tab.value === value;
+          const counted = count(tab.value);
           return (
             <button
               aria-selected={active}
@@ -400,15 +435,15 @@ function AssetTabs({
               onClick={() => onChange(tab.value)}
               role="tab"
               type="button">
-              {tab.label}
-              {tab.value === 'columns' && columnCount > 0 && (
+              {tab.value === 'contents' ? childrenTitle(assetType) : tab.label}
+              {counted > 0 && (
                 <span
                   className={`tw:ml-2 tw:rounded tw:px-1.5 tw:py-0.5 tw:text-xs tw:tabular-nums ${
                     active
                       ? 'tw:bg-brand-solid tw:text-white'
                       : 'tw:bg-secondary tw:text-tertiary'
                   }`}>
-                  {columnCount}
+                  {counted}
                 </span>
               )}
               {active && (

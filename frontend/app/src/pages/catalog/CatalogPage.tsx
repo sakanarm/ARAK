@@ -4,7 +4,9 @@ import { Link, useSearchParams } from 'react-router-dom';
 import {
   ChevronDown,
   Database01,
+  Dataflow03,
   FilterLines,
+  List,
   SearchLg,
   XClose,
 } from '@untitledui/icons';
@@ -31,6 +33,7 @@ import { Select } from '../policies/controls';
 import { PAGE_SIZES, Pager } from '../../components/Pager';
 import { leaf, segments, shortFqn } from '../../lib/fqn';
 import { plainText } from '../../lib/text';
+import { AssetTree } from './hierarchy';
 
 const PAGE_SIZE = 25;
 
@@ -62,11 +65,15 @@ export default function CatalogPage() {
   // same list rather than the first 25 of it.
   const sized = Number(params.get('size'));
   const pageSize = PAGE_SIZES.includes(sized) ? sized : PAGE_SIZE;
+  // What matches, or where things live. In the URL so "look under SalesDB"
+  // can be sent as a link like any other view of the catalog.
+  const view: 'list' | 'tree' = params.get('view') === 'tree' ? 'tree' : 'list';
 
   const { data, isLoading, error, isFetching } = useQuery({
     queryKey: ['catalog-assets', search, assetType, facets, offset, pageSize],
     queryFn: () =>
       fetchAssets({ search, assetType, facets, limit: pageSize, offset }),
+    enabled: view === 'list',
     // Without this the table empties on every keystroke-driven refetch and the
     // page jumps; the stale rows are correct until the new ones arrive.
     placeholderData: keepPreviousData,
@@ -84,6 +91,19 @@ export default function CatalogPage() {
     // on page four of a narrower result set shows an empty table and reads as
     // "nothing matched".
     draft.delete('offset');
+    // Search and filters narrow the list; the tree is always the whole
+    // catalog, so asking for something narrower means the list.
+    draft.delete('view');
+    setParams(draft, { replace: true });
+  }
+
+  function showView(next: 'list' | 'tree') {
+    const draft = new URLSearchParams(params);
+    if (next === 'tree') {
+      draft.set('view', 'tree');
+    } else {
+      draft.delete('view');
+    }
     setParams(draft, { replace: true });
   }
 
@@ -224,6 +244,31 @@ export default function CatalogPage() {
               Clear
             </Button>
           )}
+          <div
+            aria-label="Catalog view"
+            className="tw:ml-auto tw:flex tw:rounded-lg tw:border tw:border-primary tw:p-0.5"
+            role="group">
+            {(
+              [
+                ['list', 'List', List],
+                ['tree', 'Hierarchy', Dataflow03],
+              ] as const
+            ).map(([value, label, Icon]) => (
+              <button
+                aria-pressed={view === value}
+                className={`tw:flex tw:cursor-pointer tw:items-center tw:gap-1.5 tw:rounded-md tw:px-2.5 tw:py-1.5 tw:text-sm tw:font-semibold ${
+                  view === value
+                    ? 'tw:bg-secondary tw:text-primary'
+                    : 'tw:text-tertiary tw:hover:text-primary'
+                }`}
+                key={value}
+                onClick={() => showView(value)}
+                type="button">
+                <Icon aria-hidden className="tw:size-4" />
+                {label}
+              </button>
+            ))}
+          </div>
         </form>
 
         {facets.length > 0 && (
@@ -265,6 +310,16 @@ export default function CatalogPage() {
         </p>
       )}
 
+      {view === 'tree' && (
+        <section className="tw:mt-6">
+          <p className="tw:text-sm tw:text-tertiary">
+            Service → database → schema → table. Open a branch to see what is under it.
+          </p>
+          <AssetTree />
+        </section>
+      )}
+
+      {view === 'list' && (
       <div className="tw:mt-6 tw:flex tw:flex-col tw:gap-6 tw:lg:flex-row tw:lg:items-start">
         <FacetRail active={facets} innerRef={setRail} onToggle={toggleFacet} />
 
@@ -338,6 +393,7 @@ export default function CatalogPage() {
         />
         </section>
       </div>
+      )}
     </>
   );
 }

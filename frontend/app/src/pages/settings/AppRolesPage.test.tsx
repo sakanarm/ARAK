@@ -93,6 +93,7 @@ beforeEach(() => {
         certification: null,
         dataSource: null,
         columnCount: 4,
+        childCount: 0,
         taggedColumnCount: 1,
         facets: [],
         owners: [],

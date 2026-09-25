@@ -619,7 +619,34 @@ M25 ทำแยกได้ (profile ผ่าน proxy ที่มีแล�
 
 ---
 
-## รอบนี้ — **ข้อ BI: เลข Ticket ของคำขอสิทธิ์ (REQ-000042) — ค้นหา / อ้างอิงได้** (M28 Agent ยังทำอยู่ — ยังไม่ commit)
+## รอบนี้ — **ข้อ BJ: Catalog แสดงเป็น hierarchy — Service → Database → Schema → Table** (M28 Agent ยังทำอยู่ — ยังไม่ commit)
+
+ผู้ใช้: *"ใน Schema ก็ต้องแสดง list Table สิ · ใน Database ก็ต้องแสดง list Schema, dataset สิ · แสดงดูเป็น hierarchy ได้"*
+
+### BJ.1 Backend — `?parent=` + `childCount`
+- `CatalogQuery.AssetSummary` มี `childCount` (ท้ายสุด) = จำนวน asset **ปัจจุบัน** (`is_current`) ที่ `parent_fqn` ชี้มาที่ตัวนี้ — subquery เดียวกันทั้งรายการและหน้า detail
+- `CatalogQuery.assets(...)` overload ใหม่ 8 ตัวแปร มี `parent` → `AND a.parent_fqn = :parent` (bind ไม่ต่อ string) · ตัว 7 ตัวแปรเดิมเรียกต่อด้วย `parent = null` → ผู้เรียกเดิม (รวม LLM catalog search) ไม่ต้องแก้
+- `GET /v1/catalog/assets?parent=<fqn>` — ลูกโดยตรงของ container หนึ่งตัว · ผสมกับ `q` / `type` / facet ได้ · สิทธิ์เหมือนรายการ catalog เดิมทุกอย่าง
+- ไม่มี migration ใหม่
+
+### BJ.2 Frontend
+- `pages/catalog/hierarchy.tsx` (ใหม่): `isContainer` (SERVICE/DATABASE/SCHEMA) · `childLabel` ("3 schemas", "1 table") · `childrenTitle` (Databases/Schemas/Tables) · `AssetTree` · `ChildrenPanel`
+- **หน้า Catalog** — ปุ่มสลับ **List / Hierarchy** ขวาของแถวค้นหา (`?view=tree` อยู่ใน URL แชร์ได้)
+  - Hierarchy = tree (`role="tree"`) เริ่มที่ service · **โหลดทีละชั้นตอนกางเท่านั้น** (`?parent=`, สูงสุด 500 ต่อชั้น เกินนั้นบอก "Showing X of N — open … to search them")
+  - ชั้นที่มีลูกตัวเดียวกางให้เอง (service ที่มี database เดียว) · แต่ละแถว: icon ตามชนิด · ลิงก์ไปหน้า asset · badge ชนิด · "N schemas" / "N columns" ด้านขวา
+  - เปลี่ยนตัวกรอง / ค้นหาใดๆ → กลับไป List เอง (ตัวกรองใช้กับ list เท่านั้น) · ตอนดู tree ไม่ยิง query รายการ
+- **หน้า asset ของ Service / Database / Schema** — แท็บใหม่ถัดจาก Overview ชื่อตามของข้างใน (**Databases / Schemas / Tables**) พร้อมตัวเลข · **ไม่มีแท็บ Columns** (container ไม่มี column) · หัวหน้าแสดง "Contains: 2 tables" แทน Columns
+  - ตารางลูก: ชื่อ (ลิงก์) + badge + description · Contains · Governance chips · ช่อง **Filter tables** กรองชื่อ/description · ว่าง → *"The crawl found nothing under this schema."*
+  - ลิงก์ `?tab=contents` ไปหน้า table (ไม่มีแท็บนี้) หรือ `?tab=columns` ไปหน้า schema → เปิด Overview แทนหน้าว่าง
+
+### BJ.3 ผลทดสอบ
+- IT `CatalogQueryIT` **20/20** (ใหม่ 2: เดิน SERVICE→DATABASE→SCHEMA→[CUSTOMER, ORDER] · ค้นภายใน parent · childCount ในรายการและ detail · recrawl ที่ ORDER หายไป → นับแค่ของปัจจุบัน) · `LlmAssistResourceTest` ผ่าน
+- frontend: tsc ผ่าน · jest **446/446** (ใหม่ 6: tree เดินทีละชั้น + ยิง `parent` ตอนกาง + ลิงก์ + aria-level · สลับ List/Hierarchy แล้วค้นหากลับเป็น list · แท็บ Tables ของ schema + ไม่มี Columns · filter · ว่าง · table ไม่มีแท็บ contents) · build ผ่าน
+- **live** (dev app): 3 services → databases → schemas → tables ครบ · `childCount` ตรงกับจำนวนลูกจริงทุกชั้น (เช่น `dtp-iprm.iprm.public` = 33) · ทุกลูกชี้ parent ถูก · parent ที่ไม่มี / parent แบบ `' OR '1'='1` → 0 แถว · proxy :8090 เสิร์ฟ bundle ใหม่ที่มี tree แล้ว
+
+---
+
+## รอบก่อนหน้า — **ข้อ BI: เลข Ticket ของคำขอสิทธิ์ (REQ-000042) — ค้นหา / อ้างอิงได้** (M28 Agent ยังทำอยู่ — ยังไม่ commit)
 
 ผู้ใช้ขอ: *"Access requests ต้องมีเลข Ticket เก็บไว้ด้วยนะ เอาไว้ Search หรือ Ref"* · แล้ว *"ไม่เห็นแสดงเลข ticket ในหน้า UI Access Request เลย"* (ตอนนั้น dev app ยังไม่ได้ restart — restart แล้วเห็น)
 
@@ -5775,6 +5802,7 @@ estate ที่ใช้: `prod-mssql.SalesDB.dbo.{customer, order}` + **`prod-
 - ✅ **ข้อ AY เสร็จแล้ว** (Open in OpenMetadata ไม่ 500 · Request access มุมขวาบน · หัวหน้า asset แบบ OM · seed เคส demo) — ต่อด้วย **M9 slice 2** ข้างล่าง
 
 0. ✅ **M10 เสร็จ (ข้อ BE)** — Query log ตามหน้าที่ (V25) + Access Control Dashboard · **ต่อไป:** M9 recertification · แนบไฟล์ในคำขอ · export / SIEM ของ M8
+0-BJ. ✅ **ข้อ BJ เสร็จ** — Catalog แสดง hierarchy: ปุ่ม List / Hierarchy (tree โหลดทีละชั้น) + แท็บ Databases / Schemas / Tables ในหน้า container · `?parent=` + `childCount` · **ต่อไป:** Preauthorization Access Request · M28 แชท agent
 0-BI. ✅ **ข้อ BI เสร็จ** — เลข Ticket ของคำขอ REQ-000042 (V28) ค้นหา / copy ได้ · **ต่อไป:** Preauthorization Access Request (ตาม tag / attribute ของ table → ให้ attribute ของคน หรือ group) · Catalog แสดง hierarchy (Database → Schema → Table) · M28 แชท agent
 0-BF. ✅ **ข้อ BF เสร็จ** — rail จัดเองได้ต่อคน (V26) + เลือกขนาด Comfortable / Compact (V27) · Enforcement และ System ย้ายเข้า Settings · Suggest พร้อม % · 🐛 parse error ของ Query · **ต่อไป:** M26 Fix with AI + Explain query → M28 แชท agent · ของค้าง (d) (f) (g) (j) (k) ดูข้อ BF.9
 0-M9. ✅ **M9 slice 2c เสร็จ (ข้อ BD)** — Dashboard ใครใกล้หมดสิทธิ์ + นับถอยหลัง · สถิติคำขอต่อ table · ✅ slice 2b (ข้อ BC) · ✅ slice 2a (ข้อ BB) · **ต่อไป:** M9 ที่เหลือ — recertification / access review · break-glass · notification ออกนอกระบบ (ดูข้อ BD.7) — ผู้ใช้สั่ง *"ทำต่อได้เลยนะ เอาตาม Roadmap ทำไปเรื่อยๆ ต้องทดสอบให้ดีทุกขั้นตอน"*

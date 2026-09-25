@@ -89,7 +89,9 @@ public class CatalogQuery {
       int columnCount,
       int taggedColumnCount,
       List<FacetRow> facets,
-      List<Owner> owners) {}
+      List<Owner> owners,
+      /** What sits directly under it: a database's schemas, a schema's tables. */
+      int childCount) {}
 
   /** One page of {@link AssetSummary}, with what it took to get there. */
   public record AssetPage(List<AssetSummary> items, int total, int limit, int offset) {}
@@ -169,6 +171,24 @@ public class CatalogQuery {
       UUID sourceId,
       int limit,
       int offset) {
+    return assets(search, assetType, facets, owner, sourceId, null, limit, offset);
+  }
+
+  /**
+   * As above, narrowed to what sits directly under {@code parent}: the schemas
+   * of a database, the tables of a schema. One level only -- the tree opens a
+   * branch at a time, and a database's whole subtree is what the other
+   * filters are for.
+   */
+  public AssetPage assets(
+      String search,
+      String assetType,
+      List<FacetFilter> facets,
+      String owner,
+      UUID sourceId,
+      String parent,
+      int limit,
+      int offset) {
 
     int capped = Math.max(1, Math.min(limit, MAX_LIMIT));
     int from = Math.max(0, offset);
@@ -187,6 +207,10 @@ public class CatalogQuery {
           if (assetType != null && !assetType.isBlank()) {
             where.append(" AND a.asset_type = :assetType");
             binds.put("assetType", assetType.trim().toUpperCase());
+          }
+          if (parent != null && !parent.isBlank()) {
+            where.append(" AND a.parent_fqn = :parent");
+            binds.put("parent", parent.trim());
           }
           if (sourceId != null) {
             // Either the asset belongs to this source outright -- which is how
@@ -251,7 +275,9 @@ public class CatalogQuery {
                                  (SELECT count(DISTINCT f.column_id) FROM asset_facet f
                                   JOIN asset_column c ON c.id = f.column_id
                                   WHERE c.asset_id = a.id AND c.is_current
-                                    AND f.facet_type IN ('tags', 'terms')) AS tagged_column_count
+                                    AND f.facet_type IN ('tags', 'terms')) AS tagged_column_count,
+                                 (SELECT count(*) FROM asset ch
+                                  WHERE ch.parent_fqn = a.fqn AND ch.is_current) AS child_count
                           FROM asset a
                           LEFT JOIN data_source s ON s.id = a.data_source_id
                           """
@@ -276,7 +302,8 @@ public class CatalogQuery {
                               rs.getInt("column_count"),
                               rs.getInt("tagged_column_count"),
                               new ArrayList<>(),
-                              new ArrayList<>()))
+                              new ArrayList<>(),
+                              rs.getInt("child_count")))
                   .list();
 
           if (rows.isEmpty()) {
@@ -312,7 +339,9 @@ public class CatalogQuery {
                              (SELECT count(DISTINCT f.column_id) FROM asset_facet f
                               JOIN asset_column c ON c.id = f.column_id
                               WHERE c.asset_id = a.id AND c.is_current
-                                AND f.facet_type IN ('tags', 'terms')) AS tagged_column_count
+                                AND f.facet_type IN ('tags', 'terms')) AS tagged_column_count,
+                             (SELECT count(*) FROM asset ch
+                              WHERE ch.parent_fqn = a.fqn AND ch.is_current) AS child_count
                       FROM asset a
                       LEFT JOIN data_source s ON s.id = a.data_source_id
                       WHERE a.fqn = :fqn AND a.is_current
@@ -334,7 +363,8 @@ public class CatalogQuery {
                               rs.getInt("column_count"),
                               rs.getInt("tagged_column_count"),
                               new ArrayList<>(),
-                              new ArrayList<>()))
+                              new ArrayList<>(),
+                              rs.getInt("child_count")))
                   .findOne();
           if (summary.isEmpty()) {
             return Optional.empty();

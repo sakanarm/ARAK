@@ -148,6 +148,7 @@ conf/dac.yml                 config เดียวที่ commit — ใช�
 | FR-1.7 | สร้าง local tag/classification เอง + `provenance` + ปุ่ม push กลับเข้า OM | ⬜ | — |
 | FR-1.8 | Effective facet computation พร้อม `inherited_from` (ไม่พึ่ง tag propagation ของ OM) | ✅ | `om/facet/FacetInheritance.java` · `asset_facet` |
 | FR-1.9 | Sync **นิยาม** custom property (type, enum values) เพื่อให้ Policy Builder แสดง operator ถูกชนิด | ✅ | `custom_property_def` · `GovernanceMapper` |
+| FR-1.10 | **Catalog แบบ hierarchy** — Service → Database → Schema → Table: tree ที่โหลดทีละชั้น (`?view=tree`) + แท็บ Databases / Schemas / Tables ในหน้า container · `GET /v1/catalog/assets?parent=` + `childCount` (ผู้ใช้ขอ 2026-09-26) | ✅ | `catalog/CatalogQuery.java` · `pages/catalog/hierarchy.tsx` |
 
 #### รายละเอียด FR-1.5 (ที่เพิ่งทำเสร็จ)
 
