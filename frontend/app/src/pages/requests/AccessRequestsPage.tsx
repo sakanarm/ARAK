@@ -6,11 +6,13 @@ import {
   AlertTriangle,
   Check,
   Clock,
+  Copy01,
   Database01,
   Inbox01,
   InfoCircle,
   Key01,
   PlayCircle,
+  SearchLg,
   Send01,
   Settings01,
   Table,
@@ -29,8 +31,11 @@ import {
   describeSeat,
   fetchMyRequests,
   fetchRequest,
+  fetchRequestByTicket,
   fetchRequestInbox,
+  matchesSearch,
   OPEN_STATUSES,
+  ticketNumber,
   rejectRequest,
   startRequest,
   withdrawRequest,
@@ -202,7 +207,22 @@ function RequestsTab({ side }: { side: Side }) {
   });
   const source = side === 'inbox' ? inbox : mine;
   const all = source.data;
-  const listed = all?.filter((r) => matches(status, r.status));
+  const search = params.get('q') ?? '';
+  const filtered = all?.filter((r) => matches(status, r.status) && matchesSearch(r, search));
+  // A ticket number is often quoted from an email, for a request outside this
+  // filter or older than the list goes back. Asked for on its own; the server
+  // answers only what the reader could open anyway.
+  const typedTicket = ticketNumber(search);
+  const byTicket = useQuery({
+    queryKey: ['access-requests', 'ticket', typedTicket],
+    queryFn: () => fetchRequestByTicket(String(typedTicket)),
+    enabled: typedTicket !== null && filtered !== undefined && filtered.length === 0,
+    retry: false,
+  });
+  const listed =
+    filtered && filtered.length === 0 && typedTicket !== null && byTicket.data
+      ? [byTicket.data]
+      : filtered;
 
   const wanted = params.get('id');
   const selectedId = wanted ?? listed?.[0]?.id ?? null;
@@ -228,6 +248,19 @@ function RequestsTab({ side }: { side: Side }) {
       }
     }
     setParams(merged);
+  }
+
+  function setSearch(value: string) {
+    const merged = new URLSearchParams(params);
+    merged.set('tab', side);
+    merged.delete('id');
+    if (value.trim()) {
+      merged.set('q', value);
+    } else {
+      merged.delete('q');
+    }
+    // Typing is not navigation: one history entry, not one per key.
+    setParams(merged, { replace: true });
   }
 
   return (
@@ -258,10 +291,25 @@ function RequestsTab({ side }: { side: Side }) {
             );
           })}
         </div>
+        <label className="tw:flex tw:items-center tw:gap-2 tw:border-b tw:border-secondary tw:px-3 tw:py-2">
+          <SearchLg aria-hidden className="tw:size-4 tw:shrink-0 tw:text-fg-quaternary" />
+          <input
+            aria-label="Search requests"
+            className="tw:min-w-0 tw:flex-1 tw:bg-transparent tw:text-sm tw:text-primary tw:outline-none tw:placeholder:text-placeholder"
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Ticket, table or person"
+            type="search"
+            value={search}
+          />
+        </label>
         <RequestList
-          empty={emptyText(side, status)}
+          empty={
+            search.trim()
+              ? `Nothing here matches “${search.trim()}”.`
+              : emptyText(side, status)
+          }
           error={source.error}
-          isLoading={source.isLoading}
+          isLoading={source.isLoading || byTicket.isLoading}
           onSelect={(id) => update({ id })}
           requests={listed}
           selectedId={selectedId}
@@ -367,6 +415,33 @@ function TabButton({
   );
 }
 
+/** The ticket number, and a button that copies it for an email or a change ticket. */
+function TicketNumber({ ticket }: { ticket: string }) {
+  const [copied, setCopied] = useState(false);
+  if (!ticket) return null;
+  return (
+    <span className="tw:inline-flex tw:items-center tw:gap-1 tw:rounded-md tw:bg-secondary tw:px-1.5 tw:py-0.5">
+      <span className="tw:font-mono tw:text-xs tw:font-semibold tw:text-secondary" title="Ticket number">
+        {ticket}
+      </span>
+      <button
+        aria-label={copied ? `Copied ${ticket}` : `Copy ${ticket}`}
+        className="tw:cursor-pointer tw:rounded tw:p-0.5 tw:text-fg-quaternary tw:hover:text-fg-secondary"
+        onClick={() => {
+          // Clipboard is missing on plain http and in some browsers; the
+          // number is on screen to select by hand either way.
+          void navigator.clipboard
+            ?.writeText(ticket)
+            .then(() => setCopied(true))
+            .catch(() => undefined);
+        }}
+        type="button">
+        {copied ? <Check aria-hidden className="tw:size-3.5" /> : <Copy01 aria-hidden className="tw:size-3.5" />}
+      </button>
+    </span>
+  );
+}
+
 function RequestList({
   requests,
   isLoading,
@@ -443,6 +518,8 @@ function RequestList({
                   </span>
                 </span>
                 <span className="tw:mt-0.5 tw:block tw:truncate tw:text-xs tw:text-tertiary">
+                  <span className="tw:font-mono">{request.ticket}</span>
+                  {' · '}
                   {side === 'inbox'
                     ? `${request.requesterUsername} · ${duration(request.requestedDays)}`
                     : request.assetFqn}
@@ -555,6 +632,7 @@ function RequestDetail({ request, side }: { request: AccessRequest; side: Side }
             <Badge color={status.colour} size="sm" type="pill-color">
               {status.label}
             </Badge>
+            <TicketNumber ticket={request.ticket} />
           </div>
           <Link
             className="tw:mt-0.5 tw:block tw:truncate tw:font-mono tw:text-xs tw:text-tertiary tw:hover:text-brand-secondary tw:hover:underline"

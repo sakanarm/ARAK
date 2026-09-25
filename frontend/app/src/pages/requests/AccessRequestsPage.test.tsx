@@ -12,6 +12,7 @@ import type {
 const fetchInbox = jest.fn();
 const fetchMine = jest.fn();
 const fetchOne = jest.fn();
+const fetchByTicket = jest.fn();
 const fetchNotices = jest.fn();
 const approve = jest.fn();
 const reject = jest.fn();
@@ -29,6 +30,7 @@ jest.mock('../../api/accessRequests', () => {
     fetchRequestInbox: (...args: unknown[]) => fetchInbox(...args),
     fetchMyRequests: (...args: unknown[]) => fetchMine(...args),
     fetchRequest: (...args: unknown[]) => fetchOne(...args),
+    fetchRequestByTicket: (...args: unknown[]) => fetchByTicket(...args),
     fetchRequestNotices: (...args: unknown[]) => fetchNotices(...args),
     approveRequest: (...args: unknown[]) => approve(...args),
     rejectRequest: (...args: unknown[]) => reject(...args),
@@ -58,6 +60,7 @@ const FQN = 'demo-pg.salesdb.sales.customer';
 function request(overrides: Partial<AccessRequest> = {}): AccessRequest {
   return {
     id: 'req-1',
+    ticket: 'REQ-000001',
     assetFqn: FQN,
     requesterId: 'p-1',
     requesterUsername: 'analyst_a',
@@ -220,6 +223,7 @@ beforeEach(() => {
     fetchInbox,
     fetchMine,
     fetchOne,
+    fetchByTicket,
     fetchNotices,
     approve,
     reject,
@@ -357,6 +361,64 @@ describe('AccessRequestsPage inbox', () => {
     expect(header.className).toContain('tw:top-16');
     expect(card.className).not.toContain('overflow-hidden');
     expect(within(header).getByRole('link', { name: FQN })).toBeInTheDocument();
+  });
+
+  it('shows the ticket number in the list and on the request', async () => {
+    fetchInbox.mockResolvedValue([request({ ticket: 'REQ-000042' })]);
+    renderPage('/requests?tab=inbox');
+
+    const card = await detail();
+    expect(within(within(card).getByTestId('request-header')).getByText('REQ-000042')).toBeInTheDocument();
+    expect(within(card).getByRole('button', { name: 'Copy REQ-000042' })).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: /customer, Pending, asked by analyst_a/ })
+    ).toHaveTextContent('REQ-000042');
+  });
+
+  it('finds a request by its ticket number however it is typed, or by what it names', async () => {
+    fetchInbox.mockResolvedValue([
+      request({ ticket: 'REQ-000007' }),
+      request({ id: 'req-2', ticket: 'REQ-000008', assetFqn: 'pg.db.s.orders', reason: 'Order audit' }),
+    ]);
+    renderPage('/requests?tab=inbox');
+    await detail();
+
+    const box = screen.getByRole('searchbox', { name: 'Search requests' });
+    fireEvent.change(box, { target: { value: 'req-8' } });
+    expect(
+      await screen.findByRole('article', { name: 'Request for pg.db.s.orders' })
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /customer, Pending/ })).not.toBeInTheDocument();
+    expect(location).toContain('q=req-8');
+
+    fireEvent.change(box, { target: { value: '#7' } });
+    expect(await screen.findByRole('article', { name: `Request for ${FQN}` })).toBeInTheDocument();
+
+    fireEvent.change(box, { target: { value: 'orders' } });
+    expect(await screen.findByRole('button', { name: /orders, Pending/ })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /customer, Pending/ })).not.toBeInTheDocument();
+    // Everything the list held was found locally.
+    expect(fetchByTicket).not.toHaveBeenCalled();
+  });
+
+  it('asks the server for a ticket the list does not hold', async () => {
+    fetchInbox.mockResolvedValue([request({ ticket: 'REQ-000007' })]);
+    fetchByTicket.mockResolvedValue(
+      request({ id: 'old', ticket: 'REQ-000003', status: 'WITHDRAWN', decidedBy: 'analyst_a' })
+    );
+    renderPage('/requests?tab=inbox&q=REQ-000003');
+
+    const card = await detail();
+    expect(fetchByTicket).toHaveBeenCalledWith('3');
+    expect(within(card).getByText('REQ-000003')).toBeInTheDocument();
+  });
+
+  it('says so when a search matches nothing', async () => {
+    fetchInbox.mockResolvedValue([request({ ticket: 'REQ-000007' })]);
+    fetchByTicket.mockRejectedValue(new Error('Not found'));
+    renderPage('/requests?tab=inbox&q=REQ-000999');
+
+    expect(await screen.findByText('Nothing here matches “REQ-000999”.')).toBeInTheDocument();
   });
 
   it('opens the request that was picked, and marks it in the list', async () => {

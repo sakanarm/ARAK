@@ -619,7 +619,36 @@ M25 ทำแยกได้ (profile ผ่าน proxy ที่มีแล�
 
 ---
 
-## รอบนี้ — **ข้อ BH: หัวคำขอติดอยู่บนจอตอนเลื่อน · M30 IaC + Configuration as Code ลง Roadmap** (M28 Agent ยังทำอยู่ — ยังไม่ commit)
+## รอบนี้ — **ข้อ BI: เลข Ticket ของคำขอสิทธิ์ (REQ-000042) — ค้นหา / อ้างอิงได้** (M28 Agent ยังทำอยู่ — ยังไม่ commit)
+
+ผู้ใช้ขอ: *"Access requests ต้องมีเลข Ticket เก็บไว้ด้วยนะ เอาไว้ Search หรือ Ref"* · แล้ว *"ไม่เห็นแสดงเลข ticket ในหน้า UI Access Request เลย"* (ตอนนั้น dev app ยังไม่ได้ restart — restart แล้วเห็น)
+
+### BI.1 Migration — **V28 `access_request_ticket`** (ตอนนี้ V1–V29)
+- sequence `access_request_ticket_seq` + column `access_request.ticket_no bigint NOT NULL UNIQUE DEFAULT nextval(...)` · sequence `OWNED BY` column
+- คำขอเดิมได้เลขตามลำดับที่สร้าง (`row_number() OVER (ORDER BY created_at, id)`) → คำขอเก่าสุดคือ REQ-000001 · `setval(max+1, false)` ต่อจากนั้น
+- ⚠️ **ย้าย `V28__llm_feature_access.sql` ของ M28 ไปเป็น `V29__llm_feature_access.sql`** (ยังไม่เคย apply ที่ไหน จึงเปลี่ยนเลขได้) — แต่ jar ที่ใช้รัน dev รอบนี้มี V29 ติดไปด้วย (อยู่ใน target/classes) **dev DB จึง apply V29 แล้ว → ห้ามแก้เนื้อ V29 อีกโดยไม่ `flyway repair`**
+- เลขเรียงกันเดาได้ — ไม่เป็นไรเพราะเปิดอะไรไม่ได้: ค้นด้วยเลขผ่านการตรวจสิทธิ์เดียวกับค้นด้วย id
+
+### BI.2 Backend
+- `AccessRequestStore.StoredRequest.ticket` (ต่อจาก `id`) = `REQ-%06d` · `ticket(long)` · `ticketNumber(String)` อ่านได้ทุกแบบที่คนพิมพ์: `REQ-000042` / `req-42` / `REQ 42` / `#42` / `42` (≤ 12 หลัก, > 0)
+- `findByTicket(typed, actor)` → หา id จาก `ticket_no` แล้วเรียก `find(id, actor)` ตัวเดิม · พิมพ์ผิดรูป → 400 *"A ticket number looks like REQ-000042."* · ไม่มี **หรือ** ไม่ใช่เรื่องของคนถาม → 404 *"No access request REQ-xxxxxx"* เหมือนกันทุกตัวอักษร **ไม่หลุด UUID**
+- `GET /v1/access-requests/ticket/{ticket}` (ประกาศก่อน `/{id}`)
+
+### BI.3 Frontend — หน้า Access requests
+- ทุกแถวในรายการขึ้นเลข ticket (font mono) นำหน้าบรรทัดที่สอง
+- หัวคำขอ: chip เลข ticket + ปุ่ม copy (`Copy REQ-…` → `Copied REQ-…`) ข้าง badge สถานะ
+- ช่องค้นหา *"Ticket, table or person"* ใต้ตัวกรองสถานะ → `?q=` ใน URL (replace ไม่เพิ่ม history ทีละตัวอักษร) · ค้นในรายการที่โหลดแล้วด้วยเลข ticket / table / คนขอ / purpose / เหตุผล
+- ถ้าพิมพ์เป็นเลข ticket แต่ไม่อยู่ในรายการ (เก่าหรืออยู่นอกตัวกรอง) → ถาม server `GET /ticket/{n}` · ไม่เจอ → *Nothing here matches "…"*
+- `api/accessRequests.ts`: `ticket` · `fetchRequestByTicket` · `ticketNumber` (regex เดียวกับ server) · `matchesSearch`
+
+### BI.4 ผลทดสอบ
+- IT `AccessRequestIT.Asking` ใหม่ 2 ตัว: เลขไม่ซ้ำ + รูปแบบ + reload แล้วเลขเดิม + ค้นได้ทุกการสะกด (owner และคนขอ) · คนนอกได้ 404 ข้อความเดียวกับเลขที่ไม่มี · input ผิดรูป (`""`, `REQ-`, `REQ-0`, `abc`, `1; DROP TABLE x`, `-4`) → INVALID — AccessRequestIT + AccessDashboardIT + DashboardIT **84 IT + 24 unit ผ่าน**
+- frontend: tsc ผ่าน · jest **440/440** (เทสต์ใหม่ 4 ตัว: เลขในรายการ + หัว · ค้นด้วย req-8 / #7 / orders · ถาม server เมื่อไม่อยู่ในรายการ · ไม่เจอ) · build ผ่าน
+- **live** (dev app จริง): Flyway V28 + V29 success · คำขอ 20 ตัวได้ REQ-000001…REQ-000020 · inbox / mine ทุกแถวมี `ticket` ไม่มี key ที่เป็น ip · `/ticket/1` → 200 REQ-000001 · `/ticket/REQ-999999` → 404 ไม่มี UUID · `/ticket/abc` → 400 · proxy :8090 เสิร์ฟ bundle ใหม่ที่มีช่องค้นหาแล้ว
+
+---
+
+## รอบก่อนหน้า — **ข้อ BH: หัวคำขอติดอยู่บนจอตอนเลื่อน · M30 IaC + Configuration as Code ลง Roadmap** (M28 Agent ยังทำอยู่ — ยังไม่ commit)
 
 ### BH.1 หัวคำขอหายตอนเลื่อน — *"หน้า Request เวลาเลื่อน Scroll bar ลงมา Header ของ Request อันนั้น ไม่เห็นเลื่อนลงมาด้วยเลย"*
 - `AccessRequestsPage.tsx` — หัวของคำขอ (`data-testid="request-header"`) เป็น `tw:sticky tw:top-16 tw:z-20` ติดใต้ TopNav (สูง 4rem) · มีพื้น `bg-primary` + มุมบนมนเอง
@@ -5746,6 +5775,7 @@ estate ที่ใช้: `prod-mssql.SalesDB.dbo.{customer, order}` + **`prod-
 - ✅ **ข้อ AY เสร็จแล้ว** (Open in OpenMetadata ไม่ 500 · Request access มุมขวาบน · หัวหน้า asset แบบ OM · seed เคส demo) — ต่อด้วย **M9 slice 2** ข้างล่าง
 
 0. ✅ **M10 เสร็จ (ข้อ BE)** — Query log ตามหน้าที่ (V25) + Access Control Dashboard · **ต่อไป:** M9 recertification · แนบไฟล์ในคำขอ · export / SIEM ของ M8
+0-BI. ✅ **ข้อ BI เสร็จ** — เลข Ticket ของคำขอ REQ-000042 (V28) ค้นหา / copy ได้ · **ต่อไป:** Preauthorization Access Request (ตาม tag / attribute ของ table → ให้ attribute ของคน หรือ group) · Catalog แสดง hierarchy (Database → Schema → Table) · M28 แชท agent
 0-BF. ✅ **ข้อ BF เสร็จ** — rail จัดเองได้ต่อคน (V26) + เลือกขนาด Comfortable / Compact (V27) · Enforcement และ System ย้ายเข้า Settings · Suggest พร้อม % · 🐛 parse error ของ Query · **ต่อไป:** M26 Fix with AI + Explain query → M28 แชท agent · ของค้าง (d) (f) (g) (j) (k) ดูข้อ BF.9
 0-M9. ✅ **M9 slice 2c เสร็จ (ข้อ BD)** — Dashboard ใครใกล้หมดสิทธิ์ + นับถอยหลัง · สถิติคำขอต่อ table · ✅ slice 2b (ข้อ BC) · ✅ slice 2a (ข้อ BB) · **ต่อไป:** M9 ที่เหลือ — recertification / access review · break-glass · notification ออกนอกระบบ (ดูข้อ BD.7) — ผู้ใช้สั่ง *"ทำต่อได้เลยนะ เอาตาม Roadmap ทำไปเรื่อยๆ ต้องทดสอบให้ดีทุกขั้นตอน"*
 0-เดิม. **(ส่วนที่เหลือของ AX.9 = 2b)** M9 slice 2 ดูข้อ AX.9: Approve = ตัดสินใจเท่านั้น → Fulfil ด้วยมือ (ออก grant / เพิ่มเข้า policy เดิม / สร้าง policy ใหม่เป็น Draft) โดย Owner · Steward · Custodian · หน้า review: ข้อมูลผู้ขอ + impact + risk + suggestion + conflict · ไอคอน Inbox + badge บน header

@@ -250,6 +250,43 @@ class AccessRequestIT {
       // Nothing half-written by any of them.
       assertThat(requests.madeBy(ANALYST_A, 10)).isEmpty();
     }
+
+    @Test
+    @DisplayName("every request gets its own ticket number, found however it is typed")
+    void ticket() {
+      AccessRequestStore.StoredRequest first = ask("analyst_a", CUSTOMER, 7);
+      AccessRequestStore.StoredRequest second = ask("analyst_b", CUSTOMER, 7);
+
+      assertThat(first.ticket()).matches("REQ-\\d{6}");
+      assertThat(second.ticket()).isNotEqualTo(first.ticket());
+      long number = AccessRequestStore.ticketNumber(first.ticket()).orElseThrow();
+      // The number survives a reload, and the owner reaches it by any spelling.
+      assertThat(requests.find(first.id(), OWNER).ticket()).isEqualTo(first.ticket());
+      for (String typed :
+          List.of(first.ticket(), first.ticket().toLowerCase(), "#" + number, " " + number + " ",
+              "REQ " + number)) {
+        assertThat(requests.findByTicket(typed, OWNER).id()).as(typed).isEqualTo(first.id());
+      }
+      assertThat(requests.findByTicket(first.ticket(), ANALYST_A).id()).isEqualTo(first.id());
+    }
+
+    @Test
+    @DisplayName("a ticket number opens nothing its reader could not open by id")
+    void ticketKeepsItsSecrets() {
+      AccessRequestStore.StoredRequest made = ask("analyst_a", CUSTOMER, 7);
+
+      // Somebody else's request and one that does not exist read the same,
+      // and neither message gives the request's id away.
+      assertThatThrownBy(() -> requests.findByTicket(made.ticket(), ANALYST_B))
+          .satisfies(e -> assertThat(kind(e)).isEqualTo(AccessRequestStore.RequestException.Kind.NOT_FOUND))
+          .hasMessage("No access request " + made.ticket());
+      assertThatThrownBy(() -> requests.findByTicket("REQ-999999", OWNER))
+          .satisfies(e -> assertThat(kind(e)).isEqualTo(AccessRequestStore.RequestException.Kind.NOT_FOUND))
+          .hasMessage("No access request REQ-999999");
+      for (String typed : List.of("", "REQ-", "REQ-0", "abc", "1; DROP TABLE x", "-4")) {
+        assertInvalid(() -> requests.findByTicket(typed, OWNER));
+      }
+    }
   }
 
   // ------------------------------------------------------------- deciding

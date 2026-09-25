@@ -93,6 +93,8 @@ export interface Approver {
 
 export interface AccessRequest {
   id: string;
+  /** What people quote and search for: REQ-000042. The id stays the key. */
+  ticket: string;
   assetFqn: string;
   requesterId: string | null;
   requesterUsername: string;
@@ -266,6 +268,36 @@ export async function fetchEligibility(
 }
 
 /** One request, for its requester or someone who may decide it; 404 for anyone else. */
+/** One request by its ticket number, with the same visibility as by id. */
+export async function fetchRequestByTicket(ticket: string): Promise<AccessRequest> {
+  const { data } = await apiClient.get<AccessRequest>(
+    `/v1/access-requests/ticket/${encodeURIComponent(ticket)}`
+  );
+  return data;
+}
+
+/**
+ * The number in what somebody typed -- REQ-000042, req-42, #42 or 42 -- or
+ * null when it is not a ticket number. Mirrors the server's reading.
+ */
+export function ticketNumber(typed: string): number | null {
+  const match = /^#?\s*(?:REQ[\s-]*)?0*(\d{1,12})$/i.exec(typed.trim());
+  if (!match) return null;
+  const number = Number(match[1]);
+  return number > 0 ? number : null;
+}
+
+/** Whether a request answers a search: by ticket number, or by what it names. */
+export function matchesSearch(request: AccessRequest, typed: string): boolean {
+  const wanted = typed.trim().toLowerCase();
+  if (!wanted) return true;
+  const number = ticketNumber(wanted);
+  if (number !== null && ticketNumber(request.ticket ?? '') === number) return true;
+  return [request.ticket, request.assetFqn, request.requesterUsername, request.purpose, request.reason]
+    .filter((text): text is string => Boolean(text))
+    .some((text) => text.toLowerCase().includes(wanted));
+}
+
 export async function fetchRequest(id: string): Promise<AccessRequest> {
   const { data } = await apiClient.get<AccessRequest>(`/v1/access-requests/${encodeURIComponent(id)}`);
   return data;

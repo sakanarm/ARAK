@@ -327,6 +327,17 @@ public class AccessRequestResource {
   }
 
   /** One request, for the requester or someone who may decide it. */
+  /**
+   * One request by its ticket number ({@code REQ-000042}, {@code 42}), for
+   * searching and for quoting in an email. Same visibility as by id.
+   */
+  @GET
+  @Path("/ticket/{ticket}")
+  public AccessRequestStore.StoredRequest byTicket(
+      @PathParam("ticket") String ticket, @Context SecurityContext security) {
+    return guarded(() -> requests.findByTicket(ticket, actor(caller(security))));
+  }
+
   @GET
   @Path("/{id}")
   public AccessRequestStore.StoredRequest one(

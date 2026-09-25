@@ -22,7 +22,10 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.OptionalLong;
 import java.util.UUID;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import org.jdbi.v3.core.Handle;
 import org.jdbi.v3.core.Jdbi;
 import org.jdbi.v3.core.statement.StatementContext;
@@ -174,6 +177,7 @@ public class AccessRequestStore {
    */
   public record StoredRequest(
       UUID id,
+      String ticket,
       String assetFqn,
       UUID requesterId,
       String requesterUsername,
@@ -215,7 +219,7 @@ public class AccessRequestStore {
         boolean configures,
         boolean nobodyElse) {
       return new StoredRequest(
-          id, assetFqn, requesterId, requesterUsername, dataSourceId, reason, purpose,
+          id, ticket, assetFqn, requesterId, requesterUsername, dataSourceId, reason, purpose,
           requestedDays, attemptedSql, deniedBy, status, createdAt, decidedBy, decidedAt,
           decisionNote, grantId, workflowName, currentStep, assignee, assignedAt, completedBy,
           completedAt, fulfilment, fulfilmentRef, fulfilmentNote, configurers,
@@ -477,6 +481,69 @@ public class AccessRequestStore {
           }
           return seen.request();
         });
+  }
+
+  /** How a ticket number is written: {@code REQ-000042}. */
+  public static String ticket(long number) {
+    return String.format(Locale.ROOT, "REQ-%06d", number);
+  }
+
+  private static final Pattern TICKET =
+      Pattern.compile("^#?\\s*(?:REQ[\\s-]*)?0*(\\d{1,12})$", Pattern.CASE_INSENSITIVE);
+
+  /**
+   * The number in what somebody typed: {@code REQ-000042}, {@code req-42},
+   * {@code #42} or {@code 42}. Empty when it is not a ticket number at all.
+   */
+  public static OptionalLong ticketNumber(String typed) {
+    if (typed == null) {
+      return OptionalLong.empty();
+    }
+    Matcher m = TICKET.matcher(typed.trim());
+    if (!m.matches()) {
+      return OptionalLong.empty();
+    }
+    long number = Long.parseLong(m.group(1));
+    return number > 0 ? OptionalLong.of(number) : OptionalLong.empty();
+  }
+
+  /**
+   * One request by its ticket number, with exactly the visibility of {@link
+   * #find}: a number that exists but is not the reader's business is told
+   * apart from one that does not exist by nothing, not even the message.
+   */
+  public StoredRequest findByTicket(String typed, Actor actor) {
+    long number =
+        ticketNumber(typed)
+            .orElseThrow(
+                () ->
+                    new RequestException(
+                        RequestException.Kind.INVALID,
+                        "A ticket number looks like REQ-000042."));
+    RequestException missing =
+        new RequestException(
+            RequestException.Kind.NOT_FOUND, "No access request " + ticket(number));
+    Optional<UUID> id =
+        jdbi.withHandle(
+            handle ->
+                handle
+                    .createQuery("SELECT id FROM access_request WHERE ticket_no = :number")
+                    .bind("number", number)
+                    .mapTo(UUID.class)
+                    .findOne());
+    if (id.isEmpty()) {
+      throw missing;
+    }
+    try {
+      return find(id.get(), actor);
+    } catch (RequestException e) {
+      // find names the UUID; a stranger holding only the number must not
+      // learn it.
+      if (e.kind() == RequestException.Kind.NOT_FOUND) {
+        throw missing;
+      }
+      throw e;
+    }
   }
 
   // --------------------------------------------------------------- asking
@@ -1790,6 +1857,7 @@ public class AccessRequestStore {
     Pool configuring = pool == null ? null : read(pool, Pool.class);
     return new StoredRequest(
         UUID.fromString(rs.getString("id")),
+        ticket(rs.getLong("ticket_no")),
         rs.getString("asset_fqn"),
         uuidOrNull(rs.getString("requester_id")),
         rs.getString("requester_username"),

@@ -36,6 +36,7 @@ function refusal(overrides: Partial<Refusal> = {}): Refusal {
 function sent(overrides: Partial<AccessRequest> = {}): AccessRequest {
   return {
     id: 'req-1',
+    ticket: 'REQ-000001',
     assetFqn: FQN,
     requesterId: 'p-1',
     requesterUsername: 'analyst_a',
