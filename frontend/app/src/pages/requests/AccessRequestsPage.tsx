@@ -1,13 +1,15 @@
-import { createContext, useContext, useState, type ReactNode } from 'react';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button } from '@openmetadata/ui-core-components/components/base/buttons/button';
 import {
   AlertTriangle,
   Check,
+  ChevronLeft,
   Clock,
   Copy01,
   Database01,
+  Expand06,
   Inbox01,
   InfoCircle,
   Key01,
@@ -167,6 +169,56 @@ export default function AccessRequestsPage() {
   );
 }
 
+/**
+ * One request on a page of its own, at /requests/REQ-000042: the address to
+ * paste into an email or a change ticket. Found by ticket number with the
+ * same visibility as by id -- somebody who could not open it from the list
+ * reads "not found" here too -- and drawn by the same panel as the list's.
+ */
+export function RequestPage() {
+  const { ticket = '' } = useParams();
+  const me = useAuthStore((state) => state.user?.username);
+  const found = useQuery({
+    // Under 'access-requests', so deciding or configuring it refreshes it.
+    queryKey: ['access-requests', 'page', ticket],
+    queryFn: () => fetchRequestByTicket(ticket),
+    retry: false,
+  });
+  const request = found.data;
+  const side: Side =
+    request && me && request.requesterUsername.toLowerCase() === me.toLowerCase()
+      ? 'mine'
+      : 'inbox';
+
+  return (
+    <div className="tw:flex tw:flex-col tw:gap-4">
+      <nav aria-label="Breadcrumb" className="tw:flex tw:items-center tw:gap-1.5 tw:text-sm">
+        <Link
+          className="tw:inline-flex tw:items-center tw:gap-1 tw:font-semibold tw:text-tertiary tw:hover:text-brand-secondary"
+          to={request ? `/requests?tab=${side}&status=&id=${request.id}` : '/requests'}>
+          <ChevronLeft aria-hidden className="tw:size-4" />
+          Access requests
+        </Link>
+        <span aria-hidden className="tw:text-quaternary">/</span>
+        <span aria-current="page" className="tw:font-mono tw:font-semibold tw:text-secondary">
+          {request?.ticket ?? ticket}
+        </span>
+      </nav>
+      {request ? (
+        <RequestDetail page request={request} side={side} />
+      ) : found.isError ? (
+        <Placeholder>
+          {ticketNumber(ticket) === null
+            ? `“${ticket}” is not a ticket number. They look like REQ-000042.`
+            : `There is no request ${ticket} that you can see.`}
+        </Placeholder>
+      ) : (
+        <p className="tw:text-sm tw:text-tertiary">Loading…</p>
+      )}
+    </div>
+  );
+}
+
 type Side = 'inbox' | 'mine';
 
 /** A status, every open one at once, or everything. */
@@ -208,6 +260,10 @@ function RequestsTab({ side }: { side: Side }) {
   const source = side === 'inbox' ? inbox : mine;
   const all = source.data;
   const search = params.get('q') ?? '';
+  // What is typed is only a draft until Enter: a search per key would jump the
+  // list, and the selection with it, under the reader's hands.
+  const [draft, setDraft] = useState(search);
+  useEffect(() => setDraft(search), [search]);
   const filtered = all?.filter((r) => matches(status, r.status) && matchesSearch(r, search));
   // A ticket number is often quoted from an email, for a request outside this
   // filter or older than the list goes back. Asked for on its own; the server
@@ -259,7 +315,7 @@ function RequestsTab({ side }: { side: Side }) {
     } else {
       merged.delete('q');
     }
-    // Typing is not navigation: one history entry, not one per key.
+    // Searching again is not navigation: one history entry, not one per search.
     setParams(merged, { replace: true });
   }
 
@@ -291,17 +347,28 @@ function RequestsTab({ side }: { side: Side }) {
             );
           })}
         </div>
-        <label className="tw:flex tw:items-center tw:gap-2 tw:border-b tw:border-secondary tw:px-3 tw:py-2">
+        <form
+          className="tw:flex tw:items-center tw:gap-2 tw:border-b tw:border-secondary tw:px-3 tw:py-2"
+          onSubmit={(event) => {
+            event.preventDefault();
+            setSearch(draft);
+          }}
+          role="search">
           <SearchLg aria-hidden className="tw:size-4 tw:shrink-0 tw:text-fg-quaternary" />
           <input
             aria-label="Search requests"
             className="tw:min-w-0 tw:flex-1 tw:bg-transparent tw:text-sm tw:text-primary tw:outline-none tw:placeholder:text-placeholder"
-            onChange={(event) => setSearch(event.target.value)}
-            placeholder="Ticket, table or person"
+            onChange={(event) => {
+              setDraft(event.target.value);
+              // Emptying the box (or its clear button) is the one change that
+              // needs no Enter: the whole list comes back.
+              if (!event.target.value.trim() && search) setSearch('');
+            }}
+            placeholder="Ticket, table or person — Enter to search"
             type="search"
-            value={search}
+            value={draft}
           />
-        </label>
+        </form>
         <RequestList
           empty={
             search.trim()
@@ -421,9 +488,12 @@ function TicketNumber({ ticket }: { ticket: string }) {
   if (!ticket) return null;
   return (
     <span className="tw:inline-flex tw:items-center tw:gap-1 tw:rounded-md tw:bg-secondary tw:px-1.5 tw:py-0.5">
-      <span className="tw:font-mono tw:text-xs tw:font-semibold tw:text-secondary" title="Ticket number">
+      <Link
+        className="tw:font-mono tw:text-xs tw:font-semibold tw:text-secondary tw:hover:text-brand-secondary tw:hover:underline"
+        title="Ticket number — opens it on its own page"
+        to={`/requests/${ticket}`}>
         {ticket}
-      </span>
+      </Link>
       <button
         aria-label={copied ? `Copied ${ticket}` : `Copy ${ticket}`}
         className="tw:cursor-pointer tw:rounded tw:p-0.5 tw:text-fg-quaternary tw:hover:text-fg-secondary"
@@ -606,7 +676,16 @@ function Placeholder({ children }: { children: ReactNode }) {
 }
 
 /** Everything about one request, and what this reader can do with it. */
-function RequestDetail({ request, side }: { request: AccessRequest; side: Side }) {
+function RequestDetail({
+  request,
+  side,
+  page = false,
+}: {
+  request: AccessRequest;
+  side: Side;
+  /** Drawn on its own page, where "open on its own page" would lead nowhere. */
+  page?: boolean;
+}) {
   const navigate = useNavigate();
   const status = statusOf(request.status);
   const table = tableName(request.assetFqn);
@@ -647,6 +726,16 @@ function RequestDetail({ request, side }: { request: AccessRequest; side: Side }
           size="sm">
           Open table
         </Button>
+        {!page && request.ticket && (
+          <Link
+            aria-label={`Open ${request.ticket} on its own page`}
+            className="tw:inline-flex tw:items-center tw:gap-1.5 tw:rounded-lg tw:border tw:border-primary tw:bg-primary tw:px-3 tw:py-2 tw:text-sm tw:font-semibold tw:text-secondary tw:shadow-xs tw:transition tw:hover:bg-primary_hover"
+            title="Open on its own page — a link to share"
+            to={`/requests/${request.ticket}`}>
+            <Expand06 aria-hidden className="tw:size-4 tw:text-fg-quaternary" />
+            Full page
+          </Link>
+        )}
       </div>
 
       <div className="tw:flex tw:flex-col tw:gap-5 tw:px-6 tw:py-5">

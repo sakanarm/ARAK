@@ -619,7 +619,29 @@ M25 ทำแยกได้ (profile ผ่าน proxy ที่มีแล�
 
 ---
 
-## รอบนี้ — **ข้อ BJ: Catalog แสดงเป็น hierarchy — Service → Database → Schema → Table** (M28 Agent ยังทำอยู่ — ยังไม่ commit)
+## รอบนี้ — **ข้อ BK: เปิดคำขอเต็มหน้าที่ `/requests/REQ-000042` · ช่องค้นหาคำขอรอกด Enter** (M28 Agent ยังทำอยู่ — ยังไม่ commit)
+
+ผู้ใช้: *"อยากให้สามารถกดดู Ticket นั้นเต็มหน้าได้ เช่น Click เข้าไป หรือเอา URL ไปเปิด"* · *"ทำไมที่ Search ตรงนี้ พิมตัวนึงแล้วมันหาเลย ไม่รอกด enter"*
+
+### BK.1 หน้าคำขอเต็มหน้า
+- route ใหม่ `/requests/:ticket` → `RequestPage` (export จาก `AccessRequestsPage.tsx`) · หาด้วย `fetchRequestByTicket` (endpoint เดิม `GET /v1/access-requests/ticket/{n}` สิทธิ์เดียวกับหาด้วย id — ไม่มี backend ใหม่)
+- วาดด้วย `RequestDetail` ตัวเดียวกับแผงขวา → ปุ่ม Approve / Configure / Withdraw ครบตามสิทธิ์ · ของตัวเอง (`requesterUsername` = คน login) → ฝั่ง "mine" (Withdraw ไม่มี Approve)
+- query key อยู่ใต้ `['access-requests', …]` → ตัดสิน/configure แล้วหน้ารีเฟรชเอง
+- breadcrumb "‹ Access requests / REQ-000011" → กลับไป `/requests?tab=…&status=&id=…` (status ว่าง = All จึงเจอทุกสถานะ)
+- ทางเข้า: ปุ่ม **Full page** บนหัวคำขอ (ไม่แสดงบนหน้าเต็มเอง) · เลข ticket บนหัวเป็นลิงก์ · copy URL ไปวางได้ตรงๆ
+- ไม่เจอ / ไม่มีสิทธิ์ → *"There is no request REQ-000099 that you can see."* · ไม่ใช่รูปเลข ticket → *"“banana” is not a ticket number…"*
+- deep link เปิดได้เพราะ `SpaServlet` ตอบ index.html ให้ทุก path ของ SPA อยู่แล้ว
+
+### BK.2 ช่องค้นหาคำขอรอ Enter
+- เดิมกรองทุกตัวอักษร (list กระโดด + ตัวที่เลือกหาย) → ตอนนี้พิมพ์เป็น draft · **กด Enter ค่อยค้น** (`<form role="search">`) · ลบจนว่าง / กดกากบาทของช่อง → รายการเต็มกลับมาทันทีไม่ต้อง Enter · `?q=` ใน URL ยังแชร์ได้ · placeholder บอก "Enter to search"
+
+### BK.3 ผลทดสอบ
+- jest **449/449** (ใหม่ 3: เปิดเต็มหน้าจากปุ่ม → URL `/requests/REQ-000011` + Approve อยู่ + ไม่มีลิงก์หาตัวเอง + breadcrumb · เปิดจาก URL ของตัวเอง → Withdraw ไม่มี Approve · ไม่เจอ / ไม่ใช่ ticket · test ค้นหาปรับให้ตรวจว่าพิมพ์เฉยๆ ไม่ค้น, Enter ค่อยค้น, ลบแล้วกลับมาเต็ม) · tsc + build ผ่าน
+- **live**: `http://localhost:8090/Arak/requests/REQ-000011` ตอบ 200 + bundle ใหม่ · API `REQ-000011` / `req-11` → 200 คำขอเดียวกัน · `REQ-999999` → 404 · `banana` → 400
+
+---
+
+## รอบก่อนหน้า — **ข้อ BJ: Catalog แสดงเป็น hierarchy — Service → Database → Schema → Table** (M28 Agent ยังทำอยู่ — ยังไม่ commit)
 
 ผู้ใช้: *"ใน Schema ก็ต้องแสดง list Table สิ · ใน Database ก็ต้องแสดง list Schema, dataset สิ · แสดงดูเป็น hierarchy ได้"*
 
@@ -5802,6 +5824,7 @@ estate ที่ใช้: `prod-mssql.SalesDB.dbo.{customer, order}` + **`prod-
 - ✅ **ข้อ AY เสร็จแล้ว** (Open in OpenMetadata ไม่ 500 · Request access มุมขวาบน · หัวหน้า asset แบบ OM · seed เคส demo) — ต่อด้วย **M9 slice 2** ข้างล่าง
 
 0. ✅ **M10 เสร็จ (ข้อ BE)** — Query log ตามหน้าที่ (V25) + Access Control Dashboard · **ต่อไป:** M9 recertification · แนบไฟล์ในคำขอ · export / SIEM ของ M8
+0-BK. ✅ **ข้อ BK เสร็จ** — คำขอเปิดเต็มหน้าที่ `/requests/REQ-000042` (ปุ่ม Full page / ลิงก์เลข ticket / วาง URL) · ช่องค้นหาคำขอรอ Enter · **ต่อไป:** Preauthorization Access Request · Dashboard ปรับแต่งได้ (coverage แยกตาม classification + เลือก measure + จัด layout เอง) · M28
 0-BJ. ✅ **ข้อ BJ เสร็จ** — Catalog แสดง hierarchy: ปุ่ม List / Hierarchy (tree โหลดทีละชั้น) + แท็บ Databases / Schemas / Tables ในหน้า container · `?parent=` + `childCount` · **ต่อไป:** Preauthorization Access Request · M28 แชท agent
 0-BI. ✅ **ข้อ BI เสร็จ** — เลข Ticket ของคำขอ REQ-000042 (V28) ค้นหา / copy ได้ · **ต่อไป:** Preauthorization Access Request (ตาม tag / attribute ของ table → ให้ attribute ของคน หรือ group) · Catalog แสดง hierarchy (Database → Schema → Table) · M28 แชท agent
 0-BF. ✅ **ข้อ BF เสร็จ** — rail จัดเองได้ต่อคน (V26) + เลือกขนาด Comfortable / Compact (V27) · Enforcement และ System ย้ายเข้า Settings · Suggest พร้อม % · 🐛 parse error ของ Query · **ต่อไป:** M26 Fix with AI + Explain query → M28 แชท agent · ของค้าง (d) (f) (g) (j) (k) ดูข้อ BF.9

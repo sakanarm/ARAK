@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { MemoryRouter, useLocation } from 'react-router-dom';
-import AccessRequestsPage from './AccessRequestsPage';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
+import AccessRequestsPage, { RequestPage } from './AccessRequestsPage';
 import type {
   AccessRequest,
   AccessReview,
@@ -214,6 +214,24 @@ function renderPage(url = '/requests') {
   );
 }
 
+/** Both routes, as the app has them, so a link from one reaches the other. */
+function renderRoutes(url: string) {
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  });
+  return render(
+    <QueryClientProvider client={client}>
+      <MemoryRouter initialEntries={[url]}>
+        <Routes>
+          <Route element={<AccessRequestsPage />} path="/requests" />
+          <Route element={<RequestPage />} path="/requests/:ticket" />
+        </Routes>
+        <Where />
+      </MemoryRouter>
+    </QueryClientProvider>
+  );
+}
+
 function detail() {
   return screen.findByRole('article', { name: `Request for ${FQN}` });
 }
@@ -385,6 +403,10 @@ describe('AccessRequestsPage inbox', () => {
 
     const box = screen.getByRole('searchbox', { name: 'Search requests' });
     fireEvent.change(box, { target: { value: 'req-8' } });
+    // Typing alone searches nothing; Enter does.
+    expect(screen.getByRole('button', { name: /customer, Pending/ })).toBeInTheDocument();
+    expect(location).not.toContain('q=');
+    fireEvent.submit(box);
     expect(
       await screen.findByRole('article', { name: 'Request for pg.db.s.orders' })
     ).toBeInTheDocument();
@@ -392,11 +414,18 @@ describe('AccessRequestsPage inbox', () => {
     expect(location).toContain('q=req-8');
 
     fireEvent.change(box, { target: { value: '#7' } });
+    fireEvent.submit(box);
     expect(await screen.findByRole('article', { name: `Request for ${FQN}` })).toBeInTheDocument();
 
     fireEvent.change(box, { target: { value: 'orders' } });
+    fireEvent.submit(box);
     expect(await screen.findByRole('button', { name: /orders, Pending/ })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /customer, Pending/ })).not.toBeInTheDocument();
+
+    // Emptying the box brings the whole list back without Enter.
+    fireEvent.change(box, { target: { value: '' } });
+    expect(await screen.findByRole('button', { name: /customer, Pending/ })).toBeInTheDocument();
+    expect(location).not.toContain('q=');
     // Everything the list held was found locally.
     expect(fetchByTicket).not.toHaveBeenCalled();
   });
@@ -1459,5 +1488,54 @@ describe('AccessRequestsPage my requests', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Withdraw' }));
 
     expect(await screen.findByRole('alert')).toHaveTextContent('Already decided.');
+  });
+});
+
+describe('a request on its own page', () => {
+  it('opens from the list, at an address made of its ticket number', async () => {
+    fetchInbox.mockResolvedValue([request({ ticket: 'REQ-000011' })]);
+    fetchByTicket.mockResolvedValue(request({ ticket: 'REQ-000011' }));
+    renderRoutes('/requests?tab=inbox');
+
+    const card = await detail();
+    fireEvent.click(within(card).getByRole('link', { name: 'Open REQ-000011 on its own page' }));
+
+    await waitFor(() => expect(location).toBe('/requests/REQ-000011'));
+    expect(fetchByTicket).toHaveBeenCalledWith('REQ-000011');
+    const page = await detail();
+    // The same panel, with what the reader may do, but no link to itself.
+    expect(within(page).getByRole('button', { name: 'Approve' })).toBeInTheDocument();
+    expect(within(page).queryByRole('link', { name: /on its own page/ })).not.toBeInTheDocument();
+    expect(
+      within(screen.getByRole('navigation', { name: 'Breadcrumb' })).getByRole('link', {
+        name: 'Access requests',
+      })
+    ).toHaveAttribute('href', '/requests?tab=inbox&status=&id=req-1');
+  });
+
+  it('opens from a pasted address, and the ticket number links to it', async () => {
+    fetchByTicket.mockResolvedValue(request({ ticket: 'REQ-000011', requesterUsername: 'me' }));
+    renderRoutes('/requests/REQ-000011');
+
+    const page = await detail();
+    expect(within(page).getByRole('link', { name: 'REQ-000011' })).toHaveAttribute(
+      'href',
+      '/requests/REQ-000011'
+    );
+    // Their own request: withdraw, never a decision.
+    expect(within(page).getByRole('button', { name: 'Withdraw' })).toBeInTheDocument();
+    expect(within(page).queryByRole('button', { name: 'Approve' })).not.toBeInTheDocument();
+  });
+
+  it('says so for a ticket the reader cannot see, or one that is no ticket', async () => {
+    fetchByTicket.mockRejectedValue(new Error('No access request REQ-000099'));
+    const { unmount } = renderRoutes('/requests/REQ-000099');
+    expect(await screen.findByText('There is no request REQ-000099 that you can see.')).toBeInTheDocument();
+    unmount();
+
+    renderRoutes('/requests/banana');
+    expect(
+      await screen.findByText('“banana” is not a ticket number. They look like REQ-000042.')
+    ).toBeInTheDocument();
   });
 });

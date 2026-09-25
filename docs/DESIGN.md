@@ -318,7 +318,7 @@ Dashboard ใครใกล้หมดสิทธิ์ + นับถอย�
 - **FR-11.1 ไฟล์แนบ** ⬜ (ผู้ใช้ขอ 2026-09-25) — ไม่บังคับโดย default · workflow step ตั้งได้ว่าต้องแนบ · เก็บบน disk ของ server (ชื่อไฟล์เป็น UUID · เข้ารหัส · ≤ 10 MB · ≤ 5 ไฟล์ ·
   ตรวจชนิดจาก magic bytes) · ดาวน์โหลดได้เฉพาะคนขอ / approver / admin / auditor เป็น `attachment` + `nosniff` เท่านั้น · ลบไม่ได้หลังตัดสินแล้ว · audit ทุก upload / download
 - **FR-11.2 เลข Ticket** ✅ (ผู้ใช้ขอ 2026-09-26 · V28) — ทุกคำขอมีเลข `REQ-000042` จาก sequence (คำขอเดิมเรียงตามวันที่สร้าง) · ค้นด้วย `REQ-42` / `#42` / `42` ได้ ·
-  `GET /v1/access-requests/ticket/{n}` ตรวจสิทธิ์เดียวกับค้นด้วย id — ไม่มีกับไม่ใช่ของเรา ตอบ 404 เหมือนกัน ไม่หลุด UUID · หน้า Access requests มีช่องค้นหา + ปุ่ม copy เลข
+  `GET /v1/access-requests/ticket/{n}` ตรวจสิทธิ์เดียวกับค้นด้วย id — ไม่มีกับไม่ใช่ของเรา ตอบ 404 เหมือนกัน ไม่หลุด UUID · หน้า Access requests มีช่องค้นหา (กด Enter) + ปุ่ม copy เลข · เปิดเต็มหน้าที่ `/requests/REQ-000042` (แชร์ URL ได้)
 - ยังไม่ทำ: recertification ทุก 90 วัน · break-glass · email / Teams
 
 ### FR-12 Access Control Models — DAC / MAC / RBAC / ABAC

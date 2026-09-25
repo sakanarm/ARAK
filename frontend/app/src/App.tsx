@@ -19,7 +19,7 @@ import PolicyListPage from './pages/policies/PolicyListPage';
 import QueryPage from './pages/query/QueryPage';
 import QueryLogPage from './pages/audit/QueryLogPage';
 import DashboardPage from './pages/dashboard/DashboardPage';
-import AccessRequestsPage from './pages/requests/AccessRequestsPage';
+import AccessRequestsPage, { RequestPage } from './pages/requests/AccessRequestsPage';
 import SimulatorPage from './pages/simulator/SimulatorPage';
 import AccessWorkflowsPage from './pages/settings/AccessWorkflowsPage';
 import AppRolesPage from './pages/settings/AppRolesPage';
@@ -85,6 +85,7 @@ export default function App() {
           <Route element={<QueryLogPage />} path="/audit" />
           <Route element={<DashboardPage />} path="/dashboard" />
           <Route element={<AccessRequestsPage />} path="/requests" />
+          <Route element={<RequestPage />} path="/requests/:ticket" />
           <Route element={<SimulatorPage />} path="/simulator" />
           <Route element={<SourcesPage />} path="/sources" />
           <Route element={<EnforcementPage />} path="/enforcement" />
