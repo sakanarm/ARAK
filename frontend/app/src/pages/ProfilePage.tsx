@@ -175,11 +175,7 @@ export default function ProfilePage() {
             className="tw:mt-4 tw:flex tw:flex-col tw:gap-2">
             {attributes.map((attribute) => (
               <li
-                /* The brand edge is what turns a stack of identical grey
-                   rectangles into a list: it gives every row a left margin the
-                   eye can run down, and marks these rows as the ones the whole
-                   page is about. */
-                className="tw:flex tw:flex-wrap tw:items-center tw:gap-x-3 tw:gap-y-1 tw:rounded-lg tw:border tw:border-secondary tw:border-l-4 tw:border-l-utility-brand-500 tw:bg-secondary_subtle tw:px-4 tw:py-3"
+                className="tw:flex tw:flex-wrap tw:items-center tw:gap-x-3 tw:gap-y-1 tw:rounded-lg tw:border tw:border-secondary tw:bg-secondary_subtle tw:px-4 tw:py-3"
                 key={`${attribute.key}:${attribute.value}:${attribute.source}`}>
                 <span className="tw:rounded-md tw:bg-utility-brand-100 tw:px-2 tw:py-0.5 tw:font-mono tw:text-xs tw:text-utility-brand-700">
                   {attribute.key}

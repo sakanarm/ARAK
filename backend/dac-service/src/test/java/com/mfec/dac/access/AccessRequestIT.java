@@ -299,6 +299,116 @@ class AccessRequestIT {
     }
 
     @Test
+    @DisplayName("a team named like the owning user is not the owner")
+    void ownerTypeMatters() {
+      // The customer table is owned by the *user* owner_o. A team that happens
+      // to be called owner_o owns nothing, and neither do its members.
+      jdbi.useHandle(
+          handle -> {
+            handle.execute(
+                """
+                INSERT INTO principal (principal_type, username, source, enabled)
+                VALUES ('GROUP', 'owner_o', 'openmetadata', true)
+                """);
+            handle.execute(
+                """
+                INSERT INTO group_member (group_id, member_id, source)
+                SELECT g.id, m.id, 'openmetadata'
+                FROM principal g, principal m
+                WHERE g.username = 'owner_o' AND g.principal_type = 'GROUP'
+                  AND m.username = 'analyst_b'
+                """);
+          });
+      AccessRequestStore.StoredRequest made = ask("analyst_a", CUSTOMER, 7);
+
+      assertThatThrownBy(() -> requests.approve(made.id(), ANALYST_B, null, null))
+          .satisfies(e -> assertThat(kind(e)).isEqualTo(AccessRequestStore.RequestException.Kind.NOT_FOUND));
+      assertThat(requests.decidableBy(ANALYST_B, null, 100)).isEmpty();
+      // The real owner still can.
+      assertThat(requests.decidableBy(OWNER, null, 100)).hasSize(1);
+    }
+
+    @Test
+    @DisplayName("a request only its requester could decide says so, instead of waiting forever")
+    void stranded() {
+      // No administrator holds the role yet: an orphan waits for nobody.
+      AccessRequestStore.StoredRequest orphan = ask("analyst_a", ORPHAN, null);
+      assertThat(requests.find(orphan.id(), ANALYST_A).stranded()).isTrue();
+
+      administrator("admin");
+      assertThat(requests.find(orphan.id(), ANALYST_A).stranded()).isFalse();
+      assertThat(requests.nobodyElseDecides("analyst_b", ORPHAN)).isFalse();
+
+      // The only administrator asking for an unowned table: nobody decides
+      // their own request, so it waits for nobody, and the page must say so.
+      AccessRequestStore.StoredRequest own = ask("admin", ORPHAN, null);
+      assertThat(requests.find(own.id(), ADMIN).stranded()).isTrue();
+      assertThat(requests.decidableBy(ADMIN, null, 100))
+          .extracting(AccessRequestStore.StoredRequest::id)
+          .doesNotContain(own.id());
+      // An owned table is decided by its owner, whoever asks.
+      assertThat(requests.nobodyElseDecides("admin", CUSTOMER)).isFalse();
+      // The sole owner asking about their own table still has an administrator.
+      assertThat(requests.nobodyElseDecides("owner_o", CUSTOMER)).isFalse();
+
+      administrator("owner_o");
+      assertThat(requests.find(own.id(), ADMIN).stranded()).isFalse();
+
+      // A decided request waits for nothing.
+      requests.approve(own.id(), new AccessRequestStore.Actor("owner_o", true), null, null);
+      assertThat(requests.find(own.id(), ADMIN).stranded()).isFalse();
+    }
+
+    @Test
+    @DisplayName("a grant reaches its principal, and every member of a group, however deep")
+    void grantReach() {
+      UUID financeTeam =
+          jdbi.withHandle(
+              handle ->
+                  handle
+                      .createQuery("SELECT id FROM principal WHERE username = 'Finance'")
+                      .mapTo(UUID.class)
+                      .one());
+      UUID analystA =
+          jdbi.withHandle(
+              handle ->
+                  handle
+                      .createQuery("SELECT id FROM principal WHERE username = 'analyst_a'")
+                      .mapTo(UUID.class)
+                      .one());
+
+      assertThat(grants.reaches("finance_lead", financeTeam)).isTrue();
+      assertThat(grants.reaches("FINANCE_LEAD", financeTeam)).isTrue();
+      assertThat(grants.reaches("analyst_a", analystA)).isTrue();
+      assertThat(grants.reaches("analyst_a", financeTeam)).isFalse();
+      assertThat(grants.reaches("finance_lead", analystA)).isFalse();
+
+      // A member of a group inside Finance is reached by a grant to Finance.
+      jdbi.useHandle(
+          handle -> {
+            handle.execute(
+                """
+                INSERT INTO principal (principal_type, username, source, enabled)
+                VALUES ('GROUP', 'Finance Ops', 'local', true)
+                """);
+            handle.execute(
+                """
+                INSERT INTO group_member (group_id, member_id, source)
+                SELECT g.id, m.id, 'local' FROM principal g, principal m
+                WHERE g.username = 'Finance' AND m.username = 'Finance Ops'
+                """);
+            handle.execute(
+                """
+                INSERT INTO group_member (group_id, member_id, source)
+                SELECT g.id, m.id, 'local' FROM principal g, principal m
+                WHERE g.username = 'Finance Ops' AND m.username = 'analyst_a'
+                """);
+          });
+      assertThat(grants.reaches("analyst_a", financeTeam)).isTrue();
+      assertThat(grants.reaches(null, financeTeam)).isFalse();
+    }
+
+    @Test
     @DisplayName("the inbox holds what this person may decide, and nothing else")
     void inbox() {
       AccessRequestStore.StoredRequest customer = ask("analyst_a", CUSTOMER, 7);
@@ -822,6 +932,19 @@ class AccessRequestIT {
               WHERE g.username = 'Finance' AND m.username = 'finance_lead'
               """);
         });
+  }
+
+  private void administrator(String name) {
+    jdbi.useHandle(
+        handle ->
+            handle
+                .createUpdate(
+                    """
+                    INSERT INTO app_role_assignment (principal_id, app_role)
+                    SELECT id, 'PLATFORM_ADMIN' FROM principal WHERE username = :name
+                    """)
+                .bind("name", name)
+                .execute());
   }
 
   private static void person(Handle handle, String name, String clearance) {

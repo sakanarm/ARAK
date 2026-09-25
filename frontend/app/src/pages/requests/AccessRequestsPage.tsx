@@ -28,7 +28,7 @@ import {
   type AccessRequest,
   type RequestStatus,
 } from '../../api/accessRequests';
-import { FIELD, TextField } from '../policies/controls';
+import { FIELD } from '../policies/controls';
 import { countLabel, tableName, useRequestNotices } from './useRequestNotices';
 
 /**
@@ -392,14 +392,11 @@ function RequestList({
               aria-label={`${tableName(request.assetFqn)}, ${status.label}${
                 side === 'inbox' ? `, asked by ${request.requesterUsername}` : ''
               }`}
-              className={`tw:relative tw:flex tw:w-full tw:cursor-pointer tw:items-start tw:gap-3 tw:px-4 tw:py-3 tw:text-left tw:transition-colors ${
+              className={`tw:flex tw:w-full tw:cursor-pointer tw:items-start tw:gap-3 tw:px-4 tw:py-3 tw:text-left tw:transition-colors ${
                 active ? 'tw:bg-utility-brand-50' : 'tw:hover:bg-primary_hover'
               }`}
               onClick={() => onSelect(request.id)}
               type="button">
-              {active && (
-                <span aria-hidden className="tw:absolute tw:inset-y-0 tw:left-0 tw:w-0.5 tw:bg-brand-solid" />
-              )}
               {side === 'inbox' ? (
                 <Initial name={request.requesterUsername} />
               ) : (
@@ -531,7 +528,7 @@ function RequestDetail({ request, side }: { request: AccessRequest; side: Side }
           <h3 className="tw:text-xs tw:font-semibold tw:tracking-wide tw:text-quaternary tw:uppercase">
             Reason
           </h3>
-          <p className="tw:mt-2 tw:rounded-lg tw:border-l-4 tw:border-brand tw:bg-secondary tw:px-4 tw:py-3 tw:text-sm tw:whitespace-pre-wrap tw:text-secondary">
+          <p className="tw:mt-1.5 tw:text-sm tw:whitespace-pre-wrap tw:text-primary">
             {request.reason}
           </p>
         </div>
@@ -565,10 +562,12 @@ function RequestDetail({ request, side }: { request: AccessRequest; side: Side }
               <b className="tw:text-primary">{request.requesterUsername}</b> asked for access
             </Step>
             {pending ? (
-              <Step icon={Clock} last tone="warning" when={null}>
-                <b className="tw:text-primary">Waiting for a decision</b>
+              <Step icon={Clock} last tone={request.stranded ? 'error' : 'warning'} when={null}>
+                <b className="tw:text-primary">
+                  {request.stranded ? 'Nobody can decide this yet' : 'Waiting for a decision'}
+                </b>
                 <span className="tw:mt-0.5 tw:block tw:text-xs tw:text-tertiary">
-                  {describeApprovers(request.approvers)}
+                  {describeApprovers(request.approvers, request.stranded)}
                 </span>
               </Step>
             ) : (
@@ -670,16 +669,15 @@ function Step({
 
 function Decide({ request }: { request: AccessRequest }) {
   const queryClient = useQueryClient();
-  const [days, setDays] = useState(
-    request.requestedDays === null ? '' : String(request.requestedDays)
-  );
   const [note, setNote] = useState('');
   const done = () => queryClient.invalidateQueries({ queryKey: ['access-requests'] });
 
   const approve = useMutation({
     mutationFn: () =>
       approveRequest(request.id, {
-        days: days.trim() === '' ? null : Number.parseInt(days, 10),
+        // The grant runs as long as was asked -- the "For" line above says how
+        // long -- so approving is one decision, not a second form to fill in.
+        days: request.requestedDays,
         note: note.trim() || null,
       }),
     onSuccess: done,
@@ -689,14 +687,6 @@ function Decide({ request }: { request: AccessRequest }) {
     onSuccess: done,
   });
 
-  // Shorten only: an owner can give less time than was asked for, never more,
-  // and cannot turn a bounded ask into an open-ended grant. The server holds
-  // the same line; this only keeps the button from offering what it refuses.
-  const parsed = Number.parseInt(days, 10);
-  const daysValid =
-    days.trim() === ''
-      ? request.requestedDays === null
-      : parsed >= 1 && parsed <= Math.min(365, request.requestedDays ?? 365);
   const busy = approve.isPending || reject.isPending;
   const failure = approve.error ?? reject.error;
 
@@ -715,26 +705,6 @@ function Decide({ request }: { request: AccessRequest }) {
         </span>
       </p>
 
-      <div className="tw:flex tw:flex-wrap tw:items-center tw:gap-2">
-        <span className="tw:text-sm tw:font-medium tw:text-secondary">Grant for</span>
-        <TextField
-          ariaLabel="Grant days"
-          className="tw:w-20"
-          onChange={(value) => setDays(value.replace(/[^0-9]/g, ''))}
-          placeholder="—"
-          value={days}
-        />
-        <span className="tw:text-sm tw:text-tertiary">
-          days{days.trim() === '' ? ' (until revoked)' : ''}
-        </span>
-        {!daysValid && (
-          <span className="tw:text-xs tw:text-error-primary">
-            {request.requestedDays === null
-              ? 'Between 1 and 365 days, or blank for until revoked.'
-              : `Between 1 and ${request.requestedDays} days — no longer than was asked.`}
-          </span>
-        )}
-      </div>
       <textarea
         aria-label="Note to the requester"
         className={`${FIELD} tw:min-h-20 tw:resize-y tw:bg-primary`}
@@ -762,7 +732,7 @@ function Decide({ request }: { request: AccessRequest }) {
         <Button
           color="primary"
           iconLeading={Check}
-          isDisabled={busy || !daysValid}
+          isDisabled={busy}
           onPress={() => approve.mutate()}
           size="sm">
           {approve.isPending ? 'Approving…' : 'Approve'}

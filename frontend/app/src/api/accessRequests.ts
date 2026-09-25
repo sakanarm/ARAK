@@ -41,6 +41,8 @@ export interface AccessRequest {
   grantId: string | null;
   approvers: Approver[];
   mayDecide: boolean;
+  /** Pending, and nobody but the requester could decide it. */
+  stranded: boolean;
 }
 
 export interface NewAccessRequest {
@@ -68,6 +70,7 @@ export interface Eligibility {
   /** Empty means no owner is recorded, and a platform administrator decides. */
   approvers: Approver[];
   openRequestId: string | null;
+  stranded?: boolean;
 }
 
 /** What a refused query carries when the refusal names one table. */
@@ -78,6 +81,7 @@ export interface Refusal {
   blockedBy?: string | null;
   approvers?: Approver[];
   openRequestId?: string | null;
+  stranded?: boolean;
 }
 
 /**
@@ -174,8 +178,20 @@ export async function withdrawRequest(id: string): Promise<AccessRequest> {
   return data;
 }
 
-/** "owner_o", "team Finance", or who decides when the catalog names nobody. */
-export function describeApprovers(approvers: Approver[] | undefined): string {
+/**
+ * "owner_o", "team Finance", or who decides when the catalog names nobody.
+ *
+ * `stranded` is the server saying that nobody but the requester could decide:
+ * they are the only owner, or there is no owner and they are the only
+ * administrator. Nobody decides their own request, so the page says it will
+ * wait for nobody rather than promising somebody who cannot act.
+ */
+export function describeApprovers(approvers: Approver[] | undefined, stranded = false): string {
+  if (stranded) {
+    return !approvers || approvers.length === 0
+      ? 'No owner is recorded for this table and there is no other platform administrator, so nobody can decide this yet. Record an owner in OpenMetadata or add another administrator.'
+      : 'Only the requester owns this table, and nobody decides their own request, so nobody can decide this yet. Record another owner in OpenMetadata or add another administrator.';
+  }
   if (!approvers || approvers.length === 0) {
     return 'No owner is recorded for this table, so a platform administrator decides.';
   }

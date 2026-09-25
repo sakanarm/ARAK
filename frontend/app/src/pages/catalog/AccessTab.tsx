@@ -20,6 +20,8 @@ import {
 import { apiErrorMessage } from '../../api/client';
 import { Panel } from './panels';
 import { GrantDialog } from './GrantDialog';
+import { useAuthStore } from '../../auth/authStore';
+import { governs } from '../../auth/stewardship';
 
 /**
  * Who can reach this asset, and where that access comes from (FR-7.3, FR-3.1.5).
@@ -37,6 +39,9 @@ import { GrantDialog } from './GrantDialog';
 export function AccessTab({ fqn }: { fqn: string }) {
   const queryClient = useQueryClient();
   const [dialogOpen, setDialogOpen] = useState(false);
+  // Reading this page is open to everyone; changing it is for whoever governs
+  // the table. The server refuses the rest, so the page does not offer it.
+  const mayChange = governs(useAuthStore((state) => state.user), fqn);
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['asset-access', fqn],
@@ -86,12 +91,14 @@ export function AccessTab({ fqn }: { fqn: string }) {
     <div className="tw:space-y-6">
       <Panel
         action={
-          <Button
-            iconLeading={Plus}
-            onPress={() => setDialogOpen(true)}
-            size="sm">
-            Grant access
-          </Button>
+          mayChange ? (
+            <Button
+              iconLeading={Plus}
+              onPress={() => setDialogOpen(true)}
+              size="sm">
+              Grant access
+            </Button>
+          ) : undefined
         }
         subtitle="Access given to one person or group on this table, with a window and a reason (FR-7.1)"
         title="Direct grants">
@@ -113,7 +120,9 @@ export function AccessTab({ fqn }: { fqn: string }) {
                 busy={revoke.isPending}
                 grant={grant}
                 key={grant.id}
-                onRevoke={(reason) => revoke.mutate({ id: grant.id, reason })}
+                onRevoke={
+                  mayChange ? (reason) => revoke.mutate({ id: grant.id, reason }) : undefined
+                }
               />
             ))}
             {inert.length > 0 && (
@@ -126,8 +135,10 @@ export function AccessTab({ fqn }: { fqn: string }) {
                     busy={revoke.isPending}
                     grant={grant}
                     key={grant.id}
-                    onRevoke={(reason) =>
-                      revoke.mutate({ id: grant.id, reason })
+                    onRevoke={
+                      mayChange
+                        ? (reason) => revoke.mutate({ id: grant.id, reason })
+                        : undefined
                     }
                   />
                 ))}
@@ -199,7 +210,8 @@ function GrantRow({
   busy,
 }: {
   grant: GrantAccess;
-  onRevoke: (reason: string) => void;
+  /** Absent for someone who may not revoke here. */
+  onRevoke?: (reason: string) => void;
   busy: boolean;
 }) {
   const [confirming, setConfirming] = useState(false);
@@ -285,6 +297,7 @@ function GrantRow({
       )}
 
       {grant.live &&
+        onRevoke &&
         (confirming ? (
           <div className="tw:mt-3 tw:flex tw:flex-wrap tw:items-center tw:gap-2">
             <input

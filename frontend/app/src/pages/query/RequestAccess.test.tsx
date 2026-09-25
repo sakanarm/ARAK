@@ -53,6 +53,7 @@ function sent(overrides: Partial<AccessRequest> = {}): AccessRequest {
     grantId: null,
     approvers: [OWNER],
     mayDecide: false,
+    stranded: false,
     ...overrides,
   };
 }

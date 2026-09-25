@@ -114,13 +114,14 @@ public class AccessRequestStore {
       String decisionNote,
       UUID grantId,
       List<Approver> approvers,
-      boolean mayDecide) {
+      boolean mayDecide,
+      boolean stranded) {
 
-    StoredRequest seenBy(List<Approver> owners, boolean decides) {
+    StoredRequest seenBy(List<Approver> owners, boolean decides, boolean nobodyElse) {
       return new StoredRequest(
           id, assetFqn, requesterId, requesterUsername, dataSourceId, reason, purpose,
           requestedDays, attemptedSql, deniedBy, status, createdAt, decidedBy, decidedAt,
-          decisionNote, grantId, owners, decides);
+          decisionNote, grantId, owners, decides, nobodyElse);
     }
 
     public boolean pending() {
@@ -153,6 +154,52 @@ public class AccessRequestStore {
   /** The asset's owners, direct and inherited, as the crawl last saw them. */
   public List<Approver> approversFor(String assetFqn) {
     return jdbi.withHandle(handle -> owners(handle, List.of(assetFqn)).getOrDefault(assetFqn, List.of()));
+  }
+
+  /**
+   * Whether a request from this person on this asset would wait for nobody.
+   *
+   * <p>Nobody decides their own request, so an owner who is the requester does
+   * not count, and neither does an administrator who is the requester. When
+   * that leaves no owner and no other enabled administrator, the request sits
+   * pending forever while the page says "an administrator decides" -- this is
+   * the flag that lets the page say so instead.
+   */
+  public boolean nobodyElseDecides(String requesterUsername, String assetFqn) {
+    return jdbi.withHandle(
+        handle ->
+            nobodyElseDecides(
+                handle,
+                requesterUsername,
+                owners(handle, List.of(assetFqn)).getOrDefault(assetFqn, List.of())));
+  }
+
+  private boolean nobodyElseDecides(
+      Handle handle, String requesterUsername, List<Approver> ofAsset) {
+    Principal requester = principals.find(handle, requesterUsername).orElse(null);
+    for (Approver owner : ofAsset) {
+      // A team may hold other members; only a user owner can be the requester.
+      boolean self =
+          "user".equalsIgnoreCase(owner.type()) && requester != null && requester.is(owner.name());
+      if (!self) {
+        return false;
+      }
+    }
+    int otherAdmins =
+        handle
+            .createQuery(
+                """
+                SELECT count(*) FROM app_role_assignment r
+                JOIN principal p ON p.id = r.principal_id
+                WHERE r.app_role = 'PLATFORM_ADMIN'
+                  AND r.scope_fqn IS NULL
+                  AND p.enabled = true
+                  AND lower(p.username) <> lower(:who)
+                """)
+            .bind("who", requesterUsername)
+            .mapTo(Integer.class)
+            .one();
+    return otherAdmins == 0;
   }
 
   /** The open request this person already has on this asset, if any. */
@@ -542,9 +589,15 @@ public class AccessRequestStore {
       return false;
     }
     for (Approver owner : ofAsset) {
-      // The engine's own rule for assetOwner (SubjectMatcher.isOwner): a user
-      // owner by name or email, a team owner through membership.
-      if (who.is(owner.name()) || who.hasTeam(owner.name())) {
+      // A user owner by name or email, a team owner through membership -- and
+      // each only as what it is. Matching a name against both would let a user
+      // called "finance" decide for tables the Finance team owns, or a member
+      // of a team called "alice" decide for tables Alice owns.
+      boolean match =
+          "team".equalsIgnoreCase(owner.type())
+              ? who.hasTeam(owner.name())
+              : "user".equalsIgnoreCase(owner.type()) && who.is(owner.name());
+      if (match) {
         return true;
       }
     }
@@ -566,7 +619,9 @@ public class AccessRequestStore {
           !own
               && decides.computeIfAbsent(
                   row.assetFqn(), fqn -> mayDecide(handle, actor, fqn, owners));
-      out.add(row.seenBy(owners.getOrDefault(row.assetFqn(), List.of()), may));
+      List<Approver> ofAsset = owners.getOrDefault(row.assetFqn(), List.of());
+      boolean stranded = row.pending() && nobodyElseDecides(handle, row.requesterUsername(), ofAsset);
+      out.add(row.seenBy(ofAsset, may, stranded));
     }
     return out;
   }
@@ -830,6 +885,7 @@ public class AccessRequestStore {
         rs.getString("decision_note"),
         uuidOrNull(rs.getString("grant_id")),
         List.of(),
+        false,
         false);
   }
 

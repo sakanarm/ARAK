@@ -56,15 +56,15 @@ Phase 1 รองรับ SQL Server + PostgreSQL · identity หลักค�
 | App DB (docker `dac-appdb`, postgres:16-alpine) | `:5432` db/user `dac` |
 | OpenMetadata ของทีม | `2.0.1` — sync ผ่าน **ingestion-bot JWT** (ดู What Didn't Work) |
 
-เทสต์ทั้งหมดเขียว — **backend unit + integration รันครบเมื่อ 2026-09-25 → `./mvnw -o verify -Pintegration` BUILD SUCCESS · unit 696 · Failures 0 Errors 0** (รอบ AY: +1 `SpaServletTest.unusualCharacters` · integration **214** (รอบ AZ: +5 `AccessRequestIT.Notices`) — **+23 จาก `AccessRequestIT`** ขอ / อนุมัติ / ปฏิเสธ / ถอน + เคส policy ชนกัน (DENY · ชั้นบนปฏิเสธ · override · approve ไม่ปลด mask) บน Postgres จริง), frontend `npx jest` + `npx tsc --noEmit` + `vite build` รันใหม่ **2026-09-25** (**35 suites / 302 tests** เขียว — ดูข้อ AZ.5, AY.5 และ AX.8 · tsc exit 0 · build 11.78s · `scripts/check-cursor-pointer.mjs` → *every &lt;button&gt; offers a hand*)
+เทสต์ทั้งหมดเขียว — **backend unit + integration รันครบเมื่อ 2026-09-25 → `./mvnw -o verify -Pintegration` BUILD SUCCESS · unit 713 · Failures 0 Errors 0** (รอบ BA: +6 `StewardshipTest` · +11 `StewardshipGuardsTest` · integration **217** (+3 `AccessRequestIT.Deciding` `ownerTypeMatters` · `grantReach` · `stranded`) · รอบ AY: +1 `SpaServletTest.unusualCharacters` · integration **214** (รอบ AZ: +5 `AccessRequestIT.Notices`) — **+23 จาก `AccessRequestIT`** ขอ / อนุมัติ / ปฏิเสธ / ถอน + เคส policy ชนกัน (DENY · ชั้นบนปฏิเสธ · override · approve ไม่ปลด mask) บน Postgres จริง), frontend `npx jest` + `npx tsc --noEmit` + `vite build` รันใหม่ **2026-09-25** (**36 suites / 307 tests** เขียว — รอบ BA: `AccessTab.test.tsx` ใหม่ 4 · `AccessRequestsPage.test.tsx` ±0 สุทธิ · `accessRequests.test.ts` +1 · ดูข้อ BA.4, AZ.5, AY.5 และ AX.8 · tsc exit 0 · build 11.78s · `scripts/check-cursor-pointer.mjs` → *every &lt;button&gt; offers a hand*)
 
 > ⚠️ **`backend/dac-service/target/surefire-reports/com.mfec.dac.catalog.AssetStoreIT.txt` ยังแดงค้างอยู่ในโฟลเดอร์ — เป็นไฟล์เก่าจาก 2026-09-23 20:35 ก่อน commit `19b0503` ซึ่งคือ commit ที่แก้เคสนั้นพอดี** อย่าอ่านรายงานใน `target/` โดยไม่ดูเวลาไฟล์ — `mvn test` ไม่ล้างรายงานของคลาสที่รอบนี้ไม่ได้รัน
 
 | ชุด | จำนวน | คำสั่ง |
 |---|---|---|
-| Backend unit | dac-common 31 · dac-engine 277 · **dac-compiler-sql 51 (+17 — `RowEntitlementMaintainerTest`)** · dac-connector-openmetadata 91 · **dac-connector-source 25 (+6 — `SecureViewApplierTest`)** · dac-proxy 30 · **dac-service 186 (+6 — `ReviewedPlansTest`)** = **696** (dac-service **191** — +4 `AccessEligibilityTest` · +1 `SpaServletTest.unusualCharacters` ข้อ AY) | `./mvnw -o test` |
-| Backend integration (Testcontainers `postgres:16-alpine`) | **214 tests** — **`AccessRequestIT` 28 (+5 `Notices` ข้อ AZ.5 · 23 ข้อ AX.8)** · `AssetStoreIT` 7 · `CatalogQueryIT` 18 · `DataSourceStoreIT` 13 · `GovernanceStoreIT` 10 · `GrantCompositionIT` 17 · **`HomeLayoutStoreIT` 14 (+8 รอบนี้ — persona)** · `IdentityAdminStoreIT` 24 · `ImpactAnalysisIT` 8 · `PolicyBindingMaterializerIT` 10 · `PolicyOverviewIT` 24 · `PolicyStoreIT` 10 · **`SecureViewApplierIT` 11 (ใหม่รอบนี้ — อยู่ใน `dac-connector-source` ไม่ใช่ `dac-service`)** · **`SecureViewServiceIT` 15 (ใหม่รอบนี้)** · `SourceEngineRegistryIT` 5 | `./mvnw verify -Pintegration` (ทั้ง reactor) |
-| Frontend | **35 suites / 302 tests** (รอบ AZ: `AccessRequestsPage.test.tsx` 22 (+9) · `RequestNotices.test.tsx` ใหม่ 10 — ดูข้อ AZ.5 · รอบ AY: +10 `AriaRouter.test.tsx` · `AssetRequestAccess.test.tsx` 9 · +4 `AssetDetailPage.test.tsx` — ดูข้อ AY.5 · รอบ AX: +20 `SqlEditor.test.tsx` · +16 `RequestAccess.test.tsx` · +13 `AccessRequestsPage.test.tsx` · +5 `accessRequests.test.ts` · `sqlCompletion.test.ts` — ดูข้อ AX.8 · ก่อนหน้า: +7 `EnforcementPage.test.tsx` — dry run → apply ส่งแค่ reviewId · non-admin ไม่มีปุ่ม Apply / Roll back · apply ที่ถูกปฏิเสธล้าง review · rollback ต้องยืนยัน · +9 `policyFlow.test.ts` — ลำดับด่าน · selector ว่าง = 0 asset ไม่ใช่ทุก asset · subject ว่าง = `open` ไม่ใช่ `set` · "ไม่ผ่านด่าน" ต้องไม่อ่านว่า deny · +3 `PolicyFlowChart.test.tsx` — ไม่ส่ง `onEdit` ต้องไม่มีปุ่มใดๆ · ก่อนหน้านี้ +4 ใน `HomePersonasPage.test.tsx` — หน้าที่คนหนึ่งจัดหน้าจอให้อีกคน: admin เท่านั้นที่เห็น · ครบทั้ง 5 role ไม่ว่าจะตั้งไว้หรือยัง · ประโยค "starting point ไม่ใช่ override" · เซฟแล้วต้องลง role ที่เปิดอยู่เท่านั้น) | `npx jest` ใน `frontend/app` |
+| Backend unit | dac-common 31 · dac-engine 277 · **dac-compiler-sql 51 (+17 — `RowEntitlementMaintainerTest`)** · dac-connector-openmetadata 91 · **dac-connector-source 25 (+6 — `SecureViewApplierTest`)** · dac-proxy 30 · **dac-service 186 (+6 — `ReviewedPlansTest`)** = **713** (dac-service **208** — +6 `StewardshipTest` · +11 `StewardshipGuardsTest` ข้อ BA · ก่อนหน้า **191** — +4 `AccessEligibilityTest` · +1 `SpaServletTest.unusualCharacters` ข้อ AY) | `./mvnw -o test` |
+| Backend integration (Testcontainers `postgres:16-alpine`) | **217 tests** — **`AccessRequestIT` 31 (+3 `Deciding` ข้อ BA.1a/BA.4 · +5 `Notices` ข้อ AZ.5 · 23 ข้อ AX.8)** · `AssetStoreIT` 7 · `CatalogQueryIT` 18 · `DataSourceStoreIT` 13 · `GovernanceStoreIT` 10 · `GrantCompositionIT` 17 · **`HomeLayoutStoreIT` 14 (+8 รอบนี้ — persona)** · `IdentityAdminStoreIT` 24 · `ImpactAnalysisIT` 8 · `PolicyBindingMaterializerIT` 10 · `PolicyOverviewIT` 24 · `PolicyStoreIT` 10 · **`SecureViewApplierIT` 11 (ใหม่รอบนี้ — อยู่ใน `dac-connector-source` ไม่ใช่ `dac-service`)** · **`SecureViewServiceIT` 15 (ใหม่รอบนี้)** · `SourceEngineRegistryIT` 5 | `./mvnw verify -Pintegration` (ทั้ง reactor) |
+| Frontend | **36 suites / 307 tests** (รอบ BA: `AccessTab.test.tsx` ใหม่ 4 · `accessRequests.test.ts` +1 · `AccessRequestsPage.test.tsx` แทน 2 เคส Grant-for ด้วย 1 + stranded 1 · รอบ AZ: `AccessRequestsPage.test.tsx` 22 (+9) · `RequestNotices.test.tsx` ใหม่ 10 — ดูข้อ AZ.5 · รอบ AY: +10 `AriaRouter.test.tsx` · `AssetRequestAccess.test.tsx` 9 · +4 `AssetDetailPage.test.tsx` — ดูข้อ AY.5 · รอบ AX: +20 `SqlEditor.test.tsx` · +16 `RequestAccess.test.tsx` · +13 `AccessRequestsPage.test.tsx` · +5 `accessRequests.test.ts` · `sqlCompletion.test.ts` — ดูข้อ AX.8 · ก่อนหน้า: +7 `EnforcementPage.test.tsx` — dry run → apply ส่งแค่ reviewId · non-admin ไม่มีปุ่ม Apply / Roll back · apply ที่ถูกปฏิเสธล้าง review · rollback ต้องยืนยัน · +9 `policyFlow.test.ts` — ลำดับด่าน · selector ว่าง = 0 asset ไม่ใช่ทุก asset · subject ว่าง = `open` ไม่ใช่ `set` · "ไม่ผ่านด่าน" ต้องไม่อ่านว่า deny · +3 `PolicyFlowChart.test.tsx` — ไม่ส่ง `onEdit` ต้องไม่มีปุ่มใดๆ · ก่อนหน้านี้ +4 ใน `HomePersonasPage.test.tsx` — หน้าที่คนหนึ่งจัดหน้าจอให้อีกคน: admin เท่านั้นที่เห็น · ครบทั้ง 5 role ไม่ว่าจะตั้งไว้หรือยัง · ประโยค "starting point ไม่ใช่ override" · เซฟแล้วต้องลง role ที่เปิดอยู่เท่านั้น) | `npx jest` ใน `frontend/app` |
 
 `yarn type-check` · `yarn lint` · `yarn build` ผ่านหมด → **BUILD SUCCESS** ทั้งสองฝั่ง
 
@@ -381,7 +381,57 @@ M18 ก่อนเพิ่ม engine ตัวที่ 3 เสมอ
 
 ---
 
-## รอบนี้ — **ข้อ AZ: หน้า Access requests แบ่งเป็นแท็บ Inbox / My requests · กระดิ่งแจ้งเตือนจริง · ตัวเลขบนเมนู Requests** (+ ข้อ AY.6 เส้นคั่นแทนจุด — commit `04cbc93`)
+## รอบนี้ — **ข้อ BA: ตรวจบั๊ก Access Control (ผู้ใช้สั่ง "ตรวจหา Bug Access Control") · เอาแถบขอบซ้ายสีน้ำเงินออกทั้งแอป · เอาช่อง "Grant for … days" ออกจากการ Approve**
+
+ผู้ใช้ขอ: *"ตรวจหา Bug Access Control และทำตาม milestone ต่อ"* · *"แถบแบบนี้ดูเหมือน AI ทำมากไป"* / *"ไม่เอาขอบด้านหน้าสีน้ำเงิน เพราะมันเหมือน AI เป็นคนทำ"* · *"ตรง grant for ไม่ต้องใส่ก็ได้อะ"*
+
+### BA.1 🐛 บั๊กที่เจอ — ทุกตัว "เช็ค role แต่ลืมเช็ค scope" (มีแค่ `PolicyResource` ที่เทียบ scope)
+
+| # | จุด | บั๊ก | แก้ |
+|---|---|---|---|
+| A | `POST /v1/access/grants` | **ให้สิทธิ์ตัวเองได้** (หรือให้ group ที่ตัวเองอยู่ — ทางอ้อม) ทุก role รวม admin — ข้ามกติกา "Nobody decides their own request" ของ flow ขอสิทธิ์ | `GrantStore.reaches(username, principalId)` — recursive CTE เดียวกับ `heldBy` (ตัวเอง + group ทุกชั้น) → 403 *"Nobody grants themselves access"* |
+| B | `POST /v1/access/grants` · `POST /grants/{id}/revoke` | DATA_OWNER ของ `prod.Sales` **grant/revoke บน `prod.HR` ได้** | `Stewardship.governs(caller, fqn)` · revoke หา grant ด้วย `grants.find(id)` ก่อน (ไม่มี → 404 ไม่ใช่ 403) |
+| E | `POST /v1/decisions` (simulator "View as") | DATA_OWNER จำลองคนอื่นบน table ที่ไม่ได้เป็นเจ้าของได้ = อ่านแผนที่สิทธิ์ทั้งองค์กร | `Stewardship.oversees` — admin/author ทุกที่ · owner เฉพาะ scope · AUDITOR ทุกที่ (อ่านอย่างเดียว) · ถามเรื่องตัวเองได้เสมอ |
+| F | `/v1/enforcement/secure-views` list · `/state` · `/dry-run` | DATA_OWNER เห็น/dry-run ทุก table | list กรองเหลือเฉพาะที่ `governs` · state + dry-run → 403 นอก scope · apply/rollback เป็น PLATFORM_ADMIN อยู่แล้ว |
+| G | `AccessRequestStore.mayDecide` | owner เทียบชื่อทั้ง `who.is(name) \|\| who.hasTeam(name)` ไม่ดู `owner_type` → **สมาชิกของ team ชื่อ `owner_o` ตัดสินคำขอบน table ที่ *user* `owner_o` เป็นเจ้าของได้** (และ user ชื่อ `finance` ตัดสินแทน team Finance) | `owner_type = 'team'` → `hasTeam` เท่านั้น · `'user'` → `is` เท่านั้น |
+
+**ไม่แก้โดยตั้งใจ:** `GET /v1/access/assets/{fqn}` · `/history/{fqn}` · `/principals/{username}` ยังเปิดให้ทุกคนที่ login อ่าน — javadoc ของ `AccessResource` ตัดสินไว้แต่แรกว่า *"an access list is not a secret from the people governed by it"* ถ้าผู้ใช้อยากปิด ให้ใช้ `Stewardship.oversees` / `overseesEverything` ที่เตรียมไว้แล้ว
+
+### BA.1a 🐛 "ไม่มี owner → platform admin ตัดสิน" แต่ไม่ขึ้นใน Inbox ของ admin (ผู้ใช้รายงาน)
+- **สาเหตุ:** คำขอที่ค้างบน `demo-pg.salesdb.sales.customer` (ไม่มี owner) **ถูกขอโดย `admin` เอง** และ admin มีคนเดียว — กติกา "Nobody decides their own request" ตัดมันออกจาก Inbox ของคนขอ (ถูกต้อง) → **ไม่มีใครตัดสินได้เลย** แต่หน้าจอยังเขียนว่า *"a platform administrator decides"* = สัญญาคนที่ทำอะไรไม่ได้
+- **แก้:** `AccessRequestStore.nobodyElseDecides(requester, fqn)` — จริงเมื่อ owner ทุกคนคือผู้ขอเอง (user owner เท่านั้น — team อาจมีสมาชิกคนอื่น) **และ** ไม่มี PLATFORM_ADMIN (global, `enabled`) คนอื่น · `StoredRequest.stranded` (เฉพาะ PENDING) · `AccessEligibility.Verdict.stranded` + `QueryResource` ใส่ `stranded` ใน refusal
+- **UI:** `describeApprovers(approvers, stranded)` → *"No owner is recorded for this table and there is no other platform administrator, so nobody can decide this yet. Record an owner in OpenMetadata or add another administrator."* · หน้า request: ขั้น timeline เปลี่ยนเป็น **"Nobody can decide this yet"** สีแดง แทน "Waiting for a decision"
+- **ไม่ได้ทำ:** ให้ admin ตัดสินคำขอตัวเองเมื่อไม่มีใครอื่น — ขัดกับ separation of duty (FR-2.6) · ทางที่ถูกคือ fallback approver ที่ config ได้ใน **Access Request Workflow Design** (BA.6)
+- เทสต์: `AccessRequestIT.Deciding.stranded` (ไม่มี admin เลย → stranded · มี admin → ไม่ · admin คนเดียวขอเอง → stranded และไม่อยู่ใน Inbox ตัวเอง · เพิ่ม admin คนที่สอง → ไม่ · ตัดสินแล้ว → ไม่) · `accessRequests.test.ts` +1 · `AccessRequestsPage.test.tsx` +1
+
+### BA.2 ของใหม่
+- **`auth/Stewardship.java`** (dac-service) — คำตอบเดียวของ "ใครดูแล table นี้": `governs` (admin/POLICY_AUTHOR ทุกที่ · DATA_OWNER ตาม `scopes` เทียบทีละ segment ด้วย `Fqns.isDescendantOrSelf` → `prod.Sales` ≠ `prod.SalesArchive` · owner ที่ไม่มี scope = ไม่ได้เป็นเจ้าของอะไร) · `oversees` (= governs + AUDITOR) · `overseesEverything`
+- **`GrantStore.reaches`**
+- **Frontend `auth/stewardship.ts` `governs(user, fqn)`** — สำเนาฝั่ง UI (เทียบ `===` หรือ `startsWith(scope + '.')`) · `AccessTab.tsx` ซ่อนปุ่ม **Grant access** และ **Revoke** ถ้าไม่ governs (`GrantRow.onRevoke` เป็น optional) — server ยังเป็นตัวตัดสินจริง
+
+### BA.3 UI ตามที่ผู้ใช้สั่ง
+- **แถบขอบซ้ายสีน้ำเงินออกหมด** (ผู้ใช้: ดูเหมือน AI ทำ) — กล่อง *Reason* ในหน้า request → เป็นย่อหน้าธรรมดา `text-primary` ไม่มีกล่อง · แถว attribute ในหน้า Profile → เหลือกรอบปกติ · แถวที่เลือกในรายการ request → เหลือแค่พื้นสีอ่อน · **ห้ามกลับไปใช้ `border-l-4` / แถบ accent ซ้ายอีก** (ตัวที่เหลือใน `QueryPage.tsx:570` คือ drag handle ไม่ใช่ของตกแต่ง)
+- **เอาช่อง "Grant for … days" ออกจากแผง Your decision** — Approve ส่ง `days: request.requestedDays` (ระยะที่ขอ ซึ่งแสดงอยู่ในช่อง *For* ด้านบนแล้ว) · server ยังรับ `days` สั้นลงได้เหมือนเดิม · จะกลับมาอยู่ในขั้น Configure ของ M9 slice 2
+
+### BA.4 เทสต์
+- **`StewardshipTest`** 6 (unit) · **`StewardshipGuardsTest`** 11 (unit, Mockito — Grants 6 · Simulation 3 · Enforcement 2)
+- **`AccessRequestIT.Deciding`** +2 — `ownerTypeMatters` (team ชื่อเดียวกับ user owner ตัดสินไม่ได้ · owner จริงยังได้) · `grantReach` (ตรง · case-insensitive · group ซ้อน 2 ชั้น · null)
+- Frontend **`AccessTab.test.tsx`** ใหม่ 4 · `AccessRequestsPage.test.tsx` แทน 2 เคส shorten/bound ด้วย `leaves an open-ended ask open-ended` + assert ว่าไม่มีช่อง Grant days
+- ผล: ดูตาราง Current Progress (unit **713** · integration **217** · frontend **36 suites / 307 tests**)
+
+### BA.5 ⚠️ ผู้ใช้สั่งต่อ (2026-09-25) — M9 slice 2 ต้องเป็นแบบนี้
+> *"หลังจาก approve แล้ว ให้ส่งต่อไปที่คน Configure ไม่ใช่หรอ อันนี้ทำ auto เลยหรอ"* → ตอนนี้ (slice 1) **Approve ออก grant ทันที** (`grantForRequest` ใน `AccessRequestStore.approve`) — ยังไม่ใช่ที่ผู้ใช้ต้องการ
+> *"Data Access Request ให้มี 2 รูปแบบ คือ 1. Manual Configure (Default) ให้ Approve เสร็จ ส่งต่อไปที่คนทำ Configure แล้วมี Status อื่นอีก จนไปถึง ทำเสร็จ Completed 2. Automatically อันนี้ยาก ใส่เป็น Roadmap ไว้ก่อน"*
+
+### BA.6 ⚠️ ผู้ใช้ขอเพิ่ม (2026-09-25) — ยังไม่ได้ทำ เข้าคิวรวมกับ M9 slice 2
+1. **Access Request Workflow Design Configuration** — *"ส่งต่อได้หลายๆ คน … Configure การขอเป็นหลาย Step ได้ ทำได้ทั้งแบบ parallel, Sequence (need approve from all, need approve from only one, …)"*
+   → workflow template (ผูกกับ scope: ORG / domain / service / database / schema / table เหมือน policy) = ลำดับ **stage** · แต่ละ stage มี approver หลายคน (user / team / role / owner / steward / custodian ของ asset) + กติกา **ALL / ANY / N-of-M** · stage ต่อกันแบบ **sequence** หรือกลุ่ม **parallel** · fallback approver เมื่อไม่มี owner (แก้ BA.1a ถาวร) · ผู้ขอไม่นับเป็น approver ของตัวเองเสมอ · ต่อท้ายด้วยขั้น **Configure → COMPLETED** (BA.5)
+2. **Dashboard: ใครใกล้หมดสิทธิ์ใน table ไหน** — *"ถ้าเลือก 10 วัน ระบบจะแสดง User ที่ใกล้จะหมดอายุใน table อะไร"* + ตัวนับถอยหลัง → endpoint `GET /v1/access/grants/expiring?withinDays=N` (จาก `grant.valid_until`, กรองตาม `Stewardship.oversees`) + widget บน Dashboard
+3. **สถิติจำนวนการขอใช้ table** — *"อยากให้เก็บสถิติจำนวนที่ขอใช้ table ไว้ด้วย เผื่อเอาไว้ทำ Dashboard"* → `access_request` ไม่ลบแถวอยู่แล้ว = ข้อมูลดิบครบ (ขอ / อนุมัติ / ปฏิเสธ / ถอน ต่อ table ต่อช่วงเวลา) + `audit_query` นับการใช้จริง · ทำ endpoint สรุปรายวัน/ต่อ table ตอนทำ Dashboard
+
+→ slice 2: **Manual Configure เป็น default** — `PENDING → APPROVED (รอ configure) → IN_PROGRESS → COMPLETED` (+ REJECTED / WITHDRAWN / CANCELLED) · คน configure = Owner / Steward / Custodian · **Automatically = Roadmap เท่านั้น** ห้ามทำตอนนี้
+
+## รอบก่อนหน้า — **ข้อ AZ: หน้า Access requests แบ่งเป็นแท็บ Inbox / My requests · กระดิ่งแจ้งเตือนจริง · ตัวเลขบนเมนู Requests** (+ ข้อ AY.6 เส้นคั่นแทนจุด — commit `04cbc93`)
 
 ผู้ใช้ขอ: *"หน้า Access Request แบ่ง Sub tab ในหน้าจอให้ดีไหม ว่าเป็น My Request, Inbox / และต้องมี Notification ด้วย / ออกแบบหน้านี้ให้สวยหน่อย"* และก่อนหน้านั้น *"จุดพวกนี้คือะไรอะ ไม่สวย"* (จุด `·` คั่นข้อมูลบนหัวหน้า asset — ลอกสไตล์ OM มา → เปลี่ยนเป็นเส้นแนวตั้งบางๆ แล้วใน `04cbc93`)
 
@@ -573,7 +623,7 @@ pattern ที่ใช้ซ้ำ — **รอบถัดไปใช้ช�
 1. **Approve = ตัดสินใจเท่านั้น แล้วค่อย Fulfil** — Approve บันทึกการตัดสินใจ สถานะเป็น APPROVED (รอ fulfil) · Owner / Steward / Custodian เลือกวิธี fulfil จาก suggestion: (ก) ออก grant ที่กรอกไว้ให้แล้ว (ข) เพิ่มคน/กลุ่มเข้า policy ที่มีอยู่ (ค) สร้าง policy ใหม่เป็น **Draft** เข้า lifecycle ปกติ · โชว์ conflict ก่อนลงมือ · ปิดคำขอ (FULFILLED) เมื่อทำเสร็จจริงเท่านั้น
 2. **Steward / Custodian = Custom Property ใน OM** — custom property ชนิด user/team บน table (default ชื่อ `dataSteward` / `dataCustodian`) · sync read-only · ตกทอดจาก schema/database แบบ facet อื่น · ชื่อ property ตั้งได้ใน Settings
 
-แผนที่จะทำ: V22 (สถานะ FULFILLED, `approved_days`, `fulfilled_by/at`, `fulfilment_kind` GRANT / POLICY_UPDATED / POLICY_CREATED, `fulfilment_ref`, คลาย `access_request_approved_has_grant`) · `GET /{id}/review` (ข้อมูลผู้ขอ: attribute / group / team / role / grant ที่มี / คำขอที่ผ่านมา · ข้อมูล asset: tag / tier / domain / owner / steward / custodian · impact: ถ้าได้สิทธิ์จะเห็นอะไร column ไหนถูก mask แถวไหนถูกกรอง · risk แบบ rule-based อธิบายได้ · suggestion · conflict) · `POST /{id}/fulfil` · หน้า review · ไอคอน Inbox + badge บน header
+แผนที่จะทำ (**migration V23** — V22 ถูกใช้โดย notices แล้ว · ผู้ใช้ตัดสินแล้วว่า **Manual Configure = default, Automatic = Roadmap** ดูข้อ BA.5 · ต้องรวมกับ Workflow Design ข้อ BA.6): V23 (สถานะ FULFILLED, `approved_days`, `fulfilled_by/at`, `fulfilment_kind` GRANT / POLICY_UPDATED / POLICY_CREATED, `fulfilment_ref`, คลาย `access_request_approved_has_grant`) · `GET /{id}/review` (ข้อมูลผู้ขอ: attribute / group / team / role / grant ที่มี / คำขอที่ผ่านมา · ข้อมูล asset: tag / tier / domain / owner / steward / custodian · impact: ถ้าได้สิทธิ์จะเห็นอะไร column ไหนถูก mask แถวไหนถูกกรอง · risk แบบ rule-based อธิบายได้ · suggestion · conflict) · `POST /{id}/fulfil` · หน้า review · ไอคอน Inbox + badge บน header
 **suggestion ห้าม activate policy เอง** (กติกาเดียวกับ FR-2.6 / LLM) — สร้างได้แค่ Draft
 
 ### AX.10 กับดักที่เจอรอบนี้
@@ -4782,6 +4832,7 @@ estate ที่ใช้: `prod-mssql.SalesDB.dbo.{customer, order}` + **`prod-
 
 เขียนไว้ตรงนี้เพราะทุกข้อ **ดูเหมือนทำงานปกติจากข้างนอก** — เป็นชนิดที่จะถูกค้นพบตอนผิดแล้ว ถ้าไม่จด
 
+0. **(ข้อ BA) engine `SubjectMatcher.isOwner` ยังเทียบชื่อ owner ทั้งแบบ user และ team** — facet `OWNERS` (`FacetValue`) ไม่มี `owner_type` ติดมา จึงแยกไม่ได้ว่า `owner_o` เป็น user หรือ team → policy ที่ใช้ `assetOwner: true` ยังปล่อยสมาชิกของ team ที่ชื่อชนกับ user owner เข้าได้ · `mayDecide` ของคำขอแก้แล้ว (อ่าน `asset_owner.owner_type` ตรง) · ทางแก้: เพิ่ม type ลงใน facet value ตอน materialize (`user:owner_o` / `team:Finance`) แล้วแก้ `isOwner` + เทสต์ใน `SubjectRuleTest`
 1. **`scopeFqn` ของ policy ระดับ DOMAIN / SERVICE / DATABASE ถูกใช้เป็น prefix ของ FQN ทางกายภาพ** — ผูก policy ไว้ที่ชื่อ domain (`Finance.Risk`) มันจะ bind ไม่ติดอะไรเลย ทั้งที่หน้าจอดูเหมือนสร้างสำเร็จ ต้องแยก scope เชิง governance ออกจาก scope เชิงกายภาพ
 2. **ยังไม่มี write API สำหรับ *attribute* ของ local principal (FR-2.2) และการติด facet แบบ local (FR-1.7)** — *account กับ app role เขียนได้แล้วตั้งแต่หัวข้อ W* แต่ `principal_attribute` ของ `analyst_a` / `steward_c` และ tag ของ demo ยังถูก seed ด้วย SQL ตรงๆ ไม่มีทางทำผ่าน UI → **ABAC ครึ่งฝั่ง user ยังแก้จากหน้าจอไม่ได้**
 3. ~~**`PolicyResource.affecting` default `environment` เป็น `"dev"`**~~ — **แก้แล้วรอบนี้ (ข้อ X.2)** ทุก endpoint ใช้ `environmentOr()` ที่ fallback เป็น `DecisionService.DEFAULT_ENVIRONMENT` และฝั่ง TS default เป็น `'prod'`

@@ -66,7 +66,7 @@ export default function RequestAccess({
           </p>
           <p className="tw:mt-0.5 tw:text-sm tw:text-tertiary">
             {catalog && 'The owner can let you in. '}
-            {describeApprovers(refusal.approvers)}
+            {describeApprovers(refusal.approvers, refusal.stranded)}
           </p>
         </div>
         <Button color="primary" iconLeading={Send01} onPress={() => setAsking(true)} size="sm">
@@ -163,7 +163,7 @@ export function RequestAccessForm({
 
       <div className="tw:flex tw:flex-col tw:gap-4 tw:px-4 tw:py-4">
         <p className="tw:text-sm tw:text-tertiary">
-          {describeApprovers(refusal.approvers)}{' '}
+          {describeApprovers(refusal.approvers, refusal.stranded)}{' '}
           {catalog
             ? 'Say what the data is for; that is what they decide on.'
             : 'The statement you ran and the refusal go with the request, so they can see what you were trying to do.'}
@@ -259,7 +259,9 @@ export function RequestedNote({
     <Note className={className} icon={CheckCircle} tone="success">
       <span className="tw:font-semibold">{sent ? 'Request sent' : 'Already requested'}</span>{' '}
       for <span className="tw:font-mono">{refusal.assetFqn}</span>.{' '}
-      {describeApprovers(sent?.approvers ?? refusal.approvers)} You will be let in once it is
+      {sent
+        ? describeApprovers(sent.approvers, sent.stranded)
+        : describeApprovers(refusal.approvers, refusal.stranded)} You will be let in once it is
       approved — follow it under{' '}
       <Link className="tw:font-semibold tw:text-brand-secondary tw:hover:underline" to="/requests">
         Access requests

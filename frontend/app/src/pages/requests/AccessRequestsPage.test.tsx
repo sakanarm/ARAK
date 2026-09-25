@@ -57,6 +57,7 @@ function request(overrides: Partial<AccessRequest> = {}): AccessRequest {
     grantId: null,
     approvers: [{ type: 'team', name: 'Finance', direct: true, inheritedFrom: null }],
     mayDecide: true,
+    stranded: false,
     ...overrides,
   };
 }
@@ -230,8 +231,8 @@ describe('AccessRequestsPage inbox', () => {
     fetchInbox.mockResolvedValue([request()]);
     approve.mockResolvedValue(request({ status: 'APPROVED' }));
     renderPage('/requests?tab=inbox');
-    const days = (await screen.findByLabelText('Grant days')) as HTMLInputElement;
-    expect(days.value).toBe('30');
+    await screen.findByRole('button', { name: 'Approve' });
+    expect(screen.queryByLabelText('Grant days')).toBeNull();
 
     fireEvent.change(screen.getByLabelText('Note to the requester'), {
       target: { value: ' Until the audit closes ' },
@@ -246,50 +247,12 @@ describe('AccessRequestsPage inbox', () => {
     await waitFor(() => expect(fetchNotices.mock.calls.length).toBeGreaterThanOrEqual(2));
   });
 
-  it('lets the owner give less time than asked, never more', async () => {
-    fetchInbox.mockResolvedValue([request({ requestedDays: 30 })]);
-    approve.mockResolvedValue(request({ status: 'APPROVED' }));
-    renderPage('/requests?tab=inbox');
-    const days = await screen.findByLabelText('Grant days');
-    const approveButton = screen.getByRole('button', { name: 'Approve' });
-
-    fireEvent.change(days, { target: { value: '31' } });
-    expect(approveButton).toBeDisabled();
-    expect(
-      screen.getByText('Between 1 and 30 days — no longer than was asked.')
-    ).toBeInTheDocument();
-
-    // A bounded ask cannot be turned into a grant until revoked.
-    fireEvent.change(days, { target: { value: '' } });
-    expect(approveButton).toBeDisabled();
-
-    fireEvent.change(days, { target: { value: '0' } });
-    expect(approveButton).toBeDisabled();
-
-    fireEvent.change(days, { target: { value: '7' } });
-    expect(approveButton).toBeEnabled();
-    fireEvent.click(approveButton);
-
-    await waitFor(() => expect(approve).toHaveBeenCalledWith('req-1', { days: 7, note: null }));
-  });
-
-  it('may leave an open-ended ask open-ended, or bound it', async () => {
+  it('leaves an open-ended ask open-ended', async () => {
     fetchInbox.mockResolvedValue([request({ requestedDays: null })]);
     approve.mockResolvedValue(request({ status: 'APPROVED' }));
     renderPage('/requests?tab=inbox');
-    const days = (await screen.findByLabelText('Grant days')) as HTMLInputElement;
-    const approveButton = screen.getByRole('button', { name: 'Approve' });
-    expect(days.value).toBe('');
-    expect(approveButton).toBeEnabled();
 
-    fireEvent.change(days, { target: { value: '366' } });
-    expect(approveButton).toBeDisabled();
-    expect(
-      screen.getByText('Between 1 and 365 days, or blank for until revoked.')
-    ).toBeInTheDocument();
-
-    fireEvent.change(days, { target: { value: '' } });
-    fireEvent.click(approveButton);
+    fireEvent.click(await screen.findByRole('button', { name: 'Approve' }));
     await waitFor(() => expect(approve).toHaveBeenCalledWith('req-1', { days: null, note: null }));
   });
 
@@ -386,6 +349,16 @@ describe('AccessRequestsPage my requests', () => {
     await detail();
     expect(screen.queryByRole('button', { name: 'Approve' })).toBeNull();
     expect(screen.getByRole('button', { name: 'Withdraw' })).toBeInTheDocument();
+  });
+
+  it('says plainly when nobody else can decide an administrator’s own request', async () => {
+    fetchMine.mockResolvedValue([request({ mayDecide: false, approvers: [], stranded: true })]);
+    renderPage('/requests?tab=mine');
+
+    const card = await detail();
+    expect(within(card).getByText('Nobody can decide this yet')).toBeInTheDocument();
+    expect(within(card).getByText(/there is no other platform administrator/)).toBeInTheDocument();
+    expect(within(card).queryByText('Waiting for a decision')).toBeNull();
   });
 
   it('offers no withdraw once a request is decided', async () => {

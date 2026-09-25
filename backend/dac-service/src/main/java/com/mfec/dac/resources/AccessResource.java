@@ -4,6 +4,7 @@ import com.mfec.dac.access.AccessQuery;
 import com.mfec.dac.access.GrantStore;
 import com.mfec.dac.auth.AuthenticatedUser;
 import com.mfec.dac.auth.Secured;
+import com.mfec.dac.auth.Stewardship;
 import jakarta.ws.rs.BadRequestException;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.DefaultValue;
@@ -34,7 +35,8 @@ import java.util.UUID;
  * <p>Reading is open to any authenticated caller: an access list is not a
  * secret from the people governed by it, and hiding it is how organisations end
  * up with access nobody reviews. Writing is restricted to the three roles that
- * may change who sees data.
+ * may change who sees data -- and, for a data owner, only on the tables they
+ * own ({@link Stewardship}).
  */
 @Path("/v1/access")
 @Produces(MediaType.APPLICATION_JSON)
@@ -119,6 +121,18 @@ public class AccessResource {
     if (request.principalId() == null) {
       throw new BadRequestException("Name the person or group this grant is for");
     }
+    if (!Stewardship.governs(actor, request.assetFqn())) {
+      throw new ForbiddenException(
+          "You can grant only on tables you own; " + request.assetFqn() + " is not one of them");
+    }
+    // The request flow already refuses to let anyone decide their own request.
+    // A direct grant is the same act without the paperwork, so the same line
+    // holds here -- including a grant to a group the granter is in, which would
+    // otherwise be the way round it.
+    if (grants.reaches(actor.username(), request.principalId())) {
+      throw new ForbiddenException(
+          "Nobody grants themselves access; ask another owner or an administrator");
+    }
     GrantStore.StoredGrant created;
     try {
       created =
@@ -158,6 +172,14 @@ public class AccessResource {
     String why = request == null ? null : request.reason();
     if (why == null || why.isBlank()) {
       throw new BadRequestException("Say why this grant is being revoked");
+    }
+    GrantStore.StoredGrant existing =
+        grants
+            .find(id)
+            .orElseThrow(() -> new NotFoundException("No grant " + id + " is outstanding"));
+    if (!Stewardship.governs(actor, existing.assetFqn())) {
+      throw new ForbiddenException(
+          "You can revoke only on tables you own; " + existing.assetFqn() + " is not one of them");
     }
     return grants
         .revoke(id, actor.username(), why)

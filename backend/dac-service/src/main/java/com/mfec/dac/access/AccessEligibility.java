@@ -42,6 +42,8 @@ public class AccessEligibility {
    * @param approvers who would decide a request, per OpenMetadata; empty means
    *     no owner is recorded and a platform administrator decides
    * @param openRequestId the caller's request that is already waiting, if any
+   * @param stranded nobody but the caller could decide a request: no owner
+   *     other than them and no other administrator
    */
   public record Verdict(
       String assetFqn,
@@ -49,7 +51,8 @@ public class AccessEligibility {
       boolean requestable,
       String blockedBy,
       List<AccessRequestStore.Approver> approvers,
-      String openRequestId) {}
+      String openRequestId,
+      boolean stranded) {}
 
   /** Just the first half, for listing many tables at once: can this person read it now. */
   public boolean readable(String username, String assetFqn, String ip, String purpose) {
@@ -62,7 +65,7 @@ public class AccessEligibility {
   public Verdict check(String username, String assetFqn, String ip, String purpose) {
     DecisionService.Ask ask = new DecisionService.Ask(username, assetFqn, null, ip, purpose, null);
     if (Boolean.TRUE.equals(decisions.decide(ask).getAllowed())) {
-      return new Verdict(assetFqn, true, false, null, List.of(), null);
+      return new Verdict(assetFqn, true, false, null, List.of(), null, false);
     }
     PolicyDecision ifGranted = decisions.decideAsIfGranted(ask);
     boolean requestable = Boolean.TRUE.equals(ifGranted.getAllowed());
@@ -74,7 +77,8 @@ public class AccessEligibility {
         requestable,
         requestable ? null : blocker(ifGranted),
         requests.approversFor(assetFqn),
-        open);
+        open,
+        requestable && requests.nobodyElseDecides(username, assetFqn));
   }
 
   /**

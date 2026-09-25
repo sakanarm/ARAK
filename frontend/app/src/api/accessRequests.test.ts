@@ -48,4 +48,11 @@ describe('describeApprovers', () => {
     expect(describeApprovers([])).toBe(fallback);
     expect(describeApprovers(undefined)).toBe(fallback);
   });
+
+  it('promises nobody when only the requester could decide', () => {
+    expect(describeApprovers([], true)).toMatch(/^No owner is recorded .* nobody can decide this yet/);
+    expect(
+      describeApprovers([{ type: 'user', name: 'admin', direct: true, inheritedFrom: null }], true)
+    ).toMatch(/^Only the requester owns this table/);
+  });
 });

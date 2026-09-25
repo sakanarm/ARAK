@@ -2,6 +2,7 @@ package com.mfec.dac.resources;
 
 import com.mfec.dac.auth.AuthenticatedUser;
 import com.mfec.dac.auth.Secured;
+import com.mfec.dac.auth.Stewardship;
 import com.mfec.dac.enforcement.SecureViewService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.ws.rs.BadRequestException;
@@ -31,7 +32,8 @@ import java.util.UUID;
  *
  * <p>Reading the state and running a dry run is open to the people who write
  * and own policy, because a dry run is how they find out what their policy
- * does to a real table. Applying and rolling back are for platform
+ * does to a real table -- a data owner on the tables they own, and only those.
+ * Applying and rolling back are for platform
  * administrators only: they run DDL on a customer's database under the
  * platform's own credential, and the person who wrote a policy is not the
  * person who should be able to put it in front of production by themselves
@@ -60,18 +62,27 @@ public class EnforcementResource {
 
   @GET
   public Map<String, Object> list(
-      @QueryParam("q") String search, @DefaultValue("200") @QueryParam("limit") int limit) {
-    List<SecureViewService.Candidate> candidates = views.candidates(search, limit);
+      @QueryParam("q") String search,
+      @DefaultValue("200") @QueryParam("limit") int limit,
+      @Context SecurityContext security) {
+    AuthenticatedUser caller = caller(security);
+    List<SecureViewService.Candidate> candidates =
+        views.candidates(search, limit).stream()
+            .filter(candidate -> Stewardship.governs(caller, candidate.assetFqn()))
+            .toList();
     return Map.of("data", candidates, "populationLimit", SecureViewService.POPULATION_LIMIT);
   }
 
   @GET
   @Path("/state")
   public Map<String, Object> state(
-      @QueryParam("fqn") String fqn, @DefaultValue("50") @QueryParam("limit") int limit) {
+      @QueryParam("fqn") String fqn,
+      @DefaultValue("50") @QueryParam("limit") int limit,
+      @Context SecurityContext security) {
     if (fqn == null || fqn.isBlank()) {
       throw new BadRequestException("Say which table: ?fqn=…");
     }
+    requireGoverns(caller(security), fqn);
     Map<String, Object> body = new LinkedHashMap<>();
     body.put("assetFqn", fqn.trim());
     body.put("state", views.state(fqn.trim()).orElse(null));
@@ -87,6 +98,7 @@ public class EnforcementResource {
     if (target == null || target.assetFqn() == null || target.assetFqn().isBlank()) {
       throw new BadRequestException("Send {\"assetFqn\": \"service.database.schema.table\"}");
     }
+    requireGoverns(caller, target.assetFqn());
     try {
       return views.dryRun(target.assetFqn(), caller.getName(), clientIp(request));
     } catch (RuntimeException e) {
@@ -134,6 +146,13 @@ public class EnforcementResource {
       return views.rollback(target.assetFqn().trim(), caller.getName(), clientIp(request));
     } catch (RuntimeException e) {
       throw translate(e);
+    }
+  }
+
+  private static void requireGoverns(AuthenticatedUser caller, String fqn) {
+    if (!Stewardship.governs(caller, fqn)) {
+      throw new ForbiddenException(
+          "You can review enforcement only on tables you own; " + fqn.trim() + " is not one of them");
     }
   }
 

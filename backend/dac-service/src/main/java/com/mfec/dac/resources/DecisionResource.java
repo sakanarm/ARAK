@@ -2,6 +2,7 @@ package com.mfec.dac.resources;
 
 import com.mfec.dac.auth.AuthenticatedUser;
 import com.mfec.dac.auth.Secured;
+import com.mfec.dac.auth.Stewardship;
 import com.mfec.dac.policy.DecisionService;
 import com.mfec.dac.schema.api.PolicyDecision;
 import jakarta.ws.rs.BadRequestException;
@@ -26,7 +27,8 @@ import java.time.format.DateTimeParseException;
  * <p>Asking about yourself needs nothing. Asking about somebody else needs
  * authority over policy, because the answer describes another person's access
  * and, read across enough assets, is itself a map of the organisation's
- * permissions.
+ * permissions. A data owner has that authority over the tables they own and no
+ * others; an auditor has it everywhere, to read.
  */
 @Path("/v1/decisions")
 @Produces(MediaType.APPLICATION_JSON)
@@ -57,10 +59,10 @@ public class DecisionResource {
         ask.principal() == null || ask.principal().isBlank() ? caller.getName() : ask.principal();
 
     if (!subject.equalsIgnoreCase(caller.getName())
-        && !caller.isPlatformAdmin()
-        && !caller.hasAnyRole("POLICY_AUTHOR", "DATA_OWNER", "AUDITOR")) {
+        && !Stewardship.oversees(caller, ask.assetFqn())) {
       throw new ForbiddenException(
-          "Simulating another principal's access needs POLICY_AUTHOR, DATA_OWNER or AUDITOR");
+          "Simulating another principal's access needs POLICY_AUTHOR or AUDITOR, or DATA_OWNER of "
+              + ask.assetFqn().trim());
     }
 
     return decisions.decide(

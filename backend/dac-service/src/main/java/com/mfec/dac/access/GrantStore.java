@@ -192,6 +192,41 @@ public class GrantStore {
                 .list());
   }
 
+  /**
+   * Whether a grant to {@code principalId} would reach {@code username}: it is
+   * them, or a group they belong to directly or through another group.
+   *
+   * <p>The same walk as {@link #heldBy}, so "would this grant be mine" and
+   * "what do I hold" cannot disagree -- which is what keeps a grant to a group
+   * of one from being a way round the rule that nobody grants to themselves.
+   */
+  public boolean reaches(String username, UUID principalId) {
+    if (username == null || principalId == null) {
+      return false;
+    }
+    return jdbi.withHandle(
+        handle ->
+            handle
+                .createQuery(
+                    """
+                    WITH RECURSIVE me AS (
+                      SELECT id FROM principal WHERE lower(username) = lower(:username)
+                    ),
+                    reachable AS (
+                        SELECT id AS principal_id FROM me
+                      UNION
+                        SELECT m.group_id
+                        FROM group_member m
+                        JOIN reachable r ON m.member_id = r.principal_id
+                    )
+                    SELECT EXISTS (SELECT 1 FROM reachable WHERE principal_id = :principal)
+                    """)
+                .bind("username", username)
+                .bind("principal", principalId)
+                .mapTo(Boolean.class)
+                .one());
+  }
+
   public Optional<StoredGrant> find(UUID id) {
     return jdbi.withHandle(
         handle ->
