@@ -293,15 +293,40 @@ conf/dac.yml                 config เดียวที่ commit — ใช�
 - PostgreSQL ไม่มี column masking ใน core → ต้องลง extension `anon` (managed service หลายเจ้าไม่ให้) — **ยังไม่ยืนยันว่าลงได้ไหม**
 - โหมด 5.2 ถูก bypass ได้ถ้าต่อ DB ตรง → ต้อง firewall + ระบบต้องตรวจและเตือน (FR-6.3.1)
 
-### FR-7 Manual Grant (Phase 1) — M8 ⬜
+### FR-7 Manual Grant (Phase 1) — M8 ✅ เสร็จ (grant ตรง + auto-revoke + audit trail + หน้าจอ)
 FR-7.1 owner สร้าง grant ตรงๆ พร้อม `validFrom`/`validUntil` + เหตุผล · FR-7.2 job auto-revoke · FR-7.3 หน้า "สิทธิ์ของฉัน" / "ใครมีสิทธิ์ใน asset นี้"
 (ตาราง `access_grant` มี `source` = manual|request และ `request_id` nullable ไว้แล้วเพื่อไม่ต้อง migrate ตอน Phase 2)
 
-### FR-8 Audit & Compliance — M8 ⬜
+### FR-8 Audit & Compliance — M8 🚧 (เขียน audit ครบแล้ว · query log อ่านได้ใน M10 · compliance report / SIEM ⬜)
 policy change log (append-only, ค่าเดิม→ค่าใหม่) · access decision log · query log (SQL ต้นฉบับ + หลัง rewrite) · export ไป SIEM · compliance report ("ใครเข้าถึง PII ได้บ้าง", "table ที่มี tag PII แต่ยังไม่มี policy", "สิทธิ์ที่ไม่ได้ใช้เกิน 90 วัน")
 
 ### FR-9 Policy Lifecycle — ⬜
 state `DRAFT → PENDING_APPROVAL → ACTIVE → DISABLED → ARCHIVED` ✅ (มีใน schema) · version + diff + rollback (ตาราง `policy_version` มีแล้ว) · **Policy-as-Code** export/import YAML · แยก environment dev/uat/prod + promote
+
+### FR-11 Access Request Management — M9 🚧 ~75% · M13 ✅
+ขอสิทธิ์เอง · workflow หลาย step ต่อ scope (ALL / ANY / AT_LEAST n · Reject เลือกได้ต่อ stage) · inbox + กระดิ่ง · review ก่อนตอบ · กัน grant ที่ policy ยังปฏิเสธ ·
+Dashboard ใครใกล้หมดสิทธิ์ + นับถอยหลัง · สถิติคำขอต่อ table · ปุ่มขอสิทธิ์จากจุดที่โดนปฏิเสธ (M13)
+- **FR-11.1 ไฟล์แนบ** ⬜ (ผู้ใช้ขอ 2026-09-25) — ไม่บังคับโดย default · workflow step ตั้งได้ว่าต้องแนบ · เก็บบน disk ของ server (ชื่อไฟล์เป็น UUID · เข้ารหัส · ≤ 10 MB · ≤ 5 ไฟล์ ·
+  ตรวจชนิดจาก magic bytes) · ดาวน์โหลดได้เฉพาะคนขอ / approver / admin / auditor เป็น `attachment` + `nosniff` เท่านั้น · ลบไม่ได้หลังตัดสินแล้ว · audit ทุก upload / download
+- ยังไม่ทำ: recertification ทุก 90 วัน · break-glass · email / Teams
+
+### FR-12 Access Control Models — DAC / MAC / RBAC / ABAC
+| Model | สถานะ | ที่อยู่ |
+|---|---|---|
+| DAC | ✅ | owner ให้ grant เอง + อนุมัติคำขอ · แต่ให้ทะลุ policy กลางไม่ได้ |
+| RBAC | ✅ | `principals` / `requiredPrincipals`: `role` · `team` · `group` · `user` · `assetOwner` |
+| ABAC | ✅ | `attributes` · `expression` · `time` · `context.ipCidr` / `purpose` |
+| MAC | ⚠️ บางส่วน → **M20** | ORG-level DENY ได้ แต่ `gte` เรียงตามตัวอักษร (`Public < Internal < Confidential < Secret` เรียงผิด) · ยังไม่มี sensitivity scheme ที่เรียงลำดับได้ · ยังไม่มี guardrail no-read-up ระดับองค์กร |
+
+### FR-13 Anomalous Access Detection — M19 ⬜
+baseline ต่อคน และต่อคน × table (ปริมาณแถว · ชั่วโมงที่ใช้ · table ที่แตะ · อัตราโดนปฏิเสธ · รูปแบบ SQL · peer group) · risk score 0–100 พร้อมเหตุผลทีละข้อ ·
+ตอบสนอง ALERT / STEP_UP (ผ่าน flow ของ M9) / BLOCK + พักสิทธิ์ · **block ทันทีได้เฉพาะทาง proxy 5.2** (native ตรวจย้อนหลัง) · shadow mode ก่อนเสมอ ·
+ตัวตรวจล่มต้องไม่ทำให้ query ทั้งองค์กรพัง · baseline เป็นข้อมูลส่วนบุคคล (PDPA) · role ใหม่ `SECURITY_ANALYST` · LLM อธิบายเหตุผลเท่านั้น ไม่สั่ง block
+
+### FR-14 AI Data Access Control — M21 ⬜
+AI model / agent ดึงข้อมูลได้ไม่เกินสิทธิ์ของ user ที่มันทำงานแทน · agent registry (เพดานสิทธิ์ · วันหมดอายุ · kill switch · tool ที่อนุญาต) ·
+delegated token (RFC 8693, claim `act`) · ARAK MCP server (`search_assets` · `describe_asset` · `run_query` · `request_access` เป็นร่าง) · `purpose = ai-agent` ใช้ ABAC ที่มีอยู่ ·
+AI output guard (PII ใน prompt / output / citation) · pre-filter สำหรับ vector store · retention ตาม label (M20) · anomaly ต่อ agent (M19)
 
 ### FR-10 Non-Functional
 | # | | สถานะ |
@@ -316,18 +341,33 @@ state `DRAFT → PENDING_APPROVAL → ACTIVE → DISABLED → ARCHIVED` ✅ (ม
 
 ## 6. แผน Milestone และสถานะจริง
 
+สถานะ ณ 2026-09-25 · รายละเอียดทีละรอบอยู่ใน `HANDOFF.md`
+
 | M | งาน | ประเมิน | สถานะ |
 |---|---|---|---|
 | **M0** | Maven multi-module + Dropwizard skeleton · Vite+React+Tailwind shell + vendor ui-core-components · JSON Schema codegen · OM client จาก swagger · Flyway · docker-compose · CI | 3 wk | ✅ **เสร็จ** |
-| **M1** | OM connector: REST client · entity mapper ครบทุก governance object · FQN mapping · full crawl · **webhook + poller** · `asset_facet` + effective facet · nightly reconcile · **Catalog UI** | 4 wk | 🚧 **~85%** — เหลือ Catalog UI + FR-1.6 + FR-1.7 |
-| **M2** | Entra OIDC · Graph sync · LocalProvider · OmTeamProvider · AttributeResolver · app RBAC | 2 wk | ⬜ (local auth ทำไปแล้ว) |
-| **M3** | Policy IR · AssetSelector resolver + `policy_binding` materializer · SubjectRule evaluator · layered composer · ConflictResolver · decision cache · Simulator | 5 wk | 🚧 **~97%** — engine 156 tests · persistence + materializer + **decision cache เสร็จ** · เหลือ ANTLR grammar ของ `expr` |
-| **M4** | Policy Authoring UI (global + local builder, data policy builder, หน้า effective policy, view-as-user, impact analysis) | 4 wk | ⬜ |
-| **M5** | **5.1.2 Secure View** — ViewCompiler + dialect · `row_entitlement` maintainer · `DbPrincipalProvisioner` · cutover helper · dry-run/rollback · golden-file + Testcontainers | 4 wk | ⬜ |
-| **M6** | **5.1.1 Push config** — PG `CREATE POLICY` + column GRANT + `anon` · MSSQL `CREATE SECURITY POLICY` + granular UNMASK + `CREATE USER FROM EXTERNAL PROVIDER` · capability matrix · **ไม่ทำ DDM** (FR-6.2a) | 3 wk | ⬜ **เลื่อหลัง M5/M7 · opt-in ต่อ source** |
-| **M7** | **5.2a Query API** — JSqlParser rewrite · table resolution (CTE/sub-query/`SELECT *`) · fail-closed · stream · row limit/timeout · direct-access detector | 3 wk | ⬜ |
-| **M7b** | Cross-mode consistency harness + CI | 1 wk | ⬜ |
-| **M8** | Audit 3 ตาราง · DriftDetector + re-apply · manual grant + auto-revoke · compliance report · metrics · Vault | 3 wk | ⬜ |
+| **M1** | OM connector: REST client · entity mapper ครบทุก governance object · FQN mapping · full crawl · **webhook + poller** · `asset_facet` + effective facet · nightly reconcile · **Catalog UI** | 4 wk | 🚧 **~95%** — เหลือ FR-1.6 (reconcile กับ JDBC) · FR-1.7 push-back (ผู้ใช้สั่ง read-only) |
+| **M2** | Entra OIDC · Graph sync · LocalProvider · OmTeamProvider · AttributeResolver · app RBAC | 2 wk | 🚧 **~50%** — local sign-in + local account + app role จาก UI · ยังไม่มี Entra / Graph / write API ของ attribute |
+| **M3** | Policy IR · AssetSelector resolver + `policy_binding` materializer · SubjectRule evaluator · layered composer · ConflictResolver · decision cache · Simulator | 5 wk | 🚧 **~97%** — เหลือ ANTLR grammar ของ `expr` |
+| **M4** | Policy Authoring UI (global + local builder, data policy builder, หน้า effective policy, view-as-user, impact analysis) | 4 wk | ✅ **เสร็จ** |
+| **M5** | **5.1.2 Secure View** — ViewCompiler + dialect · `row_entitlement` maintainer · `DbPrincipalProvisioner` · cutover helper · dry-run/rollback · golden-file + Testcontainers | 4 wk | 🚧 **~85%** |
+| **M6** | **5.1.1 Push config** — PG `CREATE POLICY` + column GRANT + `anon` · MSSQL `CREATE SECURITY POLICY` + granular UNMASK + `CREATE USER FROM EXTERNAL PROVIDER` · capability matrix · **ไม่ทำ DDM** (FR-6.2a) | 3 wk | ⏸️ **ON HOLD** (ผู้ใช้สั่ง 2026-09-24) |
+| **M7** | **5.2a Query API** — JSqlParser rewrite · table resolution (CTE/sub-query/`SELECT *`) · fail-closed · stream · row limit/timeout · direct-access detector | 3 wk | 🚧 **~80%** — เหลือ direct-access detector · result cache |
+| **M7b** | Cross-mode consistency harness + CI | 1 wk | ⬜ ต้องมี M5 / M6 ก่อน |
+| **M8** | Audit 3 ตาราง · DriftDetector + re-apply · manual grant + auto-revoke · compliance report · metrics · Vault | 3 wk | 🚧 **~35%** |
+| **M9** | Access Request Management (FR-11) — ขอสิทธิ์ · workflow หลาย step · inbox · review · Dashboard ใกล้หมดสิทธิ์ · สถิติต่อ table · **ไฟล์แนบ** | – | 🚧 **~75%** — เหลือไฟล์แนบ · recertification · break-glass · email / Teams |
+| **M10** | Access Control Dashboard — Coverage · Exposure · Activity · Health · **Query log** | – | 🚧 **เริ่มรอบนี้** |
+| **M11** | LLM Assist — per-user gateway | – | 🚧 **~60%** |
+| **M12** | Home ที่จัดเองได้ต่อ account | – | ✅ **เสร็จ** |
+| **M13** | Request access จากจุดที่โดนปฏิเสธ | – | ✅ **เสร็จ** |
+| **M14** | Public API + Swagger + Org Key | – | ⬜ |
+| **M15** | LLM อธิบาย policy และ dashboard | – | ⬜ ต้องมี M10 (ส่วน dashboard) |
+| **M16** | LLM ช่วยหา asset จากสิ่งที่อยากได้ | – | ⬜ |
+| **M17** | ประวัติย้อนหลังของ policy (diff + rollback) | – | ⬜ |
+| **M18** | รองรับ database type ใหม่โดยไม่ต้องไล่แก้ 14 จุด | – | 🚧 **~75%** |
+| **M19** | AI-Driven Anomalous Access Detection (FR-13) | – | ⬜ ต้องมี M10 (query log + `asset_fqns`) |
+| **M20** | MAC เต็มรูปแบบ — sensitivity level ที่เรียงลำดับได้ (FR-12) | – | ⬜ |
+| **M21** | AI Data Access Control (FR-14) | – | ⬜ ต้องมี M14 |
 
 **ลำดับ:** M0 → M1 → M2 → M3 → (M4 ‖ M5 ‖ M6 ‖ M7) → M7b → M8
 หลัง M3 fix `PolicyDecision` แล้ว **compiler 3 ตัวทำขนานกันได้** — นี่คือผลตอบแทนของการลงทุนทำ Policy IR ตั้งแต่ต้น

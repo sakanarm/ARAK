@@ -36,7 +36,7 @@ Phase 1 รองรับ SQL Server + PostgreSQL · identity หลักค�
 | **M7 Query API (5.2a)** | 🚧 ~80% — **`POST /v1/query` + Query console ใช้งานได้จริงรอบนี้** · rewrite → RLS + mask + hidden column → execute → audit ครบ · พิสูจน์กับ Postgres จริงแล้วทั้ง allow / RLS / mask / refuse · เหลือ direct-access detector (FR-6.3.1) และ result cache |
 | **M7b Cross-mode consistency** | ⬜ — ต้องมี M5/M6 ก่อน |
 | **M8 Audit + Ops** | 🚧 ~35% — **FR-7 ปิดครบวงรอบนี้ (grant ตรงระดับ table + auto-revoke + audit trail + หน้าจอ) ดูข้อ AD.1** · `audit_query` / `audit_decision` / `audit_policy_change` เขียนจริงแล้วและอ่านได้ · **`evaluation_ms` มีค่าแล้ว (ข้อ AE.5)** · **ยังไม่มี audit ของการ configure** (เปลี่ยน data source / OM settings ไม่ถูกบันทึกที่ไหนเลย) · ยังไม่มี compliance report / drift detector / auto-revoke / SIEM export |
-| **M9 Access Request Management** | 🚧 **~75% — slice 2c จบรอบนี้ (ข้อ BD)** · slice 1 (ข้อ AX): `access_request` (V21) + ขอ / inbox / approve / reject / withdraw + audit · **slice 2a:** Access Request Workflow ออกแบบได้ต่อ scope (default องค์กร / service / database / schema / table) — หลาย step เรียงกัน, stage ใน step เดียวกันวิ่งพร้อมกัน, กติกา ALL / ANY / AT_LEAST n, Reject เลือกได้ต่อ stage (VETO / QUORUM / FIRST_RESPONSE), ผู้อนุมัติเป็น owner / steward / custodian / role / team / คน · admin ตอบแทนทุก stage ได้ · table ไม่มี owner → ตกไปหา platform admin **และขึ้นใน Inbox + กระดิ่งแล้ว** · Approve ≠ ให้สิทธิ์: APPROVED → IN_PROGRESS → COMPLETED (GRANT ไม่เกินวันที่ขอ / POLICY_UPDATED / POLICY_CREATED อ้างถึง policy เท่านั้น) หรือ Decline โดยผู้ configure · หน้า `/settings/workflows` (V23) · **slice 2b:** หน้า review ของคำขอ `GET /v1/access-requests/{id}/review` — ผู้ขอ (attribute / group / role / grant / ประวัติ) · grant จะเปิด column ไหน (visible / masked / hidden + sensitive) · row filter · risk LOW/MEDIUM/HIGH + เหตุผล · conflict (BLOCKER / WARNING / INFO) · suggestion (DECLINE / GRANT / UPDATE_POLICY / CREATE_POLICY_DRAFT — **draft เท่านั้น ไม่มีอะไร activate เอง**) · เช็ค policy ที่จะใช้ configure แบบอ่านอย่างเดียว · **GRANT ที่ policy ยังปฏิเสธ → 409** · IP ของคำขอ (V24) ใช้ตัดสิน ipCidr แต่ไม่เคยออกใน response · · **slice 2c:** Dashboard `GET /v1/access/grants/expiring` — ใครใกล้หมดสิทธิ์ใน table ไหน + **นับถอยหลังทีละวินาทีจากนาฬิกา server** (admin / author / auditor เห็นทุกแถว · owner เห็น table ของตัวเอง · requester เห็นของตัวเอง) · `GET /v1/access-requests/stats` — สถิติคำขอต่อ table (asked / open / granted / rejected / declined / withdrawn / คนขอ / median เวลาตอบ) นับจาก `access_request` ตรงๆ ไม่มีตารางนับแยก · การ์ด Home ใหม่ 2 ใบ · **ต่อไป:** recertification (access review รอบ 90 วัน) · ยังไม่ทำ: Automatic configuration (Roadmap) · recertification · break-glass · notification ทาง email/Teams |
+| **M9 Access Request Management** | 🚧 **~75% — slice 2c จบรอบนี้ (ข้อ BD)** · slice 1 (ข้อ AX): `access_request` (V21) + ขอ / inbox / approve / reject / withdraw + audit · **slice 2a:** Access Request Workflow ออกแบบได้ต่อ scope (default องค์กร / service / database / schema / table) — หลาย step เรียงกัน, stage ใน step เดียวกันวิ่งพร้อมกัน, กติกา ALL / ANY / AT_LEAST n, Reject เลือกได้ต่อ stage (VETO / QUORUM / FIRST_RESPONSE), ผู้อนุมัติเป็น owner / steward / custodian / role / team / คน · admin ตอบแทนทุก stage ได้ · table ไม่มี owner → ตกไปหา platform admin **และขึ้นใน Inbox + กระดิ่งแล้ว** · Approve ≠ ให้สิทธิ์: APPROVED → IN_PROGRESS → COMPLETED (GRANT ไม่เกินวันที่ขอ / POLICY_UPDATED / POLICY_CREATED อ้างถึง policy เท่านั้น) หรือ Decline โดยผู้ configure · หน้า `/settings/workflows` (V23) · **slice 2b:** หน้า review ของคำขอ `GET /v1/access-requests/{id}/review` — ผู้ขอ (attribute / group / role / grant / ประวัติ) · grant จะเปิด column ไหน (visible / masked / hidden + sensitive) · row filter · risk LOW/MEDIUM/HIGH + เหตุผล · conflict (BLOCKER / WARNING / INFO) · suggestion (DECLINE / GRANT / UPDATE_POLICY / CREATE_POLICY_DRAFT — **draft เท่านั้น ไม่มีอะไร activate เอง**) · เช็ค policy ที่จะใช้ configure แบบอ่านอย่างเดียว · **GRANT ที่ policy ยังปฏิเสธ → 409** · IP ของคำขอ (V24) ใช้ตัดสิน ipCidr แต่ไม่เคยออกใน response · · **slice 2c:** Dashboard `GET /v1/access/grants/expiring` — ใครใกล้หมดสิทธิ์ใน table ไหน + **นับถอยหลังทีละวินาทีจากนาฬิกา server** (admin / author / auditor เห็นทุกแถว · owner เห็น table ของตัวเอง · requester เห็นของตัวเอง) · `GET /v1/access-requests/stats` — สถิติคำขอต่อ table (asked / open / granted / rejected / declined / withdrawn / คนขอ / median เวลาตอบ) นับจาก `access_request` ตรงๆ ไม่มีตารางนับแยก · การ์ด Home ใหม่ 2 ใบ · **ต่อไป:** recertification (access review รอบ 90 วัน) · **แนบไฟล์ในคำขอ (ผู้ใช้ขอ 2026-09-25 — เก็บไฟล์ไว้บน server ดูข้อ AP.11)** · ยังไม่ทำ: Automatic configuration (Roadmap) · recertification · break-glass · notification ทาง email/Teams |
 | **M10 Access Control Dashboard** | ⬜ **Phase 2 — ออกแบบแล้ว ยังไม่เริ่ม** · หน้าเดียวที่ตอบว่า "ตอนนี้องค์กรคุมข้อมูลได้ดีแค่ไหน" · 4 แถว: **Coverage** (asset ที่มี tag PII แต่ไม่มี policy คุ้มครอง / % ของ asset ที่ enforce แล้ว) · **Exposure** (ใครเข้าถึง PII ได้บ้าง · grant ที่ใกล้หมดอายุ · สิทธิ์ที่ไม่ได้ใช้เกิน 90 วัน) · **Activity** (query ต่อวัน แยก EXECUTED/REJECTED/FAILED · top principal · top asset · เหตุผลที่ถูกปฏิเสธบ่อยที่สุด) · **Health** (enforcement state ต่อ source · drift · รอบ sync ล่าสุด · p95 ของ decision) — **ข้อมูลมีอยู่ครบแล้วทั้งหมด** (`audit_query`, `audit_decision`, `asset_facet`, `policy_binding`, `access_grant`, `enforcement_state`) → งานคือ query + หน้าจอ ไม่ต้อง migrate — ดูแบบเต็มที่ข้อ AM.4 |
 | **M11 LLM Assist** | 🚧 **~60%** — ตารางนี้เคยเขียนว่า "ยังไม่เริ่ม" ซึ่งไม่จริงแล้ว · **per-user gateway ใช้งานได้จริง** — แต่ละคนใส่ base URL + key ของตัวเองในหน้า Settings และเลือกเองว่าจะเปิดใช้ไหม (`llm_user_setting.base_url` + `api_key_cipher` Fernet · key ไม่เคยถูกส่งกลับ ตอบแค่ `hasOwnKey`) · `llm_provider.allow_personal` เป็น kill switch · ⚠️ `LlmResource.putUser` ตัดสิทธิ์ admin ให้แก้ได้แค่ `enabled` — **ไม่มีใครเขียน gateway ของคนอื่นได้ ห้ามผ่อน** · ทดสอบสดผ่านแล้ว (21 models + completion ด้วย key ของ `analyst_a` เอง) · เหลือฟีเจอร์จริงสองตัว: **NL→SQL** และ **ร่าง policy** ที่ออกมาเป็น `DRAFT` เท่านั้น (FR-2.6 — LLM ไม่มีสิทธิ์ activate เอง) — ดูข้อ AO.8/AO.9 |
 | **M12 Home ที่จัดเอง** | ✅ **เสร็จ — milestone ใหม่ ไม่อยู่ในแผนเดิม** · หน้าแรกจัดวางเองได้ต่อ account · 5 preset · 14 widget type (กราฟวาดเป็น SVG มือ ไม่มี chart library) · วาง **HTML / Note / Link / Video** ได้ · `V13__home_layout.sql` — ไม่มีแถว = default (ลบแถว = reset) · **default คนละใบตาม role**: governance ได้หน้าเดิม · Requestor ได้หน้า Search · ⚠️ **HTML ที่คนพิมพ์เอง = stored XSS** → `HomeLayoutValidator` ล้างทั้ง**ตอนเขียนและตอนอ่าน** **ห้ามมีทางเขียน `home_layout` ที่ไม่ผ่านตัวนี้** · **M12b persona เสร็จแล้ว** (`V19__home_role_layout.sql`) — admin จัดหน้าแรกให้แต่ละ Platform Role ได้ที่ `/settings/home` · resolve แบบ **personal → role (แรงสุดที่ถือ) → built-in** · **persona ไม่เคยทับหน้าที่คนจัดเอง** · ⚠️ เป็น**ที่แรกที่ markup ของคนหนึ่งถูก render ใน session ของอีกคนโดยตั้งใจ** → `@Secured("PLATFORM_ADMIN")` + ล้างผ่าน `HomeLayoutValidator` ทั้งเขียนและอ่าน — ดูข้อ AN และ AS |
@@ -46,6 +46,9 @@ Phase 1 รองรับ SQL Server + PostgreSQL · identity หลักค�
 | **M16 LLM ช่วยหา asset จากสิ่งที่อยากได้** | ⬜ **Roadmap ใหม่ — ผู้ใช้ขอ 2026-09-24** · ในหน้า Query เพิ่ม option ให้พิมพ์เป็นภาษาคนว่า *“อยากได้ข้อมูลผลิตภัณฑ์และราคา”* แล้ว LLM ไปค้นใน metadata (asset + column + description + tag + glossary term + domain) แล้วตอบกลับเป็น **ตาราง/คอลัมน์ที่น่าจะใช่ พร้อมเหตุผลว่าทำไม** · แต่ละตัวต้องบอกด้วยว่า **คุณ query ได้เลย** หรือ **ต้องไปขอสิทธิ์ก่อน** (ต่อปุ่มของ M13 ตรงนั้น) · ตัวที่ query ได้กดแล้วเติม SQL ร่างลงช่อง editor ให้เลย — ⚠️ **ค้นบน metadata เท่านั้น ห้ามส่งแถวข้อมูลจริงให้ LLM** และผลลัพธ์ต้อง **กรองด้วยสิทธิ์ของคนที่ถาม** ก่อนแสดง (ห้ามใช้ LLM เป็นช่องทางส่องว่ามีตารางอะไรอยู่บ้าง) — ดูข้อ AP.4 |
 | **M17 ประวัติย้อนหลังของ policy** | ⬜ **Roadmap ใหม่ — ผู้ใช้ขอ 2026-09-24** · ชิป *`v13 · active`* ที่เห็นบนหน้า policy มาจาก `policy.version` + `policy.lifecycle_state` · **ประวัติเก็บครบอยู่แล้วใน `policy_version`** (append-only ตั้งแต่ V3 — `PolicyStore` เขียนทุกครั้งก่อนแก้แถวจริง เก็บ `document` ทั้งใบ + `lifecycle_state` + `changed_by` + `change_reason` + `changed_at`) และ `GET /v1/policies/{id}/versions` ก็เปิดอยู่ **แต่ไม่มีหน้าจอไหนเรียกมันเลย** (`fetchPolicyVersions` ใน `api/policies.ts` เขียนไว้แล้วแต่ไม่มีใครใช้) · งานคือ: **แท็บ History** บนหน้า policy · **diff ระหว่างสองเวอร์ชัน** · **rollback** (เขียนเวอร์ชันใหม่ทับ ไม่ใช่ลบของเก่า ตาม FR-9.2) · และ **`audit_policy_change` ที่ยังไม่มีใครเขียนลงไปเลยสักแถว** — ดูข้อ AP.5 |
 | **M18 รองรับ database type ใหม่ได้โดยไม่ต้องไล่แก้ 14 จุด** | 🚧 **~75% — slice 1 จบรอบนี้และ*ผ่านการรันจริง*แล้ว (ดูข้อ AR)** · `SourceEngine` registry + `SqlDialects` + `ProxyCapabilities` + `V18__source_engine.sql` + `GET /v1/sources/engines` · **switch ทั้ง 3 ตัวและ hardcode ฝั่ง frontend ทั้ง 6 ไฟล์หายไปแล้ว** · **proxy fail-closed แล้ว** — engine ที่ mask ไม่ได้ถูกปฏิเสธพร้อมบอกทางออก แทนที่จะคืน column แบบ plaintext · เหลือ: introspection quirk ต่อ engine (`supportsSchemas` ยังไม่มีใครอ่าน) · `engine_capability` ฝั่ง native ยังไม่มีคนอ่าน (รอ M6) · และ **เพิ่ม engine ตัวที่ 3 จริงเพื่อพิสูจน์ว่า class เดียวพอ** · เดิมคือ ⬜ **Roadmap ใหม่ — ผู้ใช้ขอ 2026-09-24** · ของที่แพงออกแบบถูกแล้ว (`PolicyDecision` ไม่มี SQL · `SqlDialect` เป็น interface · `engine_capability` เป็น data) **แต่ชื่อ engine ถูก hardcode อยู่ 14 ที่** — `CHECK (engine IN (...))` 2 migration · switch ใน `JdbcTargets` + `SourceProbe` + `QueryService.dialectFor()` · frontend อีก 6 ไฟล์ · ลืมจุดเดียว**ไม่ error ตอน compile** แต่พังตอน runtime · งานคือ **`SourceEngine` registry ตัวเดียว** ที่ถือ url template + driver + dialect + probe + introspection quirk แล้วให้ทุกจุดอ่านจากมัน → เพิ่ม engine = **class 1 ตัว + capability rows** — ดูข้อ AP.7 |
+| **M19 AI-Driven Anomalous Access Detection** | ⬜ **Roadmap ใหม่ — ผู้ใช้ขอ 2026-09-25** · เรียนรู้ baseline การเข้าถึงข้อมูลของแต่ละคน (ปริมาณแถว · ช่วงเวลา · table ที่แตะ · อัตราโดนปฏิเสธ) แล้วจับพฤติกรรมที่ผิดไปจาก baseline เช่น ปกติดึงลูกค้าวันละ 10 แถว แต่วันหนึ่งดึง 5,000 แถวตอนตี 3 · **ตอบสนองได้ 3 ระดับ: แจ้งเตือน → ขอเหตุผลหรือให้ owner อนุมัติ → block แล้วพักสิทธิ์ใช้ query ไว้จนกว่า security จะตรวจ** · **block ทันทีทำได้เฉพาะเมื่อ query ผ่าน proxy (5.2)** · โหมด native (5.1.1 / 5.1.2) ทำได้แค่ตรวจย้อนหลังแล้วพักสิทธิ์ · v1 ใช้สถิติที่อธิบายได้ (median / MAD · histogram ตามชั่วโมง · table ที่ไม่เคยแตะ) ก่อน ML · LLM ใช้อธิบายเหตุผลเท่านั้น และเห็นแค่ตัวเลขสรุป ไม่เห็นข้อมูลจริง · ต้องเริ่มจาก shadow mode (แจ้งเตือนอย่างเดียว) · ต้องมี M10 (query log + `asset_fqns`) ก่อน · ดูข้อ AP.9 |
+| **M20 MAC เต็มรูปแบบ — sensitivity level ที่เรียงลำดับได้** | ⬜ **Roadmap ใหม่ — ผู้ใช้ถาม 2026-09-25 ว่า DAC / MAC / RBAC / ABAC มีครบไหม** · DAC ✅ (owner ให้ grant เอง + อนุมัติคำขอ) · RBAC ✅ (`role` / `team` / `group` / `user` / `assetOwner`) · ABAC ✅ (`attributes` · `expression` · `time` · `context.ipCidr` / `purpose`) · **MAC ⚠️ ได้บางส่วน** — เขียนเป็น ORG policy แบบ DENY ได้ (local ผ่อนไม่ได้ และ owner ให้ grant ทะลุไม่ได้) แต่ `gte` เทียบ clearance ด้วยการเรียงตัวอักษร (`Comparisons.compare`) จึงใช้ได้กับชื่ออย่าง `L1 < L2` เท่านั้น · `Public < Internal < Confidential < Secret` เรียงผิด และระดับของ table ยังไม่ผูกกับ clearance อัตโนมัติ · ดูข้อ AP.10 |
+| **M21 AI Data Access Control** | ⬜ **Roadmap ใหม่ — ผู้ใช้ขอ 2026-09-25** · คุมว่า AI model / agent ดึงข้อมูลอะไรได้ ตามตัวตน สิทธิ์ และบริบทของ **user ที่ agent ทำงานแทน** · เทียบ 6 ข้อที่ผู้ใช้ส่งมา: runtime authorization ✅ (ฝั่ง SQL) · identity binding ⚠️ · row/column ✅ แต่ vector chunk ❌ · classification ⚠️ (ใช้ของ OM) · redaction ✅ ในผลลัพธ์ query แต่ ❌ ใน prompt / output ของ LLM · centralized enforcement ⚠️ · **ช่องว่างหลัก: ยังไม่มีช่องทางให้ agent เรียก ARAK ในนาม user** → agent registry + delegated token (RFC 8693) + ARAK MCP server + AI output guard + filter สำหรับ vector store · ต้องมี M14 ก่อน · ดูข้อ AP.12 |
 
 **ที่รันอยู่ตอนนี้**
 | | |
@@ -70,7 +73,7 @@ Phase 1 รองรับ SQL Server + PostgreSQL · identity หลักค�
 
 ---
 
-## Roadmap ที่เพิ่มรอบนี้ — **M13 · M14 · M15 · M16 · M17 · M18** (ผู้ใช้ขอ 2026-09-24)
+## Roadmap ที่เพิ่มรอบนี้ — **M13 · M14 · M15 · M16 · M17 · M18 · M19 · M20 · M21** (ผู้ใช้ขอ 2026-09-24 · M19 / M20 / M21 / ไฟล์แนบของ M9 ขอ 2026-09-25)
 
 ผู้ใช้สั่งว่า *"ช่วยเพิ่ม Roadmap เพิ่ม Access Control ให้เรามีความพิเศษ"* แล้วให้มาสามข้อ
 แล้วขอเพิ่มข้อที่สี่ ห้า และหกตามมาในวันเดียวกัน (M16, M17, M18)
@@ -360,6 +363,154 @@ parse ด้วย grammar ของ engine นั้น (ไม่แปลง�
 คือ **อย่าออกแบบอะไรที่ปิดทางนั้น** — ซึ่ง `SourceEngine` registry เปิดทางไว้พอดี เพราะ
 federation layer ในอนาคตก็จะถาม registry ตัวเดียวกันว่า engine ปลายทางทำอะไรได้บ้าง
 
+### AP.9 M19 — AI-Driven Anomalous Access Detection (ผู้ใช้ขอ 2026-09-25)
+
+ผู้ใช้สั่ง *"ทำเป็น Roadmap หน่อย"* พร้อมข้อความที่ก๊อปมา ใจความคือ: ใช้ AI / ML ตรวจพฤติกรรมการเข้าถึงข้อมูลที่ผิดปกติ
+โดยเรียนรู้พฤติกรรมปกติของพนักงานแต่ละคน (baseline) เช่น *ปกติดึงข้อมูลลูกค้าวันละ 10 รายชื่อ แต่วันหนึ่งสั่งดึง 5,000 รายชื่อตอนตี 3*
+แล้วให้ระบบ **block ทันทีและแจ้งทีม security**
+(คำถามท้ายข้อความที่ก๊อปมา เช่น ใช้กับฐานข้อมูลประเภทไหน หรือโจทย์ใหญ่คืออะไร เป็นคำถามจากแหล่งที่ก๊อปมาถึงผู้ใช้
+ไม่ใช่งานของเรา · ข้อนี้ออกแบบจากบริบทของ ARAK ตอนนี้: PostgreSQL + SQL Server · ผ่าน proxy 5.2 · โมเดลสิทธิ์ของ M3)
+
+**1. สิ่งที่มีอยู่แล้วและใช้เป็น baseline ได้**
+- `audit_query` — ใคร · เมื่อไหร่ · source · SQL ต้นฉบับ / หลัง rewrite · outcome · `row_count` · `duration_ms`
+  (**ยังไม่รู้ว่า query แตะ table ไหน** → M10 เพิ่ม `audit_query.asset_fqns` ให้ ต้องทำก่อน)
+- `audit_decision` — ใคร · table ไหน · allow / deny · policy ที่ match · purpose
+- `access_grant` / `access_request` — สิทธิ์มาจากไหน และขอไว้เพื่ออะไร
+- facet ของ table (`classifications` เช่น PII) — ใช้ถ่วงน้ำหนักความเสี่ยง: 5,000 แถวจาก table PII ไม่เท่ากับ 5,000 แถวจาก lookup table
+
+**2. Baseline ต่อคน (และต่อคน × table)** — คำนวณซ้ำทุกคืนจาก 30–90 วันย้อนหลัง
+| สัญญาณ | ตัวอย่างที่จับได้ |
+|---|---|
+| ปริมาณแถวต่อ query และต่อวัน | ปกติ 10 แถว/วัน → วันนี้ 5,000 |
+| ช่วงเวลาที่ใช้งาน (histogram 24 ชั่วโมง × วันธรรมดา/วันหยุด) | ไม่เคย query หลัง 20:00 → ตี 3 |
+| table ที่แตะ | แตะ table PII ที่ไม่เคยแตะมาก่อน · จำนวน table ต่อวันกระโดด (กวาดหลาย table) |
+| อัตราโดนปฏิเสธ | โดน deny ติดกันหลายครั้งใน 10 นาที = ไล่ลองหาช่อง |
+| รูปแบบ SQL | `SELECT *` ไม่มี `WHERE` บน table ใหญ่ ทั้งที่ปกติ query แบบมีเงื่อนไข |
+| peer group | เทียบกับคนใน team / department เดียวกัน สำหรับคนใหม่ที่ยังไม่มีประวัติ |
+
+**3. วิธีจับ — เรียงจากง่ายไปยาก**
+- **v1 สถิติที่อธิบายได้** (ไม่ต้องใช้ ML library) — robust z-score (median / MAD) · ชั่วโมงที่ความถี่ในอดีตต่ำกว่าเกณฑ์ ·
+  table ใหม่ + มี classification อ่อนไหว · รวมเป็น **risk score 0–100** พร้อมรายการเหตุผลทีละข้อ
+  (ทำนองเดียวกับ explainability ของ FR-5.4: ต้องตอบได้ว่า block เพราะอะไร ไม่ใช่ "AI บอกว่าแปลก")
+- **v2 ML** — Isolation Forest / clustering ต่อ peer group รันแบบ offline ทุกคืน ใช้เป็นสัญญาณเสริม ไม่ใช่ตัวตัดสินเดี่ยว
+- **LLM (ต่อจาก M11 / M15)** — ใช้**เขียนสรุปเหตุผลให้ security อ่าน**เท่านั้น ส่งให้แค่ตัวเลขสรุปกับ metadata
+  (ไม่ส่งข้อมูลจริงหรือผลลัพธ์ query — ตามกฎเดิม *LLM sees metadata only*) และ **LLM ไม่มีสิทธิ์สั่ง block หรือปลด block เอง**
+
+**4. จังหวะที่ตรวจ และทำอะไรได้ในแต่ละโหมด enforcement**
+| จังหวะ | ทำได้ใน | เช็คอะไร |
+|---|---|---|
+| **ก่อนรัน** (ใน `QueryService.run` หลัง rewrite ก่อน execute) | proxy 5.2 | เวลา · table ที่แตะ · SQL ไม่มี `WHERE` · จำนวนแถวที่ขอ (`maxRows`) · ความถี่ของคนนี้ในชั่วโมงนี้ |
+| **หลังรัน ก่อนส่งผลกลับ** | proxy 5.2 | จำนวนแถวที่ได้จริง — **รู้แล้วแต่ผลยังไม่ออกจาก ARAK จึงยังกันไว้ได้** |
+| **ย้อนหลัง** (job ทุก 5–15 นาที) | ทุกโหมด รวม native 5.1.1 / 5.1.2 | ผลรวมทั้งวัน · หลาย query เล็กๆ ที่รวมกันแล้วผิดปกติ (หลบเกณฑ์ต่อ query) |
+
+> ⚠️ **"block ทันที" ทำได้จริงเฉพาะทาง proxy** · ใน native mode คน query ตรงเข้า database ARAK ไม่ได้อยู่ในเส้นทาง
+> จึงทำได้แค่จับจาก log ของ source ทีหลัง แล้วพักสิทธิ์ (REVOKE ผ่านกลไก grant ที่มีอยู่) · ต้องบอกผู้ใช้ตรงๆ ไม่ขายเกินจริง
+> (สอดคล้องกับ FR-6.3.1 — ถ้ายังมีคนต่อ database ตรงได้ ตัวตรวจนี้ก็ถูกเลี่ยงได้เช่นกัน)
+
+**5. ระดับการตอบสนอง** (ตั้งได้ต่อ policy / classification / source — ไม่ใช่ค่าเดียวทั้งองค์กร)
+1. **ALERT** — ปล่อยผ่าน แต่ขึ้นใน inbox ของ security พร้อม risk score และเหตุผล
+2. **STEP_UP** — หยุดไว้ก่อน ให้ผู้ใช้กรอกเหตุผล หรือส่งเป็น access request ให้ owner อนุมัติ
+   (ใช้ flow ของ M9 / M13 ที่มีแล้ว: ปุ่มขอสิทธิ์ · workflow หลายขั้น · กระดิ่งแจ้งเตือน)
+3. **BLOCK** — ปฏิเสธ query นี้ **และพักสิทธิ์ใช้ query ของคนนี้ไว้** จนกว่า security จะปลด (มีเหตุผล + audit)
+   บันทึกเป็น `REJECTED` ใน `audit_query` พร้อม `reject_reason` ที่บอกว่าเป็น anomaly block — ไม่ใช่ policy deny
+
+**6. ข้อที่ต้องออกแบบให้ถูกตั้งแต่แรก**
+- **shadow mode ก่อนเสมอ** — ช่วง 14–30 วันแรก คำนวณ score และแจ้งเตือนอย่างเดียว ยังไม่ block
+  เพราะการ block คนทำงานจริงผิดตัว (เช่น ช่วงปิดงบสิ้นเดือนที่ทุกคนทำงานดึก) แพงกว่าการปล่อยหลุดหนึ่งครั้ง · มีหน้าจอดูว่าถ้าเปิด block จะโดนกี่ครั้ง
+- **ถ้าตัวตรวจล่ม ห้ามทำให้ query ทั้งองค์กรพัง** — policy engine ยังเป็นตัวตัดสินหลัก · ตัวตรวจนี้เป็นชั้นเสริม ·
+  เลือกได้ต่อ classification ว่าจะ fail-open หรือ fail-closed (table PII อาจเลือก fail-closed)
+- **baseline เองก็เป็นข้อมูลส่วนบุคคลของพนักงาน** (PDPA) — จำกัดคนเห็นหน้า anomaly ไว้ที่ security / auditor ·
+  มี retention · ห้ามโชว์ `client_ip` ใน response เหมือนกฎเดิมของทุก audit table
+- **role ใหม่ `SECURITY_ANALYST`** — ตอนนี้มีแค่ PLATFORM_ADMIN / POLICY_AUTHOR / DATA_OWNER / AUDITOR / REQUESTER
+  ต้องมีคนที่ปลด block ได้แต่ไม่ได้เขียน policy (separation of duty ตาม FR-2.6)
+- **คนที่ถูก block ต้องรู้ว่าต้องทำอะไรต่อ** — ข้อความบอกว่าโดนพักเพราะพฤติกรรมผิดปกติและติดต่อใคร
+  แต่**ไม่บอกเกณฑ์ตัวเลข** (ไม่งั้นรู้ว่าต้องดึงทีละ 4,999 แถว)
+- **การแจ้งเตือนออกนอกระบบ** (email / Teams) ใช้ช่องทางเดียวกับที่ M9 ยังค้างอยู่ — ทำครั้งเดียวใช้ร่วมกัน
+
+**7. แบ่ง slice**
+| slice | งาน |
+|---|---|
+| 0 (ทำใน M10) | `audit_query.asset_fqns` + query log API / หน้าจอ — ฐานข้อมูลของทุกอย่างข้างล่าง |
+| 1 | `access_baseline` (ต่อคน และต่อคน × table) + job คำนวณทุกคืน + หน้าดู baseline ของคนหนึ่งคน |
+| 2 | risk score + เหตุผล · ตรวจย้อนหลังทุก 15 นาที · inbox ของ security · **shadow mode** |
+| 3 | ตรวจใน proxy ก่อนรัน / หลังรันก่อนส่งผล · STEP_UP ผ่าน flow ของ M9 · BLOCK + พักสิทธิ์ + ปลดโดย `SECURITY_ANALYST` |
+| 4 | peer group + ML offline · LLM สรุปเหตุผล (ต่อ M15) · email / Teams |
+
+### AP.10 M20 — MAC เต็มรูปแบบ และสถานะของ access control model ทั้ง 4 แบบ (ผู้ใช้ถาม 2026-09-25)
+
+ผู้ใช้ส่งนิยาม DAC / MAC / RBAC / ABAC มาแล้วถามว่า *"พวกนี้มีครบไหม"* · ตรวจจากโค้ดจริง (`subjectRule.json` · `Operators` · `Comparisons` · `GrantStore` · `Stewardship`):
+
+| Model | สถานะ | อยู่ตรงไหน |
+|---|---|---|
+| **DAC** — owner ตัดสินใจเองว่าใครเข้าได้ | ✅ มี | owner ให้ grant ตรง (`POST /v1/access/grants` · ต้องมี `DATA_OWNER` + scope) · อนุมัติ access request (M9) · **ต่างจาก DAC ทั่วไปตรงที่ owner ให้สิทธิ์ทะลุ policy กลางไม่ได้** (grant ที่ policy ยัง DENY อยู่ถูกปฏิเสธตั้งแต่ตอนให้ — commit `37cbd1c`) |
+| **RBAC** — สิทธิ์ผูกกับ role ไม่ใช่ตัวคน | ✅ มี | `principals` (OR) / `requiredPrincipals` (AND) ด้วย `role` · `team` · `group` · `user` · และ `assetOwner` แบบ dynamic |
+| **ABAC** — ตัดสินจาก attribute และ context | ✅ มี | `attributes` (eq / in / gte …) · `expression` (เทียบ user กับ asset เช่น `user.country == asset.prop('dataResidency')`) · `time.windows` + `validFrom/To` · `context.ipCidr` / `purpose` |
+| **MAC** — ระดับชั้นความลับของข้อมูลเทียบกับ clearance ของคน ส่วนกลางคุม คนอื่นแก้ไม่ได้ | ⚠️ **ได้บางส่วน** | เขียนเป็น ORG-level DENY ได้ (`classifications contains 'PII'` + `clearance lt L2`) · DENY ชนะเสมอ · local policy ผ่อนไม่ได้เว้นแต่เปิด `allowLocalOverride` · owner ให้ grant ทะลุไม่ได้ |
+
+**ช่องว่างของ MAC**
+1. `gte` / `lt` เทียบข้อความด้วยการเรียงตัวอักษร (`Comparisons.compare` บรรทัด 59–62) — ใช้ได้กับ `L1 < L2 < L3`
+   แต่ `Public < Internal < Confidential < Secret` เรียงผิด (`Confidential` มาก่อน `Internal`) และ `L10` มาก่อน `L2`
+2. ระดับชั้นของ table ไม่ใช่ค่าเดียวที่เรียงได้ — เป็นแค่ tag หลายตัว · ยังไม่มีกฎว่า "ระดับของ table = ระดับสูงสุดของ column"
+3. ต้องมีคนเขียน policy ถึงจะมี MAC · ไม่มีค่า default ที่เปิดทีเดียวใช้ทั้งองค์กร
+
+**สิ่งที่จะทำ**
+- `sensitivity_scheme` — ลำดับระดับที่ admin กำหนด (เช่น `Public=0 · Internal=1 · Confidential=2 · Secret=3`) ผูกกับ classification ใน OpenMetadata
+  (อ่านอย่างเดียว ไม่เขียนกลับ OM) · และผูก attribute `clearance` ของคนเข้ากับ scheme เดียวกัน
+- operator ใหม่ที่เทียบตามลำดับของ scheme ไม่ใช่ตามตัวอักษร · และตัวแปร `asset.sensitivity` = ระดับสูงสุดของ table และทุก column
+- **MAC guardrail ระดับองค์กร** เปิดปิดได้ครั้งเดียว: `user.clearance < asset.sensitivity → DENY` (no read-up) ·
+  compose กับ policy อื่นแบบ DENY ชนะ · ไม่มี `allowLocalOverride` · แสดงใน Simulator / explainability ว่าโดน MAC
+- ระดับของ column ที่สูงกว่า clearance → mask หรือซ่อน column แทนการ deny ทั้ง table (เลือกได้)
+- no-write-down ไม่เกี่ยว เพราะ Phase 1 เป็น read-only
+
+### AP.11 M9 — แนบไฟล์ใน access request เก็บไว้บน server (ผู้ใช้ขอ 2026-09-25)
+
+ผู้ใช้ถาม *"Access Request ต้องใส่ Attach file ด้วยไหม"* แล้วตามด้วย *"เก็บไฟล์ไว้ใน Server"*
+→ **ควรมี** เพราะคำขอข้อมูลอ่อนไหวมักต้องมีหลักฐานประกอบ เช่น บันทึกอนุมัติจากหัวหน้า · NDA · แบบประเมิน PDPA / DPIA · ticket
+**ไม่บังคับโดย default** · workflow step ตั้งได้ว่า *"ต้องมีไฟล์แนบ"* (เช่นเฉพาะ table ที่มี PII) — อยู่ใน Configure เหมือนตัวเลือกอื่นของ workflow
+
+**การเก็บไฟล์**
+- เก็บบน disk ของ server ใต้โฟลเดอร์ที่ config ได้ (`attachments.dir`) · บน prod host ต้องอยู่ใต้ `~/Arak` เท่านั้นและเป็น volume ที่ backup ไปพร้อมฐานข้อมูล
+- **ชื่อไฟล์บน disk เป็น UUID** ไม่ใช่ชื่อที่ผู้ใช้ส่งมา (กัน path traversal) · ชื่อเดิมเก็บใน DB ไว้แสดงอย่างเดียว
+- ตาราง `access_request_attachment(id, request_id, filename, content_type, size_bytes, sha256, uploaded_by, uploaded_at, storage_key)`
+- เข้ารหัสไฟล์ก่อนเขียนลง disk (ไฟล์พวกนี้มักมีข้อมูลส่วนบุคคล) · กุญแจอยู่ใน `.env` เหมือน `FERNET_KEY` ห้าม commit
+- จำกัด: ไม่เกิน 10 MB ต่อไฟล์ · 5 ไฟล์ต่อคำขอ · รับเฉพาะ PDF / PNG / JPG / DOCX / XLSX / TXT · **ตรวจจาก magic bytes ไม่ใช่นามสกุล**
+- ช่องทางสแกนไวรัส (ClamAV) ไว้เสียบทีหลัง
+
+**ใครดาวน์โหลดได้** — คนขอ · approver ของทุก step ในคำขอนั้น · PLATFORM_ADMIN · AUDITOR · คนอื่นได้ 404 (ไม่บอกว่ามีไฟล์)
+- ส่งกลับด้วย `Content-Disposition: attachment` + `X-Content-Type-Options: nosniff` เสมอ · ห้ามเปิดแบบ inline (กัน HTML / SVG ที่มี script)
+- **หลังคำขอถูกตัดสินแล้ว ลบหรือเปลี่ยนไฟล์ไม่ได้** เพราะเป็นหลักฐานของการอนุมัติ · ระหว่างที่คำขอยังเปิดอยู่ คนขอเพิ่มไฟล์ได้
+- บันทึก audit ทุกการ upload และ download · ห้ามส่ง IP ของผู้ใช้กลับใน response (เหมือนกฎของ V24)
+
+### AP.12 M21 — AI Data Access Control (ผู้ใช้ขอ 2026-09-25)
+
+ผู้ใช้ส่งนิยามมาว่า *AI data access control governs which data an AI model or agent can retrieve, read, or use based on user identity, permissions, and context*
+พร้อม feature 6 ข้อ แล้วสั่ง *"พวกนี้มีครบหรือยัง ถ้ายัง ให้ใส่ Roadmap ไว้"* · ตรวจเทียบกับโค้ดจริง:
+
+| Feature | สถานะใน ARAK ตอนนี้ |
+|---|---|
+| **Runtime Authorization** — ตรวจสิทธิ์ตอนทำงานจริง ไม่ใช่ครั้งเดียวตอนเริ่ม | ✅ ฝั่ง SQL — ทุก statement ผ่าน `DecisionService.decide` ตอนรัน · time window ตรวจ ณ เวลารัน · decision cache ล้างเมื่อ policy / attribute / tag / grant เปลี่ยน · ❌ แต่ยังไม่มีช่องทางให้ AI agent เรียก |
+| **Identity Binding & Inheritance** — agent ต้องทำงานในนาม user ที่ยืนยันตัวแล้ว และได้สิทธิ์ไม่เกิน user | ⚠️ `POST /v1/query` รันในนามคนที่ login อยู่ · แต่**ไม่มี delegated token** ให้ agent ทำแทน user · Org Key ของ M14 ผูกกับ principal เดียว จึงยังไม่ใช่ on-behalf-of |
+| **Granular Filtering (Row / Column)** — กรองก่อนข้อมูลเข้า context ของ LLM | ✅ row filter + mask + hidden column ใน SQL rewrite · ❌ ไม่รองรับ vector chunk / RAG |
+| **Automated Classification** — จัดหมวดข้อมูลอ่อนไหวและติด label ที่กำหนด retention / การดึง | ⚠️ ใช้ classification จาก OpenMetadata (รวม auto-classification ของ OM — ตั้งใจไม่เขียนตัวจัดหมวดเอง) · ❌ ยังไม่มี retention / retrieval limit ตาม label (ต่อกับ M20) |
+| **Dynamic Redaction & Masking** — ซ่อนค่าอ่อนไหวใน prompt / output / citation แบบ real time | ✅ mask ในผลลัพธ์ query · ❌ ยังไม่ redact ใน prompt / output ของ LLM (ตอนนี้ LLM ของ ARAK เห็นแค่ metadata จึงไม่มีข้อมูลจริงเข้า prompt แต่ข้อความที่ผู้ใช้พิมพ์เองอาจมี PII) |
+| **Centralized Policy Enforcement** — คุม credential, gateway traffic และสิทธิ์ของ tool ที่เดียวทุก AI workload | ⚠️ credential ของ source ถูกปิดผนึก (Fernet / vault) · LLM gateway ต่อคน + kill switch (`allow_personal`) · ❌ ยังไม่มีสิทธิ์ระดับ tool ของ agent และยังไม่มี gateway กลางสำหรับ AI workload |
+
+**สิ่งที่จะทำ (แบ่ง slice)**
+| slice | งาน |
+|---|---|
+| 0 | ต้องมี **M14** (public API + OpenAPI) ก่อน — agent เรียก ARAK ผ่าน API ชุดเดียวกับระบบอื่น |
+| 1 **Agent registry** | principal ชนิด `AGENT` มี owner · วันหมดอายุบังคับ · kill switch · tool ที่อนุญาต · **เพดานสิทธิ์** เช่น ห้ามเห็น classification `Secret` แม้ user จะเห็นได้ · **สิทธิ์ของ agent = สิทธิ์ของ user ∩ เพดานของ agent** เสมอ ไม่มีทางมากกว่า user |
+| 2 **Delegated token** | OAuth 2.0 Token Exchange (RFC 8693) — agent แลก token ของ user เป็น token อายุสั้น (5–15 นาที) ที่มี claim `act` บอกว่า agent ตัวไหนทำแทนใคร · **ARAK ปฏิเสธการเรียกของ agent ที่ไม่มี user อยู่เบื้องหลัง** · audit เขียนว่า "agent X ในนามของ Y" ทุกแถว |
+| 3 **ARAK MCP server** | tool: `search_assets` · `describe_asset` · `run_query` · `request_access` (ร่างคำขอเท่านั้น user ต้องกดส่งเอง) · ทุกการเรียก tool = runtime authorization ใหม่ · row cap ของ agent ต่ำกว่าคน · ผลลัพธ์ผ่าน mask / RLS ชุดเดียวกับ proxy |
+| 4 **Purpose `ai-agent`** | ส่ง `purpose = ai-agent` เข้า decision ทุกครั้งที่เป็น agent → ใช้ `context.purpose` ของ ABAC ที่มีอยู่แล้วเขียน policy ได้ทันที เช่น *"mask PII เมื่อเป็น AI แม้คนคนนั้นจะเห็นได้เอง"* · ไม่ต้องสร้าง engine ใหม่ |
+| 5 **AI output guard** | ตรวจ PII ใน prompt ขาออกจาก LLM gateway และในคำตอบของ model (เลขบัตรประชาชนไทยที่ checksum ถูก · เบอร์โทร · email · บัตรเครดิตที่ผ่าน Luhn) → redact หรือ block ตาม policy · citation ที่อ้างถึง column ที่ถูก mask ต้องโชว์ค่าที่ mask แล้วเท่านั้น |
+| 6 **Filter สำหรับ vector store / RAG** | ARAK ไม่เก็บ vector เอง · เปิด API ให้ retriever ถามว่า user คนนี้ดึง chunk จาก asset / column ไหนได้บ้าง พร้อม row predicate เป็น metadata filter (**pre-filter ก่อนค้น** ไม่ใช่กรองทีหลัง) · chunk ต้องติด FQN ของต้นทางและรับ classification ตกทอดมา |
+| 7 **Retention / retrieval limit ตาม label** | ต่อกับ sensitivity scheme ของ M20 — เช่น label `Secret` ห้ามเข้า context ของ LLM ภายนอกเลย |
+| 8 **Anomaly ของ agent** | ใช้ baseline ของ M19 แยกต่อ agent (agent ยิงถี่กว่าคนมาก เกณฑ์ต้องแยก) |
+
+**กฎที่ต้องคงไว้** — LLM ไม่มีสิทธิ์เปิดใช้ policy เอง (เดิม) · LLM ภายใน ARAK เห็นแค่ metadata (เดิม) ·
+agent ขยายสิทธิ์ตัวเองไม่ได้ · คำขอสิทธิ์ที่ agent ร่างเป็นแค่ร่างจนกว่า user จะกดส่ง · ห้ามส่ง `client_ip` กลับใน response
+
 ### AP.8 ลำดับที่แนะนำ
 
 ```
@@ -374,6 +525,11 @@ M17       ทำแยกได้เลย  (ข้อมูลกับ endpoi
 M18 → M6  (M6 คือ NativeCompiler ต่อ engine — ถ้าทำ M6 ก่อน M18
            จะได้ switch เพิ่มมาอีกชุดที่ต้องมารื้อทีหลัง)
 M18 ก่อนเพิ่ม engine ตัวที่ 3 เสมอ
+M10 → M19 (M19 ต้องใช้ query log และ `audit_query.asset_fqns` ที่ M10 ทำ ·
+           slice 3 ต้องใช้ flow ขอสิทธิ์ของ M9 / M13 ที่มีแล้ว)
+M20       ทำแยกได้เลย  (engine มีครบแล้ว ขาด scheme ที่เรียงลำดับได้ + operator + guardrail ระดับองค์กร)
+ไฟล์แนบ M9  ทำแยกได้เลย  (ต่อจาก access_request ที่มีแล้ว · ต้องมี volume ที่ backup ได้บน prod ก่อนเปิดใช้)
+M14 → M21 (agent เรียก ARAK ผ่าน public API · slice 7 ต้องมี M20 · slice 8 ต้องมี M19)
 
 2026-09-24 ผู้ใช้สั่งสลับลำดับ: **M18 ขึ้นก่อนทุกอย่าง และเริ่มที่ฝั่ง proxy**
   (`ปรับมาทำส่วนนี้ก่อนเลย เพื่อสร้างฐานให้แข็งแรง`) → เหตุผลอยู่ที่ AP.7a
