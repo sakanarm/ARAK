@@ -8,13 +8,13 @@ import {
   Home01,
   Inbox01,
   SearchRefraction,
-  Server01,
   Settings01,
   ShieldTick,
   User03,
   Users01,
 } from '@untitledui/icons';
 import type { NavItemType } from '@openmetadata/ui-core-components/components/application/app-navigation/config';
+import type { RailEntry } from '../api/rail';
 
 /**
  * The console's sections, in the order the work lands.
@@ -59,6 +59,13 @@ export interface NavSection extends NavItemType {
    * does not narrow anyone's rights, and widening it would not widen them.
    */
   visibleTo: 'everyone' | string[];
+  /**
+   * False for a section that is offered but not in the rail until somebody
+   * puts it there. It is still reachable from wherever it lives otherwise
+   * (Enforcement from Settings), and anybody who uses it daily can pin it with
+   * Customize.
+   */
+  defaultShown?: boolean;
 }
 
 export const NAV_SECTIONS: NavSection[] = [
@@ -158,11 +165,15 @@ export const NAV_SECTIONS: NavSection[] = [
       'See a table as another person sees it before a policy reaches production.',
   },
   {
+    // Out of the rail by default and into Settings -> Data source connections:
+    // applying a secure view is a setup step done a few times per table, not
+    // a place anybody goes every day. Customize puts it back for whoever does.
     label: 'Enforcement',
     visibleTo: ['POLICY_AUTHOR', 'DATA_OWNER'],
     href: '/enforcement',
     icon: FileShield02,
     milestone: null,
+    defaultShown: false,
     description:
       'Review, apply and roll back secure views on registered sources.',
   },
@@ -179,26 +190,21 @@ export const NAV_SECTIONS: NavSection[] = [
     hidden: true,
     description: 'Grants, expiry and who can reach what.',
   },
-  // Sources is not in this rail. It is a setup screen, reached from Settings
-  // -> Data sources, the same place the OpenMetadata connection and the app
-  // roles live. A second door on the top-level rail made the rail read as
-  // though registering a database were daily work, which it is not.
+  // Sources and System are not in this rail at all. Both are setup screens, reached
+  // from Settings -> Data source connections, the same place the OpenMetadata
+  // connection and the app roles live. A second door on the top-level rail
+  // made the rail read as though registering a database or checking the build
+  // were daily work, which it is not.
   {
+    // Policy authors and data owners too, now that Enforcement is reached from
+    // here. The page itself shows each of them only the cards they can open.
     label: 'Settings',
-    visibleTo: [],
+    visibleTo: ['POLICY_AUTHOR', 'DATA_OWNER'],
     href: '/settings',
     icon: Settings01,
     milestone: null,
     description:
       'Where the metadata comes from, who may operate this platform, and which databases it enforces policy in.',
-  },
-  {
-    label: 'System',
-    visibleTo: [],
-    href: '/system',
-    icon: Server01,
-    milestone: null,
-    description: 'Service build and the OpenMetadata instance it is pinned to.',
   },
 ];
 
@@ -207,7 +213,8 @@ export function findSection(pathname: string): NavSection | undefined {
 }
 
 /**
- * The sections one account is offered.
+ * The sections one account is offered -- everything Customize lists, whether
+ * or not it is in the rail right now.
  *
  * @param hasRole the store's check, which already treats PLATFORM_ADMIN as
  *     holding every role
@@ -220,4 +227,56 @@ export function sectionsFor(
       !section.hidden &&
       (section.visibleTo === 'everyone' || hasRole(...section.visibleTo))
   );
+}
+
+/** One line of the rail as this person arranged it. */
+export interface RailItem {
+  section: NavSection;
+  shown: boolean;
+}
+
+/**
+ * The rail one account is drawn: the sections it is offered, in the order it
+ * saved, showing the ones it chose.
+ *
+ * Saved entries this account is not offered -- a section since removed, or
+ * one a role it no longer holds opened -- are dropped silently: the list is a
+ * preference, and a stale line in it must never become a link. A section it
+ * is offered but never arranged -- new in this release, or new to it with a
+ * role -- goes in right after the section it follows by default, shown or not
+ * as it would be by default, so nobody has to open Customize to find it.
+ *
+ * @param saved null when this person never arranged the rail
+ */
+export function arrangeRail(offered: NavSection[], saved: RailEntry[] | null | undefined): RailItem[] {
+  const byDefault = (section: NavSection): RailItem => ({
+    section,
+    shown: section.defaultShown !== false,
+  });
+  if (!saved) {
+    return offered.map(byDefault);
+  }
+  const byHref = new Map(offered.map((section) => [section.href, section]));
+  const items: RailItem[] = [];
+  for (const entry of saved) {
+    const section = byHref.get(entry.href);
+    if (section && !items.some((item) => item.section === section)) {
+      items.push({ section, shown: entry.shown });
+    }
+  }
+  offered.forEach((section, index) => {
+    if (items.some((item) => item.section === section)) {
+      return;
+    }
+    let at = 0;
+    for (let before = index - 1; before >= 0; before -= 1) {
+      const found = items.findIndex((item) => item.section === offered[before]);
+      if (found >= 0) {
+        at = found + 1;
+        break;
+      }
+    }
+    items.splice(at, 0, byDefault(section));
+  });
+  return items;
 }

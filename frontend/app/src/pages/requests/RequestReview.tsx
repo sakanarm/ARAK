@@ -1,12 +1,14 @@
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { Button } from '@openmetadata/ui-core-components/components/base/buttons/button';
 import {
   AlertTriangle,
+  Database01,
   FilePlus02,
   InfoCircle,
   Lightbulb02,
+  Stars02,
   User01,
   XCircle,
 } from '@untitledui/icons';
@@ -22,6 +24,8 @@ import {
   type ReviewConflict,
   type ReviewSuggestion,
   type RiskLevel,
+  type Recommendation,
+  type Verdict,
 } from '../../api/accessRequests';
 
 /**
@@ -73,31 +77,149 @@ const FATE: Record<ColumnFateKind, { label: string; colour: 'success' | 'warning
   HIDDEN: { label: 'Hidden', colour: 'gray' },
 };
 
-/** The review of one request, drawn between the request and the answer. */
+const VERDICT: Record<Verdict, { label: string; colour: 'success' | 'warning' | 'error' | 'gray'; bar: string }> = {
+  APPROVE: { label: 'Approve', colour: 'success', bar: 'tw:bg-fg-success-secondary' },
+  REVIEW: { label: 'Look closer', colour: 'warning', bar: 'tw:bg-fg-warning-secondary' },
+  REJECT: { label: 'Reject', colour: 'error', bar: 'tw:bg-fg-error-secondary' },
+  DECLINE: { label: 'Nothing to approve', colour: 'gray', bar: 'tw:bg-fg-quaternary' },
+};
+
+/**
+ * The review of one request, drawn between the request and the answer.
+ *
+ * <p>The suggestion waits behind a button rather than leading the review: a
+ * reviewer who reads a number before the facts anchors on it. Asked for, it
+ * comes first, with every point that made it.
+ */
 export function RequestReview({ requestId }: { requestId: string }) {
   const review = useAccessReview(requestId, null);
+  const [suggesting, setSuggesting] = useState(false);
 
   return (
     <section
       aria-label="Review"
-      className="tw:overflow-hidden tw:rounded-lg tw:border tw:border-secondary">
-      <div className="tw:flex tw:flex-wrap tw:items-center tw:justify-between tw:gap-2 tw:border-b tw:border-secondary tw:bg-secondary tw:px-4 tw:py-2.5">
-        <h3 className="tw:text-sm tw:font-semibold tw:text-primary">Before you answer</h3>
+      className="tw:min-w-0 tw:overflow-hidden tw:rounded-xl tw:border tw:border-secondary">
+      <div className="tw:flex tw:flex-wrap tw:items-center tw:gap-x-3 tw:gap-y-2 tw:border-b tw:border-secondary tw:bg-secondary tw:px-4 tw:py-3">
+        <div className="tw:flex tw:min-w-0 tw:flex-1 tw:items-center tw:gap-2">
+          <h3 className="tw:text-sm tw:font-semibold tw:text-primary">Before you answer</h3>
+          {review.data && (
+            <Badge color={RISK[review.data.risk.level].colour} size="sm" type="pill-color">
+              {RISK[review.data.risk.level].label}
+            </Badge>
+          )}
+        </div>
         {review.data && (
-          <Badge color={RISK[review.data.risk.level].colour} size="sm" type="pill-color">
-            {RISK[review.data.risk.level].label}
-          </Badge>
+          <Button
+            aria-expanded={suggesting}
+            color={suggesting ? 'secondary' : 'primary'}
+            iconLeading={Stars02}
+            onPress={() => setSuggesting((on) => !on)}
+            size="sm">
+            {suggesting ? 'Hide suggestion' : 'Suggest'}
+          </Button>
         )}
       </div>
-      <div className="tw:flex tw:flex-col tw:gap-5 tw:px-4 tw:py-4">
+      <div className="tw:flex tw:flex-col tw:gap-6 tw:p-4 tw:sm:p-5">
         {review.isLoading && <p className="tw:text-sm tw:text-tertiary">Reading the request…</p>}
         {review.isError && (
           <p className="tw:text-sm tw:text-error-primary" role="alert">
             {apiErrorMessage(review.error, 'The review could not be read.')}
           </p>
         )}
+        {review.data && suggesting && <RecommendationCard recommendation={review.data.recommendation} />}
         {review.data && <ReviewBody review={review.data} />}
       </div>
+    </section>
+  );
+}
+
+/**
+ * Whether ARAK would approve, how strongly, and every point that says so.
+ *
+ * <p>The score is shown as a lean, not a probability: it is a neutral 50 plus
+ * the signals below it, and the list adds up to it.
+ */
+export function RecommendationCard({ recommendation }: { recommendation: Recommendation }) {
+  const look = VERDICT[recommendation.verdict] ?? VERDICT.REVIEW;
+  const weighed = recommendation.verdict !== 'DECLINE';
+  return (
+    <section
+      aria-label="Suggestion"
+      className="tw:rounded-xl tw:border tw:border-secondary tw:bg-primary tw:p-4 tw:shadow-xs">
+      <div className="tw:flex tw:flex-wrap tw:items-center tw:gap-4">
+        <div className="tw:flex tw:min-w-0 tw:flex-1 tw:items-center tw:gap-3">
+          <span
+            aria-hidden
+            className="tw:flex tw:size-10 tw:shrink-0 tw:items-center tw:justify-center tw:rounded-lg tw:bg-utility-brand-50">
+            <Stars02 className="tw:size-5 tw:text-fg-brand-primary" />
+          </span>
+          <div className="tw:min-w-0">
+            <p className="tw:text-xs tw:text-tertiary">ARAK suggests</p>
+            <p className="tw:flex tw:flex-wrap tw:items-center tw:gap-2">
+              <Badge color={look.colour} size="md" type="pill-color">
+                {look.label}
+              </Badge>
+              {recommendation.suggestedDays !== null && (
+                <span className="tw:text-sm tw:font-medium tw:text-secondary">
+                  for {recommendation.suggestedDays} days
+                </span>
+              )}
+            </p>
+          </div>
+        </div>
+        {weighed && (
+          <div className="tw:w-full tw:sm:w-56">
+            <div className="tw:flex tw:items-baseline tw:justify-between tw:gap-2">
+              <span className="tw:text-xs tw:text-tertiary">Leans to approve</span>
+              <span
+                aria-label={`${recommendation.score}% towards approving`}
+                className="tw:text-display-xs tw:font-semibold tw:tabular-nums tw:text-primary">
+                {recommendation.score}%
+              </span>
+            </div>
+            <div
+              aria-hidden
+              className="tw:relative tw:mt-1.5 tw:h-2 tw:overflow-hidden tw:rounded-full tw:bg-quaternary">
+              <div
+                className={`tw:h-full tw:rounded-full ${look.bar}`}
+                style={{ width: `${recommendation.score}%` }}
+              />
+            </div>
+          </div>
+        )}
+      </div>
+
+      <p className="tw:mt-3 tw:text-sm tw:text-secondary">{recommendation.summary}</p>
+
+      {recommendation.signals.length > 0 && (
+        <ul aria-label="Why" className="tw:mt-3 tw:flex tw:flex-col tw:divide-y tw:divide-secondary tw:rounded-lg tw:border tw:border-secondary">
+          {weighed && (
+            <li className="tw:flex tw:items-center tw:gap-3 tw:px-3 tw:py-2 tw:text-xs tw:text-tertiary">
+              <span className="tw:w-10 tw:shrink-0 tw:text-right tw:font-semibold tw:tabular-nums">50</span>
+              <span>Where every request starts</span>
+            </li>
+          )}
+          {recommendation.signals.map((signal) => (
+            <li className="tw:flex tw:items-start tw:gap-3 tw:px-3 tw:py-2 tw:text-sm" data-code={signal.code} key={signal.code}>
+              {weighed ? (
+                <span
+                  className={`tw:w-10 tw:shrink-0 tw:text-right tw:font-semibold tw:tabular-nums ${
+                    signal.points > 0 ? 'tw:text-success-primary' : signal.points < 0 ? 'tw:text-error-primary' : 'tw:text-tertiary'
+                  }`}>
+                  {signal.points > 0 ? `+${signal.points}` : signal.points < 0 ? `−${-signal.points}` : '0'}
+                </span>
+              ) : (
+                <InfoCircle className="tw:mt-0.5 tw:size-4 tw:shrink-0 tw:text-fg-quaternary" />
+              )}
+              <span className="tw:min-w-0 tw:text-secondary">{signal.detail}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <p className="tw:mt-3 tw:text-xs tw:text-quaternary">
+        A suggestion only, worked out from the facts below. You decide; nothing is approved until you answer.
+      </p>
     </section>
   );
 }
@@ -108,10 +230,9 @@ function ReviewBody({ review }: { review: AccessReview }) {
     <>
       {review.conflicts.length > 0 && <ConflictList conflicts={review.conflicts} />}
 
-      <div className="tw:grid tw:gap-5 tw:lg:grid-cols-2">
-        <div className="tw:min-w-0">
-          <Heading>Who is asking</Heading>
-          <div className="tw:mt-2 tw:flex tw:items-center tw:gap-2">
+      <div className="tw:grid tw:gap-4 tw:lg:grid-cols-2">
+        <Panel icon={User01} title="Who is asking">
+          <div className="tw:flex tw:min-w-0 tw:flex-wrap tw:items-center tw:gap-x-2 tw:gap-y-1">
             <User01 className="tw:size-4 tw:shrink-0 tw:text-fg-quaternary" />
             <span className="tw:truncate tw:text-sm tw:font-medium tw:text-primary">
               {requester.displayName || requester.username}
@@ -131,18 +252,36 @@ function ReviewBody({ review }: { review: AccessReview }) {
               )
             )}
           </div>
-          <dl className="tw:mt-3 tw:grid tw:grid-cols-[auto_1fr] tw:gap-x-4 tw:gap-y-1.5 tw:text-sm">
-            {requester.email && <Row label="Email">{requester.email}</Row>}
+          <dl className={FACTS}>
+            {requester.email && (
+              <Row label="Email">
+                <span className="tw:block tw:truncate" title={requester.email}>
+                  {requester.email}
+                </span>
+              </Row>
+            )}
             {requester.source && <Row label="Directory">{requester.source}</Row>}
             <Row label="Groups">
               {requester.memberships.length === 0 ? (
                 <None />
               ) : (
-                <Chips
-                  values={requester.memberships.map(
-                    (m) => `${m.kind === 'team' ? 'Team ' : ''}${m.displayName || m.name}`
-                  )}
-                />
+                <span className="tw:flex tw:min-w-0 tw:flex-wrap tw:gap-1">
+                  {requester.memberships.map((m) => {
+                    const label = `${m.kind === 'team' ? 'Team ' : ''}${m.displayName || m.name}`;
+                    return (
+                      <Link
+                        aria-label={`Open ${label}: its members and attributes`}
+                        className="tw:max-w-full tw:rounded-full tw:transition tw:hover:opacity-80 tw:focus-visible:outline-2 tw:focus-visible:outline-offset-1 tw:focus-visible:outline-brand"
+                        key={m.id}
+                        title={`${label} — open its members and attributes`}
+                        to={`/principals/${encodeURIComponent(m.id)}`}>
+                        <Badge className="tw:max-w-full tw:cursor-pointer" color="brand" size="sm" type="pill-color">
+                          <span className="tw:truncate">{label}</span>
+                        </Badge>
+                      </Link>
+                    );
+                  })}
+                </span>
               )}
             </Row>
             <Row label="Attributes">
@@ -166,9 +305,11 @@ function ReviewBody({ review }: { review: AccessReview }) {
             </Row>
           </dl>
           {requester.earlier.length > 0 && (
-            <ul aria-label="Earlier requests for this table" className="tw:mt-3 tw:flex tw:flex-col tw:gap-1 tw:text-xs tw:text-tertiary">
+            <ul
+              aria-label="Earlier requests for this table"
+              className="tw:mt-3 tw:flex tw:flex-col tw:gap-1 tw:border-t tw:border-secondary tw:pt-3 tw:text-xs tw:text-tertiary">
               {requester.earlier.map((past) => (
-                <li key={past.id}>
+                <li className="tw:break-words" key={past.id}>
                   <b className="tw:font-semibold tw:text-secondary">{past.status.toLowerCase().replace('_', ' ')}</b>{' '}
                   <span title={past.createdAt}>{relativeTime(past.createdAt)}</span>
                   {past.decidedBy && ` by ${past.decidedBy}`}
@@ -177,11 +318,10 @@ function ReviewBody({ review }: { review: AccessReview }) {
               ))}
             </ul>
           )}
-        </div>
+        </Panel>
 
-        <div className="tw:min-w-0">
-          <Heading>The table</Heading>
-          <dl className="tw:mt-2 tw:grid tw:grid-cols-[auto_1fr] tw:gap-x-4 tw:gap-y-1.5 tw:text-sm">
+        <Panel icon={Database01} title="The table">
+          <dl className={`${FACTS} tw:mt-0`}>
             <Row label="Owners">
               {table.owners.length === 0 ? (
                 <None text="None recorded" />
@@ -205,7 +345,7 @@ function ReviewBody({ review }: { review: AccessReview }) {
               )}
             </Row>
           </dl>
-        </div>
+        </Panel>
       </div>
 
       <div>
@@ -216,13 +356,13 @@ function ReviewBody({ review }: { review: AccessReview }) {
       {risk.factors.length > 0 && (
         <div>
           <Heading>Why this risk</Heading>
-          <ul className="tw:mt-2 tw:flex tw:flex-col tw:gap-1 tw:text-sm tw:text-secondary">
+          <ul className="tw:mt-2 tw:flex tw:flex-col tw:gap-1.5 tw:text-sm tw:text-secondary">
             {risk.factors.map((f) => (
               <li className="tw:flex tw:items-start tw:gap-2" key={f.code}>
-                <Badge color={RISK[f.level].colour} size="sm" type="pill-color">
+                <Badge className="tw:w-16 tw:shrink-0 tw:justify-center" color={RISK[f.level].colour} size="sm" type="pill-color">
                   {f.level.toLowerCase()}
                 </Badge>
-                <span>{f.detail}</span>
+                <span className="tw:min-w-0">{f.detail}</span>
               </li>
             ))}
           </ul>
@@ -379,6 +519,23 @@ function Suggestions({ review }: { review: AccessReview }) {
   );
 }
 
+/** The rows of a fact list: the labels line up, and a long value wraps inside its column. */
+const FACTS =
+  'tw:mt-3 tw:grid tw:grid-cols-[6.5rem_minmax(0,1fr)] tw:items-baseline tw:gap-x-3 tw:gap-y-2 tw:text-sm';
+
+/** A titled box, one of a pair side by side. */
+function Panel({ icon: Icon, title, children }: { icon: typeof User01; title: string; children: ReactNode }) {
+  return (
+    <div className="tw:min-w-0 tw:rounded-lg tw:border tw:border-secondary tw:p-4">
+      <h4 className="tw:mb-3 tw:flex tw:items-center tw:gap-2 tw:text-xs tw:font-semibold tw:tracking-wide tw:text-quaternary tw:uppercase">
+        <Icon aria-hidden className="tw:size-4 tw:text-fg-quaternary" />
+        {title}
+      </h4>
+      {children}
+    </div>
+  );
+}
+
 function Heading({ children }: { children: ReactNode }) {
   return (
     <h4 className="tw:text-xs tw:font-semibold tw:tracking-wide tw:text-quaternary tw:uppercase">
@@ -396,12 +553,18 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
+/**
+ * Values as chips that wrap, and truncate when one is wider than the column:
+ * a domain FQN can be longer than the whole panel. The title keeps it readable.
+ */
 function Chips({ values }: { values: string[] }) {
   return (
-    <span className="tw:flex tw:flex-wrap tw:gap-1">
+    <span className="tw:flex tw:min-w-0 tw:flex-wrap tw:gap-1">
       {values.map((v) => (
-        <Badge color="gray" key={v} size="sm" type="pill-color">
-          {v}
+        <Badge className="tw:max-w-full" color="gray" key={v} size="sm" type="pill-color">
+          <span className="tw:truncate" title={v}>
+            {v}
+          </span>
         </Badge>
       ))}
     </span>

@@ -3,6 +3,7 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import { MemoryRouter, useLocation } from 'react-router-dom';
 import DashboardPage, { wordingOf } from './DashboardPage';
 import type { Attention, Dashboard, SensitiveTable } from '../../api/dashboard';
+import type { GovernanceValue } from '../../api/governance';
 
 const fetchDashboard = jest.fn();
 
@@ -10,6 +11,43 @@ jest.mock('../../api/dashboard', () => {
   const actual = jest.requireActual('../../api/dashboard');
   return { ...actual, fetchDashboard: (...args: unknown[]) => fetchDashboard(...args) };
 });
+
+const fetchVocabulary = jest.fn();
+
+jest.mock('../../api/governance', () => {
+  const actual = jest.requireActual('../../api/governance');
+  return { ...actual, fetchVocabulary: () => fetchVocabulary() };
+});
+
+function value(fqn: string, depth: number, assets: number, children: GovernanceValue[] = [], disabled = false): GovernanceValue {
+  return {
+    fqn,
+    name: fqn.split('.').pop() as string,
+    parentFqn: depth === 0 ? null : fqn.slice(0, fqn.lastIndexOf('.')),
+    displayName: null,
+    description: null,
+    depth,
+    provenance: 'openmetadata',
+    disabled,
+    mutuallyExclusive: false,
+    assets,
+    directAssets: assets,
+    policies: 0,
+    children,
+  };
+}
+
+const VOCABULARY = {
+  classifications: [
+    value('PII', 0, 5, [value('PII.Sensitive', 1, 4)]),
+    value('Tier', 0, 2, [value('Tier.Tier1', 1, 1)]),
+    value('Retired', 0, 0, [], true),
+  ],
+  glossaries: [],
+  domains: [],
+  dataProducts: [],
+  customProperties: [],
+};
 
 jest.mock('../../api/client', () => ({
   apiErrorMessage: (error: { message?: string }, fallback: string) => error?.message ?? fallback,
@@ -131,6 +169,8 @@ function section(name: string) {
 
 beforeEach(() => {
   fetchDashboard.mockReset();
+  fetchVocabulary.mockReset();
+  fetchVocabulary.mockResolvedValue(VOCABULARY);
   location = '';
 });
 
@@ -157,7 +197,8 @@ describe('DashboardPage', () => {
     renderPage('/dashboard?days=90&label=Finance');
     await screen.findByRole('region', { name: 'Key figures' });
     expect(fetchDashboard).toHaveBeenCalledWith(90, 'Finance');
-    expect(screen.getByRole('textbox', { name: 'Sensitive label' })).toHaveValue('Finance');
+    // Not a label the catalogue knows, yet it stays what the picker shows.
+    expect(screen.getByRole('button', { name: /Sensitive label/ })).toHaveTextContent('Finance');
   });
 
   it('falls back to thirty days when the address asks for a window it does not offer', async () => {
@@ -167,25 +208,25 @@ describe('DashboardPage', () => {
     expect(fetchDashboard).toHaveBeenCalledWith(30, 'PII');
   });
 
-  it('puts a new label in the address once typing stops', async () => {
-    jest.useFakeTimers();
-    try {
-      fetchDashboard.mockResolvedValue(dashboard());
-      renderPage();
-      await screen.findByRole('region', { name: 'Key figures' });
+  it('offers the labels the catalogue knows, and puts the chosen one in the address', async () => {
+    fetchDashboard.mockResolvedValue(dashboard());
+    renderPage();
+    await screen.findByRole('region', { name: 'Key figures' });
+    await waitFor(() => expect(fetchVocabulary).toHaveBeenCalled());
 
-      fireEvent.change(screen.getByRole('textbox', { name: 'Sensitive label' }), {
-        target: { value: 'Tier.Tier1' },
-      });
-      expect(fetchDashboard).not.toHaveBeenCalledWith(30, 'Tier.Tier1');
-      act(() => {
-        jest.advanceTimersByTime(500);
-      });
-      await waitFor(() => expect(fetchDashboard).toHaveBeenLastCalledWith(30, 'Tier.Tier1'));
-      expect(location).toBe('?label=Tier.Tier1');
-    } finally {
-      jest.useRealTimers();
-    }
+    fireEvent.click(screen.getByRole('button', { name: /Sensitive label/ }));
+    const options = (await screen.findAllByRole('option')).map((o) => o.textContent);
+    expect(options).toHaveLength(4);
+    expect(options[0]).toContain('PII');
+    expect(options[0]).toContain('every tag under it');
+    expect(options[1]).toContain('PII.Sensitive');
+    expect(options[1]).toContain('4 tables and columns');
+    // A disabled classification is not enforced, so it is not offered.
+    expect(options.join()).not.toContain('Retired');
+
+    fireEvent.click(screen.getByRole('option', { name: /Tier\.Tier1/ }));
+    await waitFor(() => expect(fetchDashboard).toHaveBeenLastCalledWith(30, 'Tier.Tier1'));
+    expect(location).toBe('?label=Tier.Tier1');
   });
 
   it('lists what needs attention, loudest first, each with the way to fix it', async () => {

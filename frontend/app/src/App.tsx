@@ -105,7 +105,9 @@ export default function App() {
           <Route element={<HomePersonasPage />} path="/settings/home" />
           <Route element={<LlmSettingsPage />} path="/settings/assistant" />
           <Route element={<SettingsPage />} path="/settings" />
-          <Route element={<SystemStatusPage />} path="/system" />
+          <Route element={<SystemStatusPage />} path="/settings/system" />
+          {/* Where it lived while it had a place in the rail; old links still land. */}
+          <Route element={<Navigate replace to="/settings/system" />} path="/system" />
           {/*
             Inside the guard, not outside it. The reference names the facets
             and attributes this deployment carries, which is a description of

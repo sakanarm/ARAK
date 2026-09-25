@@ -94,6 +94,20 @@ export interface PrincipalDetail {
   groups: Principal[];
   /** The people in it, when this principal is a group. */
   members: Principal[];
+  /**
+   * For a group, each attribute value its members hold and how many hold it.
+   * Older servers leave it out.
+   */
+  memberAttributes?: MemberAttribute[];
+}
+
+export interface MemberAttribute {
+  key: string;
+  value: string;
+  /** Members holding this value. */
+  members: number;
+  /** Members holding any value of this key; one person may hold several. */
+  keyHolders: number;
 }
 
 export interface AttributeValue {

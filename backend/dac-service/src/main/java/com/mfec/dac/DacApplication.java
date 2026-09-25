@@ -12,6 +12,7 @@ import com.mfec.dac.access.WorkflowStore;
 import com.mfec.dac.access.GrantStore;
 import com.mfec.dac.home.HomeLayoutStore;
 import com.mfec.dac.home.HomeLayoutValidator;
+import com.mfec.dac.home.RailStore;
 import com.mfec.dac.crypto.SecretBox;
 import com.mfec.dac.llm.LlmClient;
 import com.mfec.dac.llm.LlmSecretRef;
@@ -49,6 +50,7 @@ import com.mfec.dac.resources.HomePersonaResource;
 import com.mfec.dac.resources.HomeResource;
 import com.mfec.dac.resources.LlmAssistResource;
 import com.mfec.dac.resources.LlmResource;
+import com.mfec.dac.resources.RailResource;
 import com.mfec.dac.resources.AuditResource;
 import com.mfec.dac.resources.DashboardResource;
 import com.mfec.dac.resources.AuthResource;
@@ -431,6 +433,11 @@ public class DacApplication extends Application<DacConfiguration> {
     // one person writes and another person renders, so it is the last place
     // that should get a second way into the table.
     environment.jersey().register(new HomePersonaResource(homeLayouts));
+    // The left-hand rail each person arranges for themselves. A menu preference
+    // only: every section it names is still refused at the API by its own role.
+    environment
+        .jersey()
+        .register(new RailResource(new RailStore(jdbi, environment.getObjectMapper())));
 
     // The assistant (M11). Each person points it at their own gateway with
     // their own key; the deployment may also run a shared one for anybody who

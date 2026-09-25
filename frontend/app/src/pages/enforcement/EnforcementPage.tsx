@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   AlertTriangle,
@@ -51,7 +52,13 @@ export default function EnforcementPage() {
     <div className="tw:flex tw:flex-col tw:gap-5">
       <header className="tw:flex tw:flex-wrap tw:items-start tw:justify-between tw:gap-3">
         <div>
-          <h1 className="tw:text-display-xs tw:font-semibold tw:text-primary">Enforcement</h1>
+          {/* Reached from Settings now rather than the rail, so it says where it lives. */}
+          <p className="tw:text-sm tw:text-tertiary">
+            <Link className="tw:hover:text-brand-secondary tw:hover:underline" to="/settings">
+              Settings
+            </Link>
+          </p>
+          <h1 className="tw:mt-1 tw:text-display-xs tw:font-semibold tw:text-primary">Enforcement</h1>
           <p className="tw:mt-1 tw:max-w-3xl tw:text-pretty tw:text-sm tw:text-tertiary">
             Secure views on registered sources. Run a dry run to read exactly what would change;
             an administrator applies that review, or rolls a view back by the name it was

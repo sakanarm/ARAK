@@ -120,11 +120,26 @@ public class PrincipalQuery {
 
   public record Attribute(String key, String value, String source) {}
 
+  /**
+   * @param memberAttributes for a group, the attribute values its direct members
+   *     hold and how many hold each -- what a rule written against those
+   *     attributes would see of the group. Empty for a user. The group's own
+   *     attributes are not among them: members do not inherit those.
+   */
   public record PrincipalDetail(
       Principal principal,
       List<Attribute> attributes,
       List<Principal> groups,
-      List<Principal> members) {}
+      List<Principal> members,
+      List<MemberAttribute> memberAttributes) {}
+
+  /**
+   * One attribute value among a group's members.
+   *
+   * @param members how many members hold this value
+   * @param keyHolders how many hold any value of the key; one person may hold several
+   */
+  public record MemberAttribute(String key, String value, int members, int keyHolders) {}
 
   private static final String PRINCIPAL_COLUMNS =
       """
@@ -359,9 +374,40 @@ public class PrincipalQuery {
                               rs.getString("source")))
                   .list();
 
+          List<Principal> members = related(handle, id, false);
+          List<MemberAttribute> memberAttributes =
+              members.isEmpty()
+                  ? List.of()
+                  : handle
+                      .createQuery(
+                          """
+                          WITH held AS (
+                            SELECT DISTINCT a.principal_id, a.attr_key, a.attr_value
+                            FROM group_member g
+                            JOIN principal_attribute a
+                              ON a.principal_id = g.member_id AND a.valid_to IS NULL
+                            WHERE g.group_id = CAST(:id AS uuid))
+                          SELECT h.attr_key, h.attr_value,
+                                 count(*) AS holders,
+                                 (SELECT count(DISTINCT k.principal_id) FROM held k
+                                   WHERE k.attr_key = h.attr_key) AS key_holders
+                          FROM held h
+                          GROUP BY h.attr_key, h.attr_value
+                          ORDER BY h.attr_key, holders DESC, h.attr_value
+                          """)
+                      .bind("id", id)
+                      .map(
+                          (rs, ctx) ->
+                              new MemberAttribute(
+                                  rs.getString("attr_key"),
+                                  rs.getString("attr_value"),
+                                  rs.getInt("holders"),
+                                  rs.getInt("key_holders")))
+                      .list();
+
           return java.util.Optional.of(
               new PrincipalDetail(
-                  found.get(), attributes, related(handle, id, true), related(handle, id, false)));
+                  found.get(), attributes, related(handle, id, true), members, memberAttributes));
         });
   }
 

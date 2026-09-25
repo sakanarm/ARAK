@@ -43,7 +43,7 @@ Phase 1 รองรับ SQL Server + PostgreSQL · identity หลักค�
 | **M13 Request access จากจุดที่โดนปฏิเสธ** | ✅ **เสร็จรอบนี้ (ข้อ AX)** · refusal (403) ของ `POST /v1/query` พก `assetFqn` · `requestable` · `blockedBy` · `approvers[]` · `openRequestId` · หน้า Query ขึ้นกล่อง **"The owner can let you in"** → ฟอร์มขอสิทธิ์ (เหตุผล + จำนวนวัน + purpose + SQL ที่ติด) · ถ้า grant ช่วยไม่ได้ (DENY / ชั้นบนปฏิเสธ) บอกชื่อ policy ที่ขวางแทน ไม่ส่งไปให้ owner · **SQL Suggest** ในหน้า Query พร้อมป้าย *Readable* / *Request needed* ต่อ table · **ปุ่มเดียวกันบนหน้า asset ใน Catalog ✅ (ข้อ AY)** — มุมขวาบนของหัวหน้า asset · เปิด dialog ฟอร์มเดียวกัน · บอก *You can read this* / *Access requested* / กุญแจ + ชื่อ policy ที่ขวาง · ยังไม่ทำ: flag "ปฏิเสธแบบไม่บอกอะไรเลย" ต่อ policy |
 | **M14 Public API + Swagger + Org Key** | ⬜ **Roadmap ใหม่ — ผู้ใช้ขอ 2026-09-24** · เปิด ARAK ให้ระบบอื่นเรียกได้: **Swagger UI + OpenAPI spec** ที่ generate จาก resource จริง · **สร้าง policy** และ **query ตามสิทธิ์ที่ตัวเองมี** ผ่าน API ได้ · auth ด้วย **Org Key ที่มีวันหมดอายุบังคับ** — scope ต่อ key, ผูกกับ principal ที่ระบุ, สิทธิ์ของ key ไม่เกินสิทธิ์ของเจ้าของ — ดูข้อ AP.2 |
 | **M15 LLM อธิบาย policy และอธิบาย dashboard** | ⬜ **Roadmap ใหม่ — ผู้ใช้ขอ 2026-09-24** · ต่อยอดจาก M11 ที่ per-user gateway ใช้ได้จริงแล้ว · **(ก)** admin เปิด policy ตัวหนึ่งแล้วกด "อธิบายให้ฟัง" — LLM แปล selector + subject rule + row filter + mask ออกมาเป็นภาษาคน พร้อมบอกว่า **จะถูก policy ชั้นบนทับตรงไหน** · **(ข)** หน้า Dashboard (M10) กดที่กราฟแล้วให้ LLM อ่านตัวเลขให้ฟังว่ามันแปลว่าอะไรและควรไปดูอะไรต่อ — ⚠️ **ส่ง metadata + ตัวเลขสรุปเท่านั้น ห้ามส่งแถวข้อมูลจริง และ LLM ยังไม่มีสิทธิ์ activate อะไรทั้งสิ้น** (FR-2.6) — ดูข้อ AP.3 |
-| **M16 LLM ช่วยหา asset จากสิ่งที่อยากได้** | ⬜ **Roadmap ใหม่ — ผู้ใช้ขอ 2026-09-24** · ในหน้า Query เพิ่ม option ให้พิมพ์เป็นภาษาคนว่า *“อยากได้ข้อมูลผลิตภัณฑ์และราคา”* แล้ว LLM ไปค้นใน metadata (asset + column + description + tag + glossary term + domain) แล้วตอบกลับเป็น **ตาราง/คอลัมน์ที่น่าจะใช่ พร้อมเหตุผลว่าทำไม** · แต่ละตัวต้องบอกด้วยว่า **คุณ query ได้เลย** หรือ **ต้องไปขอสิทธิ์ก่อน** (ต่อปุ่มของ M13 ตรงนั้น) · ตัวที่ query ได้กดแล้วเติม SQL ร่างลงช่อง editor ให้เลย — ⚠️ **ค้นบน metadata เท่านั้น ห้ามส่งแถวข้อมูลจริงให้ LLM** และผลลัพธ์ต้อง **กรองด้วยสิทธิ์ของคนที่ถาม** ก่อนแสดง (ห้ามใช้ LLM เป็นช่องทางส่องว่ามีตารางอะไรอยู่บ้าง) — ดูข้อ AP.4 |
+| **M16 LLM ช่วยหา asset จากสิ่งที่อยากได้** | ⬜ **Roadmap ใหม่ — ผู้ใช้ขอ 2026-09-24** · ในหน้า Query เพิ่ม option ให้พิมพ์เป็นภาษาคนว่า *“อยากได้ข้อมูลผลิตภัณฑ์และราคา”* แล้ว LLM ไปค้นใน metadata (asset + column + description + tag + glossary term + domain) แล้วตอบกลับเป็น **ตาราง/คอลัมน์ที่น่าจะใช่ พร้อมเหตุผลว่าทำไม** · แต่ละตัวต้องบอกด้วยว่า **คุณ query ได้เลย** หรือ **ต้องไปขอสิทธิ์ก่อน** (ต่อปุ่มของ M13 ตรงนั้น) · ตัวที่ query ได้กดแล้วเติม SQL ร่างลงช่อง editor ให้เลย — ⚠️ **ค้นบน metadata เท่านั้น ห้ามส่งแถวข้อมูลจริงให้ LLM** และผลลัพธ์ต้อง **กรองด้วยสิทธิ์ของคนที่ถาม** ก่อนแสดง (ห้ามใช้ LLM เป็นช่องทางส่องว่ามีตารางอะไรอยู่บ้าง) — ดูข้อ AP.4 · **จุดเข้าที่สอง — หน้า Catalog** (ผู้ใช้ขอ 2026-09-26 *"Catalog ต้องสามารถให้ LLM มาช่วยในการค้นหาได้ด้วย"*): ช่องค้นหาของ Catalog มีโหมด "Ask" ที่พิมพ์เป็นภาษาคนได้ ใช้ backend ตัวเดียวกับหน้า Query · ผลลัพธ์เป็น asset ที่คนถามมองเห็นอยู่แล้วเท่านั้น พร้อมเหตุผล และปุ่มเปิดหน้า asset / ขอสิทธิ์ · ตัวแชทเต็มรูปแบบอยู่ใน **M28** |
 | **M17 ประวัติย้อนหลังของ policy** | ⬜ **Roadmap ใหม่ — ผู้ใช้ขอ 2026-09-24** · ชิป *`v13 · active`* ที่เห็นบนหน้า policy มาจาก `policy.version` + `policy.lifecycle_state` · **ประวัติเก็บครบอยู่แล้วใน `policy_version`** (append-only ตั้งแต่ V3 — `PolicyStore` เขียนทุกครั้งก่อนแก้แถวจริง เก็บ `document` ทั้งใบ + `lifecycle_state` + `changed_by` + `change_reason` + `changed_at`) และ `GET /v1/policies/{id}/versions` ก็เปิดอยู่ **แต่ไม่มีหน้าจอไหนเรียกมันเลย** (`fetchPolicyVersions` ใน `api/policies.ts` เขียนไว้แล้วแต่ไม่มีใครใช้) · งานคือ: **แท็บ History** บนหน้า policy · **diff ระหว่างสองเวอร์ชัน** · **rollback** (เขียนเวอร์ชันใหม่ทับ ไม่ใช่ลบของเก่า ตาม FR-9.2) · และ **`audit_policy_change` ที่ยังไม่มีใครเขียนลงไปเลยสักแถว** — ดูข้อ AP.5 |
 | **M18 รองรับ database type ใหม่ได้โดยไม่ต้องไล่แก้ 14 จุด** | 🚧 **~75% — slice 1 จบรอบนี้และ*ผ่านการรันจริง*แล้ว (ดูข้อ AR)** · `SourceEngine` registry + `SqlDialects` + `ProxyCapabilities` + `V18__source_engine.sql` + `GET /v1/sources/engines` · **switch ทั้ง 3 ตัวและ hardcode ฝั่ง frontend ทั้ง 6 ไฟล์หายไปแล้ว** · **proxy fail-closed แล้ว** — engine ที่ mask ไม่ได้ถูกปฏิเสธพร้อมบอกทางออก แทนที่จะคืน column แบบ plaintext · เหลือ: introspection quirk ต่อ engine (`supportsSchemas` ยังไม่มีใครอ่าน) · `engine_capability` ฝั่ง native ยังไม่มีคนอ่าน (รอ M6) · และ **เพิ่ม engine ตัวที่ 3 จริงเพื่อพิสูจน์ว่า class เดียวพอ** · เดิมคือ ⬜ **Roadmap ใหม่ — ผู้ใช้ขอ 2026-09-24** · ของที่แพงออกแบบถูกแล้ว (`PolicyDecision` ไม่มี SQL · `SqlDialect` เป็น interface · `engine_capability` เป็น data) **แต่ชื่อ engine ถูก hardcode อยู่ 14 ที่** — `CHECK (engine IN (...))` 2 migration · switch ใน `JdbcTargets` + `SourceProbe` + `QueryService.dialectFor()` · frontend อีก 6 ไฟล์ · ลืมจุดเดียว**ไม่ error ตอน compile** แต่พังตอน runtime · งานคือ **`SourceEngine` registry ตัวเดียว** ที่ถือ url template + driver + dialect + probe + introspection quirk แล้วให้ทุกจุดอ่านจากมัน → เพิ่ม engine = **class 1 ตัว + capability rows** — ดูข้อ AP.7 |
 | **M19 AI-Driven Anomalous Access Detection** | ⬜ **Roadmap ใหม่ — ผู้ใช้ขอ 2026-09-25** · เรียนรู้ baseline การเข้าถึงข้อมูลของแต่ละคน (ปริมาณแถว · ช่วงเวลา · table ที่แตะ · อัตราโดนปฏิเสธ) แล้วจับพฤติกรรมที่ผิดไปจาก baseline เช่น ปกติดึงลูกค้าวันละ 10 แถว แต่วันหนึ่งดึง 5,000 แถวตอนตี 3 · **ตอบสนองได้ 3 ระดับ: แจ้งเตือน → ขอเหตุผลหรือให้ owner อนุมัติ → block แล้วพักสิทธิ์ใช้ query ไว้จนกว่า security จะตรวจ** · **block ทันทีทำได้เฉพาะเมื่อ query ผ่าน proxy (5.2)** · โหมด native (5.1.1 / 5.1.2) ทำได้แค่ตรวจย้อนหลังแล้วพักสิทธิ์ · v1 ใช้สถิติที่อธิบายได้ (median / MAD · histogram ตามชั่วโมง · table ที่ไม่เคยแตะ) ก่อน ML · LLM ใช้อธิบายเหตุผลเท่านั้น และเห็นแค่ตัวเลขสรุป ไม่เห็นข้อมูลจริง · ต้องเริ่มจาก shadow mode (แจ้งเตือนอย่างเดียว) · ต้องมี M10 (query log + `asset_fqns`) ก่อน · ดูข้อ AP.9 |
@@ -53,6 +53,9 @@ Phase 1 รองรับ SQL Server + PostgreSQL · identity หลักค�
 | **M23 Personal Security Health Dashboard** | ⬜ **Roadmap ใหม่ — ผู้ใช้ขอ 2026-09-25** · หน้าส่วนตัวของแต่ละคน: ตอนนี้ฉันเข้าถึงอะไรได้บ้าง และปลอดภัยไหม · **ต่อยอดของที่มีแล้ว:** การ์ด Home "what applies to you" · grant ใกล้หมดอายุ + นับถอยหลัง (M9 slice 2c) · query log ของตัวเอง (M10) · **ใหม่:** รวมทุกช่องทางที่ทำให้เข้าถึงได้ (grant · policy ตาม role / team / attribute · owner) พร้อมระดับความอ่อนไหว · สิทธิ์ที่ไม่ได้ใช้ ≥ 90 วัน + ปุ่มคืนสิทธิ์ · คะแนน / checklist ความปลอดภัยส่วนตัว · การแจ้งเตือนความผิดปกติจาก M19 · ดูข้อ AP.14 |
 | **M24 Automated Query Risk Blocker** | ⬜ **Roadmap ใหม่ — ผู้ใช้ขอ 2026-09-25** · ประเมินความเสี่ยงของ SQL **ก่อนส่งไป database** แล้วเตือน / ขอเหตุผล / บล็อก · **ที่มีแล้ว:** read-only (SELECT อย่างเดียว) · fail-closed ถ้า parse หรือ resolve table ไม่ครบ · จำกัดแถว `MAX_ROWS` 5,000 · timeout 30 วินาที · **ใหม่:** กฎตรวจโครงสร้าง (ไม่มี WHERE บน table ใหญ่ · cartesian join · `SELECT *` บน PII · ดึง PII จำนวนมาก) · ประเมิน cost ด้วย `EXPLAIN` · คะแนนความเสี่ยง + นโยบาย WARN / REQUIRE_PURPOSE / BLOCK · LLM อธิบายความเสี่ยงจากโครงสร้างที่ตัดค่าจริงออกแล้ว · ดูข้อ AP.15 |
 | **M25 On-Demand Test Data Synthesis** | ⬜ **Roadmap ใหม่ — ผู้ใช้ขอ 2026-09-25** · สร้างข้อมูลจำลอง (synthetic data) จาก table จริงเพื่อใช้ทดสอบ / เทรนโมเดล · เรียนสถิติผ่าน proxy ด้วย Differential Privacy (ε กำหนดได้) · รักษาความสัมพันธ์ข้าม table ตาม PK / FK · ส่งออกเป็นไฟล์ หรือเขียนลง sandbox ที่ ARAK เป็นเจ้าของ · **ระวังคำโฆษณา:** "เหมือนจริง 100%" กับ "ปลอดภัย 100%" ทำพร้อมกันไม่ได้ — จะรายงานค่า ε และคะแนน fidelity / privacy ให้เห็นแทน · ดูข้อ AP.16 |
+| **M26 LLM Fix with AI + Explain query** | ⬜ **Roadmap ใหม่ — ผู้ใช้ขอ 2026-09-26** *"อยากให้มีปุ่ม ให้ LLM มา Correct ให้"* · *"อยากให้มีปุ่มให้ LLM AI อธิบาย Query ให้ได้ด้วย"* · **(ก) Fix with AI** — เมื่อ query ถูกปฏิเสธเพราะ parse ไม่ได้ / column ไม่มี / syntax ผิด ขึ้นปุ่มในกล่อง error · ส่งไป gateway ของ M11 เฉพาะ **SQL + ข้อความ error + metadata** (ชื่อ table / column / type ของ source ที่เลือก) · SQL ที่แก้แล้ว **วางลง editor เป็นข้อเสนอ ให้คนกด Run เอง** และยังต้องผ่าน proxy + policy (fail-closed) เหมือนเดิม · ห้ามใช้ Fix เพื่อหลบการปฏิเสธเพราะไม่มีสิทธิ์ — refusal เรื่องสิทธิ์ต่อปุ่มขอสิทธิ์ของ M13 ไม่ใช่ปุ่ม Fix · **(ข) Explain query** — ปุ่มบนหน้า Query อธิบายเป็นภาษาคนว่า SQL นี้ทำอะไร join อะไร กรองอะไร · ⚠️ **ห้ามส่งแถวผลลัพธ์ให้ LLM** |
+| **M27 ขอสิทธิ์ในนามกลุ่ม** | ⬜ **Roadmap ใหม่ — ผู้ใช้ถาม 2026-09-26** · ตอนนี้คำขอผูกกับผู้ขอคนเดียว (`access_request.requester_id`) · ต้องเพิ่ม subject เป็น group / team · approver ต้องเห็นรายชื่อสมาชิก ณ ตอนอนุมัติ · grant ที่ออกให้กลุ่มต้องตามสมาชิกที่เปลี่ยนภายหลัง (หรือ snapshot — ต้องตัดสินใจ) · คนขอต้องเป็นสมาชิก / owner ของกลุ่ม |
+| **M28 Conversational ARAK Agent** | ⬜ **Roadmap ใหม่ — ผู้ใช้ขอ 2026-09-26** *"Catalog ต้องสามารถแชทพูดคุยได้สิ หรือ ด้านขวาล่าง Mascot ต้องแชทคุยได้ อยากทำอะไร หาอะไร เปิดหน้าไหนในแอพ"* · *"หรือทำเป็น Agent ไปเลย"* · mascot มุมขวาล่าง (AssistDock) + ช่องใน Catalog กลายเป็นแชทโต้ตอบ: **ค้นใน catalog** ("มีข้อมูล employee ไหม" → รายการ table ที่เห็นได้) · **ตอบคำถามทั่วไป / SQL syntax** · **เขียน query** (ใช้ของเดิมในโหมด SQL) · **ร่าง policy** (ของเดิมในโหมด Policy) · **พาไปหน้าในแอพ** ("อยากขอสิทธิ์" → เปิด Requests) · ทำเป็น agent ที่มี tool ชุดเล็ก: `search_catalog` · `describe_asset` · `write_sql` · `draft_policy` · `navigate` — ทุก tool รันด้วยสิทธิ์ของคนที่คุย · ⚠️ **เห็นแค่ metadata ไม่เห็นแถวข้อมูล** · ผลค้นกรองด้วยสิทธิ์ก่อนถึง LLM · **ทำได้แค่แนะนำและพาไป — ไม่ Run / approve / apply / activate อะไรเอง** · ใช้ gateway ต่อคนของ M11 · ต่อยอด **M16** (ค้นหา) และ **M26** (Fix / Explain) |
 
 **ที่รันอยู่ตอนนี้**
 | | |
@@ -616,7 +619,124 @@ M25 ทำแยกได้ (profile ผ่าน proxy ที่มีแล�
 
 ---
 
-## รอบนี้ — **ข้อ BE: M10 — Query log ที่อ่านได้ตามหน้าที่ (V25) + Access Control Dashboard หน้าเดียวทั้งองค์กร**
+## รอบนี้ — **ข้อ BF: Rail ด้านซ้ายที่แต่ละคนจัดเองได้ (V26) + เลือกขนาดได้ Comfortable / Compact (V27) · Enforcement และ System ย้ายเข้า Settings · Suggest พร้อม % · กดดูสมาชิก/attribute ของกลุ่ม · Dashboard เลือก label · 🐛 Query ถูกปฏิเสธว่า "could not be parsed" ทุกตัว**
+
+ผู้ใช้สั่งหลายข้อต่อกันในรอบเดียว — ข้อที่ทำเสร็จและทดสอบแล้วอยู่ในหัวข้อนี้ ข้อที่ยังค้างอยู่ใน BF.9
+
+หลักของรอบนี้:
+- **เมนูเป็นแค่ความชอบ ไม่ใช่สิทธิ์** — rail ที่จัดเองเก็บที่ server ต่อ account แต่ **href ที่เก็บไว้ไม่ให้สิทธิ์อะไรเลย**: client แสดงเฉพาะ section ที่ account นี้ถูก offer อยู่แล้ว (`sectionsFor(hasRole)`) และทุก section ยังถูก API ปฏิเสธเองอยู่ดี
+- **Migration ใหม่สองตัว: V26 + V27** (ตอนนี้ V1–V27)
+- **ไม่มี client address ออกไปไหน** — `requester_ip` / `client_ip` ยังไม่ถูก select ในทุก endpoint ที่แตะรอบนี้ (ตรวจ response จริงแล้ว ไม่มี key ที่เป็น ip)
+
+### BF.1 Rail ที่จัดเองได้ — ผู้ใช้ขอ *"อยากให้สามารถ Customize Ribbon ด้านซ้ายเองได้ ของ user แต่ละคน"*
+
+**Backend**
+- **V26 `user_rail`** — `principal_id uuid PK → principal(id) ON DELETE CASCADE` · `sections jsonb NOT NULL` · `updated_at` · ไม่มีแถว = ใช้ rail ตั้งต้น
+- `home/Rail.java` — `Section(href, shown)` · `Layout(sections)` · `View(sections, updatedAt)` · `validate()`:
+  - body / list เป็น null → "No sections" · href เป็น null → "Every section needs an address" · ซ้ำ → "Listed twice: /x"
+  - ไม่เกิน `MAX_SECTIONS = 40` · href ยาวไม่เกิน 64 · ต้องตรง `^/([a-z0-9-]+(/[a-z0-9-]+)*)?$` — กัน `https://…`, `//host`, `javascript:`, `/../`, query, fragment, ตัวใหญ่, ช่องว่าง, trailing slash · ข้อความ error ตัด href ยาวไม่ให้สะท้อนกลับทั้งก้อน
+  - `shown` ที่เป็น null = true · list ว่างรับได้ (แต่ UI ไม่ยอมให้ save rail ว่าง)
+- `home/RailStore.java` — `forPrincipal` · `save` (validate ก่อนเสมอ แล้ว upsert `CAST(:body AS jsonb)`) · `reset` (ลบแถว)
+- `resources/RailResource.java` — `GET / PUT / DELETE /v1/me/rail` · `@Secured` (ใครก็ได้ที่ login) · **ทำกับแถวของผู้เรียกเท่านั้น ไม่รับ principal จาก request** · ไม่มีเวอร์ชัน admin · `InvalidRailException` → 400
+
+**Frontend**
+- `api/rail.ts` — `fetchRail` / `saveRail` / `resetRail` · key `['me','rail']`
+- `layout/navigation.ts` — field ใหม่ `defaultShown?: boolean` (false = offer ให้แต่ไม่อยู่ใน rail จนกว่าจะ pin) · `arrangeRail(offered, saved)`:
+  - ไม่มีที่เก็บไว้ → rail ตั้งต้น
+  - มี → เรียงตามที่เก็บ · **ตัดทิ้งเงียบๆ** ทุก href ที่ account นี้ไม่ได้ถูก offer (section ที่ถูกลบ / role ที่เสียไป) และตัวที่ซ้ำ
+  - section ที่ถูก offer แต่ไม่เคยจัด (ของใหม่ในรุ่นนี้ หรือได้ role ใหม่) → แทรกต่อจาก section ที่อยู่ก่อนหน้ามันในลำดับตั้งต้น ด้วยค่า shown ตั้งต้น — ไม่ต้องเปิด Customize ก็เจอ
+- `layout/RailCustomizer.tsx` — หน้าต่าง **"Customize your rail"**: ลากเรียงได้ (HTML5 drag) + ปุ่ม ↑ ↓ สำหรับ keyboard · Toggle ต่อแถว · ป้าย "Also in Settings" บน section ที่ `defaultShown: false` · นับ "n of m shown" · **Save ถูกปิดถ้าไม่มีอะไรเปลี่ยน หรือซ่อนหมดทุกตัว** ("Keep at least one section in the rail.") · Reset to default ใช้ได้เมื่อเคยจัดไว้ · mount เฉพาะตอนเปิด ดังนั้นเปิดใหม่ทุกครั้งเริ่มจาก rail จริง ไม่ใช่ draft ที่ Cancel ทิ้งไว้
+- `layout/AppShell.tsx` — `Sidebar` ใช้ `useQuery(fetchRail)` · **ระหว่างรอ หรือโหลดไม่สำเร็จ ใช้ rail ตั้งต้น ไม่ใช่ rail ว่าง** · save/reset สำเร็จ → `setQueryData` แล้วปิด · ไม่สำเร็จ → ข้อความใน `role="alert"` และหน้าต่างยังเปิดอยู่
+
+**BF.1a ขนาดของ rail — เลือกเองได้ระหว่าง Comfortable (แบบเดิม) กับ Compact**
+
+ลำดับเหตุการณ์:
+1. ผู้ใช้ส่งภาพ rail แล้วบอก *"ทำให้ Compact กว่านี้หน่อย ให้ดูสวย Clean ตา ไม่รกตา"* → ทำ rail แบบกระชับแทนที่ของเดิม
+2. ผู้ใช้ดูแล้วบอก *"Menu ด้านซ้าย มันเล็กไป ชอบใหญ่ๆ แบบเดิมมากกว่า เอาคืนมา"*
+3. แล้วสั่งต่อ *"เปลี่ยนเป็นสามารถตั้งค่าได้ ว่าจะเอาแบบนี้ หรือแบบเดิม"* → **แบบเดิมกลับมาเป็นค่าตั้งต้น** และแบบกระชับกลายเป็นตัวเลือก
+
+ใช้ที่ไหน: ปุ่ม **"Customize rail"** ล่างสุดของ rail → หน้าต่าง "Customize your rail" → หัวข้อ **Size** บนสุด → **Comfortable** (*Large rows and icons*) / **Compact** (*Narrower, shorter rows*) → **Save** · เก็บต่อคนเหมือน section · **Reset to default** กลับเป็น Comfortable
+
+**Backend**
+- **V27 `user_rail.density`** — `text NOT NULL DEFAULT 'comfortable' CHECK (density IN ('comfortable','compact'))` · แถวเดิมทุกแถวได้ comfortable
+- `Rail.java` — `COMFORTABLE` / `COMPACT` · `Layout(sections, density)` (constructor เดิม `Layout(sections)` ยังใช้ได้ = comfortable) · `View(sections, density, updatedAt)` · `unarranged()` = comfortable · `Rail.density(layout)`: null → comfortable · ค่าอื่นนอกจากสองตัวนี้ → `InvalidRailException("Unknown rail size: …")` (**ตัวพิมพ์ต้องตรง** `Compact` ไม่รับ · ค่ายาวถูกตัดก่อนสะท้อนกลับ)
+- `RailStore` — SELECT / upsert คอลัมน์ `density` ด้วย · validate density ก่อนเขียน ค่าผิดจึงไม่เขียนอะไรลงไปเลย
+
+**Frontend**
+- `api/rail.ts` — `RailDensity` · `railDensity(view)` คืน `compact` เฉพาะเมื่อ server บอก compact เป๊ะๆ (ค่าอื่น / ไม่มี / โหลดพัง = comfortable) · `saveRail(sections, density)` ส่ง `{sections, density}`
+- `AppShell.tsx` — ความกว้างอ่านจาก rail query เดียวกัน: comfortable `w-70` (ย่อ `w-18`) · compact `w-60` (ย่อ `w-16`) · `<nav data-density=…>`
+  - **Comfortable = ของเดิมทุกจุด**: แถว `h-11` · icon `size-6` · `text-md` · แถวที่เปิดอยู่เป็นพื้น brand ทึบ ตัวอักษรขาว · ปุ่ม "Customize rail" เต็มแถว · copyright สองบรรทัด
+  - **Compact**: แถว `h-9` · icon 18px · `text-sm` · แถวที่เปิดอยู่เป็นพื้นฟ้าอ่อน + ตัวอักษร brand · badge `h-4.5` · footer บรรทัดเดียว "© 2026 MFEC" + icon `Sliders01` (aria-label "Customize rail")
+- `RailCustomizer.tsx` — `role="radiogroup"` สองตัวเลือก (`role="radio"` + `aria-checked`) · เปลี่ยนแค่ขนาดก็นับว่า dirty → Save กดได้
+
+**ทดสอบเพิ่ม**
+- `RailTest` +1 (`density()` — ตั้งต้น · สองค่า · ปฏิเสธ `Compact` / `tiny` / `""` / ค่ายาว 200 ตัวอักษร โดยข้อความ error สั้นกว่า 120) → **18**
+- `RailStoreIT` +1 (save ตั้งต้น → compact → อ่านกลับได้ · `tiny` ถูกปฏิเสธและค่าเดิมไม่เปลี่ยน · reset → comfortable · UPDATE ตรงเป็น `tiny` ชน CHECK) → **6**
+- `Rail.test.tsx` +2 (ตั้งต้น comfortable + ปุ่ม Customize เต็มข้อความ · เลือก Compact → Save ส่ง `'compact'` + section ครบ → nav เป็น compact · compact ที่เก็บไว้ถูกอ่าน / ค่าแปลก `huge` = comfortable) → **15**
+- **live** (dev app จริง): Flyway V27 success · GET → `density: comfortable` · PUT compact → คืน compact · PUT `tiny` → 400 · DELETE → comfortable · Playwright: comfortable → เลือก Compact + Save → reload ยัง compact → Reset → comfortable · ไม่มี 5xx / page error · rail ของ admin ถูกคืนเป็นค่าตั้งต้นแล้ว
+
+**ทดสอบ**
+- `RailTest` 17 (+1 ใน BF.1a) · `RailStoreIT` 5 (+1 ใน BF.1a) (round trip, แทนที่ทั้งก้อน, แยกต่อคน, validate ก่อนเขียน, reset + cascade)
+- `layout/Rail.test.tsx` 13 (+2 ใน BF.1a) — arrangeRail 4 เคส · Enforcement offered แต่ไม่แสดงตั้งต้น · requester ไม่ได้ทั้ง Enforcement และ Settings · Sidebar: วาดตามที่เก็บ · fallback ตอนโหลดพัง · pin + ย้าย + save ส่งครบทุก section · ไม่ยอม save rail ว่าง · cancel ไม่เปลี่ยน + reset · save พังแล้วบอกเหตุผล
+- **live** (dev app จริง): GET → null · PUT → คืนตามที่ส่ง · PUT `https://evil.example.test` → 400 · DELETE → null · ไม่มี token → 401 · Playwright: pin Enforcement + ย้าย Requests → save → reload ยังอยู่ → reset กลับตั้งต้น · ไม่มี 5xx / page error
+
+### BF.2 Enforcement ย้ายเข้า Settings — *"เอา Enforcement ไปใส่ใน Setting ก่อน"*
+- `navigation.ts` Enforcement `defaultShown: false` — ยังอยู่ในหน้าต่าง Customize ให้ pin กลับได้
+- Settings → **Data source connections** มีการ์ด **Enforcement** (`/enforcement`) สำหรับ PLATFORM_ADMIN / POLICY_AUTHOR / DATA_OWNER — ตรงกับที่ API ยอม (apply / rollback ยังเป็น admin เท่านั้น)
+- Settings ใน rail เปิดให้ POLICY_AUTHOR / DATA_OWNER ด้วย (เดิม admin เท่านั้น) — ไม่งั้นสองบทบาทนี้หา Enforcement ไม่เจอ · การ์ดที่ `adminOnly` ยังซ่อนจากเขา
+- หน้า Enforcement มี breadcrumb "Settings" เหนือหัวเรื่อง
+- `pages/settings/SettingsPage.test.tsx` (ใหม่ 4) — policy author เห็น Enforcement / ไม่เห็น Registered sources · data owner เห็น · auditor ไม่เห็น · admin เห็นครบ
+
+### BF.3 System ย้ายเข้า Settings — *"เอา System เข้าไปอยู่ใน Setting แล้วไม่ต้องแสดงแถบด้านซ้าย"*
+- route ใหม่ `/settings/system` (การ์ด **Service & build**) · `/system` เดิม redirect มา · ไม่อยู่ใน rail แล้ว
+- หน้า System: breadcrumb Settings · การ์ด Service · ส่วน crawl เฉพาะ admin (non-admin ไม่เรียก `fetchSyncStatus` เลย)
+- `SystemStatusPage.test.tsx` เขียนใหม่ 4 เคส
+
+### BF.4 Suggest พร้อม verdict และ % — หน้า Review ของคำขอ
+- `AccessReview.Recommendation(verdict, score 0–100, summary, suggestedDays, signals[])` — เริ่มที่ 50 แล้วบวก/ลบตาม signal ที่ reviewer อ่านได้ทุกตัว · **เป็นกฎ ไม่ใช่ AI — ไม่มี model และไม่เรียนรู้อะไร** · `APPROVE_AT = 70` · `REJECT_BELOW = 40`
+- สามกรณีไม่ให้คะแนนเลย (ผู้ขอหาย / ถูกปิด / อ่านได้อยู่แล้ว → `DECLINE`) · grant ที่ policy ยังตีตกจะ **ไม่มีทาง lean approve**
+- **เป็นคำแนะนำเท่านั้น — ไม่ approve เอง** และการ approve ยังแค่บันทึกการตัดสินใจเหมือนเดิม
+- `AccessReviewTest` เพิ่มเคส recommendation · `AccessRequestIT` ตรวจ field ใน response จริง
+
+### BF.5 กดดูสมาชิกและ attribute ของกลุ่ม
+- `Membership` มี `id` แล้ว · ชิปกลุ่มในหน้า Review กดได้ → เปิดรายละเอียดกลุ่ม (สมาชิก + attribute)
+- `PrincipalQuery` คืน attribute ของสมาชิก (`memberAttributes`) · หน้า Principal detail แสดง · เทสต์ใน `PrincipalDetailPage.test.tsx`
+
+### BF.6 Domain / FQN ในหน้า Review ล้นกรอบ — *"หน้า Request ตัวอักษรหลุดกรอบ"*
+- ชิป Domain / FQN ใน `RequestReview.tsx` ตัดบรรทัดด้วย `min-w-0` + `break-all` / truncate พร้อม title — ไม่ล้นออกนอกการ์ดแล้ว
+
+### BF.7 Dashboard — label เลือกแทนพิมพ์ — *"เปลี่ยนจากพิมพ์เป็นให้เลือกดีกว่าไหม"*
+- ช่อง label ของ Dashboard เป็น Select จาก classification/tag ที่มีจริง · เทสต์ใน `DashboardPage.test.tsx`
+
+### BF.8 🐛 Query ทุกตัวถูกปฏิเสธว่า *"This statement could not be parsed, so it cannot be enforced and will not be run"*
+
+ผู้ใช้ถาม *"ทำไม Query แล้วขึ้นแบบนี้"*
+
+**อาการ** — `audit_query` มี REJECTED ด้วยเหตุผลนี้ 17 แถวติดกันในช่วงเวลาเดียว ทั้ง `SELECT * FROM sales.customer` และแม้แต่ `SELECT 1` · ผู้ใช้ทุกคน · SQL เดิมเคย EXECUTED ได้ก่อนหน้า · bytes ของ SQL ปกติ (ไม่มีตัวอักษรแปลก)
+
+**สาเหตุ — ไม่ใช่บั๊กของ parser หรือ policy** — JVM ที่รันอยู่เริ่มจาก `target/dac-service.jar` แล้ว **jar ถูก build ทับระหว่างที่ JVM ยังรันอยู่** · class ของ JSqlParser โหลดแบบ lazy ตอน parse ครั้งแรก จึงอ่านจากไฟล์ที่ offset ไม่ตรงแล้ว → error ถูกห่อเป็น `JSQLParserException` → ข้อความ fail-closed นี้ (ซึ่งตั้งใจไม่ echo ข้อความของ parser) · พิสูจน์: เรียก `CCJSqlParserUtil.parse("SELECT 1")` ตรงจาก jar ใหม่ → parse ได้ปกติ
+
+**แก้**
+- restart app → `SELECT 1` รันได้ · `sales.customer` ได้คำตอบของ policy ตามปกติ (admin ถูก `finance-subscription` ปฏิเสธ = ถูกต้อง)
+- script ยก dev app (ใน scratchpad ไม่ได้ commit) **รันจากสำเนาของ jar** — build รอบหน้าจะไม่เขียนทับไฟล์ที่ JVM กำลังใช้อีก
+- **บทเรียนสำหรับ deploy จริง:** ห้ามวาง jar ใหม่ทับไฟล์ที่ JVM เปิดอยู่ ให้ stop → copy → start (หรือ copy ไปชื่อใหม่แล้ว restart)
+- ผู้ใช้ขอต่อ: *"อยากให้มีปุ่ม ให้ LLM มา Correct ให้"* และ *"อยากให้มีปุ่มให้ LLM AI อธิบาย Query ให้ได้ด้วย"* → **M26** (ดู Roadmap)
+
+### BF.9 ยังค้างจากชุดคำสั่งนี้ (ยังไม่ได้ทำ)
+- **(b)** ขอสิทธิ์ในนามกลุ่ม — **ตอนนี้ยังไม่รองรับ**: คำขอผูกกับผู้ขอคนเดียว · ใส่ Roadmap เป็น **M27** แล้ว
+- **(d)** จัดหน้า Access Requests ให้เป็นระเบียบกว่านี้
+- **(f)** Home page per role — แสดงรายการ role ก่อน กดแล้วค่อยแก้ทีละ role
+- **(g)** Application roles — แยก list คนที่จะ grant ออกจาก Role master
+- **(j)** Query log export CSV / Excel (ตาม scope ของผู้อ่าน · **ห้ามมี client_ip**)
+- **(k)** Header ของคำขอแบบ sticky ตอนเลื่อน + list ด้านซ้ายค้างให้เห็นแถวที่เลือก
+- ผู้ใช้ขอ *"Catalog ต้องสามารถให้ LLM มาช่วยในการค้นหาได้ด้วย"* → คือ **M16** ที่อยู่ใน Roadmap แล้ว · เพิ่มจุดเข้าในหน้า Catalog ลงใน M16
+- ผู้ใช้ส่งผลของ Assistant ที่ถาม *"มีข้อมูล employee ไหม"* แล้วได้ *"The assistant could not answer that from the tables in this source."* — **ถูกต้องตามที่ออกแบบไว้ตอนนี้**: โหมด SQL ของ mascot รับเฉพาะคำขอที่แปลงเป็น SELECT ได้บน source ที่เลือก ไม่ได้เป็นแชท · ผู้ใช้ขอ *"นอกจากสร้าง Query แล้ว ยังอาจจะต้องสามารถแชทโต้ตอบได้ เช่นช่วยค้นหา ตอบเรื่องทั่วไป ถาม Syntax .... แล้ว Write query"* · *"หรือทำเป็น Agent ไปเลย"* · *"Catalog ต้องสามารถแชทพูดคุยได้สิ หรือ ด้านขวาล่าง Mascot ต้องแชทคุยได้ อยากทำอะไร หาอะไร เปิดหน้าไหนในแอพ"* → ใส่ Roadmap เป็น **M28 Conversational ARAK Agent**
+
+### BF.10 ตัวเลขเทสต์
+- backend `./mvnw -o verify -Pintegration` → **BUILD SUCCESS · 1,161 tests · 0 failures / 0 errors** (รวม `RailTest` 18 · `RailStoreIT` 6 · recommendation / memberAttributes)
+- frontend: **42 suites / 423 tests ผ่าน** · `tsc --noEmit` สะอาด · `vite build` ผ่าน
+
+## รอบก่อนหน้า — **ข้อ BE: M10 — Query log ที่อ่านได้ตามหน้าที่ (V25) + Access Control Dashboard หน้าเดียวทั้งองค์กร**
 
 ผู้ใช้ถามว่า *"แล้ว log การ Query หละ"* แล้วตามด้วย *"หน้า Dashboard Access Control รวมหละ ออกแบบให้ด้วย ขอสวยงาม มีความหมาย"* · ภายใต้คำสั่งเดิม *"ทำต่อได้เลยนะ เอาตาม Roadmap ทำไปเรื่อยๆ ต้องทดสอบให้ดีทุกขั้นตอน"* / *"ทำต่อ"* → ทำ M10 ตามแบบที่วางไว้ในข้อ AM.4 จบรอบนี้
 
@@ -5552,6 +5672,7 @@ estate ที่ใช้: `prod-mssql.SalesDB.dbo.{customer, order}` + **`prod-
 - ✅ **ข้อ AY เสร็จแล้ว** (Open in OpenMetadata ไม่ 500 · Request access มุมขวาบน · หัวหน้า asset แบบ OM · seed เคส demo) — ต่อด้วย **M9 slice 2** ข้างล่าง
 
 0. ✅ **M10 เสร็จ (ข้อ BE)** — Query log ตามหน้าที่ (V25) + Access Control Dashboard · **ต่อไป:** M9 recertification · แนบไฟล์ในคำขอ · export / SIEM ของ M8
+0-BF. ✅ **ข้อ BF เสร็จ** — rail จัดเองได้ต่อคน (V26) + เลือกขนาด Comfortable / Compact (V27) · Enforcement และ System ย้ายเข้า Settings · Suggest พร้อม % · 🐛 parse error ของ Query · **ต่อไป:** M26 Fix with AI + Explain query → M28 แชท agent · ของค้าง (d) (f) (g) (j) (k) ดูข้อ BF.9
 0-M9. ✅ **M9 slice 2c เสร็จ (ข้อ BD)** — Dashboard ใครใกล้หมดสิทธิ์ + นับถอยหลัง · สถิติคำขอต่อ table · ✅ slice 2b (ข้อ BC) · ✅ slice 2a (ข้อ BB) · **ต่อไป:** M9 ที่เหลือ — recertification / access review · break-glass · notification ออกนอกระบบ (ดูข้อ BD.7) — ผู้ใช้สั่ง *"ทำต่อได้เลยนะ เอาตาม Roadmap ทำไปเรื่อยๆ ต้องทดสอบให้ดีทุกขั้นตอน"*
 0-เดิม. **(ส่วนที่เหลือของ AX.9 = 2b)** M9 slice 2 ดูข้อ AX.9: Approve = ตัดสินใจเท่านั้น → Fulfil ด้วยมือ (ออก grant / เพิ่มเข้า policy เดิม / สร้าง policy ใหม่เป็น Draft) โดย Owner · Steward · Custodian · หน้า review: ข้อมูลผู้ขอ + impact + risk + suggestion + conflict · ไอคอน Inbox + badge บน header
 0a. **ถัดไป:** Flowchart สำหรับอ่านระดับ table บนหน้า asset (ผู้ใช้ขอแล้ว — toggle text/diagram แบบ `PolicyFlowChart`, ค่าเริ่มต้นเป็นหน้าเดิม)

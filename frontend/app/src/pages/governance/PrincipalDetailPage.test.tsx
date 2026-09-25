@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import PrincipalDetailPage from './PrincipalDetailPage';
 import type { Principal, PrincipalDetail } from '../../api/governance';
@@ -283,4 +283,61 @@ test('somebody without the platform role is offered no form at all', async () =>
   expect(
     screen.queryByRole('button', { name: /Withdraw/ })
   ).not.toBeInTheDocument();
+});
+
+test("a group counts what its members carry, and who carries none of a key", async () => {
+  renderAt(GROUP_ID, {
+    principal: principal({
+      id: GROUP_ID,
+      principalType: 'GROUP',
+      username: 'analysts',
+      displayName: 'analysts',
+      email: null,
+      attributeCount: 0,
+      memberCount: 3,
+      groupCount: 0,
+    }),
+    attributes: [],
+    groups: [],
+    members: [
+      principal({}),
+      principal({ id: USER_ID.replace(/1/g, '3'), username: 'analyst_b' }),
+      principal({ id: USER_ID.replace(/1/g, '4'), username: 'analyst_c' }),
+    ],
+    memberAttributes: [
+      { key: 'clearance', value: 'L1', members: 2, keyHolders: 3 },
+      { key: 'clearance', value: 'L2', members: 1, keyHolders: 3 },
+      { key: 'country', value: 'TH', members: 2, keyHolders: 2 },
+    ],
+  });
+
+  const list = await screen.findByLabelText('Member attributes');
+  expect(screen.getByText('What its members carry')).toBeInTheDocument();
+  const l1 = within(list).getByRole('link', { name: /L1/ });
+  expect(l1).toHaveTextContent('2');
+  expect(l1).toHaveAttribute('href', `/principals?attr=${encodeURIComponent('clearance=L1')}`);
+  // Everyone holds a clearance; one of the three holds no country.
+  expect(within(list).getAllByText(/without/)).toHaveLength(1);
+  expect(within(list).getByText('1 without')).toBeInTheDocument();
+});
+
+test('a group whose members carry nothing says so', async () => {
+  renderAt(GROUP_ID, {
+    principal: principal({
+      id: GROUP_ID,
+      principalType: 'GROUP',
+      username: 'analysts',
+      displayName: 'analysts',
+      email: null,
+      attributeCount: 0,
+      memberCount: 1,
+      groupCount: 0,
+    }),
+    attributes: [],
+    groups: [],
+    members: [principal({})],
+    memberAttributes: [],
+  });
+
+  expect(await screen.findByText('None of its members carries an attribute.')).toBeInTheDocument();
 });

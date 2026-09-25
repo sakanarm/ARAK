@@ -124,7 +124,8 @@ public class AccessReview {
       PolicyCheck policy,
       Risk risk,
       List<Conflict> conflicts,
-      List<Suggestion> suggestions) {}
+      List<Suggestion> suggestions,
+      Recommendation recommendation) {}
 
   /**
    * The person asking.
@@ -157,7 +158,8 @@ public class AccessReview {
       int recentRejected) {}
 
   /** A group or OpenMetadata team the requester belongs to directly. */
-  public record Membership(String name, String displayName, String kind, String source) {}
+  public record Membership(
+      String id, String name, String displayName, String kind, String source) {}
 
   public record Attribute(String key, String value, String source) {}
 
@@ -289,6 +291,24 @@ public class AccessReview {
   public record Suggestion(
       String kind, String title, String detail, Integer days, UUID policyId, Policy draft) {}
 
+  /**
+   * Whether ARAK would approve, and how strongly. A lean, never an answer.
+   *
+   * <p>Every point comes from a signal the reviewer can read and disagree with:
+   * there is no model behind it and nothing is learned. The reviewer still
+   * decides, and approving still only records the decision.
+   *
+   * @param verdict APPROVE, REVIEW, REJECT or DECLINE (they can already read it)
+   * @param score how far ARAK leans towards approving, 0 to 100
+   * @param suggestedDays a shorter grant worth approving instead, or null
+   * @param signals what moved the score, in the order they were weighed
+   */
+  public record Recommendation(
+      String verdict, int score, String summary, Integer suggestedDays, List<Signal> signals) {}
+
+  /** One thing that moved the score, and by how much. */
+  public record Signal(String code, int points, String detail) {}
+
   // --------------------------------------------------------------- reviewing
 
   /**
@@ -372,7 +392,8 @@ public class AccessReview {
         policy,
         judged.risk(),
         judged.conflicts(),
-        judged.suggestions());
+        judged.suggestions(),
+        judged.recommendation());
   }
 
   /**
@@ -469,6 +490,7 @@ public class AccessReview {
             .map(
                 g ->
                     new Membership(
+                        g.id(),
                         g.username(),
                         g.displayName(),
                         "openmetadata".equals(g.source()) ? "team" : "group",
@@ -720,7 +742,11 @@ public class AccessReview {
 
   // --------------------------------------------------------------- judging
 
-  record Judgement(Risk risk, List<Conflict> conflicts, List<Suggestion> suggestions) {}
+  record Judgement(
+      Risk risk,
+      List<Conflict> conflicts,
+      List<Suggestion> suggestions,
+      Recommendation recommendation) {}
 
   /**
    * Risk, conflicts and suggestions from what was read. Pure, so every rule can
@@ -974,7 +1000,193 @@ public class AccessReview {
     }
 
     conflicts.sort(Comparator.comparingInt(c -> severityRank(c.severity())));
-    return new Judgement(new Risk(level, List.copyOf(factors)), List.copyOf(conflicts), List.copyOf(suggestions));
+    return new Judgement(
+        new Risk(level, List.copyOf(factors)),
+        List.copyOf(conflicts),
+        List.copyOf(suggestions),
+        recommend(days, purpose, requester, table, now, ifGranted, peers));
+  }
+
+  // --------------------------------------------------------------- recommending
+
+  /** Where the score starts before any signal: no lean either way. */
+  static final int NEUTRAL = 50;
+
+  /** At or above this, ARAK leans towards approving. */
+  static final int APPROVE_AT = 70;
+
+  /** Below this, ARAK leans towards turning it down. */
+  static final int REJECT_BELOW = 40;
+
+  /**
+   * Whether ARAK would approve, from the same facts the risk is read from.
+   *
+   * <p>Pure and additive: each signal adds or takes points from a neutral 50,
+   * so the reviewer can see exactly why the number is what it is. Three cases
+   * are not weighed at all, because no number would be honest about them: a
+   * requester who is gone or disabled, and one who can already read the table.
+   * A grant that a policy would still defeat is weighed, but can never lean to
+   * approve -- approving it would open nothing until that policy changes.
+   */
+  static Recommendation recommend(
+      Integer days,
+      String purpose,
+      Requester requester,
+      TableFacts table,
+      Access now,
+      Access ifGranted,
+      List<Peers> peers) {
+    if (!requester.known() || !requester.enabled()) {
+      String why =
+          requester.username()
+              + (requester.known() ? " is disabled" : " is no longer a known principal");
+      return new Recommendation(
+          "REJECT", 0, "Turn it down: " + why + ".", null,
+          List.of(new Signal(requester.known() ? "REQUESTER_DISABLED" : "REQUESTER_UNKNOWN", -NEUTRAL, why)));
+    }
+    if (now.allowed()) {
+      return new Recommendation(
+          "DECLINE", 0, "Nothing to approve: they can already read this table.", null,
+          List.of(new Signal("ALREADY_READS", -NEUTRAL, "They can already read this table")));
+    }
+
+    List<Signal> signals = new ArrayList<>();
+    if (!ifGranted.allowed()) {
+      signals.add(
+          new Signal(
+              "GRANT_BLOCKED", -30,
+              "A grant would not open it; still refusing: " + ifGranted.blockedBy()));
+    }
+
+    if (purpose == null || purpose.isBlank()) {
+      signals.add(new Signal("NO_PURPOSE", -10, "No purpose was given"));
+    } else {
+      signals.add(new Signal("PURPOSE", 10, "A purpose was given"));
+    }
+
+    List<ColumnFate> clear = ifGranted.allowed() ? ifGranted.sensitiveInClear() : List.of();
+    boolean anySensitive = ifGranted.columns().stream().anyMatch(ColumnFate::sensitive);
+    if (!clear.isEmpty()) {
+      signals.add(
+          new Signal(
+              "SENSITIVE_IN_CLEAR", -25,
+              clear.size() + " sensitive column" + (clear.size() == 1 ? "" : "s") + " would be readable in clear"));
+    } else if (ifGranted.allowed() && anySensitive) {
+      signals.add(new Signal("SENSITIVE_PROTECTED", 10, "Every sensitive column stays masked or hidden"));
+    } else if (ifGranted.allowed() && table.known() && !ifGranted.columns().isEmpty()) {
+      signals.add(new Signal("NOTHING_SENSITIVE", 10, "No column on the table is tagged sensitive"));
+    }
+
+    if (days == null) {
+      signals.add(new Signal("OPEN_ENDED", -20, "Asked until revoked, with no end date"));
+    } else if (days > VERY_LONG_DAYS) {
+      signals.add(new Signal("VERY_LONG", -20, "Asked for " + days + " days"));
+    } else if (days > LONG_DAYS) {
+      signals.add(new Signal("LONG", -10, "Asked for " + days + " days"));
+    } else if (days <= SHORTER_DAYS) {
+      signals.add(new Signal("SHORT", 10, "Asked for only " + days + (days == 1 ? " day" : " days")));
+    }
+
+    if (table.tiers().stream().anyMatch(t -> t.toLowerCase(Locale.ROOT).endsWith("tier1"))) {
+      signals.add(new Signal("TIER1", -5, "The table is Tier 1"));
+    }
+    if (!table.known()) {
+      signals.add(new Signal("TABLE_UNKNOWN", -10, "The table is not in the metadata cache"));
+    }
+
+    long rejectedHere =
+        requester.earlier().stream().filter(r -> "REJECTED".equals(r.status())).count();
+    long grantedHere =
+        requester.earlier().stream()
+            .filter(r -> "COMPLETED".equals(r.status()) || "APPROVED".equals(r.status()))
+            .count();
+    if (rejectedHere > 0) {
+      signals.add(
+          new Signal(
+              "REJECTED_BEFORE", -15,
+              "Turned down for this table " + rejectedHere + (rejectedHere == 1 ? " time" : " times") + " before"));
+    } else if (grantedHere > 0) {
+      signals.add(new Signal("APPROVED_BEFORE", 10, "Given access to this table before"));
+    }
+    if (requester.recentRejected() >= 2 && requester.recentRejected() * 2 >= requester.recentRequests()) {
+      signals.add(
+          new Signal(
+              "OFTEN_REJECTED", -10,
+              requester.recentRejected() + " of their " + requester.recentRequests()
+                  + " other requests in 90 days were turned down"));
+    }
+
+    if (!peers.isEmpty()) {
+      Peers most = peers.get(0);
+      signals.add(
+          new Signal(
+              "PEERS_HOLD", 15,
+              most.holding() + " other members of " + most.kind() + " " + most.name()
+                  + " already read this table"));
+    }
+    String match = domainMatch(requester, table.domains());
+    if (match != null) {
+      signals.add(new Signal("DOMAIN_MATCH", 10, match));
+    }
+
+    int score = NEUTRAL;
+    for (Signal signal : signals) {
+      score += signal.points();
+    }
+    score = Math.max(0, Math.min(100, score));
+
+    Integer shorter =
+        !clear.isEmpty() && (days == null || days > SHORTER_DAYS) ? SHORTER_DAYS : null;
+    String verdict;
+    String summary;
+    if (!ifGranted.allowed()) {
+      verdict = score < REJECT_BELOW ? "REJECT" : "REVIEW";
+      summary =
+          "A grant alone would not let them in. Approve only if the policy in the way should change for them.";
+    } else if (score >= APPROVE_AT) {
+      verdict = "APPROVE";
+      summary = shorter == null ? "Leans to approve." : "Leans to approve, for " + SHORTER_DAYS + " days rather than as asked.";
+    } else if (score < REJECT_BELOW) {
+      verdict = "REJECT";
+      summary = "Leans to turn it down. Read the signals before you do.";
+    } else {
+      verdict = "REVIEW";
+      summary =
+          shorter == null
+              ? "No clear lean. Check the signals below."
+              : "No clear lean. A " + SHORTER_DAYS + "-day grant would keep the exposure small.";
+    }
+    return new Recommendation(verdict, score, summary, shorter, List.copyOf(signals));
+  }
+
+  /**
+   * A requester's attribute or group that names one of the table's domains,
+   * segment for segment and ignoring case: {@code department = FINANCE} meets
+   * {@code Finance.Risk}. Null when none does.
+   */
+  static String domainMatch(Requester requester, List<String> domains) {
+    if (domains.isEmpty()) {
+      return null;
+    }
+    for (String domain : domains) {
+      Set<String> segments = new java.util.HashSet<>();
+      for (String part : domain.split("\\.")) {
+        segments.add(lower(part.trim()));
+      }
+      for (Attribute attribute : requester.attributes()) {
+        if (attribute.value() != null && segments.contains(lower(attribute.value().trim()))) {
+          return "Their " + attribute.key() + " " + attribute.value() + " matches the domain " + domain;
+        }
+      }
+      for (Membership group : requester.memberships()) {
+        if (segments.contains(lower(group.name()))
+            || (group.displayName() != null && segments.contains(lower(group.displayName())))) {
+          return "They belong to " + (group.displayName() != null ? group.displayName() : group.name())
+              + ", which matches the domain " + domain;
+        }
+      }
+    }
+    return null;
   }
 
   /** A TABLE subscription letting one group read one table. Returned unsaved. */

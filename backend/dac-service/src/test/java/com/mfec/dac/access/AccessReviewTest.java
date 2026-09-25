@@ -364,6 +364,173 @@ class AccessReviewTest {
     }
   }
 
+  @Nested
+  class Recommending {
+
+    AccessReview.Requester finance() {
+      return new AccessReview.Requester(
+          "analyst_a", "Analyst A", null, true, true, "local", List.of(), List.of(),
+          List.of(new AccessReview.Attribute("department", "FINANCE", "local")),
+          List.of(), 0, List.of(), 0, 0);
+    }
+
+    AccessReview.TableFacts financeTable() {
+      return new AccessReview.TableFacts(
+          FQN, true, List.of(), List.of("Finance.Risk"), List.of(), 4, 2);
+    }
+
+    List<String> signals(AccessReview.Recommendation r) {
+      return r.signals().stream().map(AccessReview.Signal::code).toList();
+    }
+
+    @Test
+    void aShortMaskedRequestFromTheRightPeopleLeansToApprove() {
+      AccessReview.Access masked = AccessReview.access(maskingEmail(), COLUMNS);
+      AccessReview.Recommendation r =
+          AccessReview.judge(
+                  5, "month end", finance(), financeTable(), none(), masked, null, null,
+                  List.of(new AccessReview.Peers("finance", "group", 3)))
+              .recommendation();
+
+      assertThat(r.verdict()).isEqualTo("APPROVE");
+      assertThat(signals(r))
+          .containsExactly("PURPOSE", "SENSITIVE_PROTECTED", "SHORT", "PEERS_HOLD", "DOMAIN_MATCH");
+      // 50 + 10 + 10 + 10 + 15 + 10, capped at 100.
+      assertThat(r.score()).isEqualTo(100);
+      assertThat(r.suggestedDays()).isNull();
+      assertThat(r.signals().get(4).detail()).contains("department", "FINANCE", "Finance.Risk");
+    }
+
+    @Test
+    void theScoreIsNeutralPlusTheSignals() {
+      AccessReview.Access plain =
+          AccessReview.access(allowed(), List.of(ColumnContext.named("id").build()));
+      AccessReview.Recommendation r =
+          AccessReview.judge(
+                  45, "x", requester(true, true), table(List.of("Tier.Tier1")), none(), plain,
+                  null, null, List.of())
+              .recommendation();
+
+      int sum = r.signals().stream().mapToInt(AccessReview.Signal::points).sum();
+      assertThat(r.score()).isEqualTo(AccessReview.NEUTRAL + sum);
+      assertThat(signals(r)).containsExactly("PURPOSE", "NOTHING_SENSITIVE", "LONG", "TIER1");
+      assertThat(r.score()).isEqualTo(55);
+      assertThat(r.verdict()).isEqualTo("REVIEW");
+    }
+
+    @Test
+    void sensitiveColumnsInClearForLongLeanToRejectAndOfferAShorterGrant() {
+      AccessReview.Access open = AccessReview.access(allowed(), COLUMNS);
+      AccessReview.Recommendation r =
+          AccessReview.judge(
+                  null, " ", requester(true, true), table(List.of()), none(), open, null, null,
+                  List.of())
+              .recommendation();
+
+      assertThat(signals(r)).containsExactly("NO_PURPOSE", "SENSITIVE_IN_CLEAR", "OPEN_ENDED");
+      assertThat(r.score()).isZero();
+      assertThat(r.verdict()).isEqualTo("REJECT");
+      assertThat(r.suggestedDays()).isEqualTo(AccessReview.SHORTER_DAYS);
+    }
+
+    @Test
+    void aGrantAPolicyWouldDefeatNeverLeansToApprove() {
+      AccessReview.Recommendation r =
+          AccessReview.judge(
+                  3, "month end", finance(), financeTable(), none(), none(), null, null,
+                  List.of(new AccessReview.Peers("finance", "group", 4)))
+              .recommendation();
+
+      assertThat(signals(r)).startsWith("GRANT_BLOCKED");
+      // 50 - 30 + 10 + 10 + 15 + 10: high, and still only REVIEW.
+      assertThat(r.score()).isEqualTo(65);
+      assertThat(r.verdict()).isEqualTo("REVIEW");
+      assertThat(r.summary()).contains("policy in the way");
+    }
+
+    @Test
+    void historyCounts() {
+      AccessReview.Access plain =
+          AccessReview.access(allowed(), List.of(ColumnContext.named("id").build()));
+      AccessReview.Requester turnedDown =
+          new AccessReview.Requester(
+              "analyst_a", null, null, true, true, "local", List.of(), List.of(), List.of(),
+              List.of(), 0,
+              List.of(
+                  new AccessReview.PastRequest(
+                      UUID.randomUUID(), "REJECTED", 5, Instant.now(), "owner_a", "no", null)),
+              4, 3);
+      AccessReview.Requester grantedBefore =
+          new AccessReview.Requester(
+              "analyst_a", null, null, true, true, "local", List.of(), List.of(), List.of(),
+              List.of(), 0,
+              List.of(
+                  new AccessReview.PastRequest(
+                      UUID.randomUUID(), "COMPLETED", 5, Instant.now(), "owner_a", null, "GRANT")),
+              1, 0);
+
+      assertThat(
+              signals(
+                  AccessReview.judge(
+                          14, "x", turnedDown, table(List.of()), none(), plain, null, null,
+                          List.of())
+                      .recommendation()))
+          .containsExactly("PURPOSE", "NOTHING_SENSITIVE", "REJECTED_BEFORE", "OFTEN_REJECTED");
+      assertThat(
+              signals(
+                  AccessReview.judge(
+                          14, "x", grantedBefore, table(List.of()), none(), plain, null, null,
+                          List.of())
+                      .recommendation()))
+          .containsExactly("PURPOSE", "NOTHING_SENSITIVE", "APPROVED_BEFORE");
+    }
+
+    @Test
+    void nobodyToGiveItToAndNothingToGiveAreNotWeighed() {
+      AccessReview.Access plain =
+          AccessReview.access(allowed(), List.of(ColumnContext.named("id").build()));
+
+      AccessReview.Recommendation gone =
+          AccessReview.judge(
+                  5, "x", requester(false, false), table(List.of()), none(), plain, null, null,
+                  List.of())
+              .recommendation();
+      assertThat(gone.verdict()).isEqualTo("REJECT");
+      assertThat(gone.score()).isZero();
+      assertThat(signals(gone)).containsExactly("REQUESTER_UNKNOWN");
+
+      AccessReview.Recommendation disabled =
+          AccessReview.judge(
+                  5, "x", requester(true, false), table(List.of()), none(), plain, null, null,
+                  List.of())
+              .recommendation();
+      assertThat(signals(disabled)).containsExactly("REQUESTER_DISABLED");
+
+      AccessReview.Recommendation already =
+          AccessReview.judge(
+                  5, "x", requester(true, true), table(List.of()), plain, plain, null, null,
+                  List.of())
+              .recommendation();
+      assertThat(already.verdict()).isEqualTo("DECLINE");
+      assertThat(already.score()).isZero();
+    }
+
+    @Test
+    void aDomainMatchesSegmentForSegmentNotByPrefix() {
+      assertThat(AccessReview.domainMatch(finance(), List.of("Finance Ops"))).isNull();
+      assertThat(AccessReview.domainMatch(finance(), List.of("Sales.Finance")))
+          .contains("Sales.Finance");
+      assertThat(AccessReview.domainMatch(finance(), List.of())).isNull();
+      AccessReview.Requester inGroup =
+          new AccessReview.Requester(
+              "analyst_a", null, null, true, true, "local", List.of(),
+              List.of(new AccessReview.Membership("g1", "finance", "Finance", "group", "local")),
+              List.of(), List.of(), 0, List.of(), 0, 0);
+      assertThat(AccessReview.domainMatch(inGroup, List.of("Finance")))
+          .contains("belong to Finance");
+    }
+  }
+
   @Test
   void slugsAreSafePolicyNames() {
     assertThat(AccessReview.slug("Finance Team-reads-kb_likes")).isEqualTo("finance-team-reads-kb-likes");

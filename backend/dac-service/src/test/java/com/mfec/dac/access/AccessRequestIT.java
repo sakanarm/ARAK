@@ -1784,6 +1784,30 @@ class AccessRequestIT {
       // Others' grants are counted in the group, not listed as the requester's.
       assertThat(seen.requester().grantsHere()).isEmpty();
       assertThat(seen.requester().grantsElsewhere()).isZero();
+      // The group chip opens the group: the review carries its id.
+      String group = jdbi.withHandle(h -> h.createQuery(
+              "SELECT id::text FROM principal WHERE username = 'analysts'").mapTo(String.class).one());
+      assertThat(seen.requester().memberships())
+          .extracting(AccessReview.Membership::id, AccessReview.Membership::name)
+          .contains(tuple(group, "analysts"));
+      // Peers holding it lift the lean, and the signal says who they are.
+      assertThat(seen.recommendation().signals())
+          .filteredOn(s -> s.code().equals("PEERS_HOLD"))
+          .singleElement()
+          .satisfies(s -> assertThat(s.detail()).contains("analysts"));
+      assertThat(seen.recommendation().score())
+          .isEqualTo(
+              AccessReview.NEUTRAL
+                  + seen.recommendation().signals().stream().mapToInt(AccessReview.Signal::points).sum());
+      // The group's own page counts what its three members carry.
+      PrincipalQuery.PrincipalDetail analysts = new PrincipalQuery(jdbi).detail(group).orElseThrow();
+      assertThat(analysts.members()).hasSize(3);
+      assertThat(analysts.memberAttributes())
+          .filteredOn(a -> a.key().equals("clearance"))
+          .allSatisfy(a -> assertThat(a.keyHolders()).isEqualTo(3))
+          .extracting(PrincipalQuery.MemberAttribute::members)
+          .satisfies(counts -> assertThat(counts.stream().mapToInt(Integer::intValue).sum()).isEqualTo(3));
+      assertThat(new PrincipalQuery(jdbi).detail("analyst_a").orElseThrow().memberAttributes()).isEmpty();
       // The draft is valid as it stands, and saving it makes a DRAFT, nothing more.
       PolicyStore.StoredPolicy saved = policies.create(document, "finance_lead");
       assertThat(saved.lifecycleState()).isEqualTo("DRAFT");

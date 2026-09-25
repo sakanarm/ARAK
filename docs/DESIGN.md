@@ -370,7 +370,7 @@ LLM เห็นแค่ชื่อ / คำอธิบาย column ไม�
 
 ## 6. แผน Milestone และสถานะจริง
 
-สถานะ ณ 2026-09-25 · รายละเอียดทีละรอบอยู่ใน `HANDOFF.md`
+สถานะ ณ 2026-09-26 · รายละเอียดทีละรอบอยู่ใน `HANDOFF.md`
 
 | M | งาน | ประเมิน | สถานะ |
 |---|---|---|---|
@@ -391,7 +391,7 @@ LLM เห็นแค่ชื่อ / คำอธิบาย column ไม�
 | **M13** | Request access จากจุดที่โดนปฏิเสธ | – | ✅ **เสร็จ** |
 | **M14** | Public API + Swagger + Org Key | – | ⬜ |
 | **M15** | LLM อธิบาย policy และ dashboard | – | ⬜ ต้องมี M10 (ส่วน dashboard) |
-| **M16** | LLM ช่วยหา asset จากสิ่งที่อยากได้ | – | ⬜ |
+| **M16** | LLM ช่วยหา asset จากสิ่งที่อยากได้ — จุดเข้าในหน้า Query **และหน้า Catalog** | – | ⬜ ต้องมี M11 |
 | **M17** | ประวัติย้อนหลังของ policy (diff + rollback) | – | ⬜ |
 | **M18** | รองรับ database type ใหม่โดยไม่ต้องไล่แก้ 14 จุด | – | 🚧 **~75%** |
 | **M19** | AI-Driven Anomalous Access Detection (FR-13) | – | ⬜ ต้องมี M10 (query log + `asset_fqns`) |
@@ -401,6 +401,9 @@ LLM เห็นแค่ชื่อ / คำอธิบาย column ไม�
 | **M23** | Personal Security Health Dashboard (FR-16) | – | ⬜ ต้องมี M10 · ส่วนความผิดปกติต้องมี M19 |
 | **M24** | Automated Query Risk Blocker (FR-17) | – | ⬜ ต้องมี M10 · ส่วน AI ต้องมี M11 |
 | **M25** | On-Demand Test Data Synthesis (FR-18) | – | ⬜ |
+| **M26** | LLM Fix with AI (query ที่พัง) + Explain query — SQL + error + metadata เท่านั้น · ผลเป็นข้อเสนอใน editor | – | ⬜ ต้องมี M11 |
+| **M27** | ขอสิทธิ์ในนามกลุ่ม | – | ⬜ ต่อยอด M9 |
+| **M28** | Conversational ARAK Agent — แชทใน mascot + Catalog · ค้น catalog · ตอบ SQL syntax · เขียน query · พาไปหน้าในแอพ · metadata เท่านั้น · ไม่ apply อะไรเอง | – | ⬜ ต้องมี M11 · ต่อยอด M16 + M26 |
 
 **ลำดับ:** M0 → M1 → M2 → M3 → (M4 ‖ M5 ‖ M6 ‖ M7) → M7b → M8
 หลัง M3 fix `PolicyDecision` แล้ว **compiler 3 ตัวทำขนานกันได้** — นี่คือผลตอบแทนของการลงทุนทำ Policy IR ตั้งแต่ต้น

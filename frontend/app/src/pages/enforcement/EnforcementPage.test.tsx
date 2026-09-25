@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 import EnforcementPage from './EnforcementPage';
 import type { SecureViewCandidate, SecureViewPreview } from '../../api/secureViews';
 
@@ -91,7 +92,9 @@ function renderPage() {
   });
   return render(
     <QueryClientProvider client={client}>
-      <EnforcementPage />
+      <MemoryRouter>
+        <EnforcementPage />
+      </MemoryRouter>
     </QueryClientProvider>
   );
 }

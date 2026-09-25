@@ -19,6 +19,7 @@ import {
   fetchPrincipalDetail,
   removePrincipalAttribute,
   type AttributeOutcome,
+  type MemberAttribute,
   type Principal,
   type PrincipalAttribute,
 } from '../../api/governance';
@@ -68,6 +69,7 @@ export default function PrincipalDetailPage() {
   }
 
   const { principal, attributes, groups, members } = data;
+  const memberAttributes = data.memberAttributes ?? [];
   const isGroup = principal.principalType === 'GROUP';
 
   return (
@@ -118,6 +120,14 @@ export default function PrincipalDetailPage() {
               ) : (
                 <PrincipalList rows={members} />
               )}
+            </Panel>
+          )}
+
+          {isGroup && members.length > 0 && (
+            <Panel
+              subtitle="The attributes its members carry themselves, and how many carry each value. This is what a rule on those attributes sees of the group."
+              title="What its members carry">
+              <MemberAttributes members={members.length} rows={memberAttributes} />
             </Panel>
           )}
 
@@ -226,6 +236,57 @@ export default function PrincipalDetailPage() {
         </aside>
       </div>
     </>
+  );
+}
+
+/**
+ * Each attribute key once, its values beside it with how many members hold
+ * them, and how many hold none -- the ones a rule on that key cannot reach.
+ */
+function MemberAttributes({ rows, members }: { rows: MemberAttribute[]; members: number }) {
+  const byKey = useMemo(() => {
+    const keys = new Map<string, MemberAttribute[]>();
+    for (const row of rows) {
+      keys.set(row.key, [...(keys.get(row.key) ?? []), row]);
+    }
+    return [...keys.entries()];
+  }, [rows]);
+
+  if (byKey.length === 0) {
+    return <Note>None of its members carries an attribute.</Note>;
+  }
+  return (
+    <dl aria-label="Member attributes" className="tw:flex tw:flex-col tw:divide-y tw:divide-secondary">
+      {byKey.map(([key, values]) => {
+        const without = Math.max(0, members - values[0].keyHolders);
+        return (
+          <div className="tw:grid tw:gap-2 tw:py-2.5 tw:first:pt-0 tw:last:pb-0 tw:sm:grid-cols-[10rem_minmax(0,1fr)]" key={key}>
+            <dt className="tw:truncate tw:font-mono tw:text-sm tw:text-secondary" title={key}>
+              {key}
+            </dt>
+            <dd className="tw:flex tw:min-w-0 tw:flex-wrap tw:items-center tw:gap-1.5">
+              {values.map((v) => (
+                <Link
+                  className="tw:max-w-full tw:rounded-full tw:hover:opacity-80"
+                  key={v.value}
+                  title={`${v.members} of ${members} hold ${key} = ${v.value}. Open everyone who does.`}
+                  to={`/principals?attr=${encodeURIComponent(`${key}=${v.value}`)}`}>
+                  <Badge className="tw:max-w-full" color="gray" size="sm" type="pill-color">
+                    <span className="tw:truncate">{v.value}</span>
+                    <span className="tw:ml-1.5 tw:shrink-0 tw:tabular-nums tw:text-quaternary">{v.members}</span>
+                  </Badge>
+                </Link>
+              ))}
+              {without > 0 && (
+                <span className="tw:text-xs tw:text-quaternary">
+                  {without} without
+                </span>
+              )}
+            </dd>
+          </div>
+        );
+      })}
+    </dl>
   );
 }
 

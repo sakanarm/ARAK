@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import {
@@ -26,7 +26,8 @@ import {
   type Severity,
 } from '../../api/dashboard';
 import { countdown, hoursLabel, humanise, Loading, urgencyOf, type Urgency } from '../home/widgets';
-import { Select, TextField } from '../policies/controls';
+import { Select, type SelectOption } from '../policies/controls';
+import { fetchVocabulary, flatten } from '../../api/governance';
 
 /**
  * The access-control dashboard (M10, FR-8.5).
@@ -1210,25 +1211,45 @@ function rank(order: string[], value: string): number {
   return at === -1 ? order.length : at;
 }
 
-/** The label reaches the address a moment after typing stops. */
+/**
+ * Every classification and tag the catalogue knows, to pick from rather than
+ * spell: a mistyped label counted nothing and looked like a clean estate.
+ * A classification covers every tag under it. A label the address names but
+ * the catalogue does not -- yet, or any more -- stays offered, so the page
+ * never shows one label and counts another.
+ */
 function LabelField({ value, onCommit }: { value: string; onCommit: (value: string) => void }) {
-  const [draft, setDraft] = useState(value);
-  useEffect(() => setDraft(value), [value]);
-  useEffect(() => {
-    const next = draft.trim();
-    if (next === '' || next === value) return undefined;
-    const timer = setTimeout(() => onCommit(next), 450);
-    return () => clearTimeout(timer);
-    // onCommit is a fresh closure every render; the draft is what matters.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [draft, value]);
+  const vocabulary = useQuery({
+    queryKey: ['governance', 'vocabulary'],
+    queryFn: fetchVocabulary,
+    staleTime: 5 * 60_000,
+  });
+  const options = useMemo<SelectOption[]>(() => {
+    const known = flatten(vocabulary.data?.classifications ?? [])
+      .filter((v) => !v.disabled)
+      .map((v) => ({
+        value: v.fqn,
+        label: v.fqn,
+        hint:
+          v.depth === 0
+            ? `Classification, every tag under it · ${carrying(v.assets)}`
+            : carrying(v.assets),
+      }));
+    return known.some((o) => o.value === value) ? known : [{ value, label: value }, ...known];
+  }, [vocabulary.data, value]);
   return (
-    <TextField
+    <Select
       ariaLabel="Sensitive label"
-      className="tw:w-44"
-      onChange={setDraft}
-      placeholder="Label, e.g. PII"
-      value={draft}
+      className="tw:w-56"
+      onChange={(next) => {
+        if (next !== value) onCommit(next);
+      }}
+      options={options}
+      value={value}
     />
   );
+}
+
+function carrying(assets: number): string {
+  return assets === 1 ? '1 table or column' : `${assets} tables and columns`;
 }

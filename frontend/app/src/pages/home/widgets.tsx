@@ -487,7 +487,7 @@ function CoverageWidget({ widget }: { widget: HomeWidget }) {
         <Loading />
       ) : tables === 0 ? (
         <WidgetEmpty
-          action={{ label: 'Check the sync', to: '/system' }}
+          action={{ label: 'Check the sync', to: '/settings/system' }}
           icon={Database01}
           line="Nothing has been crawled from OpenMetadata yet, so no policy can bind to anything."
         />
@@ -642,7 +642,7 @@ function PlatformWidget({ widget }: { widget: HomeWidget }) {
   });
 
   return (
-    <Widget action={{ label: 'Details', to: '/system' }} title={headingOf(widget)}>
+    <Widget action={{ label: 'Details', to: '/settings/system' }} title={headingOf(widget)}>
       <dl className="tw:flex tw:flex-col tw:gap-2.5 tw:text-sm">
         <SystemRow label="Service" value={system?.version ?? '—'} />
         <SystemRow

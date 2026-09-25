@@ -168,6 +168,18 @@ function review(overrides: Partial<AccessReview> = {}): AccessReview {
     risk: { level: 'LOW', factors: [] },
     conflicts: [],
     suggestions: [],
+    recommendation: {
+      verdict: 'REVIEW',
+      score: 55,
+      summary: 'No clear lean. Check the signals below.',
+      suggestedDays: null,
+      signals: [
+        { code: 'PURPOSE', points: 10, detail: 'A purpose was given' },
+        { code: 'NOTHING_SENSITIVE', points: 10, detail: 'No column on the table is tagged sensitive' },
+        { code: 'LONG', points: -10, detail: 'Asked for 45 days' },
+        { code: 'TIER1', points: -5, detail: 'The table is Tier 1' },
+      ],
+    },
     ...overrides,
   };
 }
@@ -892,7 +904,7 @@ describe('AccessRequestsPage review', () => {
           ...review().requester,
           displayName: 'Analyst A',
           email: 'analyst_a@example.test',
-          memberships: [{ name: 'analysts', displayName: null, kind: 'group', source: 'local' }],
+          memberships: [{ id: 'grp-1', name: 'analysts', displayName: null, kind: 'group', source: 'local' }],
           attributes: [{ key: 'clearance', value: 'L1', source: 'local' }],
           recentRequests: 2,
           recentRejected: 1,
@@ -964,6 +976,10 @@ describe('AccessRequestsPage review', () => {
     expect(within(reviewed).getByText('Analyst A')).toBeInTheDocument();
     expect(within(reviewed).getByText('analyst_a@example.test')).toBeInTheDocument();
     expect(within(reviewed).getByText('analysts')).toBeInTheDocument();
+    // A group opens its own page: its members and what they carry.
+    expect(
+      within(reviewed).getByRole('link', { name: 'Open analysts: its members and attributes' })
+    ).toHaveAttribute('href', '/principals/grp-1');
     expect(within(reviewed).getByText('clearance = L1')).toBeInTheDocument();
     expect(within(reviewed).getByText('2 other requests, 1 rejected')).toBeInTheDocument();
     expect(
@@ -991,6 +1007,81 @@ describe('AccessRequestsPage review', () => {
       '/policies/pol-7'
     );
     expect(fetchReview).toHaveBeenCalledWith('req-1', null);
+  });
+
+  it('keeps the suggestion behind a button, and shows every point of it', async () => {
+    fetchInbox.mockResolvedValue([request()]);
+    fetchReview.mockResolvedValue(review());
+    renderPage('/requests?tab=inbox');
+
+    const reviewed = await panel();
+    const suggest = await within(reviewed).findByRole('button', { name: 'Suggest' });
+    // Not shown until asked: a number read before the facts anchors the answer.
+    expect(within(reviewed).queryByRole('region', { name: 'Suggestion' })).toBeNull();
+    expect(suggest).toHaveAttribute('aria-expanded', 'false');
+
+    fireEvent.click(suggest);
+    const card = within(reviewed).getByRole('region', { name: 'Suggestion' });
+    expect(within(card).getByText('Look closer')).toBeInTheDocument();
+    expect(within(card).getByLabelText('55% towards approving')).toHaveTextContent('55%');
+    expect(within(card).getByText('No clear lean. Check the signals below.')).toBeInTheDocument();
+    const why = within(card).getByRole('list', { name: 'Why' });
+    const items = within(why).getAllByRole('listitem');
+    expect(items[0]).toHaveTextContent('50');
+    expect(items[1]).toHaveTextContent('+10');
+    expect(items[1]).toHaveTextContent('A purpose was given');
+    expect(items[3]).toHaveTextContent('−10');
+    expect(items[4]).toHaveAttribute('data-code', 'TIER1');
+    expect(card).toHaveTextContent('nothing is approved until you answer');
+
+    fireEvent.click(within(reviewed).getByRole('button', { name: 'Hide suggestion' }));
+    expect(within(reviewed).queryByRole('region', { name: 'Suggestion' })).toBeNull();
+  });
+
+  it('offers a shorter grant, and weighs nothing when there is nothing to approve', async () => {
+    fetchInbox.mockResolvedValue([request()]);
+    fetchReview.mockResolvedValue(
+      review({
+        recommendation: {
+          verdict: 'APPROVE',
+          score: 80,
+          summary: 'Leans to approve, for 7 days rather than as asked.',
+          suggestedDays: 7,
+          signals: [{ code: 'PEERS_HOLD', points: 15, detail: '3 other members of group analysts already read this table' }],
+        },
+      })
+    );
+    renderPage('/requests?tab=inbox');
+
+    const reviewed = await panel();
+    fireEvent.click(await within(reviewed).findByRole('button', { name: 'Suggest' }));
+    const card = within(reviewed).getByRole('region', { name: 'Suggestion' });
+    expect(within(card).getByText('Approve')).toBeInTheDocument();
+    expect(within(card).getByText('for 7 days')).toBeInTheDocument();
+    expect(within(card).getByLabelText('80% towards approving')).toBeInTheDocument();
+  });
+
+  it('draws no score when they can already read the table', async () => {
+    fetchInbox.mockResolvedValue([request()]);
+    fetchReview.mockResolvedValue(
+      review({
+        recommendation: {
+          verdict: 'DECLINE',
+          score: 0,
+          summary: 'Nothing to approve: they can already read this table.',
+          suggestedDays: null,
+          signals: [{ code: 'ALREADY_READS', points: -50, detail: 'They can already read this table' }],
+        },
+      })
+    );
+    renderPage('/requests?tab=inbox');
+
+    const reviewed = await panel();
+    fireEvent.click(await within(reviewed).findByRole('button', { name: 'Suggest' }));
+    const card = within(reviewed).getByRole('region', { name: 'Suggestion' });
+    expect(within(card).getByText('Nothing to approve')).toBeInTheDocument();
+    expect(within(card).queryByLabelText(/towards approving/)).toBeNull();
+    expect(within(card).queryByText('−50')).toBeNull();
   });
 
   it('draws no review on one’s own request, nor on one already answered', async () => {

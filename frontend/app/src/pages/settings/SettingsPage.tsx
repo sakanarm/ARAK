@@ -5,6 +5,7 @@ import {
   CpuChip01,
   Database01,
   Dataflow03,
+  FileShield02,
   Key01,
   LayoutAlt01,
   RefreshCcw01,
@@ -151,10 +152,21 @@ const GROUPS: SettingGroup[] = [
         adminOnly: true,
       },
       {
+        // Moved here from the rail: a secure view is applied a few times per
+        // table, not visited daily. Anybody who does can pin it back with
+        // Customize rail.
+        title: 'Enforcement',
+        description:
+          'Secure views on registered sources: a dry run of exactly what would change, the apply, and the rollback by the name each view was created under.',
+        to: '/enforcement',
+        icon: FileShield02,
+        roles: ['PLATFORM_ADMIN', 'POLICY_AUTHOR', 'DATA_OWNER'],
+      },
+      {
         title: 'Service & build',
         description:
           'What is running, which OpenMetadata instance it is pinned to, and whether the background pollers are healthy.',
-        to: '/system',
+        to: '/settings/system',
         icon: Server01,
       },
       {

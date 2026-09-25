@@ -987,7 +987,7 @@ function AccountMenu() {
           <Dropdown.Item
             icon={Server01}
             label="System status"
-            onAction={() => navigate('/system')}
+            onAction={() => navigate('/settings/system')}
           />
           <Dropdown.Item
             icon={Database01}

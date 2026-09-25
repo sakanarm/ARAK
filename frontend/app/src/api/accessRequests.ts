@@ -395,7 +395,8 @@ export interface ReviewRequester {
   enabled: boolean;
   source: string | null;
   appRoles: string[];
-  memberships: { name: string; displayName: string | null; kind: string; source: string }[];
+  /** Direct groups and teams; `id` opens the group's page. */
+  memberships: { id: string; name: string; displayName: string | null; kind: string; source: string }[];
   attributes: { key: string; value: string; source: string }[];
   grantsHere: {
     id: string;
@@ -458,6 +459,24 @@ export interface ReviewSuggestion {
   draft: Policy | null;
 }
 
+export type Verdict = 'APPROVE' | 'REVIEW' | 'REJECT' | 'DECLINE';
+
+/**
+ * Whether ARAK would approve, and how strongly: a lean, never an answer.
+ *
+ * <p>`score` is a neutral 50 plus the points on each signal, held to 0-100, so
+ * every point can be read and disagreed with. Nothing is learned and nothing
+ * is decided: approving still only records the reviewer's decision.
+ */
+export interface Recommendation {
+  verdict: Verdict;
+  score: number;
+  summary: string;
+  /** A shorter grant worth approving instead, or null. */
+  suggestedDays: number | null;
+  signals: { code: string; points: number; detail: string }[];
+}
+
 /**
  * What a reviewer reads before answering: who asked, what a grant would
  * open column by column, what stands in its way, and ways to answer.
@@ -480,6 +499,7 @@ export interface AccessReview {
   risk: { level: RiskLevel; factors: { level: RiskLevel; code: string; detail: string }[] };
   conflicts: ReviewConflict[];
   suggestions: ReviewSuggestion[];
+  recommendation: Recommendation;
 }
 
 /**
