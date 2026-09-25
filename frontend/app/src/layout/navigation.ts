@@ -1,6 +1,8 @@
 import {
   Activity,
+  BarChartSquare02,
   BookOpen01,
+  ClipboardCheck,
   Database01,
   FileShield02,
   Home01,
@@ -69,6 +71,15 @@ export const NAV_SECTIONS: NavSection[] = [
     description: 'What you own and what applies to you.',
   },
   {
+    label: 'Dashboard',
+    visibleTo: ['POLICY_AUTHOR', 'AUDITOR'],
+    href: '/dashboard',
+    icon: BarChartSquare02,
+    milestone: null,
+    description:
+      'The whole estate at once: coverage of sensitive data, who holds access, what the proxy ran and refused, and what wants a decision.',
+  },
+  {
     label: 'Catalog',
     visibleTo: 'everyone',
     href: '/catalog',
@@ -112,6 +123,18 @@ export const NAV_SECTIONS: NavSection[] = [
     milestone: null,
     description:
       'Run SQL through the platform: the policy is compiled into the statement before it reaches the source.',
+  },
+  {
+    // Everyone: each reader gets a different log, drawn by the server -- the
+    // whole of it for the roles that oversee everything, their own rows and
+    // their tables' for an owner, and their own for anyone else.
+    label: 'Query log',
+    visibleTo: 'everyone',
+    href: '/audit',
+    icon: ClipboardCheck,
+    milestone: null,
+    description:
+      'What was sent through the query proxy, what it became once policy was compiled in, and how it ended.',
   },
   {
     // Everyone: anybody can be refused and ask, and whether somebody may

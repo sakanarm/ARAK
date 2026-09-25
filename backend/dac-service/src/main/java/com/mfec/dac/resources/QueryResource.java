@@ -101,6 +101,7 @@ public class QueryResource {
               sourceId,
               ask.sql(),
               principal,
+              caller.getName(),
               ask.maxRows() == null ? 0 : ask.maxRows(),
               clientIp(request),
               ask.purpose());

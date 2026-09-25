@@ -17,6 +17,8 @@ import PolicyBuilderPage from './pages/policies/PolicyBuilderPage';
 import PolicyDetailPage from './pages/policies/PolicyDetailPage';
 import PolicyListPage from './pages/policies/PolicyListPage';
 import QueryPage from './pages/query/QueryPage';
+import QueryLogPage from './pages/audit/QueryLogPage';
+import DashboardPage from './pages/dashboard/DashboardPage';
 import AccessRequestsPage from './pages/requests/AccessRequestsPage';
 import SimulatorPage from './pages/simulator/SimulatorPage';
 import AccessWorkflowsPage from './pages/settings/AccessWorkflowsPage';
@@ -80,6 +82,8 @@ export default function App() {
           <Route element={<PolicyDetailPage />} path="/policies/:id" />
           <Route element={<PolicyBuilderPage />} path="/policies/:id/edit" />
           <Route element={<QueryPage />} path="/query" />
+          <Route element={<QueryLogPage />} path="/audit" />
+          <Route element={<DashboardPage />} path="/dashboard" />
           <Route element={<AccessRequestsPage />} path="/requests" />
           <Route element={<SimulatorPage />} path="/simulator" />
           <Route element={<SourcesPage />} path="/sources" />

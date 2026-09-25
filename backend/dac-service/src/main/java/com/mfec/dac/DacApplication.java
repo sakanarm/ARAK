@@ -6,6 +6,8 @@ import com.mfec.dac.access.AccessEligibility;
 import com.mfec.dac.access.AccessRequestStore;
 import com.mfec.dac.access.AccessReview;
 import com.mfec.dac.access.RequestStatistics;
+import com.mfec.dac.audit.QueryLog;
+import com.mfec.dac.dashboard.DashboardQuery;
 import com.mfec.dac.access.WorkflowStore;
 import com.mfec.dac.access.GrantStore;
 import com.mfec.dac.home.HomeLayoutStore;
@@ -47,6 +49,8 @@ import com.mfec.dac.resources.HomePersonaResource;
 import com.mfec.dac.resources.HomeResource;
 import com.mfec.dac.resources.LlmAssistResource;
 import com.mfec.dac.resources.LlmResource;
+import com.mfec.dac.resources.AuditResource;
+import com.mfec.dac.resources.DashboardResource;
 import com.mfec.dac.resources.AuthResource;
 import com.mfec.dac.catalog.SourceCatalogImporter;
 import com.mfec.dac.engine.EngineConfig;
@@ -390,6 +394,12 @@ public class DacApplication extends Application<DacConfiguration> {
                 decisionService,
                 new QueryExecutor(credentials, 10)),
             eligibility));
+    // The query log (FR-8.3, M10): each reader sees the rows that are theirs
+    // to see, which AuditResource and QueryLog decide between them.
+    environment.jersey().register(new AuditResource(new QueryLog(jdbi)));
+    // The access-control dashboard (M10, FR-8.5): the whole estate at once, so
+    // only for the roles that oversee everything.
+    environment.jersey().register(new DashboardResource(new DashboardQuery(jdbi), new QueryLog(jdbi)));
     // Enforcement mode 5.1.2 (M5). The same resolver as every other source
     // connection: a second one without the Fernet opener would read a stored
     // credential as unresolvable. Reviews are held in this process, which is

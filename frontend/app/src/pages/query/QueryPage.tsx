@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useMutation, useQueries, useQuery } from '@tanstack/react-query';
+import { Link } from 'react-router-dom';
 import { Button } from '@openmetadata/ui-core-components/components/base/buttons/button';
 import { Chip as Badge } from '../../components/chips';
 import {
   AlertTriangle,
+  ClipboardCheck,
   Copy01,
   Download01,
   Expand01,
@@ -295,7 +297,15 @@ export default function QueryPage() {
           <h1 className="tw:text-display-sm tw:font-semibold tw:text-primary">
             Query
           </h1>
-          {fullscreenToggle}
+          <div className="tw:flex tw:items-center tw:gap-2">
+            <Link
+              className="tw:inline-flex tw:items-center tw:gap-1.5 tw:rounded-lg tw:border tw:border-primary tw:bg-primary tw:px-3 tw:py-1.5 tw:text-sm tw:font-semibold tw:text-secondary tw:shadow-xs tw:transition tw:hover:bg-primary_hover"
+              to="/audit">
+              <ClipboardCheck className="tw:size-4 tw:text-fg-quaternary" />
+              Query log
+            </Link>
+            {fullscreenToggle}
+          </div>
         </header>
       )}
 

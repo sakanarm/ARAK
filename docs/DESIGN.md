@@ -297,8 +297,16 @@ conf/dac.yml                 config เดียวที่ commit — ใช�
 FR-7.1 owner สร้าง grant ตรงๆ พร้อม `validFrom`/`validUntil` + เหตุผล · FR-7.2 job auto-revoke · FR-7.3 หน้า "สิทธิ์ของฉัน" / "ใครมีสิทธิ์ใน asset นี้"
 (ตาราง `access_grant` มี `source` = manual|request และ `request_id` nullable ไว้แล้วเพื่อไม่ต้อง migrate ตอน Phase 2)
 
-### FR-8 Audit & Compliance — M8 🚧 (เขียน audit ครบแล้ว · query log อ่านได้ใน M10 · compliance report / SIEM ⬜)
+### FR-8 Audit & Compliance — M8 / M10 🚧 (FR-8.1–8.3 ✅ · FR-8.5 ✅ บน Dashboard (export ⬜) · FR-8.4 SIEM ⬜)
 policy change log (append-only, ค่าเดิม→ค่าใหม่) · access decision log · query log (SQL ต้นฉบับ + หลัง rewrite) · export ไป SIEM · compliance report ("ใครเข้าถึง PII ได้บ้าง", "table ที่มี tag PII แต่ยังไม่มี policy", "สิทธิ์ที่ไม่ได้ใช้เกิน 90 วัน")
+
+| ข้อ | สถานะ | อยู่ที่ไหน |
+|---|---|---|
+| FR-8.1 policy change log | ✅ | `audit_policy_change` append-only |
+| FR-8.2 access decision log | ✅ | `audit_decision` (+ `evaluation_ms`) |
+| FR-8.3 query log | ✅ **M10** | `audit_query` + V25 (`asset_fqns` · `run_by`) · `GET /v1/audit/queries` + หน้า `/audit` · อ่านได้ตามหน้าที่: admin / author / auditor ทุกแถว · owner แถวบน table ของตัวเอง (SQL ซ่อนถ้าแตะ table อื่น) · คนอื่นของตัวเอง |
+| FR-8.4 SIEM export + retention | ⬜ | — |
+| FR-8.5 compliance report | ✅ **M10** (บนหน้าจอ · export CSV/PDF ⬜) | `GET /v1/dashboard` + หน้า `/dashboard` — ใครเข้าถึง label ที่เลือกได้ (default PII) · table sensitive ที่ไม่มี data policy (แยก ถูกอ่าน / เข้าได้ / ปิดอยู่) · สิทธิ์ที่ไม่ได้ใช้เกิน 90 วัน · grant ใกล้หมด / ไม่มีวันหมด · ไม่มี IP / SQL ในคำตอบ |
 
 ### FR-9 Policy Lifecycle — ⬜
 state `DRAFT → PENDING_APPROVAL → ACTIVE → DISABLED → ARCHIVED` ✅ (มีใน schema) · version + diff + rollback (ตาราง `policy_version` มีแล้ว) · **Policy-as-Code** export/import YAML · แยก environment dev/uat/prod + promote
@@ -377,7 +385,7 @@ LLM เห็นแค่ชื่อ / คำอธิบาย column ไม�
 | **M7b** | Cross-mode consistency harness + CI | 1 wk | ⬜ ต้องมี M5 / M6 ก่อน |
 | **M8** | Audit 3 ตาราง · DriftDetector + re-apply · manual grant + auto-revoke · compliance report · metrics · Vault | 3 wk | 🚧 **~35%** |
 | **M9** | Access Request Management (FR-11) — ขอสิทธิ์ · workflow หลาย step · inbox · review · Dashboard ใกล้หมดสิทธิ์ · สถิติต่อ table · **ไฟล์แนบ** | – | 🚧 **~75%** — เหลือไฟล์แนบ · recertification · break-glass · email / Teams |
-| **M10** | Access Control Dashboard — Coverage · Exposure · Activity · Health · **Query log** | – | 🚧 **เริ่มรอบนี้** |
+| **M10** | Access Control Dashboard — Coverage · Exposure · Activity · Health · **Query log** | – | ✅ **เสร็จ** — query log ตามหน้าที่ (V25) + dashboard หน้าเดียว · เหลือ export CSV/PDF · drift จริงรอ DriftDetector (M8) |
 | **M11** | LLM Assist — per-user gateway | – | 🚧 **~60%** |
 | **M12** | Home ที่จัดเองได้ต่อ account | – | ✅ **เสร็จ** |
 | **M13** | Request access จากจุดที่โดนปฏิเสธ | – | ✅ **เสร็จ** |

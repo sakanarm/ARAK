@@ -136,9 +136,17 @@ public class QueryService {
   /**
    * @param principal whose access governs the rows; not necessarily the caller,
    *     because the explorer doubles as the simulator's evidence (FR-5.2)
+   * @param runBy the signed-in account that sent it, recorded beside the
+   *     principal so a query run as somebody else is never filed as theirs alone
    */
   public Result run(
-      UUID sourceId, String sql, String principal, int maxRows, String clientIp, String purpose) {
+      UUID sourceId,
+      String sql,
+      String principal,
+      String runBy,
+      int maxRows,
+      String clientIp,
+      String purpose) {
 
     // Audited before anything else can go right, because a query aimed at a
     // source that is gone or switched off is still someone trying to read data
@@ -148,13 +156,13 @@ public class QueryService {
     Optional<DataSourceStore.Source> found = sources.find(sourceId);
     if (found.isEmpty()) {
       String reason = "No data source " + sourceId;
-      audit(principal, null, sql, null, "REJECTED", reason, null, null, clientIp);
+      audit(principal, null, sql, null, "REJECTED", reason, null, null, clientIp, Set.of(), runBy);
       throw new RejectedException(reason);
     }
     DataSourceStore.Source source = found.get();
     if (!source.enabled()) {
       String reason = source.name() + " is disabled";
-      audit(principal, source.id(), sql, null, "REJECTED", reason, null, null, clientIp);
+      audit(principal, source.id(), sql, null, "REJECTED", reason, null, null, clientIp, Set.of(), runBy);
       throw new RejectedException(reason);
     }
 
@@ -162,11 +170,20 @@ public class QueryService {
     SqlDialect dialect = dialectFor(source);
     QueryRewriter rewriter = new QueryRewriter(dialect, null);
 
+    // Every governed table the rewriter resolved, in the order it met them,
+    // including the one a refusal names: the query log files each row under
+    // the tables it touched so an owner can be shown the reads of theirs.
+    Set<String> touched = new LinkedHashSet<>();
     QueryRewriter.Rewritten rewritten;
     try {
-      rewritten = rewriter.rewrite(sql, (schema, table) -> govern(source, schema, table, principal, clientIp, purpose));
+      rewritten =
+          rewriter.rewrite(
+              sql, (schema, table) -> govern(source, schema, table, principal, clientIp, purpose, touched));
     } catch (QueryRewriter.RefusedException e) {
-      audit(principal, source.id(), sql, null, "REJECTED", e.getMessage(), null, null, clientIp);
+      if (e instanceof QueryRewriter.DeniedException denied && denied.assetFqn() != null) {
+        touched.add(denied.assetFqn());
+      }
+      audit(principal, source.id(), sql, null, "REJECTED", e.getMessage(), null, null, clientIp, touched, runBy);
       throw new RejectedException(
           e.getMessage(),
           e instanceof QueryRewriter.DeniedException denied ? denied.assetFqn() : null);
@@ -183,7 +200,9 @@ public class QueryService {
           String.valueOf(e.getMessage()),
           null,
           null,
-          clientIp);
+          clientIp,
+          touched,
+          runBy);
       throw e;
     }
 
@@ -209,7 +228,9 @@ public class QueryService {
           e.getMessage(),
           null,
           (int) millis,
-          clientIp);
+          clientIp,
+          touched,
+          runBy);
       // The source's message can name objects the caller is not entitled to
       // know exist, so it goes to the log and a shorter one goes back.
       LOG.warn("Query against {} failed: {}", source.name(), e.toString());
@@ -225,7 +246,9 @@ public class QueryService {
         null,
         (long) page.rows().size(),
         (int) page.millis(),
-        clientIp);
+        clientIp,
+        touched,
+        runBy);
 
     return new Result(
         page.columns(),
@@ -379,7 +402,8 @@ public class QueryService {
       String table,
       String principal,
       String clientIp,
-      String purpose) {
+      String purpose,
+      Set<String> touched) {
 
     Optional<String> fqn =
         jdbi.withHandle(
@@ -402,6 +426,7 @@ public class QueryService {
     if (fqn.isEmpty()) {
       return null;
     }
+    touched.add(fqn.get());
 
     List<String> columns =
         jdbi.withHandle(
@@ -510,7 +535,9 @@ public class QueryService {
       String reason,
       Long rowCount,
       Integer millis,
-      String clientIp) {
+      String clientIp,
+      Set<String> assets,
+      String runBy) {
 
     try {
       jdbi.useHandle(
@@ -520,9 +547,10 @@ public class QueryService {
                       """
                       INSERT INTO audit_query (principal_name, data_source_id, original_sql,
                                                rewritten_sql, outcome, reject_reason, row_count,
-                                               duration_ms, client_ip)
+                                               duration_ms, client_ip, asset_fqns, run_by)
                       VALUES (:principal, CAST(:sourceId AS uuid), :original, :rewritten,
-                              :outcome, :reason, :rowCount, :millis, CAST(:ip AS inet))
+                              :outcome, :reason, :rowCount, :millis, CAST(:ip AS inet),
+                              :assets, :runBy)
                       """)
                   .bind("principal", principal)
                   .bind("sourceId", sourceId)
@@ -533,6 +561,8 @@ public class QueryService {
                   .bind("rowCount", rowCount)
                   .bind("millis", millis)
                   .bind("ip", inet(clientIp))
+                  .bindArray("assets", String.class, assets.toArray(new String[0]))
+                  .bind("runBy", runBy == null || runBy.equalsIgnoreCase(principal) ? null : runBy)
                   .execute());
     } catch (Exception e) {
       LOG.error("Could not write the query audit row for {}", principal, e);
