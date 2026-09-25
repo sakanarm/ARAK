@@ -49,6 +49,7 @@ Phase 1 รองรับ SQL Server + PostgreSQL · identity หลักค�
 | **M19 AI-Driven Anomalous Access Detection** | ⬜ **Roadmap ใหม่ — ผู้ใช้ขอ 2026-09-25** · เรียนรู้ baseline การเข้าถึงข้อมูลของแต่ละคน (ปริมาณแถว · ช่วงเวลา · table ที่แตะ · อัตราโดนปฏิเสธ) แล้วจับพฤติกรรมที่ผิดไปจาก baseline เช่น ปกติดึงลูกค้าวันละ 10 แถว แต่วันหนึ่งดึง 5,000 แถวตอนตี 3 · **ตอบสนองได้ 3 ระดับ: แจ้งเตือน → ขอเหตุผลหรือให้ owner อนุมัติ → block แล้วพักสิทธิ์ใช้ query ไว้จนกว่า security จะตรวจ** · **block ทันทีทำได้เฉพาะเมื่อ query ผ่าน proxy (5.2)** · โหมด native (5.1.1 / 5.1.2) ทำได้แค่ตรวจย้อนหลังแล้วพักสิทธิ์ · v1 ใช้สถิติที่อธิบายได้ (median / MAD · histogram ตามชั่วโมง · table ที่ไม่เคยแตะ) ก่อน ML · LLM ใช้อธิบายเหตุผลเท่านั้น และเห็นแค่ตัวเลขสรุป ไม่เห็นข้อมูลจริง · ต้องเริ่มจาก shadow mode (แจ้งเตือนอย่างเดียว) · ต้องมี M10 (query log + `asset_fqns`) ก่อน · ดูข้อ AP.9 |
 | **M20 MAC เต็มรูปแบบ — sensitivity level ที่เรียงลำดับได้** | ⬜ **Roadmap ใหม่ — ผู้ใช้ถาม 2026-09-25 ว่า DAC / MAC / RBAC / ABAC มีครบไหม** · DAC ✅ (owner ให้ grant เอง + อนุมัติคำขอ) · RBAC ✅ (`role` / `team` / `group` / `user` / `assetOwner`) · ABAC ✅ (`attributes` · `expression` · `time` · `context.ipCidr` / `purpose`) · **MAC ⚠️ ได้บางส่วน** — เขียนเป็น ORG policy แบบ DENY ได้ (local ผ่อนไม่ได้ และ owner ให้ grant ทะลุไม่ได้) แต่ `gte` เทียบ clearance ด้วยการเรียงตัวอักษร (`Comparisons.compare`) จึงใช้ได้กับชื่ออย่าง `L1 < L2` เท่านั้น · `Public < Internal < Confidential < Secret` เรียงผิด และระดับของ table ยังไม่ผูกกับ clearance อัตโนมัติ · ดูข้อ AP.10 |
 | **M21 AI Data Access Control** | ⬜ **Roadmap ใหม่ — ผู้ใช้ขอ 2026-09-25** · คุมว่า AI model / agent ดึงข้อมูลอะไรได้ ตามตัวตน สิทธิ์ และบริบทของ **user ที่ agent ทำงานแทน** · เทียบ 6 ข้อที่ผู้ใช้ส่งมา: runtime authorization ✅ (ฝั่ง SQL) · identity binding ⚠️ · row/column ✅ แต่ vector chunk ❌ · classification ⚠️ (ใช้ของ OM) · redaction ✅ ในผลลัพธ์ query แต่ ❌ ใน prompt / output ของ LLM · centralized enforcement ⚠️ · **ช่องว่างหลัก: ยังไม่มีช่องทางให้ agent เรียก ARAK ในนาม user** → agent registry + delegated token (RFC 8693) + ARAK MCP server + AI output guard + filter สำหรับ vector store · ต้องมี M14 ก่อน · ดูข้อ AP.12 |
+| **M22 Encryption / Decryption ของข้อมูล** | ⬜ **Roadmap ใหม่ — ผู้ใช้ถาม 2026-09-25 ว่ามีระบบ Encryption / Decryption ไหม** · **ที่มีแล้วคุมแค่ความลับของระบบเอง ไม่ใช่ตัวข้อมูล:** credential ของ source และ LLM key ถูก seal ด้วย Fernet (`SecretBox` · `FERNET_KEY`) · MSSQL ต่อด้วย `encrypt=true` · mask `HASH` เป็น SHA-256 ทางเดียว ถอดกลับไม่ได้ · **ยังไม่มี:** ถอดรหัส column ที่ source เก็บแบบเข้ารหัสไว้ให้เฉพาะคนที่ policy อนุญาต · tokenization / FPE แบบย้อนกลับได้ · หมุนกุญแจ (key rotation) · Vault / Azure Key Vault ใช้จริง (ตอนนี้รับ reference แต่ resolve ไม่ได้) · TLS บังคับทุก source · เข้ารหัส SQL ที่เก็บใน audit · ดูข้อ AP.13 |
 
 **ที่รันอยู่ตอนนี้**
 | | |
@@ -73,7 +74,7 @@ Phase 1 รองรับ SQL Server + PostgreSQL · identity หลักค�
 
 ---
 
-## Roadmap ที่เพิ่มรอบนี้ — **M13 · M14 · M15 · M16 · M17 · M18 · M19 · M20 · M21** (ผู้ใช้ขอ 2026-09-24 · M19 / M20 / M21 / ไฟล์แนบของ M9 ขอ 2026-09-25)
+## Roadmap ที่เพิ่มรอบนี้ — **M13 · M14 · M15 · M16 · M17 · M18 · M19 · M20 · M21 · M22** (ผู้ใช้ขอ 2026-09-24 · M19 / M20 / M21 / M22 / ไฟล์แนบของ M9 ขอ 2026-09-25)
 
 ผู้ใช้สั่งว่า *"ช่วยเพิ่ม Roadmap เพิ่ม Access Control ให้เรามีความพิเศษ"* แล้วให้มาสามข้อ
 แล้วขอเพิ่มข้อที่สี่ ห้า และหกตามมาในวันเดียวกัน (M16, M17, M18)
@@ -511,6 +512,35 @@ federation layer ในอนาคตก็จะถาม registry ตัว�
 **กฎที่ต้องคงไว้** — LLM ไม่มีสิทธิ์เปิดใช้ policy เอง (เดิม) · LLM ภายใน ARAK เห็นแค่ metadata (เดิม) ·
 agent ขยายสิทธิ์ตัวเองไม่ได้ · คำขอสิทธิ์ที่ agent ร่างเป็นแค่ร่างจนกว่า user จะกดส่ง · ห้ามส่ง `client_ip` กลับใน response
 
+### AP.13 M22 — Encryption / Decryption ของข้อมูล (ผู้ใช้ถาม 2026-09-25)
+
+ผู้ใช้ถาม *"มีระบบ Encryption Decryption ไหม ใน Roadmap"* → ตรวจจากโค้ดแล้ว **มีแค่ส่วนที่ปกป้องความลับของ ARAK เอง ยังไม่มีการเข้ารหัส / ถอดรหัสตัวข้อมูล** และใน Roadmap เดิมมีแค่คำว่า "FPE" ในรายการ Phase 2 ไม่มี milestone รองรับ
+
+| เรื่อง | สถานะ | อยู่ตรงไหน |
+|---|---|---|
+| credential ของ source · LLM API key | ✅ | `SecretBox` (Fernet · `FERNET_KEY` ใน `.env`) · `fernet:` reference · `api_key_cipher` ไม่ถูกส่งกลับ |
+| ต่อ source แบบเข้ารหัส (in transit) | ⚠️ บางส่วน | MSSQL `encrypt=true;trustServerCertificate=true` (ยังไม่ตรวจ cert) · PG ยังไม่บังคับ `sslmode` |
+| Vault / Azure Key Vault | ⚠️ รับ reference แต่ใช้ไม่ได้ | `CredentialResolver` ตอบว่า "No vault client is configured" |
+| หมุนกุญแจ (key rotation) | ❌ | `FERNET_KEY` มีได้ตัวเดียว · เปลี่ยนแล้ว credential เดิมเปิดไม่ออก |
+| mask แบบทางเดียว | ✅ | `HASH` (SHA-256 + salt ต่อ column) · `PARTIAL` · `REGEX_REPLACE` · `NULLIFY` … — ถอดกลับไม่ได้โดยตั้งใจ |
+| ถอดรหัส column ที่ source เข้ารหัสเก็บไว้ ให้เฉพาะคนที่มีสิทธิ์ | ❌ | — |
+| tokenization / FPE แบบย้อนกลับได้ | ❌ | มีแค่ชื่อในรายการ Phase 2 |
+| ไฟล์แนบของ M9 | ⬜ วางแผนแล้ว | ข้อ AP.11 — เข้ารหัสก่อนเขียนลง disk |
+
+**สิ่งที่จะทำ (เรียงตามลำดับ)**
+1. **Key management ก่อนอย่างอื่น** — keyring หลายรุ่น (`FERNET_KEYS` = ตัวใหม่อยู่หน้า · ตัวเก่ายังเปิดได้) · คำสั่ง re-seal credential ทุกตัวด้วยกุญแจใหม่ ·
+   Vault / Azure Key Vault client จริงหลัง `vault://` / `azurekeyvault://` · envelope encryption (DEK ต่อ source / ต่อ column ห่อด้วย KEK ใน KMS) · **กุญแจไม่เคยอยู่ใน DB หรือ git**
+2. **Decrypt-on-read ตาม policy** — column ที่ source เก็บเป็น ciphertext อยู่แล้ว (เช่น app เขียนด้วย AES-GCM หรือ `pgcrypto`) ติด label ใน ARAK ว่าเข้ารหัสด้วย key ไหน ·
+   data policy ได้ action ใหม่ `DECRYPT` (ALLOW ให้เห็น plaintext) · คนที่ไม่ได้สิทธิ์เห็น ciphertext หรือค่าที่ mask ต่อ ·
+   **ถอดรหัสใน proxy (5.2) ฝั่ง Java เท่านั้น** — ห้ามใส่กุญแจลงใน DDL ของ secure view เพราะใครอ่าน definition ของ view ได้ก็ได้กุญแจ · secure view / native จึงเป็น "ทำไม่ได้" ใน capability matrix
+3. **Tokenization / FPE แบบย้อนกลับได้** — mask function ใหม่ `TOKENIZE` (deterministic · join ข้าม table ได้) และ `FPE` (NIST FF1 — เลขบัตร 13 หลักยังเป็นเลข 13 หลัก) ·
+   `DETOKENIZE` เป็นสิทธิ์แยก ขอผ่าน access request (M9) หรือ break-glass · ทุกครั้งที่ถอด = 1 แถวใน audit พร้อมเหตุผล
+4. **In transit** — บังคับ TLS ทุก source (`sslmode=verify-full` บน PG · ตรวจ cert บน MSSQL) และแสดงสถานะใน Health ของ Dashboard (M10)
+5. **At rest ของ ARAK เอง** — `audit_query.original_sql` / `rewritten_sql` มักมีค่าจริงใน `WHERE` → เลือกเข้ารหัส column นี้ได้ · ไฟล์แนบ (AP.11)
+
+**ข้อที่ห้ามทำ** — ตามข้อตัดสินใจที่ 8 ARAK **ไม่ ALTER COLUMN / ไม่เข้ารหัสข้อมูลใน table ของลูกค้าแทนเขา** (ไม่เขียนข้อมูลลง source) · Always Encrypted และ DDM ของ MSSQL อยู่นอกขอบเขต ·
+กุญแจ · plaintext ที่ถอดแล้ว และ IP ของผู้ใช้ ห้ามอยู่ใน response ของ log ใดๆ
+
 ### AP.8 ลำดับที่แนะนำ
 
 ```
@@ -530,6 +560,7 @@ M10 → M19 (M19 ต้องใช้ query log และ `audit_query.asset_fq
 M20       ทำแยกได้เลย  (engine มีครบแล้ว ขาด scheme ที่เรียงลำดับได้ + operator + guardrail ระดับองค์กร)
 ไฟล์แนบ M9  ทำแยกได้เลย  (ต่อจาก access_request ที่มีแล้ว · ต้องมี volume ที่ backup ได้บน prod ก่อนเปิดใช้)
 M14 → M21 (agent เรียก ARAK ผ่าน public API · slice 7 ต้องมี M20 · slice 8 ต้องมี M19)
+M22 ข้อ 1 (key management) ก่อนข้ออื่น · ข้อ 3 `DETOKENIZE` ขอผ่าน M9 · ข้อ 4 แสดงผลใน Health ของ M10
 
 2026-09-24 ผู้ใช้สั่งสลับลำดับ: **M18 ขึ้นก่อนทุกอย่าง และเริ่มที่ฝั่ง proxy**
   (`ปรับมาทำส่วนนี้ก่อนเลย เพื่อสร้างฐานให้แข็งแรง`) → เหตุผลอยู่ที่ AP.7a

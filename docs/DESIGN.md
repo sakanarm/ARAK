@@ -328,6 +328,13 @@ AI model / agent ดึงข้อมูลได้ไม่เกินสิ
 delegated token (RFC 8693, claim `act`) · ARAK MCP server (`search_assets` · `describe_asset` · `run_query` · `request_access` เป็นร่าง) · `purpose = ai-agent` ใช้ ABAC ที่มีอยู่ ·
 AI output guard (PII ใน prompt / output / citation) · pre-filter สำหรับ vector store · retention ตาม label (M20) · anomaly ต่อ agent (M19)
 
+### FR-15 Encryption / Decryption ของข้อมูล — M22 ⬜ (ผู้ใช้ถาม 2026-09-25)
+มีแล้ว: credential ของ source และ LLM key seal ด้วย Fernet · mask `HASH` ทางเดียว · MSSQL `encrypt=true` ·
+ยังไม่มี: keyring + key rotation · Vault / Azure Key Vault client จริง · envelope encryption (DEK ห่อด้วย KEK) ·
+`DECRYPT` เป็น action ของ data policy — ถอดรหัส column ที่ source เก็บเป็น ciphertext ให้เฉพาะคนที่มีสิทธิ์ **ในโหมด proxy เท่านั้น** (กุญแจห้ามอยู่ใน DDL ของ view) ·
+`TOKENIZE` / `FPE` (FF1) แบบย้อนกลับได้ + `DETOKENIZE` ขอผ่าน access request · TLS บังคับทุก source · เข้ารหัส SQL ใน `audit_query` ได้ ·
+ไม่เข้ารหัสข้อมูลใน table ของลูกค้าแทนเขา (ข้อตัดสินใจที่ 8)
+
 ### FR-10 Non-Functional
 | # | | สถานะ |
 |---|---|---|
@@ -368,6 +375,7 @@ AI output guard (PII ใน prompt / output / citation) · pre-filter สำห�
 | **M19** | AI-Driven Anomalous Access Detection (FR-13) | – | ⬜ ต้องมี M10 (query log + `asset_fqns`) |
 | **M20** | MAC เต็มรูปแบบ — sensitivity level ที่เรียงลำดับได้ (FR-12) | – | ⬜ |
 | **M21** | AI Data Access Control (FR-14) | – | ⬜ ต้องมี M14 |
+| **M22** | Encryption / Decryption ของข้อมูล — key rotation · Vault · decrypt-on-read · tokenization / FPE (FR-15) | – | ⬜ |
 
 **ลำดับ:** M0 → M1 → M2 → M3 → (M4 ‖ M5 ‖ M6 ‖ M7) → M7b → M8
 หลัง M3 fix `PolicyDecision` แล้ว **compiler 3 ตัวทำขนานกันได้** — นี่คือผลตอบแทนของการลงทุนทำ Policy IR ตั้งแต่ต้น
