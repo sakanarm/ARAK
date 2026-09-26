@@ -320,6 +320,7 @@ Dashboard ใครใกล้หมดสิทธิ์ + นับถอย�
   ตรวจชนิดจาก magic bytes) · ดาวน์โหลดได้เฉพาะคนขอ / approver / admin / auditor เป็น `attachment` + `nosniff` เท่านั้น · ลบไม่ได้หลังตัดสินแล้ว · audit ทุก upload / download
 - **FR-11.2 เลข Ticket** ✅ (ผู้ใช้ขอ 2026-09-26 · V28) — ทุกคำขอมีเลข `REQ-000042` จาก sequence (คำขอเดิมเรียงตามวันที่สร้าง) · ค้นด้วย `REQ-42` / `#42` / `42` ได้ ·
   `GET /v1/access-requests/ticket/{n}` ตรวจสิทธิ์เดียวกับค้นด้วย id — ไม่มีกับไม่ใช่ของเรา ตอบ 404 เหมือนกัน ไม่หลุด UUID · หน้า Access requests มีช่องค้นหา (กด Enter) + ปุ่ม copy เลข · เปิดเต็มหน้าที่ `/requests/REQ-000042` (แชร์ URL ได้)
+- **FR-11.3 Request access template** ✅ (ผู้ใช้ขอ 2026-09-26 · V31) — ฟอร์มขอสิทธิ์ตั้งค่าได้ใน Settings → Request templates ต่อ scope (หรือทั้งองค์กร) และเฉพาะตารางที่มี tag / classification / glossary term ที่ระบุ (บนตารางหรือ column) · กำหนด purpose (รายการ + บังคับ) · เลขอ้างอิง (label + บังคับ) · reason ขั้นต่ำ · preset วัน + สูงสุด / until revoked · guidance **plain text** · ลำดับ: ตัวระบุ facet → scope ลึกสุด → ชื่อ → Built-in · `GET /v1/request-templates/effective/{fqn}` ไม่เปิดเผย scope / facet · **server ตรวจคำขอกับ template ของตารางเองทุกครั้ง** · คำขอเก็บชื่อ template + reference ไว้ แก้/ลบ template ไม่กระทบ · template ไม่อนุมัติ ไม่เปลี่ยนผู้อนุมัติ ไม่เปิด policy · ทั้งองค์กร = PLATFORM_ADMIN · มี scope = ผู้ดูแล scope · auditor อ่านอย่างเดียว · audit append-only
 - ยังไม่ทำ: recertification ทุก 90 วัน · break-glass · email / Teams
 
 ### FR-12 Access Control Models — DAC / MAC / RBAC / ABAC

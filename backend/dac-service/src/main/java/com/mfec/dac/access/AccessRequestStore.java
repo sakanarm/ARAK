@@ -96,14 +96,30 @@ public class AccessRequestStore {
   private final GrantStore grants;
   private final WorkflowStore workflows;
   private final ApproverDirectory directory;
+  private final RequestTemplateStore templates;
 
+  /** Requests asked on the built-in template only, as before templates existed. */
   public AccessRequestStore(
       Jdbi jdbi, ObjectMapper json, GrantStore grants, WorkflowStore workflows) {
+    this(jdbi, json, grants, workflows, null);
+  }
+
+  /**
+   * @param templates what each table's form asks; a request is checked against
+   *     its table's template before it is stored. Null = the built-in one
+   */
+  public AccessRequestStore(
+      Jdbi jdbi,
+      ObjectMapper json,
+      GrantStore grants,
+      WorkflowStore workflows,
+      RequestTemplateStore templates) {
     this.jdbi = jdbi;
     this.json = json;
     this.grants = grants;
     this.workflows = workflows;
     this.directory = new ApproverDirectory(json);
+    this.templates = templates;
   }
 
   /** Why a request could not be made or moved, and which HTTP answer that is. */
@@ -174,6 +190,8 @@ public class AccessRequestStore {
    * @param mayDecide whether the reader may answer a stage now
    * @param mayConfigure whether the reader may start, complete or decline it now
    * @param stranded it waits for nobody: nobody but the requester could move it
+   * @param templateName the request template it was asked on; null before templates
+   * @param reference what the template asked to reference (a change ticket, a DPIA number)
    */
   public record StoredRequest(
       UUID id,
@@ -209,7 +227,9 @@ public class AccessRequestStore {
       List<Approver> approvers,
       boolean mayDecide,
       boolean mayConfigure,
-      boolean stranded) {
+      boolean stranded,
+      String templateName,
+      String reference) {
 
     StoredRequest seen(
         List<StageView> stageViews,
@@ -225,7 +245,7 @@ public class AccessRequestStore {
           completedAt, fulfilment, fulfilmentRef, fulfilmentNote, configurers,
           configuring == null ? List.of() : configuring.members(),
           configuring != null && configuring.fallback(),
-          stageViews, owners, decides, configures, nobodyElse);
+          stageViews, owners, decides, configures, nobodyElse, templateName, reference);
     }
 
     public boolean pending() {
@@ -249,7 +269,25 @@ public class AccessRequestStore {
       Integer requestedDays,
       String attemptedSql,
       String deniedBy,
-      String requesterIp) {
+      String requesterIp,
+      String reference) {
+
+    /** A request with no reference, as before templates asked for one. */
+    public NewRequest(
+        String assetFqn,
+        UUID requesterId,
+        String requesterUsername,
+        UUID dataSourceId,
+        String reason,
+        String purpose,
+        Integer requestedDays,
+        String attemptedSql,
+        String deniedBy,
+        String requesterIp) {
+      this(
+          assetFqn, requesterId, requesterUsername, dataSourceId, reason, purpose,
+          requestedDays, attemptedSql, deniedBy, requesterIp, null);
+    }
 
     /** A request whose address is not known, as before the review needed one. */
     public NewRequest(
@@ -264,7 +302,7 @@ public class AccessRequestStore {
         String deniedBy) {
       this(
           assetFqn, requesterId, requesterUsername, dataSourceId, reason, purpose,
-          requestedDays, attemptedSql, deniedBy, null);
+          requestedDays, attemptedSql, deniedBy, null, null);
     }
   }
 
@@ -633,6 +671,21 @@ public class AccessRequestStore {
                 "You already have an open request for " + fqn + " (" + open.get() + ")");
           }
 
+          // The form is rendered from this template; this is the check behind
+          // it, so a request sent around the form meets the same rules.
+          RequestTemplate.Template template =
+              templates == null ? RequestTemplate.builtIn() : templates.effective(handle, fqn);
+          String problem =
+              RequestTemplate.check(
+                  template.form(),
+                  request.reason(),
+                  request.purpose(),
+                  request.requestedDays(),
+                  request.reference());
+          if (problem != null) {
+            throw new RequestException(RequestException.Kind.INVALID, problem);
+          }
+
           Workflow workflow = workflows.effective(handle, fqn);
           UUID id =
               handle
@@ -641,11 +694,13 @@ public class AccessRequestStore {
                       INSERT INTO access_request
                         (asset_fqn, requester_id, requester_username, data_source_id,
                          reason, purpose, requested_days, attempted_sql, denied_by,
-                         workflow_id, workflow_name, configurers, current_step, requester_ip)
+                         workflow_id, workflow_name, configurers, current_step, requester_ip,
+                         template_id, template_name, reference)
                       VALUES
                         (:fqn, :who, :username, :source, :reason, :purpose, :days,
                          :sql, :deniedBy, :workflowId, :workflowName,
-                         CAST(:configurers AS jsonb), :step, :ip)
+                         CAST(:configurers AS jsonb), :step, :ip,
+                         :templateId, :templateName, :reference)
                       RETURNING id
                       """)
                   .bind("fqn", fqn)
@@ -653,7 +708,7 @@ public class AccessRequestStore {
                   .bind("username", request.requesterUsername())
                   .bind("source", request.dataSourceId())
                   .bind("reason", request.reason().trim())
-                  .bind("purpose", blankToNull(request.purpose()))
+                  .bind("purpose", RequestTemplate.canonicalPurpose(template.form(), request.purpose()))
                   .bind("days", request.requestedDays())
                   .bind("sql", truncate(request.attemptedSql(), 20_000))
                   .bind("deniedBy", truncate(request.deniedBy(), 2_000))
@@ -662,6 +717,9 @@ public class AccessRequestStore {
                   .bind("configurers", write(workflow.configurers()))
                   .bind("step", firstStep(workflow))
                   .bind("ip", truncate(request.requesterIp(), 64))
+                  .bind("templateId", template.id())
+                  .bind("templateName", template.builtIn() ? null : template.name())
+                  .bind("reference", template.form().asksReference() ? RequestTemplate.trim(request.reference()) : null)
                   .mapTo(UUID.class)
                   .one();
 
@@ -1889,7 +1947,9 @@ public class AccessRequestStore {
         List.of(),
         false,
         false,
-        false);
+        false,
+        rs.getString("template_name"),
+        rs.getString("reference"));
   }
 
   private String write(Object value) {

@@ -8,6 +8,7 @@ import com.mfec.dac.access.AccessReview;
 import com.mfec.dac.access.RequestStatistics;
 import com.mfec.dac.audit.QueryLog;
 import com.mfec.dac.dashboard.DashboardQuery;
+import com.mfec.dac.access.RequestTemplateStore;
 import com.mfec.dac.access.WorkflowStore;
 import com.mfec.dac.access.GrantStore;
 import com.mfec.dac.home.HomeLayoutStore;
@@ -45,6 +46,7 @@ import com.mfec.dac.identity.PrincipalQuery;
 import com.mfec.dac.om.OpenMetadataClient;
 import com.mfec.dac.resources.AccessRequestResource;
 import com.mfec.dac.resources.AccessWorkflowResource;
+import com.mfec.dac.resources.RequestTemplateResource;
 import com.mfec.dac.resources.AccessResource;
 import com.mfec.dac.resources.HomePersonaResource;
 import com.mfec.dac.resources.HomeResource;
@@ -371,8 +373,13 @@ public class DacApplication extends Application<DacConfiguration> {
     // through the same GrantStore as a manual grant, so the decision cache
     // hears about it on the listener registered above.
     WorkflowStore accessWorkflows = new WorkflowStore(jdbi, environment.getObjectMapper());
+    // What the request form asks, per table; the store checks every request
+    // against its table's template before it is stored.
+    RequestTemplateStore requestTemplates =
+        new RequestTemplateStore(jdbi, environment.getObjectMapper());
     AccessRequestStore accessRequests =
-        new AccessRequestStore(jdbi, environment.getObjectMapper(), grants, accessWorkflows);
+        new AccessRequestStore(
+            jdbi, environment.getObjectMapper(), grants, accessWorkflows, requestTemplates);
     AccessEligibility eligibility = new AccessEligibility(decisionService, accessRequests);
     AccessReview accessReview =
         new AccessReview(
@@ -387,6 +394,7 @@ public class DacApplication extends Application<DacConfiguration> {
                 new RequestStatistics(jdbi),
                 java.time.Clock.systemUTC()));
     environment.jersey().register(new AccessWorkflowResource(accessWorkflows));
+    environment.jersey().register(new RequestTemplateResource(requestTemplates));
     environment.jersey().register(
         new QueryResource(
             new QueryService(
@@ -643,6 +651,10 @@ public class DacApplication extends Application<DacConfiguration> {
             .dataSource(dataSource)
             .locations("classpath:db/migration")
             .baselineOnMigrate(true)
+            // Features land on main in the order they finish, not the order
+            // their migrations were numbered in; each migration touches its
+            // own columns and tables, so applying a lower number late is safe.
+            .outOfOrder(true)
             .load();
     flyway.migrate();
   }

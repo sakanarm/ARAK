@@ -1,8 +1,8 @@
 import { useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button } from '@openmetadata/ui-core-components/components/base/buttons/button';
-import { AlertTriangle, CheckCircle, Key01, Send01 } from '@untitledui/icons';
+import { AlertTriangle, CheckCircle, InfoCircle, Key01, Send01 } from '@untitledui/icons';
 import { Chip as Badge } from '../../components/chips';
 import { apiErrorMessage } from '../../api/client';
 import {
@@ -15,7 +15,16 @@ import {
   type Route,
 } from '../../api/accessRequests';
 import { stepsOf } from '../../api/accessWorkflows';
-import { FIELD, TextField } from '../policies/controls';
+import {
+  checkAnswers,
+  fetchEffectiveTemplate,
+  MAX_DAYS,
+  MAX_REFERENCE,
+  TEMPLATES_KEY,
+  type RequestForm,
+  type RequestTemplate,
+} from '../../api/requestTemplates';
+import { FIELD, Select, TextField } from '../policies/controls';
 
 /**
  * What to do about a refusal, under the refusal itself.
@@ -95,11 +104,17 @@ export default function RequestAccess({
 }
 
 /**
- * The request itself: why, and for how long.
+ * The request itself: why, for how long, and whatever the table's template asks.
  *
  * <p>Its own component so the catalog can open it in a dialog from the page
  * header, where OpenMetadata puts an asset's actions, while the Query page
  * keeps it inline under the refusal it answers. Both send the same request.
+ *
+ * <p>The fields come from the template the table resolves to: a list of
+ * purposes, the durations on offer and the longest allowed, a reference such
+ * as a DPIA number, the shortest reason, and guidance from whoever wrote it.
+ * Until that arrives, and if it cannot be fetched, the built-in form stands in;
+ * the server holds the request to the real template either way.
  */
 export function RequestAccessForm({
   refusal,
@@ -123,8 +138,41 @@ export function RequestAccessForm({
 }) {
   const catalog = from === 'catalog';
   const queryClient = useQueryClient();
+  const loaded = useQuery({
+    queryKey: [...TEMPLATES_KEY, 'effective', refusal.assetFqn],
+    queryFn: () => fetchEffectiveTemplate(refusal.assetFqn!),
+    enabled: !!refusal.assetFqn,
+    retry: false,
+    staleTime: 60_000,
+  });
+  const template = loaded.data ?? BUILT_IN_TEMPLATE;
+  const form = template.form;
+
   const [reason, setReason] = useState('');
-  const [days, setDays] = useState('30');
+  const [days, setDays] = useState(daysText(form.defaultDays));
+  const [chosen, setChosen] = useState(pickPurpose(form, purpose));
+  const [reference, setReference] = useState('');
+  // A template that arrives after the form opened starts it where it says;
+  // what was typed as the reason stays.
+  const [shapedBy, setShapedBy] = useState(template.id);
+  if (shapedBy !== template.id) {
+    setShapedBy(template.id);
+    setDays(daysText(form.defaultDays));
+    setChosen(pickPurpose(form, purpose));
+  }
+
+  const listed = form.purposes.length > 0;
+  const sentPurpose = listed ? chosen || null : chosen.trim() || purpose;
+  const parsedDays = days.trim() === '' ? null : Number.parseInt(days, 10);
+  const ceiling = form.maxDays ?? MAX_DAYS;
+  const daysValid =
+    parsedDays === null ? form.allowUntilRevoked : parsedDays >= 1 && parsedDays <= ceiling;
+  const problem = checkAnswers(form, {
+    reason,
+    purpose: sentPurpose,
+    days: parsedDays,
+    reference: form.referenceLabel ? reference : '',
+  });
 
   const send = useMutation({
     mutationFn: () =>
@@ -132,10 +180,11 @@ export function RequestAccessForm({
         assetFqn: refusal.assetFqn!,
         sourceId,
         reason: reason.trim(),
-        purpose,
-        days: days.trim() === '' ? null : Number.parseInt(days, 10),
+        purpose: sentPurpose,
+        days: parsedDays,
         attemptedSql: catalog ? null : sql,
         deniedBy: catalog ? null : refusal.message,
+        ...(form.referenceLabel ? { reference: reference.trim() || null } : {}),
       }),
     onSuccess: (request) => {
       void queryClient.invalidateQueries({ queryKey: ['access-requests'] });
@@ -143,9 +192,8 @@ export function RequestAccessForm({
     },
   });
 
-  const parsedDays = Number.parseInt(days, 10);
-  const daysValid = days.trim() === '' || (parsedDays >= 1 && parsedDays <= 365);
-  const ready = reason.trim().length > 0 && daysValid && !send.isPending;
+  const ready = problem === null && !send.isPending;
+  const trimmed = reason.trim().length;
 
   return (
     <form
@@ -157,15 +205,31 @@ export function RequestAccessForm({
       }}>
       <div className="tw:flex tw:items-start tw:gap-3 tw:border-b tw:border-secondary tw:px-4 tw:py-3">
         <Tile />
-        <div className="tw:min-w-0">
+        <div className="tw:min-w-0 tw:flex-1">
           <p className="tw:text-sm tw:font-semibold tw:text-primary">Request access</p>
           <p className="tw:truncate tw:font-mono tw:text-xs tw:text-tertiary">
             {refusal.assetFqn}
           </p>
         </div>
+        {template.id && (
+          <Badge color="gray" size="sm" type="pill-color">
+            {template.name}
+          </Badge>
+        )}
       </div>
 
       <div className="tw:flex tw:flex-col tw:gap-4 tw:px-4 tw:py-4">
+        {form.guidance && (
+          // Plain text on purpose: whoever wrote the template does not get to
+          // put markup in front of every requester.
+          <div
+            aria-label="Guidance"
+            className="tw:flex tw:items-start tw:gap-2 tw:rounded-lg tw:bg-secondary tw:px-3 tw:py-2.5 tw:text-sm tw:text-secondary"
+            role="note">
+            <InfoCircle aria-hidden className="tw:mt-0.5 tw:size-4 tw:shrink-0 tw:text-fg-quaternary" />
+            <p className="tw:min-w-0 tw:whitespace-pre-line tw:break-words">{form.guidance}</p>
+          </div>
+        )}
         {refusal.route && !refusal.stranded && !ownersOnly(refusal.route) && (
           <RouteSteps route={refusal.route} />
         )}
@@ -175,6 +239,36 @@ export function RequestAccessForm({
             ? 'Say what the data is for; that is what they decide on.'
             : 'The statement you ran and the refusal go with the request, so they can see what you were trying to do.'}
         </p>
+
+        {(listed || form.purposeRequired) && (
+          <div className="tw:flex tw:flex-col tw:gap-1.5">
+            <span className="tw:text-sm tw:font-medium tw:text-secondary">
+              Purpose {form.purposeRequired && <span className="tw:text-error-primary">*</span>}
+            </span>
+            {listed ? (
+              <Select
+                ariaLabel="Purpose"
+                className="tw:max-w-sm"
+                onChange={(value) => setChosen(value === NO_PURPOSE ? '' : value)}
+                options={[
+                  ...(form.purposeRequired ? [] : [{ value: NO_PURPOSE, label: 'No particular purpose' }]),
+                  ...form.purposes.map((p) => ({ value: p, label: p })),
+                ]}
+                placeholder="Choose a purpose"
+                value={chosen || (form.purposeRequired ? '' : NO_PURPOSE)}
+              />
+            ) : (
+              <TextField
+                ariaLabel="Purpose"
+                className="tw:max-w-sm"
+                onChange={setChosen}
+                placeholder={purpose ?? 'What the data is for'}
+                value={chosen}
+              />
+            )}
+          </div>
+        )}
+
         <label className="tw:flex tw:flex-col tw:gap-1.5">
           <span className="tw:text-sm tw:font-medium tw:text-secondary">
             Why you need it <span className="tw:text-error-primary">*</span>
@@ -186,9 +280,60 @@ export function RequestAccessForm({
             placeholder="What the data is for, and for how long"
             value={reason}
           />
+          {form.minReasonLength > 1 && (
+            <span
+              className={`tw:text-xs ${
+                trimmed > 0 && trimmed < form.minReasonLength ? 'tw:text-error-primary' : 'tw:text-tertiary'
+              }`}>
+              At least {form.minReasonLength} characters · {trimmed} so far
+            </span>
+          )}
         </label>
+
+        {form.referenceLabel && (
+          <label className="tw:flex tw:flex-col tw:gap-1.5">
+            <span className="tw:text-sm tw:font-medium tw:text-secondary">
+              {form.referenceLabel}{' '}
+              {form.referenceRequired ? (
+                <span className="tw:text-error-primary">*</span>
+              ) : (
+                <span className="tw:font-normal tw:text-tertiary">(optional)</span>
+              )}
+            </span>
+            <TextField
+              ariaLabel={form.referenceLabel}
+              className="tw:max-w-sm"
+              onChange={(value) => setReference(value.slice(0, MAX_REFERENCE))}
+              value={reference}
+            />
+          </label>
+        )}
+
         <div className="tw:flex tw:flex-col tw:gap-1.5">
           <span className="tw:text-sm tw:font-medium tw:text-secondary">For how long</span>
+          {(form.durations.length > 0 || form.allowUntilRevoked) && (
+            <div aria-label="Durations" className="tw:flex tw:flex-wrap tw:gap-1.5" role="group">
+              {form.durations.map((option) => (
+                <button
+                  aria-pressed={parsedDays === option}
+                  className={chip(parsedDays === option)}
+                  key={option}
+                  onClick={() => setDays(String(option))}
+                  type="button">
+                  {option} days
+                </button>
+              ))}
+              {form.allowUntilRevoked && (
+                <button
+                  aria-pressed={days.trim() === ''}
+                  className={chip(days.trim() === '')}
+                  onClick={() => setDays('')}
+                  type="button">
+                  Until revoked
+                </button>
+              )}
+            </div>
+          )}
           <div className="tw:flex tw:flex-wrap tw:items-center tw:gap-2">
             <TextField
               ariaLabel="Days"
@@ -198,16 +343,19 @@ export function RequestAccessForm({
               value={days}
             />
             <span className="tw:text-sm tw:text-tertiary">
-              days{days.trim() === '' ? ' (until revoked)' : ''}
+              days{days.trim() === '' && form.allowUntilRevoked ? ' (until revoked)' : ''}
+              {form.maxDays ? ` · at most ${form.maxDays}` : ''}
             </span>
-            {purpose && (
+            {purpose && !listed && !form.purposeRequired && (
               <Badge color="gray" size="sm" type="pill-color">
                 Purpose: {purpose}
               </Badge>
             )}
           </div>
           {!daysValid && (
-            <span className="tw:text-xs tw:text-error-primary">Between 1 and 365 days, or blank.</span>
+            <span className="tw:text-xs tw:text-error-primary">
+              Between 1 and {ceiling} days{form.allowUntilRevoked ? ', or blank' : ''}.
+            </span>
           )}
         </div>
         {send.isError && (
@@ -230,6 +378,57 @@ export function RequestAccessForm({
       </div>
     </form>
   );
+}
+
+/** What the form asked before templates, and asks while the table's template loads. */
+export const BUILT_IN_TEMPLATE: RequestTemplate = {
+  id: null,
+  name: 'Built-in',
+  description: null,
+  scopeFqn: null,
+  matchFacets: [],
+  enabled: true,
+  form: {
+    purposes: [],
+    purposeRequired: false,
+    durations: [7, 30, 90],
+    defaultDays: 30,
+    maxDays: null,
+    allowUntilRevoked: true,
+    referenceLabel: null,
+    referenceRequired: false,
+    minReasonLength: 1,
+    guidance: null,
+  },
+};
+
+const NO_PURPOSE = '__none__';
+
+function daysText(days: number | null): string {
+  return days === null ? '' : String(days);
+}
+
+/**
+ * The purpose the form starts on.
+ *
+ * <p>The Query page's purpose is kept when the template offers it, spelled as
+ * the template spells it; a purpose the list does not have is dropped rather
+ * than sent to be refused. With no list, the field starts empty and the
+ * Query page's purpose is what goes unless something else is typed.
+ */
+function pickPurpose(form: RequestForm, purpose: string | null): string {
+  if (!purpose || form.purposes.length === 0) {
+    return '';
+  }
+  return form.purposes.find((p) => p.toLowerCase() === purpose.toLowerCase()) ?? '';
+}
+
+function chip(active: boolean) {
+  return `tw:cursor-pointer tw:rounded-md tw:border tw:px-2.5 tw:py-1 tw:text-sm ${
+    active
+      ? 'tw:border-brand tw:bg-brand-primary tw:text-brand-secondary'
+      : 'tw:border-secondary tw:text-tertiary tw:hover:text-primary'
+  }`;
 }
 
 /**

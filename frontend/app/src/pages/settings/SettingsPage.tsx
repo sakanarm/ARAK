@@ -5,6 +5,7 @@ import {
   CpuChip01,
   Database01,
   Dataflow03,
+  FileCheck02,
   FileShield02,
   Key01,
   LayoutAlt01,
@@ -103,6 +104,14 @@ const GROUPS: SettingGroup[] = [
           'Who approves a request for a table, in what order -- in parallel or one step after another -- and who configures the access once it is approved.',
         to: '/settings/workflows',
         icon: Dataflow03,
+        roles: ['PLATFORM_ADMIN', 'POLICY_AUTHOR', 'DATA_OWNER', 'AUDITOR'],
+      },
+      {
+        title: 'Request templates',
+        description:
+          'What a request for a table must say -- a purpose from a list, a reference, how long a reason -- and for how long it may ask, chosen by scope or by the tags and terms the table carries.',
+        to: '/settings/request-templates',
+        icon: FileCheck02,
         roles: ['PLATFORM_ADMIN', 'POLICY_AUTHOR', 'DATA_OWNER', 'AUDITOR'],
       },
       {

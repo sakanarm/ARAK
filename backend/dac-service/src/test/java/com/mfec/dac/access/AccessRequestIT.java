@@ -109,6 +109,7 @@ class AccessRequestIT {
   private GrantStore grants;
   private DecisionService decisions;
   private WorkflowStore workflows;
+  private RequestTemplateStore templates;
   private AccessRequestStore requests;
   private AccessEligibility eligibility;
 
@@ -130,7 +131,8 @@ class AccessRequestIT {
           handle.execute(
               """
               TRUNCATE access_request, audit_access_request, access_request_notice_seen,
-                       access_workflow, audit_access_workflow, policy_version, policy_binding,
+                       access_workflow, audit_access_workflow, access_request_template,
+                       audit_access_request_template, policy_version, policy_binding,
                        access_grant, audit_grant_change, row_entitlement, enforcement_state,
                        asset_facet, asset_owner, asset_fqn_map, asset_column, asset, policy,
                        principal_attribute, app_role_assignment, group_member, principal CASCADE
@@ -160,7 +162,8 @@ class AccessRequestIT {
             // the world between two decisions about the same pair.
             DecisionCache.disabled());
     workflows = new WorkflowStore(jdbi, json);
-    requests = new AccessRequestStore(jdbi, json, grants, workflows);
+    templates = new RequestTemplateStore(jdbi, json);
+    requests = new AccessRequestStore(jdbi, json, grants, workflows, templates);
     eligibility = new AccessEligibility(decisions, requests);
 
     crawl();
@@ -1956,6 +1959,173 @@ class AccessRequestIT {
                 .bind("name", name)
                 .mapTo(UUID.class)
                 .one());
+  }
+
+  // ------------------------------------------------------------ templates
+
+  @Nested
+  @DisplayName("request templates")
+  class Templates {
+
+    private final RequestTemplate.Form strict =
+        new RequestTemplate.Form(
+            List.of("Fraud investigation", "Regulatory report"),
+            true,
+            List.of(7, 14),
+            7,
+            30,
+            false,
+            "DPIA number",
+            true,
+            20,
+            "PII: a DPIA number is required.\n<b>not html</b>");
+
+    private RequestTemplate.Stored template(
+        String name, String scope, List<String> facets, RequestTemplate.Form form) {
+      return templates.create(
+          RequestTemplate.validate(new RequestTemplate.Draft(name, null, scope, facets, true, form)),
+          "admin");
+    }
+
+    private AccessRequestStore.StoredRequest askWith(
+        String fqn, String reason, String purpose, Integer days, String reference) {
+      return requests.create(
+          new AccessRequestStore.NewRequest(
+              fqn, idOf("analyst_a"), "analyst_a", null, reason, purpose, days, null, null, null,
+              reference),
+          ANALYST_A);
+    }
+
+    private RequestTemplate.Draft draft(RequestTemplate.Form form) {
+      return new RequestTemplate.Draft("x", null, null, null, true, form);
+    }
+
+    @Test
+    @DisplayName("with none configured, the built-in form asks what it always did")
+    void builtIn() {
+      assertThat(templates.effective(CUSTOMER).builtIn()).isTrue();
+      AccessRequestStore.StoredRequest made = askWith(CUSTOMER, "x", null, null, null);
+      assertThat(made.templateName()).isNull();
+      assertThat(made.reference()).isNull();
+    }
+
+    @Test
+    @DisplayName("a template naming a tag covers tables that carry it on the table or a column, and no others")
+    void matchesByFacet() {
+      template("PII tables", null, List.of("PII"), strict);
+      assertThat(templates.effective(CUSTOMER).name()).isEqualTo("PII tables");
+      assertThat(templates.effective(LEDGER).builtIn()).isTrue();
+
+      // Only a column carries it: asking for the table is asking for that column.
+      jdbi.useHandle(
+          handle ->
+              handle.execute(
+                  """
+                  INSERT INTO asset_facet
+                    (column_id, target_fqn, facet_type, facet_fqn, depth, is_direct)
+                  SELECT id, fqn, 'tags', 'PII.Financial', 0, true FROM asset_column WHERE fqn = ?
+                  """,
+                  LEDGER + ".email"));
+      assertThat(templates.effective(LEDGER).name()).isEqualTo("PII tables");
+      // Segment by segment: PIIX is not under PII.
+      assertThat(RequestTemplateStore.matches(List.of("PII"), List.of("PIIX.Thing"))).isFalse();
+    }
+
+    @Test
+    @DisplayName("a template naming facets beats a deeper scope that names none; then the deepest scope wins")
+    void resolution() {
+      RequestTemplate.Form plain = RequestTemplate.builtIn().form();
+      template("Organisation", null, List.of(), plain);
+      template("Sales", SALES, List.of(), plain);
+      template("Sales dbo", DBO, List.of(), plain);
+      assertThat(templates.effective(LEDGER).name()).isEqualTo("Sales dbo");
+      template("PII anywhere", null, List.of("PII.Sensitive"), strict);
+      assertThat(templates.effective(CUSTOMER).name()).isEqualTo("PII anywhere");
+      assertThat(templates.effective(LEDGER).name()).isEqualTo("Sales dbo");
+      assertThat(templates.effective("other-svc.db.s.t").name()).isEqualTo("Organisation");
+    }
+
+    @Test
+    @DisplayName("the server holds a request to its table's template, whatever the form sent")
+    void enforced() {
+      template("PII tables", null, List.of("PII"), strict);
+      String reason = "Investigating case 4411 for the fraud team";
+
+      assertInvalid(() -> askWith(CUSTOMER, "too short", "Fraud investigation", 7, "DPIA-1"));
+      assertInvalid(() -> askWith(CUSTOMER, reason, null, 7, "DPIA-1"));
+      assertInvalid(() -> askWith(CUSTOMER, reason, "Marketing", 7, "DPIA-1"));
+      assertInvalid(() -> askWith(CUSTOMER, reason, "Fraud investigation", null, "DPIA-1"));
+      assertInvalid(() -> askWith(CUSTOMER, reason, "Fraud investigation", 31, "DPIA-1"));
+      assertInvalid(() -> askWith(CUSTOMER, reason, "Fraud investigation", 7, "  "));
+      int stored =
+          jdbi.withHandle(
+              h -> h.createQuery("SELECT count(*) FROM access_request").mapTo(Integer.class).one());
+      assertThat(stored).isZero();
+
+      AccessRequestStore.StoredRequest made =
+          askWith(CUSTOMER, reason, "fraud INVESTIGATION", 30, " DPIA-2026-017 ");
+      assertThat(made.templateName()).isEqualTo("PII tables");
+      assertThat(made.reference()).isEqualTo("DPIA-2026-017");
+      // Stored as the template spells it, so reports count one purpose once.
+      assertThat(made.purpose()).isEqualTo("Fraud investigation");
+      assertThat(made.requestedDays()).isEqualTo(30);
+
+      // A table the template does not cover asks nothing extra, and takes no reference.
+      assertInvalid(() -> askWith(LEDGER, "x", null, null, "DPIA-1"));
+      assertThat(askWith(LEDGER, "x", null, null, null).templateName()).isNull();
+    }
+
+    @Test
+    @DisplayName("editing or deleting a template leaves a request made on it as it was")
+    void requestsKeepTheirCopy() {
+      RequestTemplate.Stored t = template("PII tables", null, List.of("PII"), strict);
+      AccessRequestStore.StoredRequest made =
+          askWith(
+              CUSTOMER, "Investigating case 4411 for the fraud team", "Regulatory report", 14, "D-1");
+      templates.delete(t.template().id(), "admin");
+      AccessRequestStore.StoredRequest again = requests.find(made.id(), ANALYST_A);
+      assertThat(again.templateName()).isEqualTo("PII tables");
+      assertThat(again.reference()).isEqualTo("D-1");
+      assertThat(templates.history(t.template().id()))
+          .extracting(row -> row.get("action"))
+          .containsExactly("DELETE", "CREATE");
+    }
+
+    @Test
+    @DisplayName("a template that contradicts itself is refused before it is stored")
+    void validates() {
+      assertThatThrownBy(
+              () ->
+                  RequestTemplate.validate(
+                      draft(
+                          new RequestTemplate.Form(
+                              List.of(), true, List.of(7), 7, 30, true, null, false, 1, null))))
+          .hasMessageContaining("until revoked");
+      assertThatThrownBy(
+              () ->
+                  RequestTemplate.validate(
+                      draft(
+                          new RequestTemplate.Form(
+                              List.of(), false, List.of(90), 7, 30, false, null, false, 1, null))))
+          .hasMessageContaining("between 1 and 30");
+      assertThatThrownBy(
+              () ->
+                  RequestTemplate.validate(
+                      draft(
+                          new RequestTemplate.Form(
+                              List.of(), false, List.of(), 7, null, true, null, true, 1, null))))
+          .hasMessageContaining("Name the reference");
+      assertThatThrownBy(
+              () ->
+                  RequestTemplate.validate(
+                      draft(
+                          new RequestTemplate.Form(
+                              List.of(), false, List.of(), null, 30, false, null, false, 1, null))))
+          .hasMessageContaining("starts on");
+      template("Same", null, List.of(), RequestTemplate.builtIn().form());
+      assertThatThrownBy(() -> template("same", DBO, List.of(), RequestTemplate.builtIn().form()))
+          .isInstanceOf(RequestTemplateStore.NameTakenException.class);
+    }
   }
 
   // ------------------------------------------------------------------ fixture

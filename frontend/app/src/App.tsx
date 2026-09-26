@@ -22,6 +22,7 @@ import DashboardPage from './pages/dashboard/DashboardPage';
 import AccessRequestsPage, { RequestPage } from './pages/requests/AccessRequestsPage';
 import SimulatorPage from './pages/simulator/SimulatorPage';
 import AccessWorkflowsPage from './pages/settings/AccessWorkflowsPage';
+import RequestTemplatesPage from './pages/settings/RequestTemplatesPage';
 import AppRolesPage from './pages/settings/AppRolesPage';
 import HomePersonasPage from './pages/settings/HomePersonasPage';
 import LlmSettingsPage from './pages/settings/LlmSettingsPage';
@@ -103,6 +104,7 @@ export default function App() {
           />
           <Route element={<AppRolesPage />} path="/settings/roles" />
           <Route element={<AccessWorkflowsPage />} path="/settings/workflows" />
+          <Route element={<RequestTemplatesPage />} path="/settings/request-templates" />
           <Route element={<HomePersonasPage />} path="/settings/home" />
           <Route element={<LlmSettingsPage />} path="/settings/assistant" />
           <Route element={<SettingsPage />} path="/settings" />

@@ -90,7 +90,11 @@ public class AccessRequestResource {
     this.clock = clock;
   }
 
-  /** What a requester sends. {@code days} null means "until revoked". */
+  /**
+   * What a requester sends. {@code days} null means "until revoked".
+   *
+   * @param reference what the table's request template asks to reference, if it does
+   */
   public record Ask(
       String assetFqn,
       String sourceId,
@@ -98,7 +102,21 @@ public class AccessRequestResource {
       String purpose,
       Integer days,
       String attemptedSql,
-      String deniedBy) {}
+      String deniedBy,
+      String reference) {
+
+    /** An ask with no reference, as the form sent before templates. */
+    public Ask(
+        String assetFqn,
+        String sourceId,
+        String reason,
+        String purpose,
+        Integer days,
+        String attemptedSql,
+        String deniedBy) {
+      this(assetFqn, sourceId, reason, purpose, days, attemptedSql, deniedBy, null);
+    }
+  }
 
   /**
    * An approver's answer.
@@ -169,7 +187,8 @@ public class AccessRequestResource {
                         ask.days(),
                         ask.attemptedSql(),
                         ask.deniedBy(),
-                        clientIp(http)),
+                        clientIp(http),
+                        ask.reference()),
                     actor(caller)));
     return Response.status(Response.Status.CREATED).entity(created).build();
   }

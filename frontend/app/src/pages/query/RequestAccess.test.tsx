@@ -3,8 +3,18 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { MemoryRouter } from 'react-router-dom';
 import RequestAccess from './RequestAccess';
 import type { AccessRequest, Refusal, Route } from '../../api/accessRequests';
+import type { RequestTemplate } from '../../api/requestTemplates';
 
 const requestAccess = jest.fn();
+const fetchEffectiveTemplate = jest.fn();
+
+jest.mock('../../api/requestTemplates', () => {
+  const actual = jest.requireActual('../../api/requestTemplates');
+  return {
+    ...actual,
+    fetchEffectiveTemplate: (...args: unknown[]) => fetchEffectiveTemplate(...args),
+  };
+});
 
 jest.mock('../../api/accessRequests', () => {
   const actual = jest.requireActual('../../api/accessRequests');
@@ -100,8 +110,114 @@ function openForm() {
   };
 }
 
+const PII: RequestTemplate = {
+  id: 'tpl-1',
+  name: 'PII tables',
+  description: null,
+  scopeFqn: null,
+  matchFacets: [],
+  enabled: true,
+  form: {
+    purposes: ['Fraud investigation', 'Regulatory report'],
+    purposeRequired: true,
+    durations: [7, 14],
+    defaultDays: 7,
+    maxDays: 30,
+    allowUntilRevoked: false,
+    referenceLabel: 'DPIA number',
+    referenceRequired: true,
+    minReasonLength: 20,
+    guidance: 'PII: a DPIA number is required.' + String.fromCharCode(10) + '<b>not html</b>',
+  },
+};
+
 beforeEach(() => {
   requestAccess.mockReset();
+  fetchEffectiveTemplate.mockReset();
+  // No template configured: the built-in form, as before templates.
+  fetchEffectiveTemplate.mockRejectedValue(new Error('none'));
+});
+
+describe('RequestAccess on a template', () => {
+  async function openTemplated(purpose: string | null = null) {
+    fetchEffectiveTemplate.mockResolvedValue(PII);
+    renderBox(refusal(), purpose);
+    const fields = openForm();
+    await screen.findByText('PII tables');
+    return fields;
+  }
+
+  it('asks what the table’s template asks, and shows its guidance as text', async () => {
+    const { days } = await openTemplated();
+
+    expect(fetchEffectiveTemplate).toHaveBeenCalledWith(FQN);
+    const guidance = screen.getByRole('note', { name: 'Guidance' });
+    // Whatever the template's author typed is text, never markup.
+    expect(guidance).toHaveTextContent('<b>not html</b>');
+    expect(guidance.querySelector('b')).toBeNull();
+    expect(screen.getByLabelText('DPIA number')).toBeInTheDocument();
+    expect(screen.getByText('At least 20 characters · 0 so far')).toBeInTheDocument();
+    expect(days.value).toBe('7');
+    const durations = screen.getByRole('group', { name: 'Durations' });
+    expect(within(durations).getByRole('button', { name: '7 days' })).toHaveAttribute('aria-pressed', 'true');
+    expect(within(durations).queryByRole('button', { name: 'Until revoked' })).toBeNull();
+    expect(screen.getByText(/at most 30/)).toBeInTheDocument();
+  });
+
+  it('will not send until every required answer is there', async () => {
+    requestAccess.mockResolvedValue(sent());
+    const { reason, days, send } = await openTemplated();
+
+    fireEvent.change(reason, { target: { value: 'Investigating case 4411 for fraud' } });
+    expect(send).toBeDisabled(); // no purpose, no DPIA number yet
+    fireEvent.click(screen.getByRole('button', { name: /Purpose/ }));
+    fireEvent.click(await screen.findByRole('option', { name: /Regulatory report/ }));
+    expect(send).toBeDisabled();
+    fireEvent.change(screen.getByLabelText('DPIA number'), { target: { value: ' DPIA-7 ' } });
+    expect(send).toBeEnabled();
+
+    fireEvent.change(days, { target: { value: '31' } });
+    expect(send).toBeDisabled();
+    expect(screen.getByText('Between 1 and 30 days.')).toBeInTheDocument();
+    fireEvent.change(days, { target: { value: '' } });
+    expect(send).toBeDisabled(); // until revoked is not offered here
+    fireEvent.click(screen.getByRole('button', { name: '14 days' }));
+    expect(send).toBeEnabled();
+
+    fireEvent.click(send);
+    await screen.findByText(/Request sent/);
+    expect(requestAccess.mock.calls[0][0]).toMatchObject({
+      purpose: 'Regulatory report',
+      days: 14,
+      reference: 'DPIA-7',
+    });
+  });
+
+  it('starts on the Query page’s purpose when the template offers it', async () => {
+    requestAccess.mockResolvedValue(sent());
+    const { reason } = await openTemplated('fraud INVESTIGATION');
+    fireEvent.change(reason, { target: { value: 'Investigating case 4411 for fraud' } });
+    fireEvent.change(screen.getByLabelText('DPIA number'), { target: { value: 'D-1' } });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Send request' }));
+
+    await screen.findByText(/Request sent/);
+    expect(requestAccess.mock.calls[0][0]).toMatchObject({ purpose: 'Fraud investigation' });
+  });
+
+  it('sends no reference when the form asks for none', async () => {
+    requestAccess.mockResolvedValue(sent());
+    renderBox(refusal());
+    const { reason, send } = openForm();
+    fireEvent.change(reason, { target: { value: 'Audit' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Until revoked' }));
+
+    fireEvent.click(send);
+
+    await screen.findByText(/Request sent/);
+    expect(requestAccess.mock.calls[0][0]).not.toHaveProperty('reference');
+    expect(requestAccess.mock.calls[0][0]).toMatchObject({ days: null });
+  });
 });
 
 describe('RequestAccess', () => {

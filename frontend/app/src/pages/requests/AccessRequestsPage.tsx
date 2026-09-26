@@ -751,6 +751,11 @@ function RequestDetail({
           <Fact label="Asked">
             <span title={when(request.createdAt)}>{relativeTime(request.createdAt)}</span>
           </Fact>
+          {request.reference && (
+            <Fact label="Reference">
+              <span className="tw:font-mono tw:break-all">{request.reference}</span>
+            </Fact>
+          )}
         </dl>
 
         <div>
@@ -785,9 +790,19 @@ function RequestDetail({
             <h3 className="tw:text-xs tw:font-semibold tw:tracking-wide tw:text-quaternary tw:uppercase">
               Activity
             </h3>
-            {request.workflowName && (
+            {(request.workflowName || request.templateName) && (
               <span className="tw:text-xs tw:text-tertiary">
-                Workflow <b className="tw:font-semibold tw:text-secondary">{request.workflowName}</b>
+                {request.templateName && (
+                  <>
+                    Form <b className="tw:font-semibold tw:text-secondary">{request.templateName}</b>
+                  </>
+                )}
+                {request.templateName && request.workflowName && ' · '}
+                {request.workflowName && (
+                  <>
+                    Workflow <b className="tw:font-semibold tw:text-secondary">{request.workflowName}</b>
+                  </>
+                )}
               </span>
             )}
           </div>

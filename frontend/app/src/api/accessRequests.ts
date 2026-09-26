@@ -113,6 +113,10 @@ export interface AccessRequest {
   grantId: string | null;
   /** The workflow it walks, by name as it was when the request was made. */
   workflowName?: string | null;
+  /** The template it was asked on, by name as it was then; null for the built-in form. */
+  templateName?: string | null;
+  /** The reference that template asked for, if any. */
+  reference?: string | null;
   currentStep?: number | null;
   /** Who took it to configure. */
   assignee?: string | null;
@@ -162,6 +166,8 @@ export interface NewAccessRequest {
   days?: number | null;
   attemptedSql?: string | null;
   deniedBy?: string | null;
+  /** What the table's template calls its reference: a change ticket, a DPIA number. */
+  reference?: string | null;
 }
 
 /**

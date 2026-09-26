@@ -619,7 +619,48 @@ M25 ทำแยกได้ (profile ผ่าน proxy ที่มีแล�
 
 ---
 
-## รอบนี้ — **ข้อ BM: Catalog บอกว่าอะไร Query ได้จริง / เป็นแค่ Metadata · มาจาก OpenMetadata หรือไม่ · ชื่อผู้สร้างใต้ © · น้องรักษ์ (NokRak) พูดได้** (Preauthorization กำลังทำ — ยังไม่ commit · M28 ยังไม่ commit)
+## รอบนี้ — **ข้อ BN: Request access template — ฟอร์มขอสิทธิ์ตั้งค่าได้ใน Settings ตาม scope / tag ของตาราง** (Preauthorization เลื่อนเป็น BO — ยังไม่ commit · M28 ยังไม่ commit)
+
+ผู้ใช้: *"Request access ควรจะออกแบบเป็น Form ให้กรอกหรือเปล่า หรือมี Template ให้ใส่ โดยสามารถ Configure Template ได้ใน Setting"* → *"ทำต่อเลย Request access template ด้วยนะ"*
+
+### BN.1 Migration — **V31 `access_request_template`** (ตอนนี้ V1–V28 + V31 บน main · V29 = M28 · V30 = Preauth ยังไม่ commit → Flyway เปิด `outOfOrder(true)` แล้ว)
+- `access_request_template`: `name` (unique ไม่สนตัวพิมพ์) · `description` · `scope_fqn` (null = ทั้งองค์กร) · `match_facets` jsonb (tag / classification / glossary / term — ว่าง = ทุกตารางใต้ scope) · `enabled` · `form` jsonb
+- `audit_access_request_template` append-only (CREATE / UPDATE / DELETE + before/after)
+- `access_request` + `template_id` (ON DELETE SET NULL) · `template_name` · `reference` (≤200) → **แก้หรือลบ template แล้วคำขอเดิมยังเหมือนเดิม**
+
+### BN.2 Form ที่ template กำหนด (`RequestTemplate.Form`)
+- `purposes` (≤30 ตัว ตัวละ ≤100) + `purposeRequired` · `durations` preset (≤8) + `defaultDays` + `maxDays` (≤365) + `allowUntilRevoked` (ห้ามคู่กับ `maxDays`) · `referenceLabel` (≤60 เช่น "DPIA number") + `referenceRequired` · `minReasonLength` (≤500) · `guidance` (≤2000 — **plain text เท่านั้น** render เป็น text + `whitespace-pre-line` ไม่มี HTML)
+- template ที่ขัดกันเอง (default > max, preset เกิน max, บังคับ reference แต่ไม่มี label ฯลฯ) → 400 ก่อนเก็บ · ชื่อซ้ำ → 409
+
+### BN.3 เลือก template ของตาราง (`RequestTemplateStore.effective`)
+1. เอา template ที่ enabled และ scope ครอบ fqn (ทีละ segment ไม่ใช่ LIKE)
+2. ตัวที่มี `match_facets` ต้อง match facet ของตาราง **หรือ column ใด column หนึ่ง** (hierarchical — `PII` ครอบ `PII.Sensitive`)
+3. ลำดับ: ตัวที่ระบุ facet ก่อน → scope ลึกกว่า → ชื่อ · ไม่เหลือ → **Built-in** (reason + ระยะเวลา แบบเดิม — ไม่มีอะไรเปลี่ยนสำหรับ org ที่ไม่ตั้ง template)
+- `GET /v1/request-templates/effective/{fqn}` เปิดให้ทุกคนที่ login — **ตัด `scopeFqn` / `matchFacets` ออก** ผู้ขอไม่รู้ว่าเลือกเพราะ tag อะไร
+
+### BN.4 Server เป็นคนบังคับ ไม่ใช่ฟอร์ม
+- `AccessRequestStore.submit` หา template ของตารางเอง แล้ว `check()` คำตอบ (reason ยาวพอ · purpose อยู่ในรายการ · ไม่เกิน maxDays · until-revoked เฉพาะที่อนุญาต · reference) → ไม่ผ่าน = 400 ไม่ว่าฟอร์มส่งอะไรมา
+- **template ไม่อนุมัติอะไร ไม่เปลี่ยนว่าใครอนุมัติ ไม่เปิด policy** — ผู้อนุมัติยังเป็นของ access workflow
+
+### BN.5 สิทธิ์ (`RequestTemplateResource`)
+- อ่านรายการ + history: PLATFORM_ADMIN · POLICY_AUTHOR · DATA_OWNER · AUDITOR (auditor อ่านอย่างเดียว) · Requester อ่านได้แค่ effective
+- template ทั้งองค์กร (scope null): PLATFORM_ADMIN เท่านั้น · template มี scope: คนที่ดูแล scope นั้น · ย้าย scope ไปที่ตัวเองไม่ได้ดูแล / ลบของ scope อื่น → 403
+
+### BN.6 Frontend
+- `api/requestTemplates.ts`: type + `checkAnswers()` (ลำดับเดียวกับ server) + `describeForm()`
+- `RequestAccess.tsx` → `RequestAccessForm` render ตาม template: guidance (role=note) · purpose dropdown · reason นับตัวอักษร · reference · ปุ่ม preset วัน + ช่องวัน "at most N" · ป้ายชื่อ template มุมขวาบน · ปุ่ม Send ปิดจนกว่าจะครบ
+- หน้าใหม่ **Settings → Request templates** (`/settings/request-templates`, `RequestTemplatesPage.tsx`): 3 กลุ่ม *By tag or term* / *By scope* / *When nothing else applies* (Built-in) · การ์ดมี Preview ("What the requester sees") · History · Edit · Delete (ยืนยันก่อน) · editor มี live preview ข้างๆ + ช่อง tag/term มี datalist จาก vocabulary (ไม่รวมตัวที่ disabled)
+- หน้า Access requests / Review แสดง **Form `<ชื่อ template>`** ข้าง Workflow + **Reference**
+- การ์ดใหม่ในหน้า Settings
+
+### BN.7 ผลทดสอบ
+- `AccessRequestIT` **73/73** (nested *request templates* 6 ตัว: built-in · tag บนตาราง/column · facet ชนะ scope ลึก · server บังคับ · แก้/ลบแล้วคำขอเดิมไม่เปลี่ยน · template ขัดกันเอง) · `RequestTemplateResourceTest` 5 · unit รวม 28 ผ่าน
+- tsc ผ่าน · jest **464/464** (`RequestTemplatesPage.test.tsx` 8 · `RequestAccess.test.tsx` 24) · build ผ่าน
+- dev: seed "PII tables" (ทั้งองค์กร · PII · purpose 3 ตัว · 7/14/30 วัน สูงสุด 30 · DPIA number บังคับ · reason ≥20) + "Sales database" (`demo-pg.salesdb` · Change ticket ไม่บังคับ) → screenshot analyst_c ขอ `dtp-iprm.iprm.public.customers` ได้ฟอร์ม PII ถูกต้อง · compliance_a เห็นหน้า Settings อ่านอย่างเดียว
+
+---
+
+## รอบก่อนหน้า — **ข้อ BM: Catalog บอกว่าอะไร Query ได้จริง / เป็นแค่ Metadata · มาจาก OpenMetadata หรือไม่ · ชื่อผู้สร้างใต้ © · น้องรักษ์ (NokRak) พูดได้** (Preauthorization กำลังทำ — ยังไม่ commit · M28 ยังไม่ commit)
 
 ผู้ใช้: *"ในหน้า Catalog แสดงให้เห็นด้วย ว่าอันไหน ไม่ได้ต่อจริง database ใน Arak เป็นแค่ Metadata หรือจะแสดงว่าอันไหนต่อจริง Query ได้"* + *"ในทางกลับกันก็ควรต้องมีบอกว่าอันไหนมีต่อ Catalog มาจาก OpenMetadata อันไหนไม่ได้ต่อ"* · *"© 2026 MFEC ข้างล่างเขียนตัวเล็กๆว่า <ชื่อผู้สร้าง>"* · *"ตรง icon mascot มี quote … แบบสุ่ม"* + *"Assistance Mascot ชื่อ NokRak · ภาษาไทยคือน้องรักษ์"*
 
@@ -5872,6 +5913,7 @@ estate ที่ใช้: `prod-mssql.SalesDB.dbo.{customer, order}` + **`prod-
 - ✅ **ข้อ AY เสร็จแล้ว** (Open in OpenMetadata ไม่ 500 · Request access มุมขวาบน · หัวหน้า asset แบบ OM · seed เคส demo) — ต่อด้วย **M9 slice 2** ข้างล่าง
 
 0. ✅ **M10 เสร็จ (ข้อ BE)** — Query log ตามหน้าที่ (V25) + Access Control Dashboard · **ต่อไป:** M9 recertification · แนบไฟล์ในคำขอ · export / SIEM ของ M8
+0-BN. ✅ **ข้อ BN เสร็จ** — Request access template (V31): ฟอร์มขอสิทธิ์ตั้งได้ใน Settings → Request templates ตาม scope และ tag/term ของตาราง (PII → purpose + DPIA number + สูงสุด 30 วัน) · guidance เป็น text ล้วน · server บังคับตาม template เอง · **ต่อไป:** Preauthorization (BO — `git stash pop` preauth-wip แล้วแก้ conflict ใน AccessRequestStore: templateName/reference + kind/target) → M28 (AI ใน Catalog + Ask NokRak ใน global search) → Dashboard A/B/C
 0-BM. ✅ **ข้อ BM เสร็จ** — Catalog ติดป้าย Queryable / Metadata only + OpenMetadata / Read from source ทุกแถว (list · tree · detail) + filter 2 ตัว · ~~ชื่อผู้สร้างใต้ ©~~ (เอาออกแล้วตามที่ผู้ใช้สั่ง) · น้องรักษ์ (NokRak) มีกล่องคำพูดสุ่ม · **ต่อไป:** Preauthorization (BN) → Request access template ใน Settings → M28 (AI ใน Catalog + Ask NokRak ใน global search) → Dashboard A/B/C
 0-BL. ✅ **ข้อ BL เสร็จ** — หน้า Governance เป็นตารางเดียว หัว Name / Assets / Policies คอลัมน์ตรงกัน · FQN ยาวของ sub-domain ย้ายเป็น tooltip · empty state · **ต่อไป:** Preauthorization Access Request (V30 + store เขียนแล้ว ยังไม่ commit) · AI ใน Catalog / global search · Dashboard ปรับแต่งได้ · M28
 0-BK. ✅ **ข้อ BK เสร็จ** — คำขอเปิดเต็มหน้าที่ `/requests/REQ-000042` (ปุ่ม Full page / ลิงก์เลข ticket / วาง URL) · ช่องค้นหาคำขอรอ Enter · **ต่อไป:** Preauthorization Access Request · Dashboard ปรับแต่งได้ (coverage แยกตาม classification + เลือก measure + จัด layout เอง) · M28
