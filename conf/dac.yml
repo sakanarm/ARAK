@@ -2,6 +2,11 @@
 #
 # Every ${VAR} is substituted from the environment at startup. This file is
 # committed; secrets are not. Copy .env.example to .env and fill it in.
+#
+# Substitution happens on the text, before YAML reads it, so every free-text
+# value is in double quotes: a password that starts with "@", or a token with
+# ": " in it, is otherwise a YAML syntax error and the service will not start.
+# The one thing a quoted value cannot contain is a double quote or a backslash.
 
 server:
   applicationConnectors:
@@ -10,6 +15,10 @@ server:
   adminConnectors:
     - type: http
       port: ${APP_ADMIN_PORT:-8081}
+      # Loopback only. The admin port has no authentication -- it runs a GC and
+      # changes log levels for whoever asks -- and on a shared host every other
+      # machine that can reach the box could otherwise ask.
+      bindHost: "${APP_ADMIN_BIND_HOST:-127.0.0.1}"
   rootPath: /api/*
   requestLog:
     appenders:
@@ -25,15 +34,19 @@ logging:
 
 database:
   driverClass: org.postgresql.Driver
-  url: jdbc:postgresql://${APP_DB_HOST:-localhost}:${APP_DB_PORT:-5432}/${APP_DB_NAME:-dac}
-  user: ${APP_DB_USER:-dac}
-  password: ${APP_DB_PASSWORD:-}
+  url: "jdbc:postgresql://${APP_DB_HOST:-localhost}:${APP_DB_PORT:-5432}/${APP_DB_NAME:-dac}"
+  user: "${APP_DB_USER:-dac}"
+  password: "${APP_DB_PASSWORD:-}"
   properties:
     charSet: UTF-8
   maxWaitForConnection: 5s
   validationQuery: "SELECT 1"
-  minSize: 4
-  maxSize: 32
+  # Every connection held here is one the database cannot give to anyone else.
+  # Where the server is shared with other applications, set these low in .env:
+  # the ceiling is theirs as much as ours.
+  initialSize: ${APP_DB_POOL_MIN:-4}
+  minSize: ${APP_DB_POOL_MIN:-4}
+  maxSize: ${APP_DB_POOL_MAX:-32}
   checkConnectionWhileIdle: true
 
 migrateOnStartup: ${APP_DB_MIGRATE_ON_STARTUP:-true}
@@ -43,17 +56,17 @@ migrateOnStartup: ${APP_DB_MIGRATE_ON_STARTUP:-true}
 # that runs one process on one port behind a shared proxy -- there is nothing
 # else there to serve it.
 web:
-  root: ${APP_WEB_ROOT:-}
+  root: "${APP_WEB_ROOT:-}"
   # What the bundle was built for. Behind a path-prefix proxy that strips the
   # prefix, this process never sees it; it is here so startup can say so when
   # the bundle and the mount point disagree, instead of serving a blank page.
-  basePath: ${APP_WEB_BASE_PATH:-/}
+  basePath: "${APP_WEB_BASE_PATH:-/}"
 
 openMetadata:
-  baseUrl: ${OM_BASE_URL:-http://localhost:8585}
+  baseUrl: "${OM_BASE_URL:-http://localhost:8585}"
   # Use a BOT token (Settings -> Bots in the OpenMetadata UI), not a human account.
-  jwtToken: ${OM_JWT_TOKEN:-}
-  expectedVersion: ${OM_EXPECTED_VERSION:-2.0.1}
+  jwtToken: "${OM_JWT_TOKEN:-}"
+  expectedVersion: "${OM_EXPECTED_VERSION:-2.0.1}"
   # Turn this on once the deployment is pinned: the generated client is built
   # from one spec version and talking to another drifts silently.
   failOnVersionMismatch: ${OM_FAIL_ON_VERSION_MISMATCH:-false}
@@ -61,7 +74,7 @@ openMetadata:
   # POST /v1/webhooks/openmetadata. Leave it unset and the receiver answers 503
   # rather than trusting unsigned deliveries -- it is that endpoint's only
   # authentication.
-  webhookSecret: ${OM_WEBHOOK_SECRET:-}
+  webhookSecret: "${OM_WEBHOOK_SECRET:-}"
   # The pull side of FR-1.5, and what makes a missed webhook a delay rather than
   # a permanently wrong cache. It is also the whole sync mechanism where nobody
   # registered a subscription.
@@ -72,26 +85,26 @@ openMetadata:
   # becoming mutually exclusive, a domain gaining a parent, an asset deleted
   # while this service was down.
   reconcileEnabled: ${OM_RECONCILE_ENABLED:-true}
-  reconcileAt: ${OM_RECONCILE_AT:-02:30}
-  reconcileZone: ${OM_RECONCILE_ZONE:-Asia/Bangkok}
+  reconcileAt: "${OM_RECONCILE_AT:-02:30}"
+  reconcileZone: "${OM_RECONCILE_ZONE:-Asia/Bangkok}"
 
 identity:
-  entraTenantId: ${ENTRA_TENANT_ID:-}
-  entraClientId: ${ENTRA_CLIENT_ID:-}
-  entraClientSecret: ${ENTRA_CLIENT_SECRET:-}
+  entraTenantId: "${ENTRA_TENANT_ID:-}"
+  entraClientId: "${ENTRA_CLIENT_ID:-}"
+  entraClientSecret: "${ENTRA_CLIENT_SECRET:-}"
   allowLocalUsers: ${IDENTITY_ALLOW_LOCAL_USERS:-true}
   attributeCacheTtlSeconds: 300
   # Console session token. No default on purpose: the app refuses to start
   # without it rather than sign tokens with a key that is in this repository.
   # Generate one with: openssl rand -base64 48
-  jwtSecret: ${IDENTITY_JWT_SECRET:-}
-  jwtIssuer: ${IDENTITY_JWT_ISSUER:-data-access-control}
+  jwtSecret: "${IDENTITY_JWT_SECRET:-}"
+  jwtIssuer: "${IDENTITY_JWT_ISSUER:-data-access-control}"
   jwtTtlSeconds: ${IDENTITY_JWT_TTL_SECONDS:-3600}
   maxFailedLoginAttempts: ${IDENTITY_MAX_FAILED_LOGIN_ATTEMPTS:-5}
   lockoutSeconds: ${IDENTITY_LOCKOUT_SECONDS:-900}
   # Applied to the seeded admin account on first start only, and only while no
   # local credential exists at all.
-  bootstrapAdminPassword: ${IDENTITY_BOOTSTRAP_ADMIN_PASSWORD:-}
+  bootstrapAdminPassword: "${IDENTITY_BOOTSTRAP_ADMIN_PASSWORD:-}"
 
 decisionCache:
   # Reuse of access decisions (FR-5.5). Turning this off costs three database
@@ -106,6 +119,6 @@ decisionCache:
 
 secrets:
   provider: ${SECRETS_PROVIDER:-FERNET}
-  fernetKey: ${FERNET_KEY:-}
-  vaultAddress: ${VAULT_ADDR:-}
-  vaultToken: ${VAULT_TOKEN:-}
+  fernetKey: "${FERNET_KEY:-}"
+  vaultAddress: "${VAULT_ADDR:-}"
+  vaultToken: "${VAULT_TOKEN:-}"

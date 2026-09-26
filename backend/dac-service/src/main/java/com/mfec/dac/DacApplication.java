@@ -79,6 +79,7 @@ import com.mfec.dac.enforcement.SecureViewService;
 import com.mfec.dac.source.jdbc.SecureViewApplier;
 import com.mfec.dac.source.jdbc.JdbcIntrospector;
 import com.mfec.dac.source.jdbc.QueryExecutor;
+import com.mfec.dac.web.BasePathFilter;
 import com.mfec.dac.web.SpaServlet;
 import com.mfec.dac.policy.AssetContextLoader;
 import com.mfec.dac.policy.PolicyBindingMaterializer;
@@ -102,6 +103,7 @@ import io.dropwizard.configuration.SubstitutingSourceProvider;
 import io.dropwizard.core.Application;
 import io.dropwizard.core.setup.Bootstrap;
 import io.dropwizard.core.setup.Environment;
+import jakarta.servlet.DispatcherType;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -109,6 +111,7 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.time.LocalTime;
 import java.time.ZoneId;
+import java.util.EnumSet;
 import java.util.Optional;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -591,6 +594,13 @@ public class DacApplication extends Application<DacConfiguration> {
     }
     checkMountPoint(index, web.getBasePath());
 
+    if (BasePathFilter.isNeeded(web.getBasePath())) {
+      // REQUEST only: the forward it makes must not come back through it.
+      environment
+          .servlets()
+          .addFilter("base-path", new BasePathFilter(web.getBasePath()))
+          .addMappingForUrlPatterns(EnumSet.of(DispatcherType.REQUEST), false, "/*");
+    }
     environment
         .servlets()
         .addServlet("web", new SpaServlet(root, web.getAssetCacheSeconds()))

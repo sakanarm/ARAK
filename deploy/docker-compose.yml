@@ -102,6 +102,9 @@ services:
       OM_JWT_TOKEN: ${OM_JWT_TOKEN}
       OM_EXPECTED_VERSION: ${OM_EXPECTED_VERSION:-2.0.1}
       FERNET_KEY: ${FERNET_KEY}
+      # Inside a container loopback is the container itself, and the port
+      # mapping below would reach nothing.
+      APP_ADMIN_BIND_HOST: 0.0.0.0
     ports:
       - "8080:8080"
       - "8081:8081"
