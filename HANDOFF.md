@@ -621,7 +621,7 @@ M25 ทำแยกได้ (profile ผ่าน proxy ที่มีแล�
 
 ## รอบนี้ — **ข้อ BM: Catalog บอกว่าอะไร Query ได้จริง / เป็นแค่ Metadata · มาจาก OpenMetadata หรือไม่ · ชื่อผู้สร้างใต้ © · น้องรักษ์ (NokRak) พูดได้** (Preauthorization กำลังทำ — ยังไม่ commit · M28 ยังไม่ commit)
 
-ผู้ใช้: *"ในหน้า Catalog แสดงให้เห็นด้วย ว่าอันไหน ไม่ได้ต่อจริง database ใน Arak เป็นแค่ Metadata หรือจะแสดงว่าอันไหนต่อจริง Query ได้"* + *"ในทางกลับกันก็ควรต้องมีบอกว่าอันไหนมีต่อ Catalog มาจาก OpenMetadata อันไหนไม่ได้ต่อ"* · *"© 2026 MFEC ข้างล่างเขียนตัวเล็กๆว่า Sakan Punyanon"* · *"ตรง icon mascot มี quote … แบบสุ่ม"* + *"Assistance Mascot ชื่อ NokRak · ภาษาไทยคือน้องรักษ์"*
+ผู้ใช้: *"ในหน้า Catalog แสดงให้เห็นด้วย ว่าอันไหน ไม่ได้ต่อจริง database ใน Arak เป็นแค่ Metadata หรือจะแสดงว่าอันไหนต่อจริง Query ได้"* + *"ในทางกลับกันก็ควรต้องมีบอกว่าอันไหนมีต่อ Catalog มาจาก OpenMetadata อันไหนไม่ได้ต่อ"* · *"© 2026 MFEC ข้างล่างเขียนตัวเล็กๆว่า <ชื่อผู้สร้าง>"* · *"ตรง icon mascot มี quote … แบบสุ่ม"* + *"Assistance Mascot ชื่อ NokRak · ภาษาไทยคือน้องรักษ์"*
 
 ### BM.1 Catalog — 2 แกน แสดงทั้งสองขั้วเสมอ
 - **Connection**: `Queryable · <source>` (เขียว จุดทึบ) หรือ `Metadata only` (เทา ขอบประ จุดกลวง) — ขั้วบวกมีสี ขั้วลบเป็นเทา → ตาหาตัวที่ query ได้เจอทันที ส่วนตัวที่เป็น metadata (ส่วนใหญ่ของ catalog) ไม่ตะโกน
@@ -632,7 +632,7 @@ M25 ทำแยกได้ (profile ผ่าน proxy ที่มีแล�
 - dev ตอนนี้: `dtp-iprm` (OM, 33 ตาราง) = Metadata only ทั้งหมด · `demo-pg` = Read from source + Queryable
 
 ### BM.2 Footer
-- `AppShell.tsx`: ใต้ `© 2026 MFEC` มีบรรทัดเล็ก `Sakan Punyanon` (ผู้ใช้ขอชื่อตัวเองเอง — ข้อยกเว้นเรื่องชื่อจริงใน public repo) · tooltip "Built by Sakan Punyanon."
+- ~~`AppShell.tsx`: ใต้ `© 2026 MFEC` มีบรรทัดเล็กชื่อผู้สร้าง~~ → **เอาออกแล้ว** (ผู้ใช้สั่งให้เอาชื่อออก): footer กลับเป็น `© 2026 MFEC` บรรทัดเดียว truncate + tooltip "© 2026 MFEC. All rights reserved." เหมือนก่อน BM ทุกตัวอักษร · ห้ามใส่ชื่อจริงกลับเข้า UI อีก
 
 ### BM.3 น้องรักษ์ (NokRak)
 - `assist/nokrak.ts`: ชื่อ + ชุดคำพูดตามหน้า (idle / sql / policy) มีไทยปน · `pickLine(mode, random)` สุ่ม · ไม่มีคำพูดไหนอ้างว่า run / approve / activate ได้ (ตรงกฎ LLM draft-only) · หน้าที่ไม่มี query console ไม่เสนอเขียน SQL
@@ -5872,7 +5872,7 @@ estate ที่ใช้: `prod-mssql.SalesDB.dbo.{customer, order}` + **`prod-
 - ✅ **ข้อ AY เสร็จแล้ว** (Open in OpenMetadata ไม่ 500 · Request access มุมขวาบน · หัวหน้า asset แบบ OM · seed เคส demo) — ต่อด้วย **M9 slice 2** ข้างล่าง
 
 0. ✅ **M10 เสร็จ (ข้อ BE)** — Query log ตามหน้าที่ (V25) + Access Control Dashboard · **ต่อไป:** M9 recertification · แนบไฟล์ในคำขอ · export / SIEM ของ M8
-0-BM. ✅ **ข้อ BM เสร็จ** — Catalog ติดป้าย Queryable / Metadata only + OpenMetadata / Read from source ทุกแถว (list · tree · detail) + filter 2 ตัว · ชื่อ Sakan Punyanon ใต้ © · น้องรักษ์ (NokRak) มีกล่องคำพูดสุ่ม · **ต่อไป:** Preauthorization (BN) → Request access template ใน Settings → M28 (AI ใน Catalog + Ask NokRak ใน global search) → Dashboard A/B/C
+0-BM. ✅ **ข้อ BM เสร็จ** — Catalog ติดป้าย Queryable / Metadata only + OpenMetadata / Read from source ทุกแถว (list · tree · detail) + filter 2 ตัว · ~~ชื่อผู้สร้างใต้ ©~~ (เอาออกแล้วตามที่ผู้ใช้สั่ง) · น้องรักษ์ (NokRak) มีกล่องคำพูดสุ่ม · **ต่อไป:** Preauthorization (BN) → Request access template ใน Settings → M28 (AI ใน Catalog + Ask NokRak ใน global search) → Dashboard A/B/C
 0-BL. ✅ **ข้อ BL เสร็จ** — หน้า Governance เป็นตารางเดียว หัว Name / Assets / Policies คอลัมน์ตรงกัน · FQN ยาวของ sub-domain ย้ายเป็น tooltip · empty state · **ต่อไป:** Preauthorization Access Request (V30 + store เขียนแล้ว ยังไม่ commit) · AI ใน Catalog / global search · Dashboard ปรับแต่งได้ · M28
 0-BK. ✅ **ข้อ BK เสร็จ** — คำขอเปิดเต็มหน้าที่ `/requests/REQ-000042` (ปุ่ม Full page / ลิงก์เลข ticket / วาง URL) · ช่องค้นหาคำขอรอ Enter · **ต่อไป:** Preauthorization Access Request · Dashboard ปรับแต่งได้ (coverage แยกตาม classification + เลือก measure + จัด layout เอง) · M28
 0-BJ. ✅ **ข้อ BJ เสร็จ** — Catalog แสดง hierarchy: ปุ่ม List / Hierarchy (tree โหลดทีละชั้น) + แท็บ Databases / Schemas / Tables ในหน้า container · `?parent=` + `childCount` · **ต่อไป:** Preauthorization Access Request · M28 แชท agent
