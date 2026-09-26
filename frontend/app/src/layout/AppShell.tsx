@@ -222,7 +222,7 @@ export function Sidebar({
             <span className="tw:block tw:truncate">&copy; 2026 MFEC</span>
             <span
               className={`tw:block tw:truncate tw:leading-tight ${
-                compact ? 'tw:text-[10px]' : 'tw:text-xs'
+                compact ? 'tw:text-[9px]' : 'tw:text-[10px]'
               }`}>
               Sakan Punyanon
             </span>
