@@ -668,6 +668,13 @@ M25 ทำแยกได้ (profile ผ่าน proxy ที่มีแล�
 - `QueryRewriterTest` เพิ่ม 3 ข้อ (2 ข้อใช้ `PolicyEngine` จริง) · ลอง mutation ถอดทั้ง 3 กติกาแล้ว fail ครบ 3 ข้อ
 - ผ่าน: unit ทั้ง backend 1,115 (engine 285 · proxy 37 · service 594)
 
+### BT.9 กติกา "โทษใคร" ใช้ชุดเดียวกันทั้ง Query console และหน้าคำขอสิทธิ์
+- `AccessEligibility.blocking` (ข้อความ *"ถ้าได้สิทธิ์แล้วยังติดอะไร"* บนหน้า Ask for access และ `blockedBy` / `blockedByPolicyId` บนหน้า Review) เคยเลือก **ALLOW ตัวแรกที่ไม่ match** จึงโทษได้ทั้ง DENY ที่ไม่ match · data policy · policy ใน layer ที่ผ่านแล้ว เป็นบั๊กเดียวกับ BT.8
+- ย้ายกติกาไปไว้ที่ `dac-engine` คลาสใหม่ `Refusals.blame(decision)` ทั้ง `QueryRewriter.reasonFor` และ `AccessEligibility.blocking` เรียกตัวนี้ สองหน้าจะไม่มีวันชี้ policy ต่างกันสำหรับการปฏิเสธครั้งเดียวกัน
+- ลำดับ: DENY ที่ match → ALLOW ใน gate ที่ปฏิเสธ (เกือบผ่านก่อน แล้วตัวที่มีคำอธิบาย แล้วตัวแรก) → ALLOW อื่นที่ไม่ match ด้วยกติกาเดียวกัน → reason `HOLDS_THE_GATE` เอง → บรรทัดของ engine (`(composition)` / `(none)`) · ข้ามเสมอ: DENY ที่ไม่ match · data policy · `grant:*`
+- `RefusalsTest` 8 ข้อ (5 ข้อเขียน reason เอง · 3 ข้อใช้ engine จริง รวมกรณีมี grant ที่ TABLE แล้วติด gate ของ ORG)
+- ผ่าน: unit ทั้ง backend 1,123 (engine 293) · IT `AccessRequestIT` + `PolicyOverviewIT` + `GrantCompositionIT` 122/122
+
 ### BT.6 ค้าง
 - credential ของ source บน prod ที่ auth ไม่ผ่าน ผู้ใช้เป็นคนตัดสิน · แก้แล้วให้รัน Q1–Q7 ใน `prod-demo-policies.mjs` อีกรอบ
 - กรณี group บน prod รอ push แล้ว deploy V35 ก่อน

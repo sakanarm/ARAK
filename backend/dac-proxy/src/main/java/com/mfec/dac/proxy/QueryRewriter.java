@@ -2,12 +2,10 @@ package com.mfec.dac.proxy;
 
 import com.mfec.dac.compiler.sql.DecisionSql;
 import com.mfec.dac.compiler.sql.SqlDialect;
-import com.mfec.dac.engine.PolicyEngine;
-import com.mfec.dac.engine.SubjectMatcher;
+import com.mfec.dac.engine.Refusals;
 import com.mfec.dac.schema.api.PolicyDecision;
 import com.mfec.dac.schema.api.Unenforceable;
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -441,103 +439,35 @@ public final class QueryRewriter {
   /**
    * Why this principal is not getting these rows, in the words of the decision.
    *
-   * <p>A denied decision carries reasons of three kinds, and only one of them
-   * answers the question. A policy that <em>matched</em> is only the reason when
-   * it is a {@code DENY}; a matched {@code ALLOW} beside a refusal is a policy
-   * that would have granted something had another layer agreed, and reporting it
-   * produces the sentence "access is denied: subject rule satisfied", which is
-   * what this used to say.
-   *
-   * <p>Of the ALLOW policies that did not apply, the one named is one standing
-   * in the gate that refused ({@link PolicyEngine#HOLDS_THE_GATE}), because a
-   * policy at a layer the principal got through is not why the door is shut.
-   * Among those, one written for this principal that only the clock or the
-   * network kept shut ({@link SubjectMatcher#nearMiss}) goes first: a finance
-   * analyst after hours was told the procurement policy did not apply to them,
-   * which was true and no help.
+   * <p>Which reason is the answer is {@link Refusals#blame}'s call, shared with
+   * the access-request pages so the two never name different policies for the
+   * same refusal. A matched {@code DENY} is named as the refuser; an {@code
+   * ALLOW} as the one that did not apply; the engine's composition line as it
+   * stands.
    */
   private static String reasonFor(Governed asset) {
-    List<com.mfec.dac.schema.api.DecisionReason> reasons = asset.decision().getReasons();
-    List<com.mfec.dac.schema.api.DecisionReason> unmatched = new ArrayList<>();
-    Set<String> gateHolders = new HashSet<>();
-    String composition = null;
-    if (reasons != null) {
-      for (com.mfec.dac.schema.api.DecisionReason reason : reasons) {
-        String explanation = reason.getExplanation();
-        if (explanation == null || explanation.isBlank()) {
-          continue;
-        }
-        if (Boolean.TRUE.equals(reason.getMatched())) {
-          if (reason.getEffect() == com.mfec.dac.schema.api.DecisionReason.Effect.DENY) {
-            return "Access to " + asset.fqn() + " is denied by " + name(reason) + ": " + explanation;
-          }
-          continue;
-        }
-        if (reason.getPolicyName() == null
-            || PolicyEngine.COMPOSITION.equals(reason.getPolicyName())) {
-          composition = explanation;
-        } else if (reason.getPolicyType() == com.mfec.dac.schema.api.DecisionReason.PolicyType.DATA) {
-          // A data policy never lets anyone in, so one that did not apply is
-          // not why the door is shut. Naming it sent a reader after a mask
-          // condition while the real refusal was an office-hours window.
-          continue;
-        } else if (reason.getEffect() == com.mfec.dac.schema.api.DecisionReason.Effect.DENY) {
-          // Nor does a DENY that did not match: it kept nobody out.
-          continue;
-        } else if (explanation.startsWith(PolicyEngine.HOLDS_THE_GATE)) {
-          gateHolders.add(key(reason));
-        } else {
-          unmatched.add(reason);
-        }
-      }
+    com.mfec.dac.schema.api.DecisionReason reason = Refusals.blame(asset.decision());
+    String explanation = reason == null ? null : reason.getExplanation();
+    boolean says = explanation != null && !explanation.isBlank();
+    if (reason == null || (Refusals.engine(reason) && !says)) {
+      return "Access to " + asset.fqn() + " is denied by policy";
     }
-    com.mfec.dac.schema.api.DecisionReason refusedBy = refusing(unmatched, gateHolders);
-    if (refusedBy == null) {
-      refusedBy = refusing(unmatched, Set.of());
+    if (Refusals.engine(reason)) {
+      return "Access to " + asset.fqn() + " is denied: " + explanation;
     }
-    if (refusedBy != null) {
+    if (Boolean.TRUE.equals(reason.getMatched())) {
       return "Access to "
           + asset.fqn()
-          + " is denied. "
-          + name(refusedBy)
-          + " did not apply: "
-          + refusedBy.getExplanation();
+          + " is denied by "
+          + reason.getPolicyName()
+          + (says ? ": " + explanation : "");
     }
-    if (composition != null) {
-      return "Access to " + asset.fqn() + " is denied: " + composition;
-    }
-    return "Access to " + asset.fqn() + " is denied by policy";
-  }
-
-  private static String name(com.mfec.dac.schema.api.DecisionReason reason) {
-    return reason.getPolicyName() == null ? "policy" : reason.getPolicyName();
-  }
-
-  /**
-   * The unmatched ALLOW to name, from among {@code among} when it is not empty:
-   * a near miss if there is one, otherwise the first, which names the
-   * condition to look at.
-   */
-  private static com.mfec.dac.schema.api.DecisionReason refusing(
-      List<com.mfec.dac.schema.api.DecisionReason> unmatched, Set<String> among) {
-    com.mfec.dac.schema.api.DecisionReason first = null;
-    for (com.mfec.dac.schema.api.DecisionReason reason : unmatched) {
-      if (!among.isEmpty() && !among.contains(key(reason))) {
-        continue;
-      }
-      if (SubjectMatcher.nearMiss(reason.getExplanation())) {
-        return reason;
-      }
-      if (first == null) {
-        first = reason;
-      }
-    }
-    return first;
-  }
-
-  /** One policy's reasons share this, whichever of them is being read. */
-  private static String key(com.mfec.dac.schema.api.DecisionReason reason) {
-    return reason.getPolicyId() != null ? reason.getPolicyId().toString() : name(reason);
+    return "Access to "
+        + asset.fqn()
+        + " is denied. "
+        + reason.getPolicyName()
+        + " did not apply"
+        + (says ? ": " + explanation : "");
   }
 
   private static String unquote(String value) {

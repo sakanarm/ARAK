@@ -1,5 +1,6 @@
 package com.mfec.dac.access;
 
+import com.mfec.dac.engine.Refusals;
 import com.mfec.dac.policy.DecisionService;
 import com.mfec.dac.schema.api.DecisionReason;
 import com.mfec.dac.schema.api.PolicyDecision;
@@ -87,9 +88,10 @@ public class AccessEligibility {
   /**
    * What still says no once the grant is in the stack.
    *
-   * <p>A matched DENY first, because it wins outright; otherwise the first
-   * policy that did not apply, which is the higher layer the grant could not
-   * pass; otherwise whatever the engine said about composing the layers.
+   * <p>A matched DENY first, because it wins outright; otherwise a policy in the
+   * higher layer the grant could not pass; otherwise whatever the engine said
+   * about composing the layers. {@link Refusals#blame} chooses, as it does for
+   * the query console.
    */
   static String blocker(PolicyDecision decision) {
     DecisionReason reason = blocking(decision);
@@ -98,30 +100,7 @@ public class AccessEligibility {
 
   /** The reason {@link #blocker} names, or null when no single policy is to blame. */
   static DecisionReason blocking(PolicyDecision decision) {
-    List<DecisionReason> reasons = decision.getReasons();
-    if (reasons == null) {
-      return null;
-    }
-    for (DecisionReason reason : reasons) {
-      if (Boolean.TRUE.equals(reason.getMatched())
-          && reason.getEffect() == DecisionReason.Effect.DENY) {
-        return reason;
-      }
-    }
-    // A named policy before the engine's own "(composition)" line, which says
-    // that a layer refused but not which policy the person should ask about.
-    for (boolean namedOnly : new boolean[] {true, false}) {
-      for (DecisionReason reason : reasons) {
-        String name = reason.getPolicyName();
-        if (!Boolean.TRUE.equals(reason.getMatched())
-            && name != null
-            && !name.startsWith("grant:")
-            && (!namedOnly || !name.startsWith("("))) {
-          return reason;
-        }
-      }
-    }
-    return null;
+    return Refusals.blame(decision);
   }
 
   private static String named(DecisionReason reason) {
