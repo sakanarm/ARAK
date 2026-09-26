@@ -351,6 +351,12 @@ public class PolicyResource {
               .entity(Map.of("code", 409, "message", e.getMessage()))
               .type(MediaType.APPLICATION_JSON)
               .build());
+    } catch (PolicyStore.NameTakenException e) {
+      throw new WebApplicationException(
+          Response.status(Response.Status.CONFLICT)
+              .entity(Map.of("code", 409, "message", e.getMessage()))
+              .type(MediaType.APPLICATION_JSON)
+              .build());
     } catch (PolicyStore.IllegalTransitionException e) {
       throw new WebApplicationException(
           Response.status(Response.Status.CONFLICT)

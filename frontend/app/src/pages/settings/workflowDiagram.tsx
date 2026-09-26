@@ -1,6 +1,6 @@
 import { CheckCircle, Dataflow03, PlayCircle, Settings01, UserCheck01, XCircle } from '@untitledui/icons';
 import { describeOnReject, describeRule, describeSeat } from '../../api/accessRequests';
-import { stepsOf, type AccessWorkflow } from '../../api/accessWorkflows';
+import { joinOf, stepsOf, type AccessWorkflow } from '../../api/accessWorkflows';
 import type { DiagramEdge, DiagramNode } from '../../components/diagram/FlowDiagram';
 
 /**
@@ -9,9 +9,10 @@ import type { DiagramEdge, DiagramNode } from '../../components/diagram/FlowDiag
  *
  * <p>A step with one stage says its two ways out itself: approve goes on,
  * reject goes down to the one end every refusal reaches. A step whose stages
- * run together meets at a decision first, because the request goes on only
- * when all of them approve and stops when any one refuses -- the decision is
- * where that is said once, not on every stage.
+ * run together meets at a decision first, where the step's join is said once:
+ * either the request goes on only when all of them approve and stops when any
+ * one refuses, or the first to approve moves it on and it stops only when
+ * every one refuses.
  *
  * <p>Stage nodes are named {@code stage-<index>} by their place in
  * {@code workflow.stages}, so the inspector edits the stage that was clicked.
@@ -59,6 +60,7 @@ export function workflowDiagram(workflow: AccessWorkflow): { nodes: DiagramNode[
 
   groups.forEach((group, groupIndex) => {
     const together = group.length > 1;
+    const anyOne = joinOf(group) === 'ANY';
     group.forEach((stage, i) => {
       const id = stageNodeId(stage.index);
       nodes.push({
@@ -66,13 +68,13 @@ export function workflowDiagram(workflow: AccessWorkflow): { nodes: DiagramNode[
         kind: 'task',
         column,
         row: main - (group.length - 1) / 2 + i,
-        eyebrow: `Step ${groupIndex + 1}${together ? ' · together' : ''}`,
+        eyebrow: `Step ${groupIndex + 1}${together ? (anyOne ? ' · any one' : ' · together') : ''}`,
         title: stage.name.trim() || 'Unnamed stage',
         icon: <UserCheck01 className={ICON} />,
         lines: [
           { text: `Asks ${stage.approvers.map(describeSeat).join(', ') || 'nobody yet'}`, caution: stage.approvers.length === 0 },
           { text: describeRule(stage.rule, stage.minApprovals ?? null) },
-          { text: describeOnReject(stage.onReject) },
+          { text: describeOnReject(stage.onReject, stage.rule, stage.minApprovals) },
         ],
       });
       from.forEach((source, n) =>
@@ -87,14 +89,14 @@ export function workflowDiagram(workflow: AccessWorkflow): { nodes: DiagramNode[
         kind: 'join',
         column: column + 1,
         row: main,
-        title: `All of step ${groupIndex + 1} decide`,
+        title: anyOne ? `Any one of step ${groupIndex + 1} is enough` : `All of step ${groupIndex + 1} decide`,
         icon: <Dataflow03 className={ICON} />,
         selectable: false,
       });
       group.forEach((stage) => edges.push({ from: stageNodeId(stage.index), to: join }));
-      edges.push({ from: join, to: REJECTED, label: 'Any rejects', tone: 'error', route: 'down' });
+      edges.push({ from: join, to: REJECTED, label: anyOne ? 'All reject' : 'Any rejects', tone: 'error', route: 'down' });
       from = [join];
-      saying = { label: 'All approve', tone: 'success' };
+      saying = { label: anyOne ? 'Any one approves' : 'All approve', tone: 'success' };
       column += 2;
     } else {
       const id = stageNodeId(group[0].index);

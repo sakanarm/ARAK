@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
-import { ZoomIn, ZoomOut } from '@untitledui/icons';
+import { Maximize01, Minimize01, ZoomIn, ZoomOut } from '@untitledui/icons';
 
 /**
  * A left-to-right flow drawn on a dotted canvas, the way OpenMetadata's
@@ -284,6 +284,24 @@ export default function FlowDiagram({ nodes, edges, label, selected, onSelect, o
     setChosen(true);
     setScale(next);
   };
+  // Full screen lays the canvas over the page so a wide flow can be read
+  // across the whole window; it fits again to the room it now has.
+  const [full, setFull] = useState(false);
+  const toggleFull = () => {
+    setChosen(false);
+    setFull((now) => !now);
+  };
+  useEffect(() => {
+    if (!full) return;
+    const leave = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setChosen(false);
+        setFull(false);
+      }
+    };
+    window.addEventListener('keydown', leave);
+    return () => window.removeEventListener('keydown', leave);
+  }, [full]);
   const smaller = [...ZOOMS].reverse().find((step) => step < scale - 0.001);
   const larger = ZOOMS.find((step) => step > scale + 0.001);
 
@@ -307,16 +325,31 @@ export default function FlowDiagram({ nodes, edges, label, selected, onSelect, o
   }
 
   return (
-    <div className="tw:relative tw:overflow-hidden tw:rounded-xl tw:border tw:border-secondary tw:bg-primary">
+    <>
+    {full && (
+      <div
+        aria-hidden="true"
+        className="tw:fixed tw:inset-0 tw:z-40 tw:bg-black/40"
+        onClick={toggleFull}
+      />
+    )}
+    <div
+      aria-label={full ? label : undefined}
+      aria-modal={full || undefined}
+      className={`tw:overflow-hidden tw:rounded-xl tw:border tw:border-secondary tw:bg-primary ${
+        full ? 'tw:fixed tw:inset-4 tw:z-50 tw:flex tw:flex-col tw:shadow-2xl' : 'tw:relative'
+      }`}
+      data-testid="flow-diagram"
+      role={full ? 'dialog' : undefined}>
       <div
         // The overlay sits over the canvas's corner; the band above the flow
         // keeps it off the first node however small the flow is drawn.
-        className={`tw:overflow-auto ${overlay ? 'tw:pt-12' : ''}`}
+        className={`tw:overflow-auto ${overlay ? 'tw:pt-12' : ''} ${full ? 'tw:min-h-0 tw:flex-1 tw:pt-12' : ''}`}
         ref={viewport}
         style={{
           backgroundImage: 'radial-gradient(var(--color-border-primary) 1px, transparent 1px)',
           backgroundSize: '18px 18px',
-          maxHeight: '72vh',
+          maxHeight: full ? undefined : '72vh',
         }}>
         <div
           aria-label={label}
@@ -475,7 +508,17 @@ export default function FlowDiagram({ nodes, edges, label, selected, onSelect, o
           type="button">
           <ZoomIn className="tw:size-4" />
         </button>
+        <span aria-hidden="true" className="tw:mx-0.5 tw:h-4 tw:w-px tw:bg-border-secondary" />
+        <button
+          aria-label={full ? 'Exit full screen' : 'Full screen'}
+          className="tw:flex tw:size-7 tw:cursor-pointer tw:items-center tw:justify-center tw:rounded-md tw:text-tertiary tw:hover:bg-secondary"
+          onClick={toggleFull}
+          title={full ? 'Exit full screen (Esc)' : 'Full screen'}
+          type="button">
+          {full ? <Minimize01 className="tw:size-4" /> : <Maximize01 className="tw:size-4" />}
+        </button>
       </div>
     </div>
+    </>
   );
 }

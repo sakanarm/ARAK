@@ -36,10 +36,48 @@ import { plainText } from '../../lib/text';
 import { AssetTree } from './hierarchy';
 import { ReachBadges } from './reach';
 import { AskArakButton } from '../../assist/AskArak';
+import { CatalogExportMenu } from './CatalogExportMenu';
 
 const PAGE_SIZE = 25;
 
 const ASSET_TYPES = ['TABLE', 'VIEW', 'SCHEMA', 'DATABASE', 'SERVICE'];
+
+/** List or hierarchy. */
+function ViewToggle({
+  view,
+  onChange,
+}: {
+  view: 'list' | 'tree';
+  onChange: (next: 'list' | 'tree') => void;
+}) {
+  return (
+    <div
+      aria-label="Catalog view"
+      className="tw:flex tw:rounded-lg tw:border tw:border-primary tw:p-0.5"
+      role="group">
+      {(
+        [
+          ['list', 'List', List],
+          ['tree', 'Hierarchy', Dataflow03],
+        ] as const
+      ).map(([value, label, Icon]) => (
+        <button
+          aria-pressed={view === value}
+          className={`tw:flex tw:cursor-pointer tw:items-center tw:gap-1.5 tw:rounded-md tw:px-2.5 tw:py-1.5 tw:text-sm tw:font-semibold ${
+            view === value
+              ? 'tw:bg-secondary tw:text-primary'
+              : 'tw:text-tertiary tw:hover:text-primary'
+          }`}
+          key={value}
+          onClick={() => onChange(value)}
+          type="button">
+          <Icon aria-hidden className="tw:size-4" />
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+}
 
 
 /**
@@ -204,7 +242,7 @@ export default function CatalogPage() {
 
       <section className="tw:mt-8 tw:rounded-xl tw:border tw:border-secondary tw:bg-primary tw:p-4">
         <form
-          className="tw:flex tw:flex-wrap tw:items-center tw:gap-3"
+          className="tw:space-y-3"
           onSubmit={(event) => {
             event.preventDefault();
             update((draft) => {
@@ -215,118 +253,103 @@ export default function CatalogPage() {
               }
             });
           }}>
-          <div className="tw:min-w-64 tw:flex-1">
-            <Input
-              aria-label="Search the catalog"
-              icon={SearchLg}
-              onChange={setSearchDraft}
-              placeholder="Search by name or fully qualified name"
-              value={searchDraft}
-            />
-          </div>
-          <Select
-            ariaLabel="Asset type"
-            className="tw:min-w-44"
-            onChange={(next) =>
-              update((draft) => {
-                if (next) {
-                  draft.set('type', next);
-                } else {
-                  draft.delete('type');
-                }
-              })
-            }
-            options={[
-              { value: '', label: 'All types' },
-              ...ASSET_TYPES.map((type) => ({
-                value: type,
-                label: type.charAt(0) + type.slice(1).toLowerCase(),
-              })),
-            ]}
-            value={assetType}
-          />
-          {/* Two separate questions, two separate filters: whether ARAK can
-            * query it, and whether OpenMetadata knows about it. */}
-          <Select
-            ariaLabel="Connection"
-            className="tw:min-w-44"
-            onChange={(next) =>
-              update((draft) => {
-                if (next) {
-                  draft.set('reach', next);
-                } else {
-                  draft.delete('reach');
-                }
-              })
-            }
-            options={[
-              { value: '', label: 'Any connection' },
-              { value: 'queryable', label: 'Queryable' },
-              { value: 'metadata', label: 'Metadata only' },
-            ]}
-            value={reach}
-          />
-          <Select
-            ariaLabel="Catalogued by"
-            className="tw:min-w-48"
-            onChange={(next) =>
-              update((draft) => {
-                if (next) {
-                  draft.set('origin', next);
-                } else {
-                  draft.delete('origin');
-                }
-              })
-            }
-            options={[
-              { value: '', label: 'Any origin' },
-              { value: 'openmetadata', label: 'From OpenMetadata' },
-              { value: 'discovered', label: 'Read from source' },
-              { value: 'local', label: 'ARAK only' },
-            ]}
-            value={origin}
-          />
-          <Button size="md" type="submit">
-            Search
-          </Button>
-          {/* By meaning rather than by name: the assistant reads descriptions,
-            * columns and tags, of the tables this person may see. */}
-          <AskArakButton term={searchDraft} />
-          {filtered && (
-            <Button
-              color="tertiary"
-              onPress={() => {
-                setSearchDraft('');
-                setParams(new URLSearchParams(), { replace: true });
-              }}
-              size="md">
-              Clear
+          {/* Two rows: what to look for, then how to narrow it. On one wrapping
+            * row the view toggle fell to a line of its own and left a gap. */}
+          <div className="tw:flex tw:flex-wrap tw:items-center tw:gap-3">
+            <div className="tw:min-w-64 tw:flex-1">
+              <Input
+                aria-label="Search the catalog"
+                icon={SearchLg}
+                onChange={setSearchDraft}
+                placeholder="Search by name or fully qualified name"
+                value={searchDraft}
+              />
+            </div>
+            <Button size="md" type="submit">
+              Search
             </Button>
-          )}
-          <div
-            aria-label="Catalog view"
-            className="tw:ml-auto tw:flex tw:rounded-lg tw:border tw:border-primary tw:p-0.5"
-            role="group">
-            {(
-              [
-                ['list', 'List', List],
-                ['tree', 'Hierarchy', Dataflow03],
-              ] as const
-            ).map(([value, label, Icon]) => (
-              <button
-                aria-pressed={view === value}
-                className={`tw:flex tw:cursor-pointer tw:items-center tw:gap-1.5 tw:rounded-md tw:px-2.5 tw:py-1.5 tw:text-sm tw:font-semibold ${
-                  view === value
-                    ? 'tw:bg-secondary tw:text-primary'
-                    : 'tw:text-tertiary tw:hover:text-primary'
-                }`}
-                key={value}
-                onClick={() => showView(value)}
-                type="button">
-                <Icon aria-hidden className="tw:size-4" />
-                {label}
-              </button>
-            ))}
+            {/* By meaning rather than by name: the assistant reads descriptions,
+              * columns and tags, of the tables this person may see. */}
+            <AskArakButton term={searchDraft} />
+            <ViewToggle onChange={showView} view={view} />
+          </div>
+          <div className="tw:flex tw:flex-wrap tw:items-center tw:gap-3">
+            <Select
+              ariaLabel="Asset type"
+              className="tw:min-w-44"
+              onChange={(next) =>
+                update((draft) => {
+                  if (next) {
+                    draft.set('type', next);
+                  } else {
+                    draft.delete('type');
+                  }
+                })
+              }
+              options={[
+                { value: '', label: 'All types' },
+                ...ASSET_TYPES.map((type) => ({
+                  value: type,
+                  label: type.charAt(0) + type.slice(1).toLowerCase(),
+                })),
+              ]}
+              value={assetType}
+            />
+            {/* Two separate questions, two separate filters: whether ARAK can
+              * query it, and whether OpenMetadata knows about it. */}
+            <Select
+              ariaLabel="Connection"
+              className="tw:min-w-44"
+              onChange={(next) =>
+                update((draft) => {
+                  if (next) {
+                    draft.set('reach', next);
+                  } else {
+                    draft.delete('reach');
+                  }
+                })
+              }
+              options={[
+                { value: '', label: 'Any connection' },
+                { value: 'queryable', label: 'Queryable' },
+                { value: 'metadata', label: 'Metadata only' },
+              ]}
+              value={reach}
+            />
+            <Select
+              ariaLabel="Catalogued by"
+              className="tw:min-w-48"
+              onChange={(next) =>
+                update((draft) => {
+                  if (next) {
+                    draft.set('origin', next);
+                  } else {
+                    draft.delete('origin');
+                  }
+                })
+              }
+              options={[
+                { value: '', label: 'Any origin' },
+                { value: 'openmetadata', label: 'From OpenMetadata' },
+                { value: 'discovered', label: 'Read from source' },
+                { value: 'local', label: 'ARAK only' },
+              ]}
+              value={origin}
+            />
+            {filtered && (
+              <Button
+                color="tertiary"
+                onPress={() => {
+                  setSearchDraft('');
+                  setParams(new URLSearchParams(), { replace: true });
+                }}
+                size="md">
+                Clear
+              </Button>
+            )}
+            <div className="tw:ml-auto">
+              <CatalogExportMenu query={{ search, assetType, facets, reach, origin }} />
+            </div>
           </div>
         </form>
 

@@ -65,12 +65,15 @@ export interface SchemaExplorerProps {
   onInsert: (text: string) => void;
   /** How wide the column is, in pixels. The reader drags this. */
   width?: number;
+  /** Fill the height of a column it shares, instead of setting its own width. */
+  fill?: boolean;
 }
 
 export default function SchemaExplorer({
   sourceId,
   onInsert,
   width,
+  fill = false,
 }: SchemaExplorerProps) {
   const [search, setSearch] = useState('');
 
@@ -91,8 +94,10 @@ export default function SchemaExplorer({
 
   return (
     <aside
-      className="tw:flex tw:shrink-0 tw:flex-col tw:overflow-hidden tw:rounded-lg tw:border tw:border-secondary tw:bg-primary"
-      style={{ width: width ?? 256 }}>
+      className={`tw:flex tw:flex-col tw:overflow-hidden tw:rounded-lg tw:border tw:border-secondary tw:bg-primary ${
+        fill ? 'tw:min-h-0 tw:flex-1' : 'tw:shrink-0'
+      }`}
+      style={fill ? undefined : { width: width ?? 256 }}>
       <div className="tw:border-b tw:border-secondary tw:p-3">
         <h2 className="tw:flex tw:items-center tw:gap-2 tw:text-sm tw:font-semibold tw:text-primary">
           <Database01 className="tw:size-4 tw:text-tertiary" />

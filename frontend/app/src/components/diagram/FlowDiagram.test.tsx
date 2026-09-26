@@ -87,6 +87,20 @@ describe('FlowDiagram', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Reset zoom' }));
     expect(screen.getByRole('button', { name: 'Reset zoom' })).toHaveTextContent('100%');
   });
+
+  it('opens over the page and closes by its button or Escape', () => {
+    render(<FlowDiagram edges={EDGES} label="Workflow" nodes={NODES} />);
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Full screen' }));
+    expect(screen.getByRole('dialog')).toHaveAttribute('aria-modal', 'true');
+    fireEvent.click(screen.getByRole('button', { name: 'Exit full screen' }));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Full screen' }));
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
 });
 
 describe('TabStrip', () => {

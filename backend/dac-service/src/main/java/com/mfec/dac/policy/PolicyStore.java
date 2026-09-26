@@ -6,6 +6,7 @@ import com.mfec.dac.common.Fqns;
 import com.mfec.dac.engine.PolicyExpressionEvaluator;
 import com.mfec.dac.schema.api.ResolvedColumnMask;
 import com.mfec.dac.schema.entity.policy.Policy;
+import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -14,6 +15,7 @@ import java.util.Optional;
 import java.util.UUID;
 import org.jdbi.v3.core.Handle;
 import org.jdbi.v3.core.Jdbi;
+import org.jdbi.v3.core.statement.UnableToExecuteStatementException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -83,6 +85,17 @@ public class PolicyStore {
   }
 
   /**
+   * Thrown when the name is already used in that environment. An archived
+   * policy keeps its name: the audit trail refers to policies by name, and a
+   * name that meant two different rules would make it say the wrong thing.
+   */
+  public static class NameTakenException extends RuntimeException {
+    public NameTakenException(String message) {
+      super(message);
+    }
+  }
+
+  /**
    * Creates a policy in {@code DRAFT}.
    *
    * <p>Always draft, whatever the document says. A policy that could be created
@@ -91,7 +104,54 @@ public class PolicyStore {
    */
   public StoredPolicy create(Policy document, String author) {
     validate(document);
-    StoredPolicy created = jdbi.inTransaction(
+    StoredPolicy created;
+    try {
+      created = insert(document, author);
+    } catch (UnableToExecuteStatementException e) {
+      if (!isNameClash(e)) {
+        throw e;
+      }
+      String environment = environmentOf(document);
+      String state =
+          jdbi.withHandle(
+              handle ->
+                  handle
+                      .createQuery(
+                          "SELECT lifecycle_state FROM policy WHERE name = :name AND environment = :env")
+                      .bind("name", document.getName())
+                      .bind("env", environment)
+                      .mapTo(String.class)
+                      .findOne()
+                      .orElse("another"));
+      throw new NameTakenException(
+          "A policy named " + document.getName() + " already exists in " + environment
+              + " (" + state + "); names are not reused, even after archiving — choose another");
+    }
+    // A DRAFT decides nothing, but it is created and activated from the same
+    // screen seconds apart, and announcing both is cheaper than reasoning about
+    // which lifecycle states are safe to stay quiet about.
+    changes.fire("policy " + document.getName() + " created");
+    return created;
+  }
+
+  private static String environmentOf(Policy document) {
+    return document.getEnvironment() == null ? "dev" : value(document.getEnvironment());
+  }
+
+  // Postgres reports a unique violation as SQLSTATE 23505, naming the constraint.
+  private static boolean isNameClash(Throwable e) {
+    for (Throwable t = e; t != null; t = t.getCause()) {
+      if (t instanceof SQLException sql
+          && "23505".equals(sql.getSQLState())
+          && String.valueOf(sql.getMessage()).contains("policy_name_environment_key")) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private StoredPolicy insert(Policy document, String author) {
+    return jdbi.inTransaction(
         handle -> {
           UUID id =
               handle
@@ -120,7 +180,7 @@ public class PolicyStore {
                   .bind(
                       "allowLocalOverride",
                       document.getAllowLocalOverride() != null && document.getAllowLocalOverride())
-                  .bind("environment", document.getEnvironment() == null ? "dev" : value(document.getEnvironment()))
+                  .bind("environment", environmentOf(document))
                   .bind("document", serialise(document))
                   .bind("validFrom", instant(document.getValidFrom()))
                   .bind("validUntil", instant(document.getValidUntil()))
@@ -132,11 +192,6 @@ public class PolicyStore {
           LOG.info("Policy {} created as DRAFT by {}", document.getName(), author);
           return read(handle, id).orElseThrow();
         });
-    // A DRAFT decides nothing, but it is created and activated from the same
-    // screen seconds apart, and announcing both is cheaper than reasoning about
-    // which lifecycle states are safe to stay quiet about.
-    changes.fire("policy " + document.getName() + " created");
-    return created;
   }
 
   /**
@@ -556,7 +611,35 @@ public class PolicyStore {
       throw new IllegalArgumentException(
           "A policy needs a selector; an empty one binds to nothing and protects nobody");
     }
+    validateExemptions(document);
     validateExpression(document);
+  }
+
+  /**
+   * Refuses an exemption the engine would not honour (FR-3.5).
+   *
+   * <p>The engine ignores an exemption with no expiry or no reason rather than
+   * reading it as a permanent hole, which is the safe way round, but on its own
+   * it is silent: the policy saves, the author believes a colleague is exempt,
+   * and the colleague is still refused. Saying so at save time turns that into
+   * a message instead of a support ticket.
+   */
+  private static void validateExemptions(Policy document) {
+    if (document.getExemptions() == null) {
+      return;
+    }
+    for (var exemption : document.getExemptions()) {
+      if (exemption == null || exemption.getPrincipal() == null || exemption.getPrincipal().isBlank()) {
+        throw new IllegalArgumentException("An exemption needs the principal it exempts");
+      }
+      if (exemption.getReason() == null || exemption.getReason().isBlank()) {
+        throw new IllegalArgumentException("The exemption for " + exemption.getPrincipal() + " needs a reason");
+      }
+      if (exemption.getExpiresAt() == null) {
+        throw new IllegalArgumentException(
+            "The exemption for " + exemption.getPrincipal() + " needs an expiry date; exemptions are never permanent");
+      }
+    }
   }
 
   /**

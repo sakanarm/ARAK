@@ -152,28 +152,72 @@ function sheetXml(grid: Grid): string {
 const STYLES = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font></fonts><fills count="1"><fill><patternFill patternType="none"/></fill></fills><borders count="1"><border/></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="2"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/></cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>`;
 
-const CONTENT_TYPES = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>`;
+function contentTypes(sheets: number): string {
+  const parts = Array.from(
+    { length: sheets },
+    (_, index) =>
+      `<Override PartName="/xl/worksheets/sheet${index + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`
+  ).join('');
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>${parts}<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>`;
+}
 
 const ROOT_RELS = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>`;
 
-const WORKBOOK_RELS = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`;
+function workbookRels(sheets: number): string {
+  const parts = Array.from(
+    { length: sheets },
+    (_, index) =>
+      `<Relationship Id="rId${index + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${index + 1}.xml"/>`
+  ).join('');
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${parts}<Relationship Id="rId${sheets + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`;
+}
 
-const WORKBOOK = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Results" sheetId="1" r:id="rId1"/></sheets></workbook>`;
+/**
+ * A sheet name Excel will open: at most 31 characters, none of `\ / ? * [ ] :`.
+ * A name that breaks either rule makes Excel "repair" the whole workbook.
+ */
+function sheetName(name: string): string {
+  return name.replace(/[\\/?*[\]:]/g, ' ').slice(0, 31) || 'Sheet';
+}
+
+function workbook(names: string[]): string {
+  const sheets = names
+    .map(
+      (name, index) =>
+        `<sheet name="${xmlEscape(sheetName(name))}" sheetId="${index + 1}" r:id="rId${index + 1}"/>`
+    )
+    .join('');
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>${sheets}</sheets></workbook>`;
+}
+
+/** One tab of a workbook. */
+export interface Sheet {
+  name: string;
+  grid: Grid;
+}
+
+/** Several grids as one `.xlsx`, a tab each, in the order given. */
+export function toXlsxBook(sheets: Sheet[]): Blob {
+  return zip([
+    ['[Content_Types].xml', contentTypes(sheets.length)],
+    ['_rels/.rels', ROOT_RELS],
+    ['xl/workbook.xml', workbook(sheets.map((sheet) => sheet.name))],
+    ['xl/_rels/workbook.xml.rels', workbookRels(sheets.length)],
+    ['xl/styles.xml', STYLES],
+    ...sheets.map(
+      (sheet, index) =>
+        [`xl/worksheets/sheet${index + 1}.xml`, sheetXml(sheet.grid)] as [string, string]
+    ),
+  ]);
+}
 
 /** The grid as a real `.xlsx`, which is a ZIP of five XML parts. */
 export function toXlsx(grid: Grid): Blob {
-  return zip([
-    ['[Content_Types].xml', CONTENT_TYPES],
-    ['_rels/.rels', ROOT_RELS],
-    ['xl/workbook.xml', WORKBOOK],
-    ['xl/_rels/workbook.xml.rels', WORKBOOK_RELS],
-    ['xl/styles.xml', STYLES],
-    ['xl/worksheets/sheet1.xml', sheetXml(grid)],
-  ]);
+  return toXlsxBook([{ name: 'Results', grid }]);
 }
 
 // ---------------------------------------------------------------------- zip

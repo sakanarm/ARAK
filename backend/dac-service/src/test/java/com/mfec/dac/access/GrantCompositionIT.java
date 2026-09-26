@@ -2,6 +2,7 @@ package com.mfec.dac.access;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.within;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
@@ -376,6 +377,86 @@ class GrantCompositionIT {
       assertThat(grants.historyFor(LEDGER, 10))
           .extracting(GrantStore.HistoryEntry::action)
           .containsExactly("REVOKE", "GRANT");
+    }
+
+    @Test
+    @DisplayName("an edit replaces the grant: the old row is a tombstone, access never drops")
+    void amendReplaces() {
+      Instant started = Instant.now().minus(3, ChronoUnit.DAYS);
+      GrantStore.StoredGrant given =
+          grants.grant(
+              new GrantStore.NewGrant(
+                  LEDGER,
+                  idOf("analyst_a"),
+                  started,
+                  Instant.now().plus(1, ChronoUnit.DAYS),
+                  "Quarter-end",
+                  "owner_o"));
+      Instant later = Instant.now().plus(30, ChronoUnit.DAYS);
+
+      GrantStore.StoredGrant next =
+          grants
+              .amend(
+                  given.id(),
+                  Instant.now().plus(5, ChronoUnit.DAYS),
+                  later,
+                  "Audit ran long",
+                  "owner_o")
+              .orElseThrow();
+
+      assertThat(next.id()).isNotEqualTo(given.id());
+      assertThat(next.principalId()).isEqualTo(given.principalId());
+      assertThat(next.assetFqn()).isEqualTo(LEDGER);
+      assertThat(next.validUntil()).isCloseTo(later, within(1, ChronoUnit.MILLIS));
+      // The grant had already started, so its start is history, not a setting.
+      assertThat(next.validFrom()).isEqualTo(given.validFrom());
+      assertThat(next.reason()).isEqualTo("Audit ran long");
+      assertThat(next.grantedBy()).isEqualTo("owner_o");
+
+      GrantStore.StoredGrant old = grants.find(given.id()).orElseThrow();
+      assertThat(old.revokedAt()).isNotNull();
+      assertThat(old.revokeReason()).isEqualTo("Replaced by an edit: Audit ran long");
+      assertThat(decisions.decide(DecisionService.Ask.of("analyst_a", LEDGER)).getAllowed())
+          .isTrue();
+      assertThat(grants.historyFor(LEDGER, 10))
+          .extracting(GrantStore.HistoryEntry::action)
+          .containsExactlyInAnyOrder("GRANT", "REVOKE", "GRANT");
+
+      // A tombstone is not brought back by editing it.
+      assertThat(grants.amend(given.id(), null, null, "again", "owner_o")).isEmpty();
+    }
+
+    @Test
+    @DisplayName("an edit can move a start that has not come yet, and cannot end in the past")
+    void amendWindow() {
+      GrantStore.StoredGrant given =
+          grants.grant(
+              new GrantStore.NewGrant(
+                  LEDGER,
+                  idOf("analyst_a"),
+                  Instant.now().plus(10, ChronoUnit.DAYS),
+                  null,
+                  "Starts later",
+                  "owner_o"));
+      Instant sooner = Instant.now().plus(1, ChronoUnit.DAYS);
+
+      GrantStore.StoredGrant next =
+          grants.amend(given.id(), sooner, null, "Sooner", "owner_o").orElseThrow();
+      assertThat(next.validFrom()).isCloseTo(sooner, within(1, ChronoUnit.MILLIS));
+      assertThat(next.validUntil()).isNull();
+
+      assertThatThrownBy(
+              () ->
+                  grants.amend(
+                      next.id(),
+                      null,
+                      Instant.now().minus(1, ChronoUnit.HOURS),
+                      "Backdated",
+                      "owner_o"))
+          .isInstanceOf(IllegalArgumentException.class);
+      assertThatThrownBy(() -> grants.amend(next.id(), null, null, " ", "owner_o"))
+          .isInstanceOf(IllegalArgumentException.class);
+      assertThat(grants.find(next.id()).orElseThrow().revokedAt()).isNull();
     }
 
     @Test

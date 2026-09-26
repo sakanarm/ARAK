@@ -14,6 +14,7 @@ import {
   InfoCircle,
   Key01,
   PlayCircle,
+  Plus,
   SearchLg,
   Send01,
   Settings01,
@@ -51,7 +52,7 @@ import {
   type StageStatus,
   type StageView,
 } from '../../api/accessRequests';
-import { stepsOf } from '../../api/accessWorkflows';
+import { joinOf, stepsOf } from '../../api/accessWorkflows';
 import { fetchPolicies } from '../../api/policies';
 import { useAuthStore } from '../../auth/authStore';
 import { FIELD } from '../policies/controls';
@@ -127,6 +128,13 @@ export default function AccessRequestsPage() {
             </div>
           </div>
           <div className="tw:flex tw:flex-wrap tw:gap-2">
+            <Link
+              className="tw:inline-flex tw:items-center tw:gap-1.5 tw:rounded-lg tw:bg-brand-solid tw:px-3 tw:py-2 tw:text-sm tw:font-semibold tw:text-white tw:shadow-xs tw:transition tw:hover:bg-brand-solid_hover"
+              title="Ask for one or several tables with one reason"
+              to="/requests/new">
+              <Plus className="tw:size-4" />
+              New request
+            </Link>
             <Link
               className="tw:inline-flex tw:items-center tw:gap-1.5 tw:rounded-lg tw:border tw:border-primary tw:bg-primary tw:px-3 tw:py-2 tw:text-sm tw:font-semibold tw:text-secondary tw:shadow-xs tw:transition tw:hover:bg-primary_hover"
               title="Ask ahead of need for a class of tables, for a group"
@@ -887,16 +895,16 @@ function Timeline({ request }: { request: AccessRequest }) {
   );
 
   steps.forEach((group, i) => {
-    const tone = stepTone(group);
+    const state = stepState(group);
     rows.push(
       <Step
-        icon={tone === 'success' ? Check : tone === 'error' ? XClose : Clock}
+        icon={STEP_ICON[state]}
         key={`step-${group[0].step}`}
-        tone={tone}
+        tone={STEP_TONE[state]}
         when={null}>
         <b className="tw:text-primary">
           {steps.length > 1 ? `Step ${i + 1}` : 'Approval'}
-          {group.length > 1 ? ' · in parallel' : ''}
+          {group.length > 1 ? ` · in parallel${joinOf(group) === 'ANY' ? ', any one is enough' : ''}` : ''}
         </b>
         <span className="tw:mt-2 tw:flex tw:flex-col tw:gap-2">
           {group.map((stage) => (
@@ -994,12 +1002,44 @@ function Timeline({ request }: { request: AccessRequest }) {
 /** Whether a timeline row is the last, so it draws no line down to the next. */
 const LastContext = createContext(false);
 
-function stepTone(group: StageView[]): keyof typeof TONE {
-  if (group.some((s) => s.status === 'REJECTED')) return 'error';
-  if (group.every((s) => s.status === 'APPROVED')) return 'success';
-  if (group.some((s) => s.status === 'OPEN')) return group.some((s) => s.stranded) ? 'error' : 'warning';
-  return 'gray';
+type StepState = 'passed' | 'failed' | 'stuck' | 'open' | 'waiting';
+
+/**
+ * Where one step stands, by its join. A step nobody can answer is stuck, not
+ * refused: it keeps a warning, and the cross is kept for a real rejection.
+ */
+function stepState(group: StageView[]): StepState {
+  const anyOne = joinOf(group) === 'ANY';
+  const passed = anyOne
+    ? group.some((s) => s.status === 'APPROVED')
+    : group.every((s) => s.status === 'APPROVED');
+  const failed = anyOne
+    ? group.every((s) => s.status === 'REJECTED')
+    : group.some((s) => s.status === 'REJECTED');
+  if (passed) return 'passed';
+  if (failed) return 'failed';
+  const open = group.filter((s) => s.status === 'OPEN');
+  if (open.length === 0) return 'waiting';
+  // All must pass: one stranded stage holds it. Any one: all of them must be.
+  const stuck = anyOne ? open.every((s) => s.stranded) : open.some((s) => s.stranded);
+  return stuck ? 'stuck' : 'open';
 }
+
+const STEP_ICON: Record<StepState, typeof Check> = {
+  passed: Check,
+  failed: XClose,
+  stuck: AlertTriangle,
+  open: Clock,
+  waiting: Clock,
+};
+
+const STEP_TONE: Record<StepState, keyof typeof TONE> = {
+  passed: 'success',
+  failed: 'error',
+  stuck: 'warning',
+  open: 'warning',
+  waiting: 'gray',
+};
 
 /** One stage: its rule, who was asked, and every answer. */
 function StageCard({ stage }: { stage: StageView }) {
@@ -1023,7 +1063,7 @@ function StageCard({ stage }: { stage: StageView }) {
       </span>
       <span className="tw:mt-0.5 tw:block tw:text-xs tw:text-tertiary">
         {describeRule(stage.rule, stage.minApprovals, asked || undefined)} ·{' '}
-        {describeOnReject(stage.onReject)}
+        {describeOnReject(stage.onReject, stage.rule, stage.minApprovals)}
       </span>
       <span className="tw:mt-1 tw:block tw:text-xs tw:text-secondary">
         {stage.status === 'WAITING' || asked === 0 ? (
@@ -1035,6 +1075,11 @@ function StageCard({ stage }: { stage: StageView }) {
       {stage.fallback && (
         <span className="tw:mt-1 tw:block tw:text-xs tw:text-tertiary">
           Nobody the stage names could answer it, so the platform administrators were asked.
+        </span>
+      )}
+      {stage.status === 'CLOSED' && stage.join === 'ANY' && (
+        <span className="tw:mt-1 tw:block tw:text-xs tw:text-tertiary">
+          Not needed any more: another stage of this step passed first.
         </span>
       )}
       {stage.stranded && stage.status === 'OPEN' && (
@@ -1159,7 +1204,7 @@ function Step({
 }) {
   const last = useContext(LastContext);
   return (
-    <li className="tw:relative tw:flex tw:gap-3 tw:pb-4 tw:last:pb-0">
+    <li className="tw:relative tw:flex tw:gap-3 tw:pb-4 tw:last:pb-0" data-tone={tone}>
       {!last && (
         <span aria-hidden className="tw:absolute tw:top-8 tw:bottom-0 tw:left-3.75 tw:w-px tw:bg-border-secondary" />
       )}

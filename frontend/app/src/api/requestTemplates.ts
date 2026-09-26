@@ -194,3 +194,77 @@ export function describeForm(form: RequestForm): string {
       : `up to ${MAX_DAYS} days`;
   return `Asks ${parts.length > 0 ? parts.join(', ') : 'a reason'}; ${length}.`;
 }
+
+/** One form for several tables, and what could not be reconciled. */
+export interface MergedForm {
+  form: RequestForm;
+  /** Said to the requester; the tables are sent anyway, each held to its own form. */
+  conflicts: string[];
+}
+
+/**
+ * The form a request for several tables at once is filled in on.
+ *
+ * The strictest of each: the longest reason asked, the shortest ceiling,
+ * until revoked only where every table offers it, a reference and a purpose
+ * wherever one table wants them, and only the purposes every listing table
+ * offers. Answers that pass it pass each table's own form, which the server
+ * still holds every request to.
+ */
+export function mergeForms(forms: RequestForm[]): MergedForm {
+  const conflicts: string[] = [];
+  const ceilings = forms.map((f) => f.maxDays).filter((d): d is number => d !== null);
+  const maxDays = ceilings.length > 0 ? Math.min(...ceilings) : null;
+  const ceiling = maxDays ?? MAX_DAYS;
+  const allowUntilRevoked = forms.every((f) => f.allowUntilRevoked);
+
+  // A table with no list takes any purpose, so only the listing ones narrow it.
+  const listing = forms.filter((f) => f.purposes.length > 0);
+  let purposes: string[] = [];
+  if (listing.length > 0) {
+    purposes = listing[0].purposes.filter((p) =>
+      listing.every((f) => f.purposes.some((q) => q.toLowerCase() === p.toLowerCase()))
+    );
+    if (purposes.length === 0) {
+      conflicts.push('These tables offer no purpose in common; request them separately.');
+    }
+  }
+
+  const durations = [...new Set(forms.flatMap((f) => f.durations))]
+    .filter((d) => d >= 1 && d <= ceiling)
+    .sort((a, b) => a - b);
+  const defaults = forms.map((f) => f.defaultDays).filter((d): d is number => d !== null);
+  const defaultDays =
+    defaults.length > 0
+      ? Math.min(Math.min(...defaults), ceiling)
+      : allowUntilRevoked
+        ? null
+        : ceiling;
+
+  const labels = unique(forms.map((f) => f.referenceLabel));
+  const guidance = unique(forms.map((f) => f.guidance?.trim() || null));
+
+  return {
+    form: {
+      purposes,
+      purposeRequired: forms.some((f) => f.purposeRequired),
+      durations,
+      defaultDays,
+      maxDays,
+      allowUntilRevoked,
+      referenceLabel: labels.length > 0 ? labels.join(' / ') : null,
+      referenceRequired: forms.some((f) => f.referenceRequired),
+      minReasonLength: Math.max(1, ...forms.map((f) => f.minReasonLength)),
+      guidance: guidance.length > 0 ? guidance.join('\n\n') : null,
+    },
+    conflicts,
+  };
+}
+
+function unique(values: (string | null)[]): string[] {
+  const seen = new Map<string, string>();
+  for (const value of values) {
+    if (value && !seen.has(value.toLowerCase())) seen.set(value.toLowerCase(), value);
+  }
+  return [...seen.values()];
+}

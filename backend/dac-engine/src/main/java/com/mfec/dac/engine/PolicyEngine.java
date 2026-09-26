@@ -807,6 +807,10 @@ public final class PolicyEngine {
         .withScopeLevel(policy.getScopeLevel())
         .withScopeFqn(policy.getScopeFqn())
         .withEffect(DecisionReason.Effect.fromValue(effectOf(policy).value()))
+        .withPolicyType(
+            policy.getPolicyType() == null
+                ? null
+                : DecisionReason.PolicyType.fromValue(policy.getPolicyType().value()))
         .withMatched(matched)
         .withExplanation(explanation);
   }

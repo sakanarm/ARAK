@@ -3,6 +3,7 @@ package com.mfec.dac.access;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.mfec.dac.access.AccessWorkflow.Join;
 import com.mfec.dac.access.AccessWorkflow.Kind;
 import com.mfec.dac.access.AccessWorkflow.OnReject;
 import com.mfec.dac.access.AccessWorkflow.Rule;
@@ -161,6 +162,7 @@ public class AccessRequestStore {
    * @param stranded nobody, or too few, were asked for the rule ever to pass
    *     without an administrator
    * @param mayVote whether the reader may answer this stage now
+   * @param join how the stages of its step add up: {@code ALL} or {@code ANY}
    */
   public record StageView(
       int idx,
@@ -169,6 +171,7 @@ public class AccessRequestStore {
       String rule,
       Integer minApprovals,
       String onReject,
+      String join,
       List<Seat> approvers,
       List<Member> pool,
       boolean fallback,
@@ -358,7 +361,13 @@ public class AccessRequestStore {
 
   /** One stage of the route a request on a table would walk. */
   public record RouteStage(
-      int step, String name, String rule, Integer minApprovals, String onReject, List<String> approvers) {}
+      int step,
+      String name,
+      String rule,
+      Integer minApprovals,
+      String onReject,
+      List<String> approvers,
+      String join) {}
 
   /** The route a request on a table would walk. */
   public record Route(String workflowName, List<RouteStage> stages) {}
@@ -382,7 +391,8 @@ public class AccessRequestStore {
               stage.rule().name(),
               stage.minApprovals(),
               stage.onReject().name(),
-              stage.approvers().stream().map(Seat::describe).toList()));
+              stage.approvers().stream().map(Seat::describe).toList(),
+              stage.join().name()));
     }
     return new Route(workflow.name(), List.copyOf(stages));
   }
@@ -403,18 +413,25 @@ public class AccessRequestStore {
           }
           Workflow workflow = workflows.effective(handle, assetFqn);
           int first = workflow.stages().stream().mapToInt(Stage::step).min().orElse(1);
+          // All must pass: one stage nobody can answer holds the step. Any one
+          // is enough: the step is held only when none of them can be answered.
+          boolean any = false;
+          boolean anyStranded = false;
+          boolean allStranded = true;
           for (Stage stage : workflow.stages()) {
             if (stage.step() != first) {
               continue;
             }
+            any |= stage.join() == Join.ANY;
             Pool pool = directory.pool(handle, stage.approvers(), assetFqn, requesterUsername);
-            if (StageEngine.tally(
-                    stage.rule(), stage.minApprovals(), stage.onReject(), usernames(pool.members()), List.of())
-                .stranded()) {
-              return true;
-            }
+            boolean stranded =
+                StageEngine.tally(
+                        stage.rule(), stage.minApprovals(), stage.onReject(), usernames(pool.members()), List.of())
+                    .stranded();
+            anyStranded |= stranded;
+            allStranded &= stranded;
           }
-          return false;
+          return any ? allStranded : anyStranded;
         });
   }
 
@@ -805,8 +822,8 @@ public class AccessRequestStore {
                 .createUpdate(
                     """
                     INSERT INTO access_request_stage
-                      (request_id, idx, step, name, rule, min_approvals, on_reject, approvers)
-                    VALUES (:id, :idx, :step, :name, :rule, :min, :onReject, CAST(:approvers AS jsonb))
+                      (request_id, idx, step, name, rule, min_approvals, on_reject, approvers, step_join)
+                    VALUES (:id, :idx, :step, :name, :rule, :min, :onReject, CAST(:approvers AS jsonb), :join)
                     """)
                 .bind("id", id)
                 .bind("idx", idx++)
@@ -816,6 +833,7 @@ public class AccessRequestStore {
                 .bind("min", stage.rule() == Rule.AT_LEAST ? stage.minApprovals() : null)
                 .bind("onReject", stage.onReject().name())
                 .bind("approvers", write(stage.approvers()))
+                .bind("join", stage.join().name())
                 .execute();
           }
           StoredRequest row = load(handle, id, false);
@@ -978,6 +996,7 @@ public class AccessRequestStore {
     Ctx ctx = contexts(handle, List.of(row), true).get(row.id());
     List<StageEngine.Outcome> outcomes = new ArrayList<>();
     boolean more = false;
+    Join join = Join.ALL;
     for (StageRow stage : ctx.stages()) {
       if (stage.step() > step) {
         more = true;
@@ -985,6 +1004,7 @@ public class AccessRequestStore {
       if (stage.step() != step) {
         continue;
       }
+      join = stage.join();
       StageEngine.Outcome outcome =
           switch (stage.status()) {
             case "APPROVED" -> StageEngine.Outcome.APPROVED;
@@ -1006,7 +1026,12 @@ public class AccessRequestStore {
       outcomes.add(outcome);
     }
 
-    switch (StageEngine.next(outcomes, more)) {
+    StageEngine.Next decided = StageEngine.next(outcomes, more, join);
+    if (decided == StageEngine.Next.ADVANCE || decided == StageEngine.Next.APPROVE) {
+      // Any one was enough: the stages still waiting beside it are not asked any more.
+      closeOpen(handle, row.id(), step);
+    }
+    switch (decided) {
       case WAIT -> {}
       case REJECT -> {
         handle
@@ -1054,6 +1079,18 @@ public class AccessRequestStore {
         audit(handle, "APPROVE", actor.username(), row, null, blankToNull(note), step);
       }
     }
+  }
+
+  private static void closeOpen(Handle handle, UUID id, int step) {
+    handle
+        .createUpdate(
+            """
+            UPDATE access_request_stage SET status = 'CLOSED', settled_at = now()
+             WHERE request_id = :id AND step = :step AND status = 'OPEN'
+            """)
+        .bind("id", id)
+        .bind("step", step)
+        .execute();
   }
 
   private static void closeStages(Handle handle, UUID id) {
@@ -1378,12 +1415,13 @@ public class AccessRequestStore {
       boolean fallback,
       String status,
       Instant openedAt,
-      Instant settledAt) {
+      Instant settledAt,
+      Join join) {
 
     StageRow withPool(Pool resolved) {
       return new StageRow(
           requestId, idx, step, name, rule, minApprovals, onReject, approvers,
-          resolved.members(), resolved.fallback(), status, openedAt, settledAt);
+          resolved.members(), resolved.fallback(), status, openedAt, settledAt, join);
     }
   }
 
@@ -1551,7 +1589,7 @@ public class AccessRequestStore {
             """
             SELECT request_id, idx, step, name, rule, min_approvals, on_reject,
                    approvers::text AS approvers, pool::text AS pool, fallback, status,
-                   opened_at, settled_at
+                   opened_at, settled_at, step_join
             FROM access_request_stage WHERE request_id IN (<ids>)
             ORDER BY request_id, idx
             """)
@@ -1574,7 +1612,8 @@ public class AccessRequestStore {
                   rs.getBoolean("fallback"),
                   rs.getString("status"),
                   instant(rs, "opened_at"),
-                  instant(rs, "settled_at"));
+                  instant(rs, "settled_at"),
+                  Join.valueOf(rs.getString("step_join")));
             })
         .forEach(s -> out.computeIfAbsent(s.requestId(), k -> new ArrayList<>()).add(s));
     return out;
@@ -1618,7 +1657,12 @@ public class AccessRequestStore {
 
       List<StageView> stages = new ArrayList<>();
       boolean mayDecide = false;
-      boolean stuck = false;
+      // The open step is stuck when a stage it needs cannot be answered: any
+      // one of them when all must pass, every one when any one is enough.
+      boolean anyJoin = false;
+      boolean currentSeen = false;
+      boolean anyStuck = false;
+      boolean allStuck = true;
       for (StageRow stage : ctx.stages()) {
         List<VoteView> votes = new ArrayList<>();
         boolean voted = false;
@@ -1643,7 +1687,12 @@ public class AccessRequestStore {
         boolean mayVote =
             current && !own && !voted && (contains(stage.pool(), me) || actor.platformAdmin());
         mayDecide |= mayVote;
-        stuck |= current && tally.stranded();
+        if (current) {
+          currentSeen = true;
+          anyJoin |= stage.join() == Join.ANY;
+          anyStuck |= tally.stranded();
+          allStuck &= tally.stranded();
+        }
         stages.add(
             new StageView(
                 stage.idx(),
@@ -1652,6 +1701,7 @@ public class AccessRequestStore {
                 stage.rule().name(),
                 stage.minApprovals(),
                 stage.onReject().name(),
+                stage.join().name(),
                 stage.approvers(),
                 stage.pool() == null ? List.of() : stage.pool(),
                 stage.fallback(),
@@ -1666,6 +1716,7 @@ public class AccessRequestStore {
                 mayVote));
       }
 
+      boolean stuck = currentSeen && (anyJoin ? allStuck : anyStuck);
       Pool configuring = ctx.configuring();
       boolean configurer = configuring != null && configuring.contains(me);
       boolean mayConfigure =

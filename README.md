@@ -170,3 +170,7 @@ the `anon` extension, which most managed services forbid), and SQL Server's
 Dynamic Data Masking is per column rather than per user, so it cannot express a
 cell-level mask at all. Both belong in the capability matrix so the UI warns
 when a mode is chosen rather than dropping a policy silently.
+
+## Credits
+
+Designed and built by Sakan Punyanon (MFEC).

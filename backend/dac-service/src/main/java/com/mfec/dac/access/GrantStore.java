@@ -634,6 +634,97 @@ public class GrantStore {
   }
 
   /**
+   * Changes a grant's window or reason by replacing it.
+   *
+   * <p>The row is not updated in place. A grant is also the record of what was
+   * given, and "who had access last March" has to stay answerable after
+   * somebody extends the window in April -- so the old row is revoked, saying
+   * why, and a new one with the same person, table and request is inserted in
+   * the same transaction. Nobody is without the grant in between, and the
+   * trail reads as what happened: this was replaced by that, by whom, and why.
+   *
+   * <p>Returns empty when the grant does not exist or is already revoked, as
+   * {@link #revoke} does; an edit of a tombstone would bring it back.
+   */
+  public Optional<StoredGrant> amend(
+      UUID id, Instant validFrom, Instant validUntil, String reason, String actor) {
+    if (reason == null || reason.isBlank()) {
+      throw new IllegalArgumentException("say why the grant is being changed");
+    }
+    if (validUntil != null && !validUntil.isAfter(Instant.now())) {
+      throw new IllegalArgumentException(
+          "the new end is already past; to end a grant now, revoke it");
+    }
+    Optional<StoredGrant> amended =
+        jdbi.inTransaction(
+            handle -> {
+              Optional<StoredGrant> current =
+                  handle
+                      .createQuery(
+                          """
+                          SELECT g.*, p.username, p.display_name, p.principal_type,
+                                 p.source AS principal_source
+                          FROM access_grant g
+                          JOIN principal p ON p.id = g.principal_id
+                          WHERE g.id = :id AND g.revoked_at IS NULL
+                          FOR UPDATE OF g
+                          """)
+                      .bind("id", id)
+                      .map(GrantStore::map)
+                      .findOne();
+              if (current.isEmpty()) {
+                return Optional.<StoredGrant>empty();
+              }
+              StoredGrant old = current.get();
+              // A start already past stays where it was: moving it would say the
+              // person had no access over a stretch in which they did.
+              Instant from =
+                  validFrom == null || !old.validFrom().isAfter(Instant.now())
+                      ? old.validFrom()
+                      : validFrom;
+              String why = "Replaced by an edit: " + reason.trim();
+              handle
+                  .createUpdate(
+                      """
+                      UPDATE access_grant
+                      SET revoked_at = now(), revoked_by = :by, revoke_reason = :why
+                      WHERE id = :id
+                      """)
+                  .bind("id", id)
+                  .bind("by", actor)
+                  .bind("why", why)
+                  .execute();
+              StoredGrant retired =
+                  handle
+                      .createQuery(
+                          """
+                          SELECT g.*, p.username, p.display_name, p.principal_type,
+                                 p.source AS principal_source
+                          FROM access_grant g
+                          JOIN principal p ON p.id = g.principal_id
+                          WHERE g.id = :id
+                          """)
+                      .bind("id", id)
+                      .map(GrantStore::map)
+                      .one();
+              audit(handle, "REVOKE", actor, retired, why);
+              return Optional.of(
+                  insert(
+                      handle,
+                      new NewGrant(
+                          old.assetFqn(),
+                          old.principalId(),
+                          from,
+                          validUntil,
+                          reason.trim(),
+                          actor),
+                      old.requestId()));
+            });
+    amended.ifPresent(this::announce);
+    return amended;
+  }
+
+  /**
    * Tombstones every grant whose window has closed (FR-7.2).
    *
    * <p>Expiry is already honoured on the read path, so this job does not change

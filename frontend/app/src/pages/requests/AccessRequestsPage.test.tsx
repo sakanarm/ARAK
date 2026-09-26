@@ -659,7 +659,7 @@ describe('AccessRequestsPage stages', () => {
     expect(within(stewards).getByText('1 of 2 approvals')).toBeInTheDocument();
     expect(
       within(stewards).getByText(
-        /At least 2 of 3 approve · A rejection counts only once the approvals can no longer come/
+        /At least 2 of 3 approve · Fails only once 2 approvals are out of reach/
       )
     ).toBeInTheDocument();
     expect(within(stewards).getByText('Asked stew_1, stew_2, me')).toBeInTheDocument();
@@ -708,6 +708,31 @@ describe('AccessRequestsPage stages', () => {
     expect(within(card).getByText(/so the platform administrators were asked/)).toBeInTheDocument();
     expect(within(card).getByText(/Too few people can answer for this stage/)).toBeInTheDocument();
     expect(within(card).getByText('Nobody can decide this yet')).toBeInTheDocument();
+    // Stuck is not refused: the step warns, it does not cross itself out.
+    expect(within(card).getByText('Approval').closest('li')).toHaveAttribute('data-tone', 'warning');
+  });
+
+  it('moves on when any one stage of a parallel step passes, and says why the other closed', async () => {
+    fetchInbox.mockResolvedValue([
+      request({
+        currentStep: 2,
+        stages: [
+          stage({ idx: 0, step: 1, name: 'Owners', join: 'ANY', status: 'CLOSED', approvals: 0 }),
+          stage({ idx: 1, step: 1, name: 'Security', join: 'ANY', status: 'APPROVED', approvals: 1 }),
+          stage({ idx: 2, step: 2, name: 'Privacy' }),
+        ],
+      }),
+    ]);
+    renderPage('/requests?tab=inbox');
+
+    const card = await detail();
+    const step = within(card).getByText('Step 1 · in parallel, any one is enough');
+    expect(step.closest('li')).toHaveAttribute('data-tone', 'success');
+    const owners = within(card).getByRole('group', { name: 'Stage Owners' });
+    expect(within(owners).getByText(/another stage of this step passed first/)).toBeInTheDocument();
+    expect(
+      within(within(card).getByRole('group', { name: 'Stage Security' })).queryByText(/passed first/)
+    ).toBeNull();
   });
 
   it('answers the stage this reader was asked on, and lets them pick another', async () => {

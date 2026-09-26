@@ -465,6 +465,11 @@ public final class QueryRewriter {
         if (reason.getPolicyName() == null
             || PolicyEngine.COMPOSITION.equals(reason.getPolicyName())) {
           composition = explanation;
+        } else if (reason.getPolicyType() == com.mfec.dac.schema.api.DecisionReason.PolicyType.DATA) {
+          // A data policy never lets anyone in, so one that did not apply is
+          // not why the door is shut. Naming it sent a reader after a mask
+          // condition while the real refusal was an office-hours window.
+          continue;
         } else if (refusedBy == null) {
           // The first policy that could have granted and did not: the most
           // actionable sentence, because it names the condition to look at.

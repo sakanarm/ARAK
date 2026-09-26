@@ -50,6 +50,8 @@ import {
 } from './QueryAssist';
 import { NokRakButton } from '../../assist/NokRakAsk';
 import SchemaExplorer from './SchemaExplorer';
+import { SavedQueriesPanel, SaveQueryButton } from './SavedQueries';
+import type { SavedQuery } from '../../api/savedQueries';
 import SqlEditor, { type SqlCompletionSource } from './SqlEditor';
 import { asCompletionTable, type CompletionTable } from './sqlCompletion';
 
@@ -75,6 +77,9 @@ import { asCompletionTable, type CompletionTable } from './sqlCompletion';
 export default function QueryPage() {
   const [sourceId, setSourceId] = useState('');
   const [sql, setSql] = useState('SELECT * FROM sales.customer');
+  // The saved query the editor was last opened from or saved as, so Save can
+  // offer to update it rather than keep a second copy.
+  const [opened, setOpened] = useState<SavedQuery | null>(null);
   const [asPrincipal, setAsPrincipal] = useState('');
   const [purpose, setPurpose] = useState('');
   const [maxRows, setMaxRows] = useState(String(DEFAULT_ROWS));
@@ -346,11 +351,22 @@ export default function QueryPage() {
 
       <div
         className={`tw:flex tw:min-h-0 tw:flex-1 ${fullscreen ? '' : 'tw:mt-4'}`}>
-        <SchemaExplorer
-          onInsert={insert}
-          sourceId={effectiveSource || null}
-          width={sidebarWidth}
-        />
+        <div className="tw:flex tw:min-h-0 tw:shrink-0 tw:flex-col tw:gap-2" style={{ width: sidebarWidth }}>
+          <SchemaExplorer fill onInsert={insert} sourceId={effectiveSource || null} />
+          <SavedQueriesPanel
+            onOpen={(query) => {
+              // Into the editor and no further: it runs when Run is pressed,
+              // as whoever presses it.
+              setSql(query.sql);
+              if (query.sourceId && usable.some((source) => source.id === query.sourceId)) {
+                setSourceId(query.sourceId);
+              }
+              setOpened(query);
+              run.reset();
+            }}
+            openedId={opened?.id ?? null}
+          />
+        </div>
 
         <SideSplitter onChange={setSidebarWidth} width={sidebarWidth} />
 
@@ -460,6 +476,13 @@ export default function QueryPage() {
               )}
 
               <span aria-hidden className="tw:mx-1 tw:h-5 tw:w-px tw:shrink-0 tw:bg-border-secondary" />
+
+              <SaveQueryButton
+                onSaved={setOpened}
+                opened={opened}
+                sourceId={effectiveSource}
+                sql={sql}
+              />
 
               <QuerySettings
                 maxRows={maxRows}
@@ -886,8 +909,13 @@ function ResultPanel({
 }) {
   if (error) {
     const refusal = refusalOf(error);
+    // Fills the pane and scrolls inside it. The console is sized to the
+    // viewport and clips, so a refusal carrying the request form grew past
+    // the bottom of the screen with no way to reach Submit.
     return (
-      <section className="tw:shrink-0 tw:rounded-lg tw:border tw:border-error tw:bg-error-primary tw:p-4">
+      <section
+        aria-label="Refused"
+        className="tw:min-h-0 tw:flex-1 tw:overflow-y-auto tw:overscroll-contain tw:rounded-lg tw:border tw:border-error tw:bg-error-primary tw:p-4">
         <h2 className="tw:flex tw:items-center tw:gap-2 tw:text-sm tw:font-semibold tw:text-error-primary">
           <Shield01 className="tw:size-4" />
           Refused

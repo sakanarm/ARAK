@@ -1,7 +1,23 @@
-import { useEffect, useMemo, useState } from 'react';
+import { type ReactNode, useEffect, useMemo, useState } from 'react';
+import {
+  Button as AriaButton,
+  Dialog,
+  Heading,
+  Modal,
+  ModalOverlay,
+} from 'react-aria-components';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { AlertTriangle, ArrowLeft, CheckCircle, EyeOff, Key01, XCircle } from '@untitledui/icons';
+import {
+  AlertTriangle,
+  ArrowLeft,
+  ArrowRight,
+  CheckCircle,
+  EyeOff,
+  Key01,
+  XCircle,
+  XClose,
+} from '@untitledui/icons';
 import { Chip as Badge } from '../../components/chips';
 import { Button } from '@openmetadata/ui-core-components/components/base/buttons/button';
 import { apiErrorMessage } from '../../api/client';
@@ -137,6 +153,8 @@ export default function PolicyBuilderPage() {
   // and is remembered per browser, so an author who never opens the chart sees
   // the page exactly as it has always been.
   const [view, setView] = useViewMode<'form' | 'flow' | 'diagram'>('arak.policy.view', 'form');
+  // The step open in a dialog over the chart, if one is.
+  const [editing, setEditing] = useState<number | null>(null);
   // Null until the engine list arrives, then the first one the server lists.
   // Naming one here would be this page keeping its own copy of a list that
   // exists precisely so it does not have to.
@@ -309,24 +327,244 @@ export default function PolicyBuilderPage() {
     );
   }
 
-  /**
-   * Take the author from a box in the chart to the fields that write it.
-   *
-   * The switch back to the form has to happen before the scroll, and the scroll
-   * has to wait for the form to exist — hence the deferral. Landing on a step
-   * that is not on screen yet would scroll to nothing and leave the author at
-   * the top of the page, which is the failure this is meant to avoid.
+  /*
+   * Each step once: the form lists them, and a box in the chart opens the same
+   * fields in a dialog over it -- one set of controls, two ways in.
    */
-  const editStep = (step: number) => {
-    setView('form');
-    window.setTimeout(
-      () =>
-        document
-          .getElementById(`policy-step-${step}`)
-          ?.scrollIntoView({ behavior: 'smooth', block: 'start' }),
-      0,
-    );
-  };
+  const steps: StepSpec[] = [
+    {
+      step: 1,
+      title: 'What this policy is',
+      description:
+        'The name is what everyone else will search for when they hit something they cannot explain.',
+      body: (
+        <>
+          <div className="tw:grid tw:gap-4 tw:sm:grid-cols-2">
+            <Field label="Name">
+              <TextField
+                onChange={(next) => patch({ name: next })}
+                placeholder="mask-pii-outside-clearance"
+                value={draft.name}
+              />
+            </Field>
+            <Field label="Display name">
+              <TextField
+                onChange={(next) => patch({ displayName: next || undefined })}
+                placeholder="Mask PII below clearance L2"
+                value={draft.displayName ?? ''}
+              />
+            </Field>
+            <Field
+              hint="Subscription decides who reaches the table at all. Data decides what they see inside it. They are authored by different people at different times, which is why they are separate documents."
+              label="Kind">
+              <Select
+                onChange={(next) => {
+                  const policyType = next as Policy['policyType'];
+                  // Switching to a subscription lands on a layer it is
+                  // allowed to be written at, rather than leaving the menu
+                  // displaying a level the draft no longer offers.
+                  patch(
+                    policyType === 'SUBSCRIPTION' &&
+                      !SUBSCRIPTION_LEVELS.includes(draft.scopeLevel)
+                      ? { policyType, scopeLevel: 'TABLE' }
+                      : { policyType }
+                  );
+                }}
+                options={[
+                  { value: 'SUBSCRIPTION', label: 'Subscription — who gets in' },
+                  { value: 'DATA', label: 'Data — what they see' },
+                ]}
+                value={draft.policyType}
+              />
+            </Field>
+            <Field
+              hint={
+                // Shown only when it matters. Saying "this one is enforced"
+                // on every policy would be noise; saying nothing when the
+                // policy is parked in an environment the engine never reads
+                // is how the default used to hide.
+                (draft.environment ?? ENFORCED_ENVIRONMENT) !==
+                ENFORCED_ENVIRONMENT
+                  ? `The engine decides in ${ENFORCED_ENVIRONMENT}. A policy in ` +
+                    `${draft.environment} is authored and versioned, but it is ` +
+                    `never enforced, however it is activated.`
+                  : undefined
+              }
+              label="Environment"
+            >
+              <Select
+                onChange={(next) =>
+                  patch({ environment: next as Policy['environment'] })
+                }
+                options={[
+                  {
+                    value: 'dev',
+                    label: 'dev',
+                    hint: 'Authoring only — not enforced',
+                  },
+                  {
+                    value: 'uat',
+                    label: 'uat',
+                    hint: 'Authoring only — not enforced',
+                  },
+                  {
+                    value: 'prod',
+                    label: 'prod',
+                    hint: 'The environment the engine enforces',
+                  },
+                ]}
+                value={draft.environment ?? ENFORCED_ENVIRONMENT}
+              />
+            </Field>
+            <Field className="tw:sm:col-span-2" label="Description">
+              <TextField
+                onChange={(next) => patch({ description: next || undefined })}
+                placeholder="Why this exists, for whoever reads it in a year."
+                value={draft.description ?? ''}
+              />
+            </Field>
+          </div>
+        </>
+      ),
+    },
+    {
+      step: 2,
+      title: 'Where it sits',
+      description:
+        'Higher layers cannot be relaxed by lower ones. A table-level policy adds to what the organisation already said; it never takes it away.',
+      body: (
+        <>
+          <div className="tw:grid tw:gap-4 tw:sm:grid-cols-2">
+            <Field label="Level">
+              <Select
+                onChange={(next) =>
+                  patch({ scopeLevel: next as Policy['scopeLevel'] })
+                }
+                options={levelOptions(draft)}
+                value={draft.scopeLevel}
+              />
+            </Field>
+            {draft.scopeLevel !== 'ORG' && (
+              <Field
+                hint="The anchor this level is measured from, as a fully qualified name."
+                label="Anchor">
+                <TextField
+                  onChange={(next) => patch({ scopeFqn: next || undefined })}
+                  placeholder={
+                    draft.scopeLevel === 'TABLE'
+                      ? 'demo-pg.salesdb.sales.customer'
+                      : 'prod-mssql.SalesDB.dbo'
+                  }
+                  value={draft.scopeFqn ?? ''}
+                />
+              </Field>
+            )}
+            <Field
+              className="tw:sm:col-span-2"
+              hint="Off by default. While it is off, nobody reaches these assets without matching this policy — a direct grant on a single table will show as in force and still admit nobody, which is usually the point of a global policy and occasionally the thing that looks like a bug. Every time this is used it is recorded in the audit log."
+              label="Can a grant let somebody past this policy?">
+              <Select
+                onChange={(next) =>
+                  patch({ allowLocalOverride: next === 'yes' })
+                }
+                options={[
+                  { value: 'no', label: 'No — everybody must match this policy' },
+                  {
+                    value: 'yes',
+                    label: 'Yes — a grant or a table policy may let somebody in',
+                  },
+                ]}
+                value={draft.allowLocalOverride ? 'yes' : 'no'}
+              />
+            </Field>
+          </div>
+        </>
+      ),
+    },
+    {
+      step: 3,
+      title: 'Which assets it covers',
+      description:
+        'Written against tags, terms and domains rather than table names, so an asset tagged tomorrow is covered tomorrow without anyone editing this.',
+      body: (
+        <>
+          <SelectorBuilder
+            onChange={(next) => patch({ selector: next })}
+            value={draft.selector}
+            vocabulary={vocabulary}
+          />
+        </>
+      ),
+    },
+    ...(draft.policyType === 'SUBSCRIPTION'
+      ? [
+          {
+            step: 4,
+            title: 'Who it is about',
+            description:
+              'Roles, attributes, an expression across both sides, and the hours it holds — all ANDed into one predicate.',
+            body: (
+              <>
+                <div className="tw:mb-5">
+                  <Field
+                    hint="A deny always beats an allow, anywhere in the stack, and no match at all is already a deny."
+                    label="Effect">
+                    <Select
+                      className="tw:w-56"
+                      onChange={(next) => patch({ effect: next as Policy['effect'] })}
+                      options={[
+                        { value: 'ALLOW', label: 'Allow' },
+                        { value: 'DENY', label: 'Deny' },
+                      ]}
+                      value={draft.effect ?? 'ALLOW'}
+                    />
+                  </Field>
+                </div>
+                <SubjectBuilder
+                  attributes={attributes}
+                  onChange={(next) => patch({ subject: next })}
+                  principals={principals}
+                  value={draft.subject}
+                />
+              </>
+            ),
+          },
+        ]
+      : [
+          {
+            step: 4,
+            title: 'Who it is about',
+            description:
+              'Optional. Leave it empty and the restrictions below apply to everyone who gets past the subscription policies.',
+            body: (
+              <>
+                <SubjectBuilder
+                  attributes={attributes}
+                  onChange={(next) => patch({ subject: next })}
+                  principals={principals}
+                  value={draft.subject}
+                />
+              </>
+            ),
+          },
+          {
+            step: 5,
+            title: 'What they see',
+            description:
+              'Row filters and column rules — the RLS and masking half of the policy.',
+            body: (
+              <>
+                <DataPolicyBuilder
+                  attributes={attributes}
+                  onChange={(next) => patch({ data: next })}
+                  value={draft.data}
+                  vocabulary={vocabulary}
+                />
+              </>
+            ),
+          },
+        ]),
+  ];
 
   return (
     <>
@@ -453,7 +691,7 @@ export default function PolicyBuilderPage() {
             <p className="tw:text-sm tw:text-tertiary">
               {view === 'form'
                 ? 'Fill it in top to bottom; the summary beside it follows what you write.'
-                : 'Click a step to jump to the fields that write it.'}
+                : 'Click a step to change it here; the chart redraws as you do.'}
             </p>
             <ViewToggle
               label="How to show this policy"
@@ -468,220 +706,22 @@ export default function PolicyBuilderPage() {
           </div>
           {view === 'flow' ? (
             <section className="tw:rounded-xl tw:border tw:border-secondary tw:bg-primary tw:p-5">
-              <PolicyFlowChart onEdit={editStep} policy={draft} />
+              <PolicyFlowChart onEdit={setEditing} policy={draft} />
             </section>
           ) : view === 'diagram' ? (
             <section className="tw:rounded-xl tw:border tw:border-secondary tw:bg-primary tw:p-5">
-              <PolicyDiagram onEdit={editStep} policy={draft} />
+              <PolicyDiagram onEdit={setEditing} policy={draft} />
             </section>
           ) : (
-            <>
-          <Step
-            description="The name is what everyone else will search for when they hit something they cannot explain."
-            step={1}
-            title="What this policy is">
-            <div className="tw:grid tw:gap-4 tw:sm:grid-cols-2">
-              <Field label="Name">
-                <TextField
-                  onChange={(next) => patch({ name: next })}
-                  placeholder="mask-pii-outside-clearance"
-                  value={draft.name}
-                />
-              </Field>
-              <Field label="Display name">
-                <TextField
-                  onChange={(next) => patch({ displayName: next || undefined })}
-                  placeholder="Mask PII below clearance L2"
-                  value={draft.displayName ?? ''}
-                />
-              </Field>
-              <Field
-                hint="Subscription decides who reaches the table at all. Data decides what they see inside it. They are authored by different people at different times, which is why they are separate documents."
-                label="Kind">
-                <Select
-                  onChange={(next) => {
-                    const policyType = next as Policy['policyType'];
-                    // Switching to a subscription lands on a layer it is
-                    // allowed to be written at, rather than leaving the menu
-                    // displaying a level the draft no longer offers.
-                    patch(
-                      policyType === 'SUBSCRIPTION' &&
-                        !SUBSCRIPTION_LEVELS.includes(draft.scopeLevel)
-                        ? { policyType, scopeLevel: 'TABLE' }
-                        : { policyType }
-                    );
-                  }}
-                  options={[
-                    { value: 'SUBSCRIPTION', label: 'Subscription — who gets in' },
-                    { value: 'DATA', label: 'Data — what they see' },
-                  ]}
-                  value={draft.policyType}
-                />
-              </Field>
-              <Field
-                hint={
-                  // Shown only when it matters. Saying "this one is enforced"
-                  // on every policy would be noise; saying nothing when the
-                  // policy is parked in an environment the engine never reads
-                  // is how the default used to hide.
-                  (draft.environment ?? ENFORCED_ENVIRONMENT) !==
-                  ENFORCED_ENVIRONMENT
-                    ? `The engine decides in ${ENFORCED_ENVIRONMENT}. A policy in ` +
-                      `${draft.environment} is authored and versioned, but it is ` +
-                      `never enforced, however it is activated.`
-                    : undefined
-                }
-                label="Environment"
-              >
-                <Select
-                  onChange={(next) =>
-                    patch({ environment: next as Policy['environment'] })
-                  }
-                  options={[
-                    {
-                      value: 'dev',
-                      label: 'dev',
-                      hint: 'Authoring only — not enforced',
-                    },
-                    {
-                      value: 'uat',
-                      label: 'uat',
-                      hint: 'Authoring only — not enforced',
-                    },
-                    {
-                      value: 'prod',
-                      label: 'prod',
-                      hint: 'The environment the engine enforces',
-                    },
-                  ]}
-                  value={draft.environment ?? ENFORCED_ENVIRONMENT}
-                />
-              </Field>
-              <Field className="tw:sm:col-span-2" label="Description">
-                <TextField
-                  onChange={(next) => patch({ description: next || undefined })}
-                  placeholder="Why this exists, for whoever reads it in a year."
-                  value={draft.description ?? ''}
-                />
-              </Field>
-            </div>
-          </Step>
-
-          <Step
-            description="Higher layers cannot be relaxed by lower ones. A table-level policy adds to what the organisation already said; it never takes it away."
-            step={2}
-            title="Where it sits">
-            <div className="tw:grid tw:gap-4 tw:sm:grid-cols-2">
-              <Field label="Level">
-                <Select
-                  onChange={(next) =>
-                    patch({ scopeLevel: next as Policy['scopeLevel'] })
-                  }
-                  options={levelOptions(draft)}
-                  value={draft.scopeLevel}
-                />
-              </Field>
-              {draft.scopeLevel !== 'ORG' && (
-                <Field
-                  hint="The anchor this level is measured from, as a fully qualified name."
-                  label="Anchor">
-                  <TextField
-                    onChange={(next) => patch({ scopeFqn: next || undefined })}
-                    placeholder={
-                      draft.scopeLevel === 'TABLE'
-                        ? 'demo-pg.salesdb.sales.customer'
-                        : 'prod-mssql.SalesDB.dbo'
-                    }
-                    value={draft.scopeFqn ?? ''}
-                  />
-                </Field>
-              )}
-              <Field
-                className="tw:sm:col-span-2"
-                hint="Off by default. While it is off, nobody reaches these assets without matching this policy — a direct grant on a single table will show as in force and still admit nobody, which is usually the point of a global policy and occasionally the thing that looks like a bug. Every time this is used it is recorded in the audit log."
-                label="Can a grant let somebody past this policy?">
-                <Select
-                  onChange={(next) =>
-                    patch({ allowLocalOverride: next === 'yes' })
-                  }
-                  options={[
-                    { value: 'no', label: 'No — everybody must match this policy' },
-                    {
-                      value: 'yes',
-                      label: 'Yes — a grant or a table policy may let somebody in',
-                    },
-                  ]}
-                  value={draft.allowLocalOverride ? 'yes' : 'no'}
-                />
-              </Field>
-            </div>
-          </Step>
-
-          <Step
-            description="Written against tags, terms and domains rather than table names, so an asset tagged tomorrow is covered tomorrow without anyone editing this."
-            step={3}
-            title="Which assets it covers">
-            <SelectorBuilder
-              onChange={(next) => patch({ selector: next })}
-              value={draft.selector}
-              vocabulary={vocabulary}
-            />
-          </Step>
-
-          {draft.policyType === 'SUBSCRIPTION' ? (
-            <Step
-              description="Roles, attributes, an expression across both sides, and the hours it holds — all ANDed into one predicate."
-              step={4}
-              title="Who it is about">
-              <div className="tw:mb-5">
-                <Field
-                  hint="A deny always beats an allow, anywhere in the stack, and no match at all is already a deny."
-                  label="Effect">
-                  <Select
-                    className="tw:w-56"
-                    onChange={(next) => patch({ effect: next as Policy['effect'] })}
-                    options={[
-                      { value: 'ALLOW', label: 'Allow' },
-                      { value: 'DENY', label: 'Deny' },
-                    ]}
-                    value={draft.effect ?? 'ALLOW'}
-                  />
-                </Field>
-              </div>
-              <SubjectBuilder
-                attributes={attributes}
-                onChange={(next) => patch({ subject: next })}
-                principals={principals}
-                value={draft.subject}
-              />
-            </Step>
-          ) : (
-            <>
+            steps.map((entry) => (
               <Step
-                description="Optional. Leave it empty and the restrictions below apply to everyone who gets past the subscription policies."
-                step={4}
-                title="Who it is about">
-                <SubjectBuilder
-                  attributes={attributes}
-                  onChange={(next) => patch({ subject: next })}
-                  principals={principals}
-                  value={draft.subject}
-                />
+                description={entry.description}
+                key={entry.step}
+                step={entry.step}
+                title={entry.title}>
+                {entry.body}
               </Step>
-              <Step
-                description="Row filters and column rules — the RLS and masking half of the policy."
-                step={5}
-                title="What they see">
-                <DataPolicyBuilder
-                  attributes={attributes}
-                  onChange={(next) => patch({ data: next })}
-                  value={draft.data}
-                  vocabulary={vocabulary}
-                />
-              </Step>
-            </>
-          )}
-            </>
+            ))
           )}
         </div>
 
@@ -796,7 +836,111 @@ export default function PolicyBuilderPage() {
           </section>
         </aside>
       </div>
+
+      <StepDialog
+        onClose={() => setEditing(null)}
+        onOpen={setEditing}
+        open={view === 'form' ? null : editing}
+        steps={steps}
+      />
     </>
+  );
+}
+
+interface StepSpec {
+  step: number;
+  title: string;
+  description: string;
+  body: ReactNode;
+}
+
+/**
+ * One step of the form, opened over the chart from the box it writes.
+ *
+ * Clicking a box used to switch back to the form and scroll to the step, which
+ * lost the overview the chart is there for: the author changed one field and
+ * then had to switch back to see what it did. Here the chart stays where it is
+ * and redraws behind a light overlay as the fields change, so closing the
+ * dialog lands on the result. Previous and Next walk the steps in form order
+ * without leaving it.
+ */
+function StepDialog({
+  steps,
+  open,
+  onOpen,
+  onClose,
+}: {
+  steps: StepSpec[];
+  open: number | null;
+  onOpen: (step: number) => void;
+  onClose: () => void;
+}) {
+  const index = steps.findIndex((entry) => entry.step === open);
+  const entry = index >= 0 ? steps[index] : null;
+  const previous = index > 0 ? steps[index - 1] : null;
+  const next = index >= 0 && index < steps.length - 1 ? steps[index + 1] : null;
+
+  return (
+    <ModalOverlay
+      className="tw:fixed tw:inset-0 tw:z-50 tw:flex tw:items-center tw:justify-center tw:bg-overlay/40 tw:p-4"
+      isDismissable
+      isOpen={entry !== null}
+      onOpenChange={(isOpen) => {
+        if (!isOpen) onClose();
+      }}>
+      <Modal className="tw:w-full tw:max-w-3xl">
+        <Dialog className="tw:flex tw:max-h-[85vh] tw:flex-col tw:rounded-xl tw:border tw:border-secondary tw:bg-primary tw:shadow-xl tw:outline-none">
+          {entry && (
+            <>
+              <header className="tw:flex tw:items-start tw:gap-3 tw:border-b tw:border-secondary tw:px-5 tw:py-4">
+                <span className="tw:mt-0.5 tw:flex tw:h-6 tw:w-6 tw:flex-none tw:items-center tw:justify-center tw:rounded-full tw:bg-brand-solid tw:text-xs tw:font-semibold tw:text-white">
+                  {entry.step}
+                </span>
+                <div className="tw:min-w-0 tw:flex-1">
+                  <Heading className="tw:text-md tw:font-semibold tw:text-primary" slot="title">
+                    {entry.title}
+                  </Heading>
+                  <p className="tw:mt-0.5 tw:text-sm tw:text-tertiary">{entry.description}</p>
+                </div>
+                <AriaButton
+                  aria-label="Close"
+                  className="tw:flex tw:size-8 tw:shrink-0 tw:cursor-pointer tw:items-center tw:justify-center tw:rounded-lg tw:text-fg-quaternary tw:outline-none tw:hover:bg-primary_hover tw:focus-visible:outline-2 tw:focus-visible:outline-brand"
+                  onPress={onClose}>
+                  <XClose className="tw:size-5" />
+                </AriaButton>
+              </header>
+              <div className="tw:min-h-0 tw:flex-1 tw:overflow-y-auto tw:p-5">{entry.body}</div>
+              <footer className="tw:flex tw:items-center tw:justify-between tw:gap-2 tw:border-t tw:border-secondary tw:px-5 tw:py-3">
+                <div className="tw:flex tw:items-center tw:gap-2">
+                  <Button
+                    color="secondary"
+                    iconLeading={ArrowLeft}
+                    isDisabled={!previous}
+                    onPress={() => previous && onOpen(previous.step)}
+                    size="sm">
+                    Previous
+                  </Button>
+                  <Button
+                    color="secondary"
+                    iconTrailing={ArrowRight}
+                    isDisabled={!next}
+                    onPress={() => next && onOpen(next.step)}
+                    size="sm">
+                    Next
+                  </Button>
+                  <span className="tw:text-xs tw:text-quaternary">
+                    Step {index + 1} of {steps.length}
+                  </span>
+                </div>
+                <Button onPress={onClose} size="sm">
+                  Done
+                </Button>
+              </footer>
+            </>
+          )}
+        </Dialog>
+      </Modal>
+    </ModalOverlay>
   );
 }
 

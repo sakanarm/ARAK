@@ -16,6 +16,7 @@ import com.mfec.dac.access.GrantStore;
 import com.mfec.dac.auth.AuthenticatedUser;
 import com.mfec.dac.enforcement.SecureViewService;
 import com.mfec.dac.policy.DecisionService;
+import jakarta.ws.rs.BadRequestException;
 import jakarta.ws.rs.ForbiddenException;
 import jakarta.ws.rs.NotFoundException;
 import jakarta.ws.rs.core.SecurityContext;
@@ -125,6 +126,59 @@ class StewardshipGuardsTest {
       when(grants.find(id)).thenReturn(Optional.empty());
       assertThatThrownBy(
               () -> resource.revoke(id, new AccessResource.RevokeRequest("left"), as(SALES_OWNER)))
+          .isInstanceOf(NotFoundException.class);
+    }
+
+    AccessResource.AmendRequest longer() {
+      return new AccessResource.AmendRequest(null, Instant.now().plusSeconds(86_400), "longer");
+    }
+
+    @Test
+    @DisplayName("a data owner edits a grant on a table they own")
+    void amendInScope() {
+      UUID id = UUID.randomUUID();
+      when(grants.find(id)).thenReturn(Optional.of(stored(id, OWNED)));
+      when(grants.amend(eq(id), any(), any(), eq("longer"), eq("sales_owner")))
+          .thenReturn(Optional.of(stored(UUID.randomUUID(), OWNED)));
+      assertThat(resource.amend(id, longer(), as(SALES_OWNER))).isNotNull();
+    }
+
+    @Test
+    @DisplayName("a data owner cannot edit a grant on a table they do not own")
+    void amendOutOfScope() {
+      UUID id = UUID.randomUUID();
+      when(grants.find(id)).thenReturn(Optional.of(stored(id, ELSEWHERE)));
+      assertThatThrownBy(() -> resource.amend(id, longer(), as(SALES_OWNER)))
+          .isInstanceOf(ForbiddenException.class);
+      verify(grants, never()).amend(any(), any(), any(), anyString(), anyString());
+    }
+
+    @Test
+    @DisplayName("nobody extends their own grant, an administrator included")
+    void amendNotOwnAccess() {
+      UUID id = UUID.randomUUID();
+      GrantStore.StoredGrant mine = stored(id, OWNED);
+      when(grants.find(id)).thenReturn(Optional.of(mine));
+      when(grants.reaches("admin", mine.principalId())).thenReturn(true);
+      assertThatThrownBy(() -> resource.amend(id, longer(), as(ADMIN)))
+          .isInstanceOf(ForbiddenException.class)
+          .hasMessageContaining("Nobody changes their own access");
+      verify(grants, never()).amend(any(), any(), any(), anyString(), anyString());
+    }
+
+    @Test
+    @DisplayName("an edit needs a reason, and a revoked grant cannot be edited")
+    void amendNeedsReasonAndALiveGrant() {
+      UUID id = UUID.randomUUID();
+      assertThatThrownBy(
+              () -> resource.amend(id, new AccessResource.AmendRequest(null, null, " "), as(ADMIN)))
+          .isInstanceOf(BadRequestException.class);
+      GrantStore.StoredGrant gone =
+          new GrantStore.StoredGrant(
+              id, OWNED, UUID.randomUUID(), "analyst", "Analyst", "user", "local", "manual", null,
+              null, null, "because", "admin", Instant.now(), Instant.now(), "admin", "left");
+      when(grants.find(id)).thenReturn(Optional.of(gone));
+      assertThatThrownBy(() -> resource.amend(id, longer(), as(ADMIN)))
           .isInstanceOf(NotFoundException.class);
     }
   }

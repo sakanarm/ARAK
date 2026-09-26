@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   AlertTriangle,
   Clock,
+  Edit05,
   Plus,
   SlashCircle01,
   User01,
@@ -11,6 +12,7 @@ import {
 import { Chip as Badge } from '../../components/chips';
 import { Button } from '@openmetadata/ui-core-components/components/base/buttons/button';
 import {
+  amendGrant,
   createGrant,
   fetchAssetAccess,
   revokeGrant,
@@ -20,6 +22,7 @@ import {
 import { apiErrorMessage } from '../../api/client';
 import { Panel } from './panels';
 import { GrantDialog } from './GrantDialog';
+import { AccessDecision } from './AccessDecision';
 import { useAuthStore } from '../../auth/authStore';
 import { governs } from '../../auth/stewardship';
 
@@ -72,6 +75,12 @@ export function AccessTab({ fqn }: { fqn: string }) {
     onSuccess: refresh,
   });
 
+  const amend = useMutation({
+    mutationFn: ({ id, change }: { id: string; change: GrantChange }) =>
+      amendGrant(id, change),
+    onSuccess: refresh,
+  });
+
   if (isLoading) {
     return <p className="tw:text-sm tw:text-tertiary">Loading…</p>;
   }
@@ -107,6 +116,11 @@ export function AccessTab({ fqn }: { fqn: string }) {
             {apiErrorMessage(revoke.error, 'That grant could not be revoked.')}
           </Notice>
         )}
+        {amend.isError && (
+          <Notice tone="error">
+            {apiErrorMessage(amend.error, 'That grant could not be changed.')}
+          </Notice>
+        )}
 
         {data.grants.length === 0 ? (
           <p className="tw:text-sm tw:text-tertiary">
@@ -117,9 +131,14 @@ export function AccessTab({ fqn }: { fqn: string }) {
           <div className="tw:space-y-2">
             {live.map((grant) => (
               <GrantRow
-                busy={revoke.isPending}
+                busy={revoke.isPending || amend.isPending}
                 grant={grant}
                 key={grant.id}
+                onAmend={
+                  mayChange
+                    ? (change) => amend.mutate({ id: grant.id, change })
+                    : undefined
+                }
                 onRevoke={
                   mayChange ? (reason) => revoke.mutate({ id: grant.id, reason }) : undefined
                 }
@@ -146,6 +165,12 @@ export function AccessTab({ fqn }: { fqn: string }) {
             )}
           </div>
         )}
+      </Panel>
+
+      <Panel
+        subtitle="The checks a request for this table goes through, in the order the engine runs them"
+        title="How access is decided">
+        <AccessDecision fqn={fqn} grants={data.grants} />
       </Panel>
 
       <Panel
@@ -207,14 +232,17 @@ export function AccessTab({ fqn }: { fqn: string }) {
 function GrantRow({
   grant,
   onRevoke,
+  onAmend,
   busy,
 }: {
   grant: GrantAccess;
   /** Absent for someone who may not revoke here. */
   onRevoke?: (reason: string) => void;
+  /** Absent for someone who may not change grants here. */
+  onAmend?: (change: GrantChange) => void;
   busy: boolean;
 }) {
-  const [confirming, setConfirming] = useState(false);
+  const [mode, setMode] = useState<'idle' | 'revoke' | 'edit'>('idle');
   const [reason, setReason] = useState('');
   const group = grant.principalType === 'GROUP';
   const overruled = grant.live && grant.effectiveFor === 0;
@@ -296,44 +324,194 @@ function GrantRow({
         </div>
       )}
 
-      {grant.live &&
-        onRevoke &&
-        (confirming ? (
-          <div className="tw:mt-3 tw:flex tw:flex-wrap tw:items-center tw:gap-2">
-            <input
-              aria-label="Why this grant is being revoked"
-              className="tw:min-w-0 tw:flex-1 tw:rounded-md tw:border tw:border-secondary tw:bg-primary tw:px-2.5 tw:py-1.5 tw:text-sm tw:text-primary tw:placeholder:text-quaternary"
-              onChange={(event) => setReason(event.target.value)}
-              placeholder="Why is this being revoked?"
-              value={reason}
-            />
+      {grant.live && mode === 'revoke' && onRevoke && (
+        <div className="tw:mt-3 tw:flex tw:flex-wrap tw:items-center tw:gap-2">
+          <input
+            aria-label="Why this grant is being revoked"
+            className="tw:min-w-0 tw:flex-1 tw:rounded-md tw:border tw:border-secondary tw:bg-primary tw:px-2.5 tw:py-1.5 tw:text-sm tw:text-primary tw:placeholder:text-quaternary"
+            onChange={(event) => setReason(event.target.value)}
+            placeholder="Why is this being revoked?"
+            value={reason}
+          />
+          <Button
+            color="primary-destructive"
+            isDisabled={busy || reason.trim().length === 0}
+            onPress={() => onRevoke(reason.trim())}
+            size="sm">
+            Revoke
+          </Button>
+          <Button color="link-gray" onPress={() => setMode('idle')} size="sm">
+            Cancel
+          </Button>
+        </div>
+      )}
+
+      {grant.live && mode === 'edit' && onAmend && (
+        <GrantEditor
+          busy={busy}
+          grant={grant}
+          onCancel={() => setMode('idle')}
+          onSave={(change) => {
+            onAmend(change);
+            setMode('idle');
+          }}
+        />
+      )}
+
+      {grant.live && mode === 'idle' && (onRevoke || onAmend) && (
+        <div className="tw:mt-3 tw:flex tw:gap-2">
+          {onAmend && (
             <Button
-              color="primary-destructive"
-              isDisabled={busy || reason.trim().length === 0}
-              onPress={() => onRevoke(reason.trim())}
+              color="secondary"
+              iconLeading={Edit05}
+              onPress={() => setMode('edit')}
               size="sm">
-              Revoke
+              Edit
             </Button>
-            <Button
-              color="link-gray"
-              onPress={() => setConfirming(false)}
-              size="sm">
-              Cancel
-            </Button>
-          </div>
-        ) : (
-          <div className="tw:mt-3">
+          )}
+          {onRevoke && (
             <Button
               color="secondary"
               iconLeading={SlashCircle01}
-              onPress={() => setConfirming(true)}
+              onPress={() => setMode('revoke')}
               size="sm">
               Revoke
             </Button>
-          </div>
-        ))}
+          )}
+        </div>
+      )}
     </div>
   );
+}
+
+/** What an edit sends: the new window and why. */
+export interface GrantChange {
+  validFrom?: string | null;
+  validUntil: string | null;
+  reason: string;
+}
+
+/**
+ * The window of a live grant, changed in place.
+ *
+ * <p>The server keeps the old row as a revoked one and writes the new window
+ * beside it, so the audit trail still reads what was there before. A start
+ * that has already passed is not offered: moving it would claim the person had
+ * no access over a stretch in which they did.
+ */
+function GrantEditor({
+  grant,
+  busy,
+  onSave,
+  onCancel,
+}: {
+  grant: GrantAccess;
+  busy: boolean;
+  onSave: (change: GrantChange) => void;
+  onCancel: () => void;
+}) {
+  const started = !grant.validFrom || new Date(grant.validFrom) <= new Date();
+  const [startsAt, setStartsAt] = useState(localInput(grant.validFrom));
+  const [noExpiry, setNoExpiry] = useState(!grant.validUntil);
+  const [endsAt, setEndsAt] = useState(localInput(grant.validUntil));
+  const [reason, setReason] = useState('');
+
+  const from = !started && startsAt ? new Date(startsAt) : null;
+  const until = !noExpiry && endsAt ? new Date(endsAt) : null;
+  const problem =
+    !noExpiry && !endsAt
+      ? 'Pick when it ends, or tick No expiry.'
+      : until && Number.isNaN(until.getTime())
+        ? 'That is not a date.'
+        : until && until <= new Date()
+          ? 'That end has already passed. To end a grant now, revoke it.'
+          : until && from && until <= from
+            ? 'The end has to come after the start.'
+            : null;
+
+  return (
+    <div className="tw:mt-3 tw:space-y-3 tw:rounded-md tw:bg-secondary tw:p-3">
+      <div className="tw:flex tw:flex-wrap tw:items-end tw:gap-3">
+        {!started && (
+          <div>
+            <label
+              className="tw:block tw:text-xs tw:text-tertiary"
+              htmlFor={`starts-${grant.id}`}>
+              Starts
+            </label>
+            <input
+              className="tw:rounded-md tw:border tw:border-secondary tw:bg-primary tw:px-2 tw:py-1 tw:text-sm tw:text-primary"
+              id={`starts-${grant.id}`}
+              onChange={(event) => setStartsAt(event.target.value)}
+              type="datetime-local"
+              value={startsAt}
+            />
+          </div>
+        )}
+        <div>
+          <label
+            className="tw:block tw:text-xs tw:text-tertiary"
+            htmlFor={`ends-${grant.id}`}>
+            Ends
+          </label>
+          <input
+            className="tw:rounded-md tw:border tw:border-secondary tw:bg-primary tw:px-2 tw:py-1 tw:text-sm tw:text-primary tw:disabled:opacity-50"
+            disabled={noExpiry}
+            id={`ends-${grant.id}`}
+            onChange={(event) => setEndsAt(event.target.value)}
+            type="datetime-local"
+            value={endsAt}
+          />
+        </div>
+        <label className="tw:inline-flex tw:items-center tw:gap-1.5 tw:pb-1.5 tw:text-sm tw:text-secondary">
+          <input
+            checked={noExpiry}
+            onChange={(event) => setNoExpiry(event.target.checked)}
+            type="checkbox"
+          />
+          No expiry
+        </label>
+      </div>
+      <input
+        aria-label="Why this grant is being changed"
+        className="tw:w-full tw:rounded-md tw:border tw:border-secondary tw:bg-primary tw:px-2.5 tw:py-1.5 tw:text-sm tw:text-primary tw:placeholder:text-quaternary"
+        onChange={(event) => setReason(event.target.value)}
+        placeholder="Why is this being changed?"
+        value={reason}
+      />
+      {problem && <p className="tw:text-xs tw:text-error-primary">{problem}</p>}
+      <div className="tw:flex tw:gap-2">
+        <Button
+          isDisabled={busy || problem !== null || reason.trim().length === 0}
+          onPress={() =>
+            onSave({
+              ...(from ? { validFrom: from.toISOString() } : {}),
+              validUntil: until ? until.toISOString() : null,
+              reason: reason.trim(),
+            })
+          }
+          size="sm">
+          Save
+        </Button>
+        <Button color="link-gray" onPress={onCancel} size="sm">
+          Cancel
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+/** An ISO instant as a datetime-local value, in the browser's own zone. */
+function localInput(value: string | null): string {
+  if (!value) {
+    return '';
+  }
+  const at = new Date(value);
+  if (Number.isNaN(at.getTime())) {
+    return '';
+  }
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())}T${pad(at.getHours())}:${pad(at.getMinutes())}`;
 }
 
 /**

@@ -306,7 +306,8 @@ function StepsView({ stages }: { stages: WorkflowStage[] }) {
                 key={stage.name}>
                 <span className="tw:block tw:text-sm tw:font-medium tw:text-primary">{stage.name}</span>
                 <span className="tw:block tw:text-xs tw:text-tertiary">
-                  {describeRule(stage.rule, stage.minApprovals)} · {describeOnReject(stage.onReject)}
+                  {describeRule(stage.rule, stage.minApprovals)} ·{' '}
+                  {describeOnReject(stage.onReject, stage.rule, stage.minApprovals)}
                 </span>
                 <span className="tw:block tw:text-xs tw:text-secondary">
                   Asks {stage.approvers.map(describeSeat).join(', ')}

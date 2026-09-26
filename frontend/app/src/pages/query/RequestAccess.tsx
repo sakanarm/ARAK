@@ -14,7 +14,7 @@ import {
   type Refusal,
   type Route,
 } from '../../api/accessRequests';
-import { stepsOf } from '../../api/accessWorkflows';
+import { joinOf, stepsOf } from '../../api/accessWorkflows';
 import {
   checkAnswers,
   fetchEffectiveTemplate,
@@ -461,7 +461,11 @@ export function whoDecides(refusal: Refusal): string {
     return describeApprovers(refusal.approvers, refusal.stranded);
   }
   const steps = stepsOf(route.stages).map((group) =>
-    group.length === 1 ? group[0].name : `${group.map((stage) => stage.name).join(' and ')} together`
+    group.length === 1
+      ? group[0].name
+      : joinOf(group) === 'ANY'
+        ? `${group.map((stage) => stage.name).join(' or ')}, whichever passes first`
+        : `${group.map((stage) => stage.name).join(' and ')} together`
   );
   return `It goes through the “${route.workflowName}” workflow: ${steps.join(', then ')}.`;
 }
@@ -494,14 +498,15 @@ export function RouteSteps({ route }: { route: Route }) {
             <span className="tw:flex tw:min-w-0 tw:flex-col tw:gap-1">
               {group.length > 1 && (
                 <span className="tw:text-xs tw:text-tertiary">
-                  Step {index + 1} · in parallel
+                  Step {index + 1} · in parallel{joinOf(group) === 'ANY' ? ', any one is enough' : ''}
                 </span>
               )}
               {group.map((stage) => (
                 <span className="tw:block" key={`${stage.step}-${stage.name}`}>
                   <span className="tw:text-sm tw:font-medium tw:text-primary">{stage.name}</span>
                   <span className="tw:block tw:text-xs tw:text-tertiary">
-                    {describeRule(stage.rule, stage.minApprovals)} · {describeOnReject(stage.onReject)}
+                    {describeRule(stage.rule, stage.minApprovals)} ·{' '}
+                    {describeOnReject(stage.onReject, stage.rule, stage.minApprovals)}
                   </span>
                   <span className="tw:block tw:text-xs tw:text-secondary">
                     Asks {stage.approvers.join(', ') || 'nobody'}

@@ -174,8 +174,13 @@ public final class AgentPrompts {
         "- Write plain text: no Markdown, no bold, no backticks, no tables. It is shown exactly"
             + " as you write it.\n");
     out.append(
-        "- Tables and pages your tools found are shown to the person as cards under your"
-            + " answer. Say what you found in a sentence or two; do not list every table again.\n");
+        "- Pages your tools found, and the tables you name, are shown to the person as cards"
+            + " under your answer. Name each table that answers the question by its full name,"
+            + " and leave out tables a search touched that do not answer it. Say what you found"
+            + " in a sentence or two.\n");
+    out.append(
+        "- Say whether the person can read a table or may request access to it in plain words;"
+            + " never write READABLE or REQUESTABLE.\n");
     out.append(
         "- You cannot run a query, save or activate a policy, approve or submit a request, or"
             + " change a setting, and you must never say you did. Anything you write is a"

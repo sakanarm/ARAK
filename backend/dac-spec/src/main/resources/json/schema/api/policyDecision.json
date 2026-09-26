@@ -48,6 +48,11 @@
         "scopeLevel": { "$ref": "../entity/policy/policy.json#/definitions/scopeLevel" },
         "scopeFqn": { "$ref": "../type/basic.json#/definitions/fullyQualifiedName" },
         "effect": { "type": "string", "enum": ["ALLOW", "DENY"] },
+        "policyType": {
+          "description": "Which kind of policy this reason is about. Only a SUBSCRIPTION policy can let a principal in; a DATA policy that did not apply only means its masks and filters were not added.",
+          "type": "string",
+          "enum": ["SUBSCRIPTION", "DATA"]
+        },
         "matched": { "type": "boolean" },
         "explanation": { "type": "string" }
       },

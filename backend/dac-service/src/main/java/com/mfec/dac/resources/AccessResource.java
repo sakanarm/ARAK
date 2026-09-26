@@ -299,6 +299,57 @@ public class AccessResource {
   /** The body of a revocation. */
   public record RevokeRequest(String reason) {}
 
+  /**
+   * What a caller sends to change a grant.
+   *
+   * @param validUntil the new end; null means open-ended, as on creation
+   * @param validFrom the new start; ignored once the grant has started
+   */
+  public record AmendRequest(Instant validFrom, Instant validUntil, String reason) {}
+
+  /**
+   * Changes a grant's window or reason.
+   *
+   * <p>The grant is replaced, not rewritten (see {@link GrantStore#amend}), so
+   * the answer is the new grant with a new id. The same lines hold as on
+   * creation: only whoever governs the table, never for oneself -- extending
+   * one's own grant is granting oneself access for longer -- and a reason.
+   */
+  @POST
+  @Path("/grants/{id}/amend")
+  @Consumes(MediaType.APPLICATION_JSON)
+  @Secured({"PLATFORM_ADMIN", "POLICY_AUTHOR", "DATA_OWNER"})
+  public GrantStore.StoredGrant amend(
+      @PathParam("id") UUID id, AmendRequest request, @Context SecurityContext security) {
+    AuthenticatedUser actor = caller(security);
+    String why = request == null ? null : request.reason();
+    if (why == null || why.isBlank()) {
+      throw new BadRequestException("Say why this grant is being changed");
+    }
+    GrantStore.StoredGrant existing =
+        grants
+            .find(id)
+            .filter(grant -> grant.revokedAt() == null)
+            .orElseThrow(() -> new NotFoundException("No grant " + id + " is outstanding"));
+    if (!Stewardship.governs(actor, existing.assetFqn())) {
+      throw new ForbiddenException(
+          "You can change grants only on tables you own; "
+              + existing.assetFqn()
+              + " is not one of them");
+    }
+    if (grants.reaches(actor.username(), existing.principalId())) {
+      throw new ForbiddenException(
+          "Nobody changes their own access; ask another owner or an administrator");
+    }
+    try {
+      return grants
+          .amend(id, request.validFrom(), request.validUntil(), why, actor.username())
+          .orElseThrow(() -> new NotFoundException("No grant " + id + " is outstanding"));
+    } catch (IllegalArgumentException e) {
+      throw new BadRequestException(e.getMessage());
+    }
+  }
+
   private static AuthenticatedUser caller(SecurityContext security) {
     if (security == null || !(security.getUserPrincipal() instanceof AuthenticatedUser user)) {
       throw new ForbiddenException("No caller on this request");

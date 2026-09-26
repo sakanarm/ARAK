@@ -8,11 +8,12 @@ import { relativeTime } from '../../components/widgets';
 import FlowDiagram from '../../components/diagram/FlowDiagram';
 import TabStrip, { panelId, tabId } from '../../components/TabStrip';
 import { apiErrorMessage } from '../../api/client';
-import { describeOnReject, describeRule, describeSeat, type Seat } from '../../api/accessRequests';
+import { describeOnReject, describeRule, describeSeat, type Seat, type StepJoin } from '../../api/accessRequests';
 import {
   createWorkflow,
   fetchWorkflowExecutions,
   fetchWorkflows,
+  joinOf,
   updateWorkflow,
   WORKFLOWS_KEY,
   type AccessWorkflow,
@@ -221,7 +222,11 @@ function Builder({
   };
   const addAlongside = (step: number) => {
     const index = workflow.stages.length;
-    setStages((stages) => [...stages, newStage(step, freshName(stages))]);
+    // A stage added beside others joins them the way they already join.
+    setStages((stages) => [
+      ...stages,
+      { ...newStage(step, freshName(stages)), join: stages.find((stage) => stage.step === step)?.join },
+    ]);
     setSelected(stageNodeId(index));
   };
   const removeStage = (index: number) => {
@@ -442,6 +447,10 @@ function Inspector({
 }) {
   const index = stageIndexOf(selected);
   const stage = index === null ? undefined : workflow.stages[index];
+  const siblings = stage ? workflow.stages.filter((other) => other.step === stage.step) : [];
+  const join = joinOf(siblings);
+  const setJoin = (step: number, next: StepJoin) =>
+    setStages((stages) => stages.map((other) => (other.step === step ? { ...other, join: next } : other)));
 
   let heading = 'Choose a node';
   let body: React.ReactNode = (
@@ -458,7 +467,7 @@ function Inspector({
         <li className="tw:flex tw:items-center tw:gap-2">
           <span className="tw:h-0.5 tw:w-5 tw:rounded-full tw:bg-fg-error-primary" /> Stops the request when refused
         </li>
-        <li>Stages in one column are asked at the same time.</li>
+        <li>Stages in one column are asked at the same time; the step says whether all or any one must approve.</li>
       </ul>
     </div>
   );
@@ -532,6 +541,28 @@ function Inspector({
           }
           stage={stage}
         />
+        {siblings.length > 1 && (
+          <fieldset className="tw:flex tw:flex-col tw:gap-2 tw:rounded-lg tw:border tw:border-secondary tw:px-3 tw:py-3">
+            <legend className="tw:px-1 tw:text-xs tw:font-medium tw:text-secondary">
+              The {siblings.length} stages of step {stage.step}
+            </legend>
+            {JOINS.map((option) => (
+              <label className="tw:flex tw:items-start tw:gap-2 tw:text-sm" key={option.value}>
+                <input
+                  checked={join === option.value}
+                  className="tw:mt-1"
+                  name={`join-${stage.step}`}
+                  onChange={() => setJoin(stage.step, option.value)}
+                  type="radio"
+                />
+                <span>
+                  <span className="tw:block tw:text-primary">{option.label}</span>
+                  <span className="tw:block tw:text-xs tw:text-tertiary">{option.hint}</span>
+                </span>
+              </label>
+            ))}
+          </fieldset>
+        )}
         <div className="tw:flex tw:flex-wrap tw:gap-2">
           <Button
             color="secondary"
@@ -560,7 +591,12 @@ function Inspector({
       <dl className="tw:flex tw:flex-col tw:gap-3 tw:text-sm">
         <Fact label="Step">{stage.step}</Fact>
         <Fact label="Passes when">{describeRule(stage.rule, stage.minApprovals ?? null)}</Fact>
-        <Fact label="A rejection">{describeOnReject(stage.onReject)}</Fact>
+        <Fact label="If someone says no">{describeOnReject(stage.onReject, stage.rule, stage.minApprovals)}</Fact>
+        {siblings.length > 1 && (
+          <Fact label={`With the others of step ${stage.step}`}>
+            {JOINS.find((option) => option.value === join)?.label}
+          </Fact>
+        )}
         <Fact label="Asks">{seats(stage.approvers)}</Fact>
       </dl>
     );
@@ -594,6 +630,19 @@ function Inspector({
     </aside>
   );
 }
+
+const JOINS: { value: StepJoin; label: string; hint: string }[] = [
+  {
+    value: 'ALL',
+    label: 'All must approve',
+    hint: 'The request goes on once every stage has passed; any one failing stops it.',
+  },
+  {
+    value: 'ANY',
+    label: 'Any one is enough',
+    hint: 'The first stage to pass moves the request on and closes the others; it stops only if every stage fails.',
+  },
+];
 
 function seats(list: Seat[]): string {
   return list.map(describeSeat).join(', ');

@@ -7,6 +7,7 @@ import static org.assertj.core.api.Assertions.tuple;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.mfec.dac.access.AccessWorkflow.Draft;
+import com.mfec.dac.access.AccessWorkflow.Join;
 import com.mfec.dac.access.AccessWorkflow.Kind;
 import com.mfec.dac.access.AccessWorkflow.OnReject;
 import com.mfec.dac.access.AccessWorkflow.Rule;
@@ -874,6 +875,42 @@ class AccessRequestIT {
 
       assertThat(requests.approve(made.id(), SEC_A, null, null).status()).isEqualTo("APPROVED");
       assertThat(trail(made.id())).containsExactly("APPROVE", "VOTE", "VOTE", "REQUEST");
+    }
+
+    @Test
+    @DisplayName("stages of one step side by side, any one enough: the first to pass moves it on")
+    void parallelAnyOne() {
+      workflow(
+          DBO,
+          List.of(),
+          new Stage(1, "Owner", Rule.ANY, null, OnReject.VETO, List.of(Seat.of(Kind.ASSET_OWNERS)), Join.ANY),
+          new Stage(1, "Security", Rule.ANY, null, OnReject.VETO, List.of(user("sec_a")), Join.ANY),
+          stage(2, "Privacy", Rule.ANY, null, OnReject.VETO, user("sec_b")));
+
+      AccessRequestStore.StoredRequest made = ask("analyst_a", CUSTOMER, 7);
+      assertThat(made.stages()).extracting(AccessRequestStore.StageView::join)
+          .containsExactly("ANY", "ANY", "ALL");
+      assertThat(made.stages()).extracting(AccessRequestStore.StageView::status)
+          .containsExactly("OPEN", "OPEN", "WAITING");
+
+      // Security says yes: the step passes without the owner, whose stage closes.
+      AccessRequestStore.StoredRequest moved = requests.approve(made.id(), SEC_A, null, null);
+      assertThat(moved.status()).isEqualTo("PENDING");
+      assertThat(moved.currentStep()).isEqualTo(2);
+      assertThat(moved.stages()).extracting(AccessRequestStore.StageView::status)
+          .containsExactly("CLOSED", "APPROVED", "OPEN");
+      assertThatThrownBy(() -> requests.approve(made.id(), OWNER, null, 0))
+          .satisfies(e -> assertThat(kind(e)).isEqualTo(AccessRequestStore.RequestException.Kind.CONFLICT));
+      assertThat(requests.approve(made.id(), SEC_B, null, null).status()).isEqualTo("APPROVED");
+
+      // A no in one stage waits for the other; only both failing rejects.
+      AccessRequestStore.StoredRequest other = ask("analyst_b", CUSTOMER, 7);
+      AccessRequestStore.StoredRequest one = requests.reject(other.id(), OWNER, "Not from me");
+      assertThat(one.status()).isEqualTo("PENDING");
+      assertThat(one.stages()).extracting(AccessRequestStore.StageView::status)
+          .containsExactly("REJECTED", "OPEN", "WAITING");
+      AccessRequestStore.StoredRequest both = requests.reject(other.id(), SEC_A, "Nor me");
+      assertThat(both.status()).isEqualTo("REJECTED");
     }
 
     @Test

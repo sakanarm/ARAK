@@ -1,5 +1,6 @@
 package com.mfec.dac.access;
 
+import com.mfec.dac.access.AccessWorkflow.Join;
 import com.mfec.dac.access.AccessWorkflow.OnReject;
 import com.mfec.dac.access.AccessWorkflow.Rule;
 import java.util.Collection;
@@ -154,17 +155,31 @@ public final class StageEngine {
     APPROVE
   }
 
+  /** Where the request goes from here, when every stage of the step must pass. */
+  public static Next next(List<Outcome> currentStep, boolean moreSteps) {
+    return next(currentStep, moreSteps, Join.ALL);
+  }
+
   /**
    * Where the request goes from here.
    *
    * @param currentStep the outcomes of the stages in the step now open
    * @param moreSteps whether a later step follows
+   * @param join whether the step needs all its stages or any one of them
    */
-  public static Next next(List<Outcome> currentStep, boolean moreSteps) {
-    if (currentStep.contains(Outcome.REJECTED)) {
+  public static Next next(List<Outcome> currentStep, boolean moreSteps, Join join) {
+    boolean passed =
+        join == Join.ANY
+            ? currentStep.contains(Outcome.APPROVED)
+            : !currentStep.contains(Outcome.OPEN);
+    boolean failed =
+        join == Join.ANY
+            ? !currentStep.isEmpty() && currentStep.stream().allMatch(o -> o == Outcome.REJECTED)
+            : currentStep.contains(Outcome.REJECTED);
+    if (failed) {
       return Next.REJECT;
     }
-    if (currentStep.contains(Outcome.OPEN)) {
+    if (!passed) {
       return Next.WAIT;
     }
     return moreSteps ? Next.ADVANCE : Next.APPROVE;

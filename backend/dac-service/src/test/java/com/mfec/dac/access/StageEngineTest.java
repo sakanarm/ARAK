@@ -2,6 +2,7 @@ package com.mfec.dac.access;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.mfec.dac.access.AccessWorkflow.Join;
 import com.mfec.dac.access.AccessWorkflow.OnReject;
 import com.mfec.dac.access.AccessWorkflow.Rule;
 import com.mfec.dac.access.StageEngine.Next;
@@ -338,6 +339,31 @@ class StageEngineTest {
     void aPassedStepAdvancesOrApproves() {
       assertThat(StageEngine.next(List.of(Outcome.APPROVED, Outcome.APPROVED), true)).isEqualTo(Next.ADVANCE);
       assertThat(StageEngine.next(List.of(Outcome.APPROVED), false)).isEqualTo(Next.APPROVE);
+    }
+
+    @Test
+    @DisplayName("any one of the step: one passing is enough, even beside a stage still open")
+    void anyOnePassesTheStep() {
+      Join any = Join.ANY;
+      assertThat(StageEngine.next(List.of(Outcome.OPEN, Outcome.APPROVED), true, any)).isEqualTo(Next.ADVANCE);
+      assertThat(StageEngine.next(List.of(Outcome.APPROVED, Outcome.OPEN), false, any)).isEqualTo(Next.APPROVE);
+      // A failed stage beside one that passed does not undo the pass.
+      assertThat(StageEngine.next(List.of(Outcome.REJECTED, Outcome.APPROVED), false, any)).isEqualTo(Next.APPROVE);
+    }
+
+    @Test
+    @DisplayName("any one of the step: a rejection waits for the others, and fails only when all failed")
+    void anyOneFailsOnlyWhenEveryStageFailed() {
+      Join any = Join.ANY;
+      assertThat(StageEngine.next(List.of(Outcome.REJECTED, Outcome.OPEN), true, any)).isEqualTo(Next.WAIT);
+      assertThat(StageEngine.next(List.of(Outcome.OPEN, Outcome.OPEN), true, any)).isEqualTo(Next.WAIT);
+      assertThat(StageEngine.next(List.of(Outcome.REJECTED, Outcome.REJECTED), true, any)).isEqualTo(Next.REJECT);
+    }
+
+    @Test
+    void theTwoArgumentFormIsAllOfTheStep() {
+      assertThat(StageEngine.next(List.of(Outcome.OPEN, Outcome.APPROVED), true, Join.ALL)).isEqualTo(Next.WAIT);
+      assertThat(StageEngine.next(List.of(Outcome.OPEN, Outcome.REJECTED), true, Join.ALL)).isEqualTo(Next.REJECT);
     }
   }
 }

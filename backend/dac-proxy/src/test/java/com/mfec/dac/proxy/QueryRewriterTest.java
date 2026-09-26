@@ -164,6 +164,34 @@ class QueryRewriterTest {
   }
 
   @Test
+  void doesNotBlameADataPolicyForARefusedSubscription() {
+    // A mask whose condition did not hold was listed first and named as the
+    // reason, while the table was really shut by an office-hours window.
+    PolicyDecision denied =
+        allowed()
+            .withAllowed(false)
+            .withReasons(
+                List.of(
+                    new DecisionReason()
+                        .withPolicyName("mask-contacts")
+                        .withPolicyType(DecisionReason.PolicyType.DATA)
+                        .withEffect(DecisionReason.Effect.ALLOW)
+                        .withMatched(false)
+                        .withExplanation("clearance lt L2 is false"),
+                    new DecisionReason()
+                        .withPolicyName("office-hours")
+                        .withPolicyType(DecisionReason.PolicyType.SUBSCRIPTION)
+                        .withEffect(DecisionReason.Effect.ALLOW)
+                        .withMatched(false)
+                        .withExplanation("outside the policy's permitted time window")));
+
+    assertThatThrownBy(() -> rewriter.rewrite("SELECT * FROM sales.customer", governing(denied)))
+        .isInstanceOf(QueryRewriter.DeniedException.class)
+        .hasMessageContaining("office-hours did not apply")
+        .hasMessageNotContaining("mask-contacts");
+  }
+
+  @Test
   void doesNotReportAMatchedAllowAsTheReasonForARefusal() {
     // The bug this replaced: "access is denied: subject rule satisfied".
     PolicyDecision denied =

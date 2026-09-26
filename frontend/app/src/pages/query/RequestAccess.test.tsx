@@ -264,7 +264,7 @@ describe('RequestAccess', () => {
     expect(within(route).getByText('Asks Team Security')).toBeInTheDocument();
     expect(within(route).getByText('Asks ann, bob, Role Auditor')).toBeInTheDocument();
     expect(
-      within(route).getByText('At least 2 approve · A rejection counts only once the approvals can no longer come')
+      within(route).getByText('At least 2 approve · Fails only once 2 approvals are out of reach')
     ).toBeInTheDocument();
     expect(within(route).getAllByRole('listitem')).toHaveLength(2);
   });

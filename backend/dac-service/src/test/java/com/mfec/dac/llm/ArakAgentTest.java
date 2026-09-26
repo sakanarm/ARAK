@@ -125,6 +125,61 @@ class ArakAgentTest {
   }
 
   @Test
+  void onlyTheTablesTheAnswerNamesAreShownAsCards() throws Exception {
+    // A short keyword touches a lot; the answer names the one it meant.
+    toolbox =
+        (name, arguments) ->
+            new Result(
+                "found",
+                List.of(
+                    asset("warehouse.sales.procurement.po"),
+                    asset("crm.web.public.blog_posts"),
+                    asset("crm.web.public.po_archive"),
+                    asset("crm.web.public.employees")));
+    script.add(calls(new ToolCall("c1", "search_catalog", "{\"query\":\"po\"}")));
+    script.add(answer("The table for POs is warehouse.sales.procurement.po; you may request it."));
+
+    Reply reply = run("is there a table that stores po?", tools(Feature.CHAT, Feature.CATALOG_SEARCH));
+
+    assertThat(reply.cards())
+        .extracting(Card::assetFqn)
+        .containsExactly("warehouse.sales.procurement.po");
+  }
+
+  @Test
+  void aTableNamedBySchemaAndTableCountsAndPagesAlwaysStay() throws Exception {
+    toolbox =
+        (name, arguments) ->
+            new Result(
+                "found",
+                List.of(
+                    asset("warehouse.sales.procurement.po"),
+                    asset("warehouse.sales.procurement.po_line"),
+                    new Card("link", "Open catalog", null, "/catalog", null, null, null, null)));
+    script.add(calls(new ToolCall("c1", "search_catalog", "{\"query\":\"po\"}")));
+    script.add(answer("ดูได้ที่ procurement.po_line ครับ"));
+
+    Reply reply = run("po lines?", tools(Feature.CHAT, Feature.CATALOG_SEARCH));
+
+    assertThat(reply.cards())
+        .extracting(Card::title)
+        .containsExactly("warehouse.sales.procurement.po_line", "Open catalog");
+  }
+
+  @Test
+  void anAnswerThatNamesNoTableShowsNoTableCards() throws Exception {
+    toolbox = (name, arguments) -> new Result("found", List.of(asset("crm.web.public.blog_posts")));
+    script.add(calls(new ToolCall("c1", "search_catalog", "{\"query\":\"po\"}")));
+    script.add(answer("I found no table that stores purchase orders."));
+
+    assertThat(run("po?", tools(Feature.CHAT, Feature.CATALOG_SEARCH)).cards()).isEmpty();
+  }
+
+  private static Card asset(String fqn) {
+    return new Card("asset", fqn, null, "/catalog/" + fqn, null, null, fqn, "REQUESTABLE");
+  }
+
+  @Test
   void aToolThatWasNotOfferedIsNeverRun() throws Exception {
     // WRITE_SQL is not among this person's features, so write_sql was not offered.
     script.add(calls(new ToolCall("c1", "write_sql", "{\"sql\":\"SELECT 1\"}")));

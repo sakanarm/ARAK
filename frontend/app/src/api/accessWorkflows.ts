@@ -1,5 +1,5 @@
 import { apiClient } from './client';
-import type { OnReject, Seat, StageRule } from './accessRequests';
+import type { OnReject, Seat, StageRule, StepJoin } from './accessRequests';
 
 /**
  * Access workflows: which stages a request for a table walks, and who
@@ -22,6 +22,11 @@ export interface WorkflowStage {
   minApprovals?: number | null;
   onReject: OnReject;
   approvers: Seat[];
+  /**
+   * How the stages of its step add up: ALL (every one must pass) or ANY (the
+   * first to pass moves the request on). One value per step; ALL when absent.
+   */
+  join?: StepJoin;
 }
 
 export interface AccessWorkflow {
@@ -154,6 +159,11 @@ export async function fetchWorkflowExecutions(
 }
 
 /** Stages grouped by step, in order: what runs together, then what follows. */
+/** How one step's stages add up. A stage alone in its step is all of it. */
+export function joinOf(group: { join?: StepJoin | null }[]): StepJoin {
+  return group.length > 1 && group[0].join === 'ANY' ? 'ANY' : 'ALL';
+}
+
 export function stepsOf<T extends { step: number }>(stages: T[]): T[][] {
   const byStep = new Map<number, T[]>();
   for (const stage of stages) {

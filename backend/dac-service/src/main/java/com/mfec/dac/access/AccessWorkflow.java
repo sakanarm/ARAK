@@ -12,7 +12,8 @@ import java.util.UUID;
  * configures the access (M9 slice 2a).
  *
  * <p>A workflow is a list of stages. Stages that share a step run side by side
- * and all of them must pass; steps run one after another. Each stage names its
+ * and, by the step's {@link Join}, all of them must pass or any one of them is
+ * enough; steps run one after another. Each stage names its
  * approvers as seats -- a person, a team, an app role, or whoever holds a part
  * on the table itself (its owners, its data steward, its data custodian) -- and
  * the seats are resolved to people when the stage's step opens. A stage passes
@@ -84,6 +85,22 @@ public final class AccessWorkflow {
   }
 
   /**
+   * How the stages of one step, run side by side, add up to the step.
+   *
+   * <p>Held on each stage of the step and always the same across them; a step
+   * with one stage is {@link #ALL}, where the two mean the same.
+   */
+  public enum Join {
+    /** Every stage must pass; one failing rejects the request. */
+    ALL,
+    /**
+     * One stage passing passes the step and closes the others; the request is
+     * rejected only once every stage of the step has failed.
+     */
+    ANY
+  }
+
+  /**
    * One seat.
    *
    * @param name the person, team or role; null for the table's own parts
@@ -116,7 +133,23 @@ public final class AccessWorkflow {
   @JsonInclude(JsonInclude.Include.NON_NULL)
   @JsonIgnoreProperties(ignoreUnknown = true)
   public record Stage(
-      int step, String name, Rule rule, Integer minApprovals, OnReject onReject, List<Seat> approvers) {}
+      int step,
+      String name,
+      Rule rule,
+      Integer minApprovals,
+      OnReject onReject,
+      List<Seat> approvers,
+      Join join) {
+
+    public Stage {
+      join = join == null ? Join.ALL : join;
+    }
+
+    public Stage(
+        int step, String name, Rule rule, Integer minApprovals, OnReject onReject, List<Seat> approvers) {
+      this(step, name, rule, minApprovals, onReject, approvers, Join.ALL);
+    }
+  }
 
   /**
    * A workflow as stored.
@@ -246,7 +279,30 @@ public final class AccessWorkflow {
                 + ": \"the first answer decides\" needs a stage that one approval passes;"
                 + " set it to \"any one\", or choose another way to handle a rejection");
       }
-      clean.add(new Stage(dense, label, stage.rule(), min, stage.onReject(), seats));
+      clean.add(new Stage(dense, label, stage.rule(), min, stage.onReject(), seats, stage.join()));
+    }
+
+    // One join per step: the stages that run together say it together, and a
+    // step with one stage has nothing to join.
+    java.util.Map<Integer, List<Stage>> bySteps = new java.util.LinkedHashMap<>();
+    for (Stage stage : clean) {
+      bySteps.computeIfAbsent(stage.step(), k -> new ArrayList<>()).add(stage);
+    }
+    for (int i = 0; i < clean.size(); i++) {
+      Stage stage = clean.get(i);
+      List<Stage> together = bySteps.get(stage.step());
+      if (together.stream().map(Stage::join).distinct().count() > 1) {
+        throw new IllegalArgumentException(
+            "Step " + stage.step() + ": the stages that run together need one rule for the step;"
+                + " either all of them must approve, or any one is enough");
+      }
+      if (together.size() == 1 && stage.join() != Join.ALL) {
+        clean.set(
+            i,
+            new Stage(
+                stage.step(), stage.name(), stage.rule(), stage.minApprovals(), stage.onReject(),
+                stage.approvers(), Join.ALL));
+      }
     }
 
     List<Seat> configurers = seats(draft.configurers(), "Configured by");

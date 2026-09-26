@@ -8,8 +8,10 @@ import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.mfec.dac.schema.api.ResolvedColumnMask;
 import com.mfec.dac.schema.api.ResolvedRowPredicate;
 import com.mfec.dac.schema.entity.policy.AssetSelector;
+import com.mfec.dac.schema.entity.policy.Exemption;
 import com.mfec.dac.schema.entity.policy.FacetCondition;
 import com.mfec.dac.schema.entity.policy.Policy;
+import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 import org.flywaydb.core.Flyway;
@@ -132,6 +134,19 @@ class PolicyStoreIT {
   }
 
   @Test
+  @DisplayName("a name already used in the environment is refused, even by an archived policy")
+  void aTakenNameIsRefusedNotAServerError() {
+    UUID id = store.create(policy("mask-pii"), "alice").id();
+    store.transition(id, "ARCHIVED", "alice", "retired");
+
+    // Was a raw unique-constraint violation, which the API answered with 500.
+    assertThatThrownBy(() -> store.create(policy("mask-pii"), "bob"))
+        .isInstanceOf(PolicyStore.NameTakenException.class)
+        .hasMessageContaining("mask-pii")
+        .hasMessageContaining("ARCHIVED");
+  }
+
+  @Test
   @DisplayName("a policy with an empty selector is refused at save")
   void emptySelectorIsRefused() {
     Policy document = policy("mask-pii");
@@ -143,6 +158,34 @@ class PolicyStoreIT {
     assertThatThrownBy(() -> store.create(document, "alice"))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("protects nobody");
+  }
+
+  @Test
+  @DisplayName("an exemption with no expiry or no reason is refused at save")
+  void openEndedExemptionIsRefused() {
+    // The engine ignores such an exemption, so the person named in it is still
+    // refused while the author believes they are exempt. Found in UAT.
+    Policy noExpiry = policy("deny-contractors");
+    noExpiry.setExemptions(List.of(new Exemption().withPrincipal("ann").withReason("ERP migration")));
+    assertThatThrownBy(() -> store.create(noExpiry, "alice"))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("needs an expiry date");
+
+    Policy noReason = policy("deny-contractors");
+    noReason.setExemptions(
+        List.of(new Exemption().withPrincipal("ann").withExpiresAt(Instant.parse("2026-10-15T00:00:00Z"))));
+    assertThatThrownBy(() -> store.create(noReason, "alice"))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("needs a reason");
+
+    Policy complete = policy("deny-contractors");
+    complete.setExemptions(
+        List.of(
+            new Exemption()
+                .withPrincipal("ann")
+                .withReason("ERP migration")
+                .withExpiresAt(Instant.parse("2026-10-15T00:00:00Z"))));
+    assertThat(store.create(complete, "alice").document().getExemptions()).hasSize(1);
   }
 
   @Test

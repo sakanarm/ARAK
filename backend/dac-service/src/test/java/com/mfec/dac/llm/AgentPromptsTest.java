@@ -113,7 +113,7 @@ class AgentPromptsTest {
     assertThat(without).contains("the query page (/query)").doesNotContain("write_sql");
     assertThat(without).contains("never say you did");
     // The answer is drawn as text, and the cards already list what was found.
-    assertThat(without).contains("no Markdown").contains("do not list every table again");
+    assertThat(without).contains("no Markdown").contains("leave out tables a search touched");
   }
 
   @Test

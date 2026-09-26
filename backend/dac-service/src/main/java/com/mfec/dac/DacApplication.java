@@ -48,6 +48,8 @@ import com.mfec.dac.om.OpenMetadataClient;
 import com.mfec.dac.resources.AccessRequestResource;
 import com.mfec.dac.resources.AccessWorkflowResource;
 import com.mfec.dac.resources.RequestTemplateResource;
+import com.mfec.dac.resources.SavedQueryResource;
+import com.mfec.dac.query.SavedQueryStore;
 import com.mfec.dac.resources.AccessResource;
 import com.mfec.dac.resources.HomePersonaResource;
 import com.mfec.dac.resources.HomeResource;
@@ -407,6 +409,8 @@ public class DacApplication extends Application<DacConfiguration> {
                 decisionService,
                 new QueryExecutor(credentials, 10)),
             eligibility));
+    // Statements kept under a name; the text only, never what it returned.
+    environment.jersey().register(new SavedQueryResource(new SavedQueryStore(jdbi)));
     // The query log (FR-8.3, M10): each reader sees the rows that are theirs
     // to see, which AuditResource and QueryLog decide between them.
     AuditResource audit = new AuditResource(new QueryLog(jdbi));

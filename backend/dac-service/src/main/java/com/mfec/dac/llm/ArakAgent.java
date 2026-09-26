@@ -11,6 +11,7 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -112,7 +113,8 @@ public final class ArakAgent {
       lastModel = turn.model();
       messages.add(turn.message());
       if (turn.calls().isEmpty()) {
-        return new Reply(clean(turn.content()), List.copyOf(cards), List.copyOf(used), lastModel);
+        String text = clean(turn.content());
+        return new Reply(text, named(cards, text), List.copyOf(used), lastModel);
       }
       for (ToolCall call : turn.calls()) {
         Result result = invoke(toolbox, offered, call);
@@ -134,6 +136,54 @@ public final class ArakAgent {
         List.copyOf(cards),
         List.copyOf(used),
         lastModel);
+  }
+
+  /**
+   * The cards the answer stands behind: every card that is not a table, and
+   * the tables the answer names.
+   *
+   * A search returns everything its keywords touched, and a short keyword
+   * touches a lot -- "po" finds {@code blog_posts} as readily as {@code po}.
+   * The model reads those hits and names the one that answers the question;
+   * showing the rest as cards under that answer puts tables beside it that it
+   * never meant, and reads as if they were part of it. A table counts as named
+   * when the answer spells its full name, or its schema and table.
+   */
+  static List<Card> named(List<Card> cards, String text) {
+    String said = text == null ? "" : text.toLowerCase(Locale.ROOT);
+    List<Card> kept = new ArrayList<>();
+    for (Card card : cards) {
+      if (!"asset".equals(card.kind()) || card.assetFqn() == null || mentions(said, card.assetFqn())) {
+        kept.add(card);
+      }
+    }
+    return List.copyOf(kept);
+  }
+
+  private static boolean mentions(String said, String fqn) {
+    String name = fqn.toLowerCase(Locale.ROOT);
+    if (contains(said, name)) {
+      return true;
+    }
+    String[] parts = name.split("\\.");
+    return parts.length >= 2
+        && contains(said, parts[parts.length - 2] + "." + parts[parts.length - 1]);
+  }
+
+  /** {@code needle} in {@code haystack}, not as part of a longer name. */
+  private static boolean contains(String haystack, String needle) {
+    for (int at = haystack.indexOf(needle); at >= 0; at = haystack.indexOf(needle, at + 1)) {
+      int end = at + needle.length();
+      if ((at == 0 || !namePart(haystack.charAt(at - 1)))
+          && (end == haystack.length() || !namePart(haystack.charAt(end)))) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private static boolean namePart(char c) {
+    return Character.isLetterOrDigit(c) || c == '_' || c == '.' || c == '-';
   }
 
   private Result invoke(Toolbox toolbox, Set<String> offered, ToolCall call) {

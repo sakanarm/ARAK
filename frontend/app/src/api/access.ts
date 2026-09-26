@@ -190,6 +190,24 @@ export async function revokeGrant(
 }
 
 /**
+ * Changes a live grant's window. The server revokes the old row and writes a
+ * new one in the same transaction, so the history still says what the window
+ * was before the edit. A start that has already passed stays where it was.
+ *
+ * @param validUntil null for no expiry
+ */
+export async function amendGrant(
+  id: string,
+  change: { validFrom?: string | null; validUntil: string | null; reason: string }
+): Promise<StoredGrant> {
+  const { data } = await apiClient.post<StoredGrant>(
+    `/v1/access/grants/${id}/amend`,
+    change
+  );
+  return data;
+}
+
+/**
  * One grant whose window closes soon (M9 slice 2c).
  *
  * @param mine the reader holds it, themselves or through a group they are in

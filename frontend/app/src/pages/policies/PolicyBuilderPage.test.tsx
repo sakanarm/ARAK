@@ -159,10 +159,7 @@ test('a plain new policy carries no note about a request', async () => {
   expect(screen.queryByText(/Drafted from an access request/)).not.toBeInTheDocument();
 });
 
-test('the diagram is a third view, and a node in it opens the step that writes it', async () => {
-  // jsdom lays nothing out, so it has no scrolling to offer.
-  const scroll = jest.fn();
-  Element.prototype.scrollIntoView = scroll;
+test('the diagram is a third view, and a node in it opens its step over the chart', async () => {
   renderNew();
   await screen.findByRole('button', { name: /environment/i });
 
@@ -172,10 +169,43 @@ test('the diagram is a third view, and a node in it opens the step that writes i
 
   fireEvent.click(within(figure).getByRole('button', { name: /Is the asset one of these/ }));
 
-  // Back on the form, where the step lives.
-  expect(await screen.findByRole('button', { name: /environment/i })).toBeInTheDocument();
-  expect(screen.queryByRole('figure')).not.toBeInTheDocument();
-  await waitFor(() => expect(scroll).toHaveBeenCalled());
+  // The step opens in a dialog; the chart stays where it was behind it.
+  const dialog = await screen.findByRole('dialog', { name: 'Which assets it covers' });
+  expect(within(dialog).getByText('Step 3 of 4')).toBeInTheDocument();
+  // Still on the page, only hidden from assistive tech while the modal is up.
+  expect(screen.getByRole('figure', { hidden: true })).toBeInTheDocument();
+
+  // Previous walks back through the form's steps without leaving the chart.
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Previous' }));
+  const second = await screen.findByRole('dialog', { name: 'Where it sits' });
+  expect(within(second).getByRole('button', { name: 'Next' })).toBeEnabled();
+
+  fireEvent.click(within(second).getByRole('button', { name: 'Done' }));
+  await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+  expect(screen.getByRole('figure')).toBeInTheDocument();
+  localStorage.clear();
+});
+
+test('an edit made in the dialog is the draft, and saves with it', async () => {
+  renderNew();
+  await screen.findByRole('button', { name: /environment/i });
+  fireEvent.click(screen.getByRole('button', { name: 'Diagram' }));
+  const figure = await screen.findByRole('figure');
+
+  // Step 1 has no box of its own, so reach it by walking back from step 3.
+  fireEvent.click(within(figure).getByRole('button', { name: /Is the asset one of these/ }));
+  fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Previous' }));
+  fireEvent.click(within(await screen.findByRole('dialog', { name: 'Where it sits' })).getByRole('button', { name: 'Previous' }));
+  const first = await screen.findByRole('dialog', { name: 'What this policy is' });
+  expect(within(first).getByRole('button', { name: 'Previous' })).toBeDisabled();
+  fireEvent.change(within(first).getByPlaceholderText('mask-pii-outside-clearance'), {
+    target: { value: 'from-the-dialog' },
+  });
+  fireEvent.click(within(first).getByRole('button', { name: 'Close' }));
+  await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+
+  fireEvent.click(screen.getByRole('button', { name: 'Form' }));
+  expect(await screen.findByDisplayValue('from-the-dialog')).toBeInTheDocument();
   localStorage.clear();
 });
 

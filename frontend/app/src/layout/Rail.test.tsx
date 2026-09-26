@@ -229,6 +229,7 @@ describe('Sidebar', () => {
     const customize = screen.getByRole('button', { name: 'Customize rail' });
     expect(customize).toHaveTextContent('');
     expect(customize.parentElement).toHaveTextContent('2026 MFEC');
+    expect(customize.parentElement).toHaveTextContent('by Sakan Punyanon');
 
     const dialog = await openCustomizer();
     const comfortable = within(dialog).getByRole('radio', { name: /Comfortable/ });

@@ -2,8 +2,15 @@ import { useQuery } from '@tanstack/react-query';
 import { Button } from '@openmetadata/ui-core-components/components/base/buttons/button';
 import { Plus, Trash01, XClose } from '@untitledui/icons';
 import { fetchPrincipals } from '../../api/governance';
-import { describeOnReject, type OnReject, type Seat, type SeatKind, type StageRule } from '../../api/accessRequests';
-import { stepsOf, type AccessWorkflow, type WorkflowDraft, type WorkflowStage } from '../../api/accessWorkflows';
+import {
+  describeOnReject,
+  explainOnReject,
+  type OnReject,
+  type Seat,
+  type SeatKind,
+  type StageRule,
+} from '../../api/accessRequests';
+import { joinOf, stepsOf, type AccessWorkflow, type WorkflowDraft, type WorkflowStage } from '../../api/accessWorkflows';
 import { FIELD, Select, type SelectOption } from '../policies/controls';
 
 /**
@@ -19,7 +26,11 @@ const RULES: SelectOption[] = [
   { value: 'AT_LEAST', label: 'At least a number approve' },
 ];
 
-const ON_REJECT: OnReject[] = ['VETO', 'QUORUM', 'FIRST_RESPONSE'];
+/**
+ * The two answers that differ. FIRST_RESPONSE is what VETO already does when
+ * any one approval passes, so it is read but no longer offered.
+ */
+const ON_REJECT: OnReject[] = ['VETO', 'QUORUM'];
 
 const SEAT_KINDS: SelectOption[] = [
   { value: 'ASSET_OWNERS', label: 'Owners of the table', hint: 'As OpenMetadata records them' },
@@ -76,7 +87,9 @@ export function describeSteps(stages: WorkflowStage[]): string {
     .map((group) =>
       group.length === 1
         ? group[0].name.trim()
-        : `${group.map((stage) => stage.name.trim()).join(' and ')} together`
+        : joinOf(group) === 'ANY'
+          ? `${group.map((stage) => stage.name.trim()).join(' or ')}, whichever passes first`
+          : `${group.map((stage) => stage.name.trim()).join(' and ')} together`
     )
     .join(', then ');
 }
@@ -89,6 +102,8 @@ export function cleanSeats(seats: Seat[]): Seat[] {
 
 /** What the editor holds, turned into what the server keeps. */
 export function draftOf(workflow: AccessWorkflow): WorkflowDraft {
+  // One join per step, read off its first stage, as the server keeps it.
+  const joins = new Map(stepsOf(workflow.stages).map((group) => [group[0].step, joinOf(group)]));
   return {
     name: workflow.name.trim(),
     description: workflow.description?.trim() || null,
@@ -101,6 +116,7 @@ export function draftOf(workflow: AccessWorkflow): WorkflowDraft {
       minApprovals: stage.rule === 'AT_LEAST' ? (stage.minApprovals ?? null) : null,
       onReject: stage.onReject,
       approvers: cleanSeats(stage.approvers),
+      join: joins.get(stage.step) ?? 'ALL',
     })),
     configurers: cleanSeats(workflow.configurers),
   };
@@ -125,10 +141,10 @@ export function StageEditor({
   const n = index + 1;
   const onRejectOptions: SelectOption[] = ON_REJECT.map((value) => ({
     value,
-    label: describeOnReject(value),
-    isDisabled: value === 'FIRST_RESPONSE' && stage.rule !== 'ANY',
-    hint: value === 'FIRST_RESPONSE' && stage.rule !== 'ANY' ? 'Only when any one approval passes it' : undefined,
+    label: describeOnReject(value, stage.rule, stage.minApprovals),
   }));
+  // FIRST_RESPONSE, from before, does what VETO does.
+  const onReject: OnReject = stage.onReject === 'QUORUM' ? 'QUORUM' : 'VETO';
   return (
     <div
       aria-label={`Stage ${n}`}
@@ -173,8 +189,8 @@ export function StageEditor({
               onChange({
                 rule,
                 minApprovals: rule === 'AT_LEAST' ? (stage.minApprovals ?? 2) : null,
-                // The first answer cannot decide a stage that needs more than one.
-                onReject: rule !== 'ANY' && stage.onReject === 'FIRST_RESPONSE' ? 'VETO' : stage.onReject,
+                // Everyone approving leaves a rejection nothing to wait for.
+                onReject: rule === 'ALL' || stage.onReject === 'FIRST_RESPONSE' ? 'VETO' : stage.onReject,
               });
             }}
             options={RULES}
@@ -197,13 +213,20 @@ export function StageEditor({
           </label>
         )}
         <div className="tw:flex tw:min-w-72 tw:flex-1 tw:flex-col tw:gap-1.5">
-          <span className="tw:text-xs tw:font-medium tw:text-secondary">A rejection</span>
-          <Select
-            ariaLabel={`Stage ${n} on reject`}
-            onChange={(value) => onChange({ onReject: value as OnReject })}
-            options={onRejectOptions}
-            value={stage.onReject}
-          />
+          <span className="tw:text-xs tw:font-medium tw:text-secondary">If someone says no</span>
+          {stage.rule === 'ALL' ? (
+            <span className="tw:py-2 tw:text-sm tw:text-primary">{describeOnReject('VETO', 'ALL')}</span>
+          ) : (
+            <Select
+              ariaLabel={`Stage ${n} on reject`}
+              onChange={(value) => onChange({ onReject: value as OnReject })}
+              options={onRejectOptions}
+              value={onReject}
+            />
+          )}
+          <span className="tw:text-xs tw:text-tertiary">
+            {explainOnReject(onReject, stage.rule, stage.minApprovals)}
+          </span>
         </div>
       </div>
       <div className="tw:flex tw:flex-col tw:gap-1.5">

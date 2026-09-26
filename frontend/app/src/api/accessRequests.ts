@@ -46,6 +46,8 @@ export interface Member {
 
 export type StageRule = 'ALL' | 'ANY' | 'AT_LEAST';
 export type OnReject = 'VETO' | 'QUORUM' | 'FIRST_RESPONSE';
+/** How the stages of one step add up: every one must pass, or any one is enough. */
+export type StepJoin = 'ALL' | 'ANY';
 export type StageStatus = 'WAITING' | 'OPEN' | 'APPROVED' | 'REJECTED' | 'CLOSED';
 
 export interface VoteView {
@@ -65,6 +67,8 @@ export interface StageView {
   rule: StageRule;
   minApprovals: number | null;
   onReject: OnReject;
+  /** How the stages of its step add up; ALL when it is alone in it. */
+  join?: StepJoin;
   approvers: Seat[];
   /** Who was asked; empty until the stage's step opens. */
   pool: Member[];
@@ -158,6 +162,7 @@ export interface RouteStage {
   onReject: OnReject;
   /** The seats, named for the page. */
   approvers: string[];
+  join?: StepJoin;
 }
 
 export interface Route {
@@ -740,8 +745,29 @@ export function describeRule(
   }
 }
 
-/** What a rejection does to the stage, in the words the editor offers. */
-export function describeOnReject(onReject: OnReject): string {
+/**
+ * What a rejection does to the stage, in the words the editor offers.
+ *
+ * Given the rule, it says what actually happens under it: with everyone
+ * asked to approve one no always fails the stage, and with any one approval
+ * enough the first answer decides unless a no waits for the others.
+ */
+export function describeOnReject(
+  onReject: OnReject,
+  rule?: StageRule,
+  minApprovals?: number | null
+): string {
+  const waits = onReject === 'QUORUM';
+  switch (rule) {
+    case 'ALL':
+      return 'The first no fails the stage';
+    case 'ANY':
+      return waits ? 'Fails only if everyone says no' : 'The first answer decides';
+    case 'AT_LEAST':
+      return waits
+        ? `Fails only once ${minApprovals ?? 1} approvals are out of reach`
+        : 'The first no fails the stage';
+  }
   switch (onReject) {
     case 'VETO':
       return 'One rejection rejects the request';
@@ -751,6 +777,24 @@ export function describeOnReject(onReject: OnReject): string {
       return 'The first answer decides';
     default:
       return onReject;
+  }
+}
+
+/** The same, said at length under the editor's choice, with an example. */
+export function explainOnReject(onReject: OnReject, rule: StageRule, minApprovals?: number | null): string {
+  const waits = onReject === 'QUORUM';
+  const needed = Math.max(1, minApprovals ?? 1);
+  switch (rule) {
+    case 'ALL':
+      return 'Everyone has to say yes, so there is nothing else to choose.';
+    case 'ANY':
+      return waits
+        ? 'A no does not end it; the others can still say yes. Example: 3 people asked, 2 say no, the third says yes: the stage passes.'
+        : 'Whoever answers first decides. Example: 3 people asked, the first says no: the stage fails without waiting for the other two.';
+    default:
+      return waits
+        ? `A no does not end it while ${needed} yeses can still come. Example: ${needed + 1} people asked, ${needed} needed: the first no waits, the second no fails the stage.`
+        : `Even if others already said yes. Example: ${needed + 1} people asked, ${needed} needed: one no is enough to fail it.`;
   }
 }
 

@@ -178,6 +178,22 @@ describe('workflowDiagram', () => {
     expect(edges.filter((e) => e.from === 'stage-0' && e.to.startsWith('stage-'))).toHaveLength(2);
   });
 
+  it('says so when any one stage of the step is enough', () => {
+    const anyOne = {
+      ...FINANCE,
+      stages: FINANCE.stages.map((stage) => (stage.step === 2 ? { ...stage, join: 'ANY' as const } : stage)),
+    };
+    const { nodes, edges } = workflowDiagram(anyOne);
+    const byId = Object.fromEntries(nodes.map((n) => [n.id, n]));
+    expect(byId['stage-1'].eyebrow).toBe('Step 2 · any one');
+    expect(byId['join-2'].title).toBe('Any one of step 2 is enough');
+    expect(edges).toContainEqual(expect.objectContaining({ from: 'join-2', to: 'rejected', label: 'All reject' }));
+    expect(edges).toContainEqual(expect.objectContaining({ from: 'join-2', to: 'configure', label: 'Any one approves' }));
+    // A stage alone in its step has nothing to join, whatever it carries.
+    const alone = workflowDiagram({ ...BUILT_IN, stages: [{ ...BUILT_IN.stages[0], join: 'ANY' }] });
+    expect(alone.edges).toContainEqual(expect.objectContaining({ from: 'stage-0', label: 'Reject' }));
+  });
+
   it('draws no refusal lane for a workflow without stages', () => {
     const { nodes } = workflowDiagram({ ...BUILT_IN, stages: [] });
     expect(nodes.some((n) => n.id === 'rejected')).toBe(false);
@@ -209,7 +225,15 @@ describe('WorkflowBuilderPage — designing', () => {
       scopeFqn: null,
       enabled: true,
       stages: [
-        { step: 1, name: 'Owner approval', rule: 'ANY', minApprovals: null, onReject: 'VETO', approvers: [{ kind: 'ASSET_OWNERS' }] },
+        {
+          step: 1,
+          name: 'Owner approval',
+          rule: 'ANY',
+          minApprovals: null,
+          onReject: 'VETO',
+          approvers: [{ kind: 'ASSET_OWNERS' }],
+          join: 'ALL',
+        },
       ],
       configurers: [],
     });
@@ -275,7 +299,15 @@ describe('WorkflowBuilderPage — designing', () => {
     expect(draft.name).toBe('Finance tables');
     expect(draft.scopeFqn).toBe('demo-pg.salesdb.finance');
     expect(draft.stages).toEqual([
-      { step: 1, name: 'Owner approval', rule: 'ANY', minApprovals: null, onReject: 'VETO', approvers: [{ kind: 'ASSET_OWNERS' }] },
+      {
+        step: 1,
+        name: 'Owner approval',
+        rule: 'ANY',
+        minApprovals: null,
+        onReject: 'VETO',
+        approvers: [{ kind: 'ASSET_OWNERS' }],
+        join: 'ALL',
+      },
       {
         step: 2,
         name: 'Security',
@@ -286,6 +318,7 @@ describe('WorkflowBuilderPage — designing', () => {
           { kind: 'TEAM', name: 'Security' },
           { kind: 'ROLE', name: 'AUDITOR' },
         ],
+        join: 'ALL',
       },
     ]);
     expect(draft.configurers).toEqual([{ kind: 'DATA_CUSTODIAN' }]);
@@ -319,6 +352,69 @@ describe('WorkflowBuilderPage — designing', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Discard changes' }));
     expect(screen.getByTestId('steps-preview')).toHaveTextContent('Owner approval, then Security and Compliance together');
     expect(screen.queryByText('Unsaved changes')).not.toBeInTheDocument();
+  });
+
+  it('lets the stages of one step pass together or on their own, and saves one choice for the step', async () => {
+    fetchWorkflows.mockResolvedValue(listing({ workflows: [row(FINANCE)] }));
+    updateWorkflow.mockResolvedValue(row(FINANCE));
+    renderAt('/settings/workflows/wf-finance');
+
+    // A stage alone in its step has no choice to make.
+    fireEvent.click(await screen.findByRole('button', { name: /Owner approval/ }));
+    expect(within(inspector()).queryByRole('radio', { name: /Any one is enough/ })).not.toBeInTheDocument();
+
+    fireEvent.click(node(/Security/));
+    const steps = within(inspector()).getByRole('group', { name: 'The 2 stages of step 2' });
+    expect(within(steps).getByRole('radio', { name: /All must approve/ })).toBeChecked();
+    fireEvent.click(within(steps).getByRole('radio', { name: /Any one is enough/ }));
+    expect(screen.getByTestId('steps-preview')).toHaveTextContent(
+      'Owner approval, then Security or Compliance, whichever passes first'
+    );
+    // The other stage of the step reads the same choice.
+    fireEvent.click(node(/Compliance/));
+    expect(within(inspector()).getByRole('radio', { name: /Any one is enough/ })).toBeChecked();
+
+    // A stage added beside them joins them the same way.
+    fireEvent.click(within(inspector()).getByRole('button', { name: 'Add a stage alongside' }));
+    expect(screen.getByTestId('steps-preview')).toHaveTextContent(
+      'Security or Compliance or Stage 4, whichever passes first'
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save workflow' }));
+    await waitFor(() => expect(updateWorkflow).toHaveBeenCalledTimes(1));
+    const draft = updateWorkflow.mock.calls[0][1] as WorkflowDraft;
+    expect(draft.stages.map((stage) => `${stage.name} ${stage.join}`)).toEqual([
+      'Owner approval ALL',
+      'Security ANY',
+      'Compliance ANY',
+      'Stage 4 ANY',
+    ]);
+  });
+
+  it('offers only the answers to a rejection that differ under the rule, and says what each does', async () => {
+    fetchWorkflows.mockResolvedValue(listing({ workflows: [row(FINANCE)] }));
+    renderAt('/settings/workflows/wf-finance');
+
+    // Everyone must approve: one no always fails it, so there is nothing to pick.
+    fireEvent.click(await screen.findByRole('button', { name: /Security/ }));
+    const security = within(inspector()).getByRole('group', { name: 'Stage 2' });
+    expect(within(security).queryByRole('button', { name: /Stage 2 on reject/ })).not.toBeInTheDocument();
+    expect(within(security).getByText('The first no fails the stage')).toBeInTheDocument();
+    expect(within(security).getByText(/Everyone has to say yes/)).toBeInTheDocument();
+
+    // At least 2 of them, waiting for the rest: said with its number.
+    fireEvent.click(node(/Compliance/));
+    const compliance = within(inspector()).getByRole('group', { name: 'Stage 3' });
+    expect(
+      within(compliance).getByText(/3 people asked, 2 needed: the first no waits, the second no fails the stage/)
+    ).toBeInTheDocument();
+    await choose('Stage 3 on reject', 'The first no fails the stage');
+    expect(within(compliance).getByText(/Even if others already said yes/)).toBeInTheDocument();
+
+    // Any one approval: the first answer decides, or a no waits for the others.
+    await choose('Stage 3 rule', 'Any one approves');
+    await choose('Stage 3 on reject', 'Fails only if everyone says no');
+    expect(within(compliance).getByText(/the third says yes: the stage passes/)).toBeInTheDocument();
   });
 
   it('asks how many for AT_LEAST, and refuses two stages with one name', async () => {

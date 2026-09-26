@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { Plus, SearchLg, ShieldTick } from '@untitledui/icons';
+import { EyeOff, Plus, SearchLg, ShieldTick } from '@untitledui/icons';
 import { Chip as Badge } from '../../components/chips';
 import { Button } from '@openmetadata/ui-core-components/components/base/buttons/button';
 import { Input } from '@openmetadata/ui-core-components/components/base/input/input';
@@ -12,6 +12,8 @@ import {
   type StoredPolicy,
 } from '../../api/policies';
 import { PAGE_SIZES, Pager } from '../../components/Pager';
+import { relativeTime } from '../../components/widgets';
+import { shortFqn } from '../../lib/fqn';
 import { Select } from './controls';
 import { describeSelector, describeSubject } from './policyLanguage';
 
@@ -40,6 +42,35 @@ const STATE_TONE: Record<string, 'success' | 'gray' | 'warning' | 'error'> = {
   DISABLED: 'warning',
   ARCHIVED: 'gray',
 };
+
+const STATE_LABEL: Record<string, string> = {
+  ACTIVE: 'Active',
+  DRAFT: 'Draft',
+  PENDING_APPROVAL: 'Pending approval',
+  DISABLED: 'Disabled',
+  ARCHIVED: 'Archived',
+};
+
+const LEVEL_LABEL: Record<string, string> = {
+  ORG: 'Organisation',
+  DOMAIN: 'Domain',
+  SERVICE: 'Service',
+  DATABASE: 'Database',
+  SCHEMA: 'Schema',
+  TABLE: 'Table',
+  COLUMN: 'Column',
+};
+
+/** The two kinds as tabs: they answer different questions, so they are read apart. */
+const KINDS = [
+  { value: '', label: 'All policies' },
+  { value: 'SUBSCRIPTION', label: 'Subscription' },
+  { value: 'DATA', label: 'Data' },
+] as const;
+
+/** The columns of the list, shared by its heading and its rows. */
+const ROW_GRID =
+  'tw:md:grid tw:md:grid-cols-[minmax(0,1fr)_13rem_9rem_9rem] tw:md:items-center tw:md:gap-4';
 
 export default function PolicyListPage() {
   const [params, setParams] = useSearchParams();
@@ -73,7 +104,7 @@ export default function PolicyListPage() {
     queryFn: () => countPolicies(filter),
   });
 
-  const filtered = Boolean(state || type || scopeLevel || search);
+  const filtered = Boolean(state || scopeLevel || search);
 
   function update(key: string, value: string) {
     const draft = new URLSearchParams(params);
@@ -116,85 +147,84 @@ export default function PolicyListPage() {
         </Button>
       </header>
 
+      <nav
+        aria-label="Policy kind"
+        className="tw:mt-6 tw:flex tw:gap-6 tw:border-b tw:border-secondary">
+        {KINDS.map((kind) => (
+          <button
+            aria-current={type === kind.value ? 'page' : undefined}
+            className={`tw:-mb-px tw:cursor-pointer tw:border-b-2 tw:px-1 tw:pb-2.5 tw:text-sm tw:font-semibold ${
+              type === kind.value
+                ? 'tw:border-brand tw:text-brand-secondary'
+                : 'tw:border-transparent tw:text-tertiary tw:hover:text-primary'
+            }`}
+            key={kind.value}
+            onClick={() => update('type', kind.value)}
+            type="button">
+            {kind.label}
+          </button>
+        ))}
+      </nav>
+
       {/*
         Searched on the server, not here. The list arrives one page at a time,
         so filtering the rows already on screen would quietly answer "no such
         policy" for anything past the first hundred -- the worst possible
         answer to give somebody checking whether a rule already exists.
       */}
-      <form
-        className="tw:mt-8 tw:flex tw:min-w-72 tw:items-center tw:gap-2"
-        onSubmit={(event) => {
-          event.preventDefault();
-          update('q', searchDraft.trim());
-        }}>
-        <div className="tw:min-w-56 tw:max-w-md tw:flex-1">
-          <Input
-            aria-label="Search policies"
-            icon={SearchLg}
-            onChange={setSearchDraft}
-            placeholder="Name, description or the table it scopes to"
-            value={searchDraft}
+      <section className="tw:mt-4 tw:rounded-xl tw:border tw:border-secondary tw:bg-primary tw:p-4">
+        <form
+          className="tw:flex tw:flex-wrap tw:items-center tw:gap-3"
+          onSubmit={(event) => {
+            event.preventDefault();
+            update('q', searchDraft.trim());
+          }}>
+          <div className="tw:min-w-64 tw:flex-1">
+            <Input
+              aria-label="Search policies"
+              icon={SearchLg}
+              onChange={setSearchDraft}
+              placeholder="Name, description or the table it scopes to"
+              value={searchDraft}
+            />
+          </div>
+          <Select
+            ariaLabel="Lifecycle state"
+            className="tw:w-48"
+            onChange={(next) => update('state', next)}
+            options={[
+              { value: '', label: 'Any state' },
+              ...Object.entries(STATE_LABEL).map(([value, label]) => ({ value, label })),
+            ]}
+            value={state}
           />
-        </div>
-        <Button size="md" type="submit">
-          Search
-        </Button>
-        {search && (
-          <Button
-            color="tertiary"
-            onPress={() => {
-              setSearchDraft('');
-              update('q', '');
-            }}
-            size="md">
-            Clear
+          <Select
+            ariaLabel="Scope level"
+            className="tw:w-44"
+            onChange={(next) => update('scopeLevel', next)}
+            options={[
+              { value: '', label: 'Any level' },
+              ...Object.entries(LEVEL_LABEL).map(([value, label]) => ({ value, label })),
+            ]}
+            value={scopeLevel}
+          />
+          <Button size="md" type="submit">
+            Search
           </Button>
-        )}
-      </form>
-
-      <section className="tw:mt-4 tw:flex tw:flex-wrap tw:gap-3">
-        <Select
-          ariaLabel="Lifecycle state"
-          className="tw:w-48"
-          onChange={(next) => update('state', next)}
-          options={[
-            { value: '', label: 'Any state' },
-            { value: 'DRAFT', label: 'Draft' },
-            { value: 'PENDING_APPROVAL', label: 'Pending approval' },
-            { value: 'ACTIVE', label: 'Active' },
-            { value: 'DISABLED', label: 'Disabled' },
-            { value: 'ARCHIVED', label: 'Archived' },
-          ]}
-          value={state}
-        />
-        <Select
-          ariaLabel="Policy type"
-          className="tw:w-56"
-          onChange={(next) => update('type', next)}
-          options={[
-            { value: '', label: 'Both kinds' },
-            { value: 'SUBSCRIPTION', label: 'Subscription — who gets in' },
-            { value: 'DATA', label: 'Data — what they see' },
-          ]}
-          value={type}
-        />
-        <Select
-          ariaLabel="Scope level"
-          className="tw:w-48"
-          onChange={(next) => update('scopeLevel', next)}
-          options={[
-            { value: '', label: 'Any level' },
-            { value: 'ORG', label: 'Organisation' },
-            { value: 'DOMAIN', label: 'Domain' },
-            { value: 'SERVICE', label: 'Service' },
-            { value: 'DATABASE', label: 'Database' },
-            { value: 'SCHEMA', label: 'Schema' },
-            { value: 'TABLE', label: 'Table' },
-            { value: 'COLUMN', label: 'Column' },
-          ]}
-          value={scopeLevel}
-        />
+          {filtered && (
+            <Button
+              color="tertiary"
+              onPress={() => {
+                setSearchDraft('');
+                const draft = new URLSearchParams();
+                if (type) draft.set('type', type);
+                setParams(draft, { replace: true });
+              }}
+              size="md">
+              Clear
+            </Button>
+          )}
+        </form>
       </section>
 
       {error && (
@@ -210,7 +240,7 @@ export default function PolicyListPage() {
         <p className="tw:text-sm tw:text-tertiary">
           {isLoading
             ? 'Loading…'
-            : `${total} ${total === 1 ? 'policy' : 'policies'}${filtered ? ' matching' : ''}`}
+            : `${total} ${total === 1 ? 'policy' : 'policies'}${filtered || type ? ' matching' : ''}`}
           {isFetching && !isLoading && ' · refreshing'}
         </p>
         {total > pageSize && (
@@ -220,28 +250,39 @@ export default function PolicyListPage() {
         )}
       </div>
 
-      <section className="tw:mt-3 tw:flex tw:flex-col tw:gap-3">
-
-        {data?.length === 0 && (
-          <div className="tw:rounded-xl tw:border tw:border-dashed tw:border-secondary tw:p-10 tw:text-center">
-            <ShieldTick className="tw:mx-auto tw:size-8 tw:text-tertiary" />
-            <p className="tw:mt-3 tw:text-md tw:font-medium tw:text-primary">
-              {search
-                ? `No policy matches “${search}”`
-                : 'No policy matches these filters'}
-            </p>
-            <p className="tw:mt-1 tw:text-sm tw:text-tertiary">
-              With nothing active, the engine denies by default — assets are not
-              exposed while this list is empty, they are simply unreachable
-              through us.
-            </p>
+      {data?.length === 0 ? (
+        <div className="tw:mt-3 tw:rounded-xl tw:border tw:border-dashed tw:border-secondary tw:p-10 tw:text-center">
+          <ShieldTick className="tw:mx-auto tw:size-8 tw:text-tertiary" />
+          <p className="tw:mt-3 tw:text-md tw:font-medium tw:text-primary">
+            {search
+              ? `No policy matches “${search}”`
+              : 'No policy matches these filters'}
+          </p>
+          <p className="tw:mt-1 tw:text-sm tw:text-tertiary">
+            With nothing active, the engine denies by default — assets are not
+            exposed while this list is empty, they are simply unreachable
+            through us.
+          </p>
+        </div>
+      ) : (
+        <section className="tw:mt-3 tw:overflow-hidden tw:rounded-xl tw:border tw:border-secondary tw:bg-primary">
+          <div
+            aria-hidden
+            className={`tw:hidden tw:border-b tw:border-secondary tw:bg-secondary tw:px-4 tw:py-2.5 tw:text-xs tw:font-semibold tw:text-tertiary ${ROW_GRID}`}>
+            <span>Policy</span>
+            <span>Scope</span>
+            <span>State</span>
+            <span>Updated</span>
           </div>
-        )}
-
-        {data?.map((policy) => (
-          <PolicyRow key={policy.id} policy={policy} />
-        ))}
-      </section>
+          <ul className="tw:divide-y tw:divide-secondary">
+            {data?.map((policy) => (
+              <li key={policy.id}>
+                <PolicyRow policy={policy} />
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       <Pager
         label="Policy pages"
@@ -269,40 +310,72 @@ export default function PolicyListPage() {
 
 function PolicyRow({ policy }: { policy: StoredPolicy }) {
   const document = policy.document;
-  const readback =
-    document.policyType === 'SUBSCRIPTION'
-      ? `${document.effect === 'DENY' ? 'Denies' : 'Allows'} ${describeSubject(document.subject)}`
-      : summariseData(policy);
+  const data = document.policyType === 'DATA';
+  const readback = data
+    ? summariseData(policy)
+    : `${document.effect === 'DENY' ? 'denies' : 'allows'} ${describeSubject(document.subject)}`;
+  const Icon = data ? EyeOff : ShieldTick;
 
   return (
     <Link
-      className="tw:rounded-xl tw:border tw:border-secondary tw:bg-primary tw:p-4 tw:transition tw:hover:border-brand"
+      className={`tw:block tw:px-4 tw:py-3.5 tw:transition tw:hover:bg-secondary ${ROW_GRID}`}
       to={`/policies/${policy.id}`}>
-      <div className="tw:flex tw:flex-wrap tw:items-center tw:gap-2">
-        <span className="tw:text-md tw:font-semibold tw:text-primary">
-          {document.displayName || document.name}
+      <div className="tw:flex tw:min-w-0 tw:items-start tw:gap-3">
+        <span
+          className={`tw:mt-0.5 tw:flex tw:size-9 tw:shrink-0 tw:items-center tw:justify-center tw:rounded-lg ${
+            data
+              ? 'tw:bg-utility-indigo-50 tw:text-utility-indigo-600'
+              : 'tw:bg-utility-brand-50 tw:text-utility-brand-600'
+          }`}
+          title={data ? 'Data policy' : 'Subscription policy'}>
+          <Icon aria-hidden className="tw:size-4.5" />
         </span>
-        <Badge color={STATE_TONE[policy.lifecycleState] ?? 'gray'} size="sm" type="pill-color">
-          {policy.lifecycleState.replace('_', ' ').toLowerCase()}
-        </Badge>
-        <Badge color="gray" size="sm" type="pill-color">
-          {document.policyType === 'DATA' ? 'data' : 'subscription'}
-        </Badge>
-        <Badge color="gray" size="sm" type="pill-color">
-          {document.scopeLevel.toLowerCase()}
-          {document.scopeFqn ? ` · ${document.scopeFqn}` : ''}
-        </Badge>
-        <Badge color="gray" size="sm" type="pill-color">
-          {policy.environment}
-        </Badge>
-        <span className="tw:ml-auto tw:text-xs tw:text-tertiary">
-          v{policy.version} · {policy.updatedBy}
-        </span>
+        <div className="tw:min-w-0">
+          <div className="tw:flex tw:flex-wrap tw:items-center tw:gap-x-2">
+            <span className="tw:truncate tw:text-sm tw:font-semibold tw:text-primary">
+              {document.displayName || document.name}
+            </span>
+            {document.effect === 'DENY' && (
+              <Badge color="error" size="sm" type="pill-color">
+                Deny
+              </Badge>
+            )}
+          </div>
+          <p className="tw:mt-0.5 tw:line-clamp-2 tw:text-pretty tw:text-xs tw:text-tertiary">
+            {data ? 'Data' : 'Subscription'} · on assets where{' '}
+            {describeSelector(document.selector)} — {readback}.
+          </p>
+        </div>
       </div>
 
-      <p className="tw:mt-2 tw:text-sm tw:text-secondary">
-        On assets where {describeSelector(document.selector)} — {readback}.
-      </p>
+      <div className="tw:mt-2 tw:min-w-0 tw:pl-12 tw:md:mt-0 tw:md:pl-0">
+        <p className="tw:text-sm tw:text-secondary">
+          {LEVEL_LABEL[document.scopeLevel] ?? document.scopeLevel}
+        </p>
+        {document.scopeFqn && (
+          <p
+            className="tw:truncate tw:font-mono tw:text-xs tw:text-quaternary"
+            title={document.scopeFqn}>
+            {shortFqn(document.scopeFqn)}
+          </p>
+        )}
+      </div>
+
+      <div className="tw:mt-2 tw:flex tw:flex-wrap tw:items-center tw:gap-1.5 tw:pl-12 tw:md:mt-0 tw:md:pl-0">
+        <Badge color={STATE_TONE[policy.lifecycleState] ?? 'gray'} size="sm" type="pill-color">
+          {STATE_LABEL[policy.lifecycleState] ?? policy.lifecycleState}
+        </Badge>
+        <Badge color="gray" size="sm" type="modern">
+          {policy.environment}
+        </Badge>
+      </div>
+
+      <div className="tw:mt-1 tw:pl-12 tw:text-xs tw:text-tertiary tw:md:mt-0 tw:md:pl-0">
+        <p>
+          v{policy.version} · {relativeTime(policy.updatedAt)}
+        </p>
+        <p className="tw:truncate tw:text-quaternary">by {policy.updatedBy}</p>
+      </div>
     </Link>
   );
 }

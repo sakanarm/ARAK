@@ -21,6 +21,7 @@ import QueryLogPage from './pages/audit/QueryLogPage';
 import DashboardPage from './pages/dashboard/DashboardPage';
 import AccessRequestsPage, { RequestPage } from './pages/requests/AccessRequestsPage';
 import PreauthorizePage from './pages/requests/PreauthorizePage';
+import NewRequestPage from './pages/requests/NewRequestPage';
 import SimulatorPage from './pages/simulator/SimulatorPage';
 import AccessWorkflowsPage from './pages/settings/AccessWorkflowsPage';
 import WorkflowBuilderPage from './pages/settings/WorkflowBuilderPage';
@@ -89,6 +90,7 @@ export default function App() {
           <Route element={<DashboardPage />} path="/dashboard" />
           <Route element={<AccessRequestsPage />} path="/requests" />
           <Route element={<PreauthorizePage />} path="/requests/preauthorize" />
+          <Route element={<NewRequestPage />} path="/requests/new" />
           <Route element={<RequestPage />} path="/requests/:ticket" />
           <Route element={<SimulatorPage />} path="/simulator" />
           <Route element={<SourcesPage />} path="/sources" />

@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.mfec.dac.access.AccessWorkflow.Draft;
+import com.mfec.dac.access.AccessWorkflow.Join;
 import com.mfec.dac.access.AccessWorkflow.Kind;
 import com.mfec.dac.access.AccessWorkflow.OnReject;
 import com.mfec.dac.access.AccessWorkflow.Rule;
@@ -29,6 +30,10 @@ class AccessWorkflowTest {
     return stage(step, name, Rule.ANY, null, OnReject.VETO, OWNERS);
   }
 
+  private static Stage anyJoin(int step, String name) {
+    return new Stage(step, name, Rule.ANY, null, OnReject.VETO, List.of(OWNERS), Join.ANY);
+  }
+
   private static Draft draft(Stage... stages) {
     return new Draft("Finance review", null, null, null, Arrays.asList(stages), null);
   }
@@ -45,6 +50,29 @@ class AccessWorkflowTest {
   @Nested
   @DisplayName("cleaning")
   class Cleaning {
+
+    @Test
+    @DisplayName("stages that run together keep their join; a stage alone has nothing to join")
+    void joins() {
+      Draft clean =
+          AccessWorkflow.validate(
+              draft(
+                  anyJoin(1, "Owner"),
+                  anyJoin(1, "Steward"),
+                  anyJoin(2, "Security")));
+      assertThat(clean.stages())
+          .extracting(s -> s.name() + " " + s.join())
+          .containsExactly("Owner ANY", "Steward ANY", "Security ALL");
+      // Written before joins existed: the stored stage reads as ALL.
+      assertThat(any(1, "Owner").join()).isEqualTo(Join.ALL);
+    }
+
+    @Test
+    void stagesThatRunTogetherAgreeOnTheJoin() {
+      assertThat(refusal(draft(anyJoin(1, "Owner"), any(1, "Steward"))))
+          .contains("Step 1")
+          .contains("any one is enough");
+    }
 
     @Test
     void stepsAreRenumberedDenselyAndSortedStably() {
