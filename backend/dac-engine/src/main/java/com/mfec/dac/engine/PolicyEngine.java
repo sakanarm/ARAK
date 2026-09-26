@@ -409,22 +409,37 @@ public final class PolicyEngine {
       // looking at a direct grant that is in force and admitting nobody -- for
       // whom the answer is one policy's name and whether it consented to being
       // passed.
+      //
+      // Consent is per layer, so a policy that did consent is still stuck behind
+      // a neighbour that did not. Saying so by name keeps its author from
+      // switching allowLocalOverride on a second time and wondering why nothing
+      // changed.
       boolean relaxable = overridable(subscriptions, gate);
+      List<String> withholding = withholding(subscriptions, gate);
       for (Candidate c : subscriptions) {
         if (c.layer() != gate || !c.allows() || c.applies() || c.additive()) {
           continue;
         }
-        reasons.add(
-            reason(
-                c.policy(),
-                false,
-                relaxable
-                    ? "holds the gate at this layer and does not grant this principal access; it "
-                        + "allows a lower layer to relax it, but nothing below has granted access "
-                        + "either"
-                    : "holds the gate at this layer and does not grant this principal access; it "
-                        + "does not allow a lower layer to relax it, so no direct grant can pass "
-                        + "it either"));
+        String explanation;
+        if (relaxable) {
+          explanation =
+              "holds the gate at this layer and does not grant this principal access; it "
+                  + "allows a lower layer to relax it, but nothing below has granted access "
+                  + "either";
+        } else if (Boolean.TRUE.equals(c.policy().getAllowLocalOverride())) {
+          explanation =
+              "holds the gate at this layer and does not grant this principal access; it "
+                  + "allows a lower layer to relax it, but "
+                  + String.join(", ", withholding)
+                  + (withholding.size() == 1 ? " at the same layer does" : " at the same layer do")
+                  + " not, so no direct grant can pass this layer";
+        } else {
+          explanation =
+              "holds the gate at this layer and does not grant this principal access; it "
+                  + "does not allow a lower layer to relax it, so no direct grant can pass "
+                  + "it either";
+        }
+        reasons.add(reason(c.policy(), false, explanation));
       }
       reasons.add(
           bareReason(
@@ -456,11 +471,17 @@ public final class PolicyEngine {
     return false;
   }
 
-  /** True when every ALLOW policy at this layer consented to being relaxed. */
+  /**
+   * True when every authored ALLOW at this layer consented to being relaxed.
+   *
+   * <p>A direct grant has no say. It opens the door for the people it names and
+   * was never asked to guard it, so a grant to one person must not keep the
+   * layer shut for another whom the layer's authors agreed to let past.
+   */
   private static boolean overridable(List<Candidate> candidates, int layer) {
     boolean seen = false;
     for (Candidate c : candidates) {
-      if (c.layer() != layer || !c.allows()) {
+      if (c.layer() != layer || !c.allows() || c.additive()) {
         continue;
       }
       seen = true;
@@ -469,6 +490,20 @@ public final class PolicyEngine {
       }
     }
     return seen;
+  }
+
+  /** The authored ALLOW policies at this layer that did not consent to being relaxed. */
+  private static List<String> withholding(List<Candidate> candidates, int layer) {
+    List<String> names = new ArrayList<>();
+    for (Candidate c : candidates) {
+      if (c.layer() == layer
+          && c.allows()
+          && !c.additive()
+          && !Boolean.TRUE.equals(c.policy().getAllowLocalOverride())) {
+        names.add(c.policy().getName());
+      }
+    }
+    return names;
   }
 
   // ------------------------------------------------------------ data policy
@@ -737,17 +772,17 @@ public final class PolicyEngine {
    */
   private static String signature(ResolvedRowPredicate predicate) {
     return nullSafe(String.valueOf(predicate.getKind()))
-        + ' '
+        + '\0'
         + nullSafe(predicate.getColumn())
-        + ' '
+        + '\0'
         + nullSafe(String.valueOf(predicate.getOperator()))
-        + ' '
+        + '\0'
         + nullSafe(String.valueOf(predicate.getValues()))
-        + ' '
+        + '\0'
         + nullSafe(predicate.getEntitlementKey())
-        + ' '
+        + '\0'
         + nullSafe(predicate.getRawPredicate())
-        + ' '
+        + '\0'
         + nullSafe(String.valueOf(predicate.getSourcePolicyId()));
   }
 

@@ -651,10 +651,16 @@ M25 ทำแยกได้ (profile ผ่าน proxy ที่มีแล�
 ### BT.5 บทเรียนจาก demo (engine ถูกต้องตาม FR-5.1 แต่คนเขียน policy พลาดได้)
 - **ALLOW ที่ระดับล่างกว่าและมี selector จะผ่อน gate ของ global ให้ทุกคนที่มัน match ทันทีที่ ALLOW ระดับ global ทุกตัวตั้ง `allowLocalOverride: true`** (ซึ่งต้องตั้งถ้าอยากให้ grant ผ่าน gate ได้) · demo รอบแรกมี schema ALLOW `tenant eq ARAK-DEMO` ผลคือทุกคนใน tenant เข้าตารางได้หมด แก้เป็น schema **DENY** `tenant ne ARAK-DEMO` (ออกเป็น version ใหม่) · `ne` / `notIn` เมื่อไม่มี attribute นั้นจะได้ **true** DENY จึงครอบคนที่ไม่มี tenant ด้วย
 - การ "ให้คนคนเดียวเข้าที่ระดับ table" ต้องทำด้วย **grant** เพราะ policy ที่ไม่มี selector ถูก API ปฏิเสธ (มีแต่ grant ที่เป็น additive)
-- ข้อความตอน refuse ของ gate บอกว่า *"does not allow a lower layer to relax it"* กับ **ทุก** ALLOW ใน layer นั้น แม้ตัวที่ตั้ง override=true แล้วก็ตาม · ควรชี้เฉพาะตัวที่ไม่ยินยอม (ค้าง ดู BT.6)
+- ข้อความตอน refuse ของ gate เคยบอกว่า *"does not allow a lower layer to relax it"* กับ **ทุก** ALLOW ใน layer นั้น แม้ตัวที่ตั้ง override=true แล้วก็ตาม → **แก้แล้ว (BT.7)**
+
+### BT.7 PolicyEngine — gate ชี้ชื่อ policy ที่ไม่ยินยอม · grant ไม่มีสิทธิ์ออกเสียงเรื่อง consent
+- ตัวที่ **ยินยอม** แล้วแต่ยังติด จะได้ข้อความ *"it allows a lower layer to relax it, but `<ชื่อ policy>` at the same layer does not, so no direct grant can pass this layer"* ส่วนตัวที่ **ไม่ยินยอม** ได้ข้อความเดิม คนเขียน policy จึงรู้ว่าต้องไปแก้ตัวไหน ไม่ใช่ไปเปิด override ซ้ำที่ตัวเองแล้วงงว่าทำไมไม่มีอะไรเปลี่ยน
+- `overridable(layer)` **ไม่นับ direct grant แล้ว** เพราะ grant (selector = null, `allowLocalOverride` = null) ที่ตกอยู่ใน layer เดียวกับ gate เคยถูกนับเป็นเสียง "ไม่ยินยอม" ผลคือ grant ของคนหนึ่งปิด layer ใส่อีกคนที่ผู้เขียน policy ยอมให้ผ่านแล้ว ซึ่งกลับหัวกับหลัก "grant เพิ่มสิทธิ์อย่างเดียว" · ใน service ตอนนี้ grant อยู่ที่ TABLE เสมอ (`GrantStore.GRANT_LAYER`) เคสนี้จึงยังไม่เกิดจริง แต่ engine ต้องไม่พึ่งเรื่องนั้น
+- `SubscriptionPolicyTest.Gates`: `refusalNamesTheWithholdingPolicy` · `grantAtTheGateDoesNotWithholdConsent` (ลอง mutation เอา `c.additive()` ออกแล้ว test นี้ fail จริง)
+- `PolicyEngine.java` เคยมี NUL byte ดิบ 6 ตัวใน char literal ของ `predicateKey` ทำให้ git/grep มองว่าเป็นไฟล์ binary (git เลยไม่ normalize line ending) เปลี่ยนเป็น `'\0'` แล้ว ค่าเท่าเดิมทุก byte · **diff รอบนี้ยาวทั้งไฟล์เพราะ git normalize CRLF → LF ครั้งเดียว** ไม่ใช่การแก้ logic
+- ผ่าน: engine 285 · unit ทั้ง backend 1,112 · `GrantCompositionIT` 19/19
 
 ### BT.6 ค้าง
-- ข้อความ refuse ของ gate ควรชี้เฉพาะ policy ที่ไม่ยินยอม (BT.5)
 - credential ของ source บน prod ที่ auth ไม่ผ่าน ผู้ใช้เป็นคนตัดสิน · แก้แล้วให้รัน Q1–Q7 ใน `prod-demo-policies.mjs` อีกรอบ
 - กรณี group บน prod รอ push แล้ว deploy V35 ก่อน
 

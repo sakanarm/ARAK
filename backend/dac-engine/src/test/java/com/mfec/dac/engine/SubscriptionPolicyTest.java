@@ -422,6 +422,64 @@ class SubscriptionPolicyTest {
     }
 
     @Test
+    @DisplayName("the refusal names the ALLOW that withheld consent, not the one that gave it")
+    void refusalNamesTheWithholdingPolicy() {
+      PolicyDecision decision =
+          engine()
+              .evaluate(
+                  analyst(),
+                  customer(),
+                  NOW,
+                  List.of(
+                      allow("org-consenting", ScopeLevel.ORG)
+                          .withSubject(onlyRole("admin"))
+                          .withAllowLocalOverride(true),
+                      allow("org-withholding", ScopeLevel.ORG).withSubject(onlyRole("admin")),
+                      allow("table-allow", ScopeLevel.TABLE)));
+
+      assertThat(decision.getAllowed()).isFalse();
+      assertThat(
+              decision.getReasons().stream()
+                  .filter(r -> "org-consenting".equals(r.getPolicyName()))
+                  .map(r -> r.getExplanation())
+                  .toList())
+          .anySatisfy(
+              e ->
+                  assertThat(e)
+                      .contains("allows a lower layer to relax it")
+                      .contains("org-withholding at the same layer does not"));
+      assertThat(
+              decision.getReasons().stream()
+                  .filter(r -> "org-withholding".equals(r.getPolicyName()))
+                  .map(r -> r.getExplanation())
+                  .toList())
+          .anySatisfy(e -> assertThat(e).contains("does not allow a lower layer to relax it"));
+    }
+
+    /**
+     * A grant sits at a layer only because it has to sit somewhere. Counting it
+     * as a vote on consent would let a grant to one person shut a layer for
+     * someone else, which is the opposite of what a grant is for.
+     */
+    @Test
+    @DisplayName("a grant to somebody else at the gate does not withhold consent")
+    void grantAtTheGateDoesNotWithholdConsent() {
+      Policy bobsGrant =
+          allow("grant-bob", ScopeLevel.SCHEMA)
+              .withSelector(null)
+              .withSubject(
+                  new SubjectRule().withPrincipals(List.of(new PrincipalMatch().withUser("bob"))));
+      assertThat(
+              allowed(
+                  allow("schema-admins", ScopeLevel.SCHEMA)
+                      .withSubject(onlyRole("admin"))
+                      .withAllowLocalOverride(true),
+                  bobsGrant,
+                  allow("table-allow", ScopeLevel.TABLE)))
+          .isTrue();
+    }
+
+    @Test
     @DisplayName("and is overridable when they all did")
     void allConsentingAllowsOpenTheLayer() {
       assertThat(
