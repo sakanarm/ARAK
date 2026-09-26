@@ -7,6 +7,7 @@ import com.mfec.dac.identity.PrincipalQuery;
 import com.mfec.dac.policy.AssetContextLoader;
 import com.mfec.dac.policy.DecisionService;
 import com.mfec.dac.policy.PolicyStore;
+import com.mfec.dac.policy.PrincipalLoader;
 import com.mfec.dac.schema.api.DecisionReason;
 import com.mfec.dac.schema.api.PolicyDecision;
 import com.mfec.dac.schema.api.ResolvedColumnMask;
@@ -18,6 +19,8 @@ import com.mfec.dac.schema.entity.policy.PrincipalMatch;
 import com.mfec.dac.schema.entity.policy.SubjectRule;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -79,6 +82,7 @@ public class AccessReview {
   private final PrincipalQuery people;
   private final AssetContextLoader contexts;
   private final GrantStore grants;
+  private final Preauthorization preauthorizations;
 
   public AccessReview(
       Jdbi jdbi,
@@ -95,6 +99,7 @@ public class AccessReview {
     this.people = people;
     this.contexts = contexts;
     this.grants = grants;
+    this.preauthorizations = new Preauthorization(jdbi, contexts, new PrincipalLoader());
   }
 
   // --------------------------------------------------------------- the answer
@@ -107,6 +112,11 @@ public class AccessReview {
    * @param ifPolicy what they could read with the chosen policy in force; null
    *     unless a policy was named
    * @param policy the chosen policy as it stands; null unless one was named
+   * @param kind ASSET or PREAUTHORIZATION. A pre-authorization has no one
+   *     person to read the table as, so {@code now}, {@code ifGranted} and
+   *     {@code ifPolicy} are null and {@code coverage} says what it reaches.
+   * @param target for a pre-authorization, which tables and for whom
+   * @param coverage for a pre-authorization, the tables and people it covers today
    */
   public record Review(
       UUID requestId,
@@ -125,7 +135,10 @@ public class AccessReview {
       Risk risk,
       List<Conflict> conflicts,
       List<Suggestion> suggestions,
-      Recommendation recommendation) {}
+      Recommendation recommendation,
+      String kind,
+      Preauthorization.Target target,
+      Preauthorization.Coverage coverage) {}
 
   /**
    * The person asking.
@@ -326,6 +339,9 @@ public class AccessReview {
           AccessRequestStore.RequestException.Kind.FORBIDDEN,
           "A review is for the people deciding a request, not for the person who asked");
     }
+    if (request.preauthorization()) {
+      return preauthorizationReview(request);
+    }
 
     String fqn = request.assetFqn();
     String who = request.requesterUsername();
@@ -393,7 +409,160 @@ public class AccessReview {
         judged.risk(),
         judged.conflicts(),
         judged.suggestions(),
-        judged.recommendation());
+        judged.recommendation(),
+        Preauthorization.ASSET,
+        null,
+        null);
+  }
+
+  /** People matched beyond this make a pre-authorization wide. */
+  static final int WIDE_AUDIENCE = 50;
+
+  /** Tables matched beyond this make a pre-authorization broad. */
+  static final int MANY_TABLES = 20;
+
+  /**
+   * A pre-authorization's review: what it reaches, not what one person sees.
+   *
+   * <p>There is no requester to read the tables as -- the people it is for may
+   * not include them -- so the review measures the target with the engine's own
+   * matchers, and offers the policy that would fulfil it as a draft to open.
+   * ARAK does not lean either way: whether a group should read a class of
+   * tables ahead of need is a governance call, and a score would pretend
+   * otherwise.
+   */
+  private Review preauthorizationReview(AccessRequestStore.StoredRequest request) {
+    Instant at = Instant.now();
+    Preauthorization.Target target = request.target();
+    Preauthorization.Coverage coverage =
+        preauthorizations.measure(request.assetFqn(), target, true);
+    Requester requester = requester(request, at);
+    TableFacts scope =
+        new TableFacts(request.assetFqn(), true, List.of(), List.of(), request.approvers(), 0, 0);
+
+    List<Factor> factors = new ArrayList<>();
+    if (coverage.peopleAtLeast() || coverage.people() > WIDE_AUDIENCE) {
+      factors.add(
+          new Factor(
+              "HIGH",
+              "WIDE_AUDIENCE",
+              (coverage.peopleAtLeast() ? "At least " : "")
+                  + coverage.people()
+                  + " people match today, and anybody who comes to match later will too"));
+    }
+    if (coverage.tables() > MANY_TABLES) {
+      factors.add(
+          new Factor(
+              "MEDIUM",
+              "MANY_TABLES",
+              coverage.tables()
+                  + " tables match today, and any tagged the same way later will too"));
+    }
+    if (request.requestedDays() == null) {
+      factors.add(
+          new Factor(
+              "MEDIUM",
+              "NO_END",
+              "Asked until revoked: the policy runs until somebody disables it"));
+    } else if (request.requestedDays() > VERY_LONG_DAYS) {
+      factors.add(new Factor("MEDIUM", "LONG", "Asked for " + request.requestedDays() + " days"));
+    }
+
+    List<Conflict> conflicts = new ArrayList<>();
+    if (coverage.tables() == 0) {
+      conflicts.add(
+          new Conflict(
+              "WARNING",
+              "NO_TABLES",
+              "No table under "
+                  + request.assetFqn()
+                  + " matches today. The policy would reach the first one tagged so, without"
+                  + " anybody looking again.",
+              null,
+              null));
+    }
+    if (coverage.people() == 0) {
+      conflicts.add(
+          new Conflict(
+              "WARNING",
+              "NOBODY",
+              "Nobody matches today. The policy would let in the first person who does.",
+              null,
+              null));
+    }
+    conflicts.add(
+        new Conflict(
+            "INFO",
+            "POLICY_ONLY",
+            "A pre-authorization is configured by a policy, never a grant. The draft is saved as a"
+                + " DRAFT and activated through the policy lifecycle, like any other.",
+            null,
+            null));
+
+    String level =
+        factors.stream().anyMatch(f -> "HIGH".equals(f.level()))
+            ? "HIGH"
+            : factors.isEmpty() ? "LOW" : "MEDIUM";
+    Policy draft =
+        Preauthorization.draft(
+            request, target, coverage.scopeType(), LocalDate.now(ZoneOffset.UTC));
+    List<Suggestion> suggestions =
+        List.of(
+            new Suggestion(
+                "CREATE_POLICY_DRAFT",
+                "A policy for " + Preauthorization.describePeople(target),
+                "Lets them read tables under "
+                    + request.assetFqn()
+                    + " where "
+                    + Preauthorization.describeTables(target)
+                    + (request.requestedDays() == null
+                        ? ", until disabled"
+                        : ", for " + request.requestedDays() + " days from the day it is drafted")
+                    + ". Opened as a draft: nothing is saved or activated until you do it.",
+                null,
+                null,
+                draft),
+            new Suggestion(
+                "DECLINE",
+                "Decline",
+                "If these people should not read these tables ahead of need, decline and say why.",
+                null,
+                null,
+                null));
+    Recommendation recommendation =
+        new Recommendation(
+            "REVIEW",
+            NEUTRAL,
+            "ARAK does not lean on a pre-authorization: whether these people should read this"
+                + " class of tables is yours to weigh.",
+            null,
+            List.of());
+    return new Review(
+        request.id(),
+        request.assetFqn(),
+        request.status(),
+        request.requestedDays(),
+        request.purpose(),
+        at,
+        false,
+        requester,
+        scope,
+        null,
+        null,
+        null,
+        null,
+        new Risk(level, List.copyOf(factors)),
+        List.copyOf(conflicts),
+        suggestions,
+        recommendation,
+        Preauthorization.KIND,
+        target,
+        coverage);
+  }
+
+  /** What a pre-authorization would cover, for the person filling one in: counts, no names. */
+  public Preauthorization.Coverage coverage(String scopeFqn, Preauthorization.Target target) {
+    return preauthorizations.measure(scopeFqn, target, false);
   }
 
   /**
@@ -406,6 +575,10 @@ public class AccessReview {
    * nobody decided about then.
    */
   public Optional<String> grantWouldNotOpen(AccessRequestStore.StoredRequest request) {
+    if (request.preauthorization()) {
+      // No grant configures one at all; the store refuses it in its own words.
+      return Optional.empty();
+    }
     DecisionService.Ask ask =
         new DecisionService.Ask(
             request.requesterUsername(),

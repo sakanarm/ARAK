@@ -192,6 +192,10 @@ public class AccessRequestStore {
    * @param stranded it waits for nobody: nobody but the requester could move it
    * @param templateName the request template it was asked on; null before templates
    * @param reference what the template asked to reference (a change ticket, a DPIA number)
+   * @param kind {@code ASSET}, a table for the requester; or {@code
+   *     PREAUTHORIZATION}, tables by facet under {@code assetFqn} for a group or
+   *     attribute holders, fulfilled by a policy only
+   * @param target for a pre-authorization, which tables and for whom
    */
   public record StoredRequest(
       UUID id,
@@ -229,7 +233,9 @@ public class AccessRequestStore {
       boolean mayConfigure,
       boolean stranded,
       String templateName,
-      String reference) {
+      String reference,
+      String kind,
+      Preauthorization.Target target) {
 
     StoredRequest seen(
         List<StageView> stageViews,
@@ -245,7 +251,11 @@ public class AccessRequestStore {
           completedAt, fulfilment, fulfilmentRef, fulfilmentNote, configurers,
           configuring == null ? List.of() : configuring.members(),
           configuring != null && configuring.fallback(),
-          stageViews, owners, decides, configures, nobodyElse, templateName, reference);
+          stageViews, owners, decides, configures, nobodyElse, templateName, reference, kind, target);
+    }
+
+    public boolean preauthorization() {
+      return Preauthorization.KIND.equals(kind);
     }
 
     public boolean pending() {
@@ -270,9 +280,11 @@ public class AccessRequestStore {
       String attemptedSql,
       String deniedBy,
       String requesterIp,
-      String reference) {
+      String reference,
+      String kind,
+      Preauthorization.Target target) {
 
-    /** A request with no reference, as before templates asked for one. */
+    /** An ordinary request, for one table, for the person asking, with no reference. */
     public NewRequest(
         String assetFqn,
         UUID requesterId,
@@ -286,7 +298,26 @@ public class AccessRequestStore {
         String requesterIp) {
       this(
           assetFqn, requesterId, requesterUsername, dataSourceId, reason, purpose,
-          requestedDays, attemptedSql, deniedBy, requesterIp, null);
+          requestedDays, attemptedSql, deniedBy, requesterIp, null, Preauthorization.ASSET, null);
+    }
+
+    /** An ordinary request, for one table, for the person asking. */
+    public NewRequest(
+        String assetFqn,
+        UUID requesterId,
+        String requesterUsername,
+        UUID dataSourceId,
+        String reason,
+        String purpose,
+        Integer requestedDays,
+        String attemptedSql,
+        String deniedBy,
+        String requesterIp,
+        String reference) {
+      this(
+          assetFqn, requesterId, requesterUsername, dataSourceId, reason, purpose,
+          requestedDays, attemptedSql, deniedBy, requesterIp, reference, Preauthorization.ASSET,
+          null);
     }
 
     /** A request whose address is not known, as before the review needed one. */
@@ -434,7 +465,7 @@ public class AccessRequestStore {
                     """
                     SELECT * FROM access_request
                     WHERE asset_fqn = :fqn AND lower(requester_username) = lower(:who)
-                      AND status IN (<open>)
+                      AND status IN (<open>) AND kind = 'ASSET'
                     """)
                 .bind("fqn", assetFqn)
                 .bind("who", requesterUsername)
@@ -594,9 +625,36 @@ public class AccessRequestStore {
    * the first.
    */
   public StoredRequest create(NewRequest request, Actor actor) {
+    String kind =
+        request.kind() == null || request.kind().isBlank()
+            ? Preauthorization.ASSET
+            : request.kind().trim().toUpperCase(Locale.ROOT);
+    if (!Preauthorization.ASSET.equals(kind) && !Preauthorization.KIND.equals(kind)) {
+      throw new RequestException(
+          RequestException.Kind.INVALID, "A request is for a table, or a pre-authorization");
+    }
+    boolean preauth = Preauthorization.KIND.equals(kind);
+    Preauthorization.Target target = null;
+    if (preauth) {
+      // Checked before anything is stored: a target the builder could not
+      // express, or a subject naming nobody, must never reach an approver.
+      target = Preauthorization.normalise(request.target());
+      if (request.attemptedSql() != null || request.deniedBy() != null) {
+        throw new RequestException(
+            RequestException.Kind.INVALID,
+            "A pre-authorization is asked for ahead of need, not from a refused statement");
+      }
+    } else if (request.target() != null) {
+      throw new RequestException(
+          RequestException.Kind.INVALID, "Only a pre-authorization names tables by facet");
+    }
     String fqn = request.assetFqn() == null ? "" : request.assetFqn().trim();
     if (fqn.isEmpty()) {
-      throw new RequestException(RequestException.Kind.INVALID, "Name the table you are asking for");
+      throw new RequestException(
+          RequestException.Kind.INVALID,
+          preauth
+              ? "Choose the service, database, schema or table it is under"
+              : "Name the table you are asking for");
     }
     if (request.reason() == null || request.reason().isBlank()) {
       throw new RequestException(
@@ -614,7 +672,7 @@ public class AccessRequestStore {
 
     StoredRequest created;
     try {
-      created = insert(request, actor, fqn);
+      created = insert(request, actor, fqn, kind, target);
     } catch (UnableToExecuteStatementException e) {
       // Two clicks that both passed the lookup below before either committed:
       // the partial unique index lets one through and refuses the other, and
@@ -634,31 +692,47 @@ public class AccessRequestStore {
     return created;
   }
 
-  private StoredRequest insert(NewRequest request, Actor actor, String fqn) {
+  private StoredRequest insert(
+      NewRequest request, Actor actor, String fqn, String kind, Preauthorization.Target target) {
+    boolean preauth = target != null;
     return jdbi.inTransaction(
         handle -> {
-          boolean exists =
-              handle
-                  .createQuery(
-                      """
-                      SELECT count(*) > 0 FROM asset
-                      WHERE fqn = :fqn AND is_current AND asset_type IN ('TABLE', 'VIEW')
-                      """)
-                  .bind("fqn", fqn)
-                  .mapTo(Boolean.class)
-                  .one();
-          if (!exists) {
-            throw new RequestException(
-                RequestException.Kind.INVALID,
-                fqn + " is not a table or view in the catalog, so there is nothing to grant");
+          if (preauth) {
+            if (Preauthorization.scopeType(handle, fqn).isEmpty()) {
+              throw new RequestException(
+                  RequestException.Kind.INVALID,
+                  fqn + " is not a service, database, schema or table in the catalog");
+            }
+          } else {
+            boolean exists =
+                handle
+                    .createQuery(
+                        """
+                        SELECT count(*) > 0 FROM asset
+                        WHERE fqn = :fqn AND is_current AND asset_type IN ('TABLE', 'VIEW')
+                        """)
+                    .bind("fqn", fqn)
+                    .mapTo(Boolean.class)
+                    .one();
+            if (!exists) {
+              throw new RequestException(
+                  RequestException.Kind.INVALID,
+                  fqn + " is not a table or view in the catalog, so there is nothing to grant");
+            }
           }
 
+          // A pre-authorization is about other people and a set of tables:
+          // two on one scope, for two groups, are two requests.
           Optional<UUID> open =
+              preauth
+                  ? Optional.empty()
+                  :
               handle
                   .createQuery(
                       """
                       SELECT id FROM access_request
                       WHERE asset_fqn = :fqn AND requester_id = :who AND status IN (<open>)
+                        AND kind = 'ASSET'
                       """)
                   .bind("fqn", fqn)
                   .bind("who", request.requesterId())
@@ -695,12 +769,12 @@ public class AccessRequestStore {
                         (asset_fqn, requester_id, requester_username, data_source_id,
                          reason, purpose, requested_days, attempted_sql, denied_by,
                          workflow_id, workflow_name, configurers, current_step, requester_ip,
-                         template_id, template_name, reference)
+                         template_id, template_name, reference, kind, target)
                       VALUES
                         (:fqn, :who, :username, :source, :reason, :purpose, :days,
                          :sql, :deniedBy, :workflowId, :workflowName,
                          CAST(:configurers AS jsonb), :step, :ip,
-                         :templateId, :templateName, :reference)
+                         :templateId, :templateName, :reference, :kind, CAST(:target AS jsonb))
                       RETURNING id
                       """)
                   .bind("fqn", fqn)
@@ -720,6 +794,8 @@ public class AccessRequestStore {
                   .bind("templateId", template.id())
                   .bind("templateName", template.builtIn() ? null : template.name())
                   .bind("reference", template.form().asksReference() ? RequestTemplate.trim(request.reference()) : null)
+                  .bind("kind", kind)
+                  .bind("target", preauth ? write(target) : null)
                   .mapTo(UUID.class)
                   .one();
 
@@ -1049,6 +1125,14 @@ public class AccessRequestStore {
             handle -> {
               StoredRequest row = load(handle, id, true);
               configurable(handle, row, actor);
+              if ("GRANT".equals(kind) && row.preauthorization()) {
+                // The people it is for may not include the requester at all,
+                // and a grant is for one person on one table: only a policy
+                // says "these tables, these people".
+                throw new RequestException(
+                    RequestException.Kind.INVALID,
+                    "A pre-authorization is configured by a policy, not a grant");
+              }
               Instant now = Instant.now();
               UUID grantId = null;
               String ref = null;
@@ -1949,7 +2033,11 @@ public class AccessRequestStore {
         false,
         false,
         rs.getString("template_name"),
-        rs.getString("reference"));
+        rs.getString("reference"),
+        rs.getString("kind"),
+        rs.getString("target") == null
+            ? null
+            : read(rs.getString("target"), Preauthorization.Target.class));
   }
 
   private String write(Object value) {

@@ -1964,6 +1964,205 @@ class AccessRequestIT {
   // ------------------------------------------------------------ templates
 
   @Nested
+  @DisplayName("pre-authorizing a class of tables for a group")
+  class Preauthorizing {
+
+    private static final String IP = "192.0.2.77";
+
+    private AccessReview review() {
+      return new AccessReview(
+          jdbi,
+          decisions,
+          requests,
+          policies,
+          new PrincipalQuery(jdbi),
+          new AssetContextLoader(json),
+          grants);
+    }
+
+    private Preauthorization.Target piiForTeam(String team) {
+      return new Preauthorization.Target(
+          List.of(new Preauthorization.Condition("tags", "contains", "PII.Sensitive")),
+          new Preauthorization.Subject(
+              "GROUP", List.of(new Preauthorization.PrincipalRef("team", team)), List.of()));
+    }
+
+    private AccessRequestStore.StoredRequest preauthorize(
+        String scope, Integer days, Preauthorization.Target target) {
+      return requests.create(
+          new AccessRequestStore.NewRequest(
+              scope,
+              idOf("analyst_a"),
+              "analyst_a",
+              null,
+              "The fraud team reads PII tables under dbo every quarter",
+              null,
+              days,
+              null,
+              null,
+              IP,
+              null,
+              Preauthorization.KIND,
+              target),
+          ANALYST_A);
+    }
+
+    @Test
+    @DisplayName("a target names at least one facet and exactly one kind of subject")
+    void normalises() {
+      Preauthorization.Subject team =
+          new Preauthorization.Subject(
+              "group", List.of(new Preauthorization.PrincipalRef("TEAM", " Finance ")), List.of());
+      assertInvalid(() -> Preauthorization.normalise(null));
+      assertInvalid(() -> Preauthorization.normalise(new Preauthorization.Target(List.of(), team)));
+      assertInvalid(
+          () ->
+              Preauthorization.normalise(
+                  new Preauthorization.Target(
+                      List.of(new Preauthorization.Condition("owner", "eq", "x")), team)));
+      assertInvalid(
+          () ->
+              Preauthorization.normalise(
+                  new Preauthorization.Target(
+                      List.of(new Preauthorization.Condition("tags", "startsWith", "PII")), team)));
+      assertInvalid(
+          () ->
+              Preauthorization.normalise(
+                  new Preauthorization.Target(
+                      List.of(new Preauthorization.Condition("tags", "contains", "PII")), null)));
+      assertInvalid(
+          () ->
+              Preauthorization.normalise(
+                  new Preauthorization.Target(
+                      List.of(new Preauthorization.Condition("tags", "contains", "PII")),
+                      new Preauthorization.Subject(
+                          "GROUP",
+                          List.of(new Preauthorization.PrincipalRef("team", "Finance")),
+                          List.of(new Preauthorization.Attribute("clearance", "eq", "L2"))))));
+
+      Preauthorization.Target clean =
+          Preauthorization.normalise(
+              new Preauthorization.Target(
+                  List.of(
+                      new Preauthorization.Condition(" Tags ", null, " PII.Sensitive "),
+                      new Preauthorization.Condition("tags", "contains", "PII.Sensitive")),
+                  team));
+      assertThat(clean.conditions())
+          .containsExactly(new Preauthorization.Condition("tags", "contains", "PII.Sensitive"));
+      assertThat(clean.subject().kind()).isEqualTo("GROUP");
+      assertThat(clean.subject().principals())
+          .containsExactly(new Preauthorization.PrincipalRef("team", "Finance"));
+    }
+
+    @Test
+    @DisplayName("asked for a scope, not a table: two may be open at once, and a refused statement is no reason")
+    void asks() {
+      AccessRequestStore.StoredRequest one = preauthorize(DBO, 90, piiForTeam("Finance"));
+      AccessRequestStore.StoredRequest two = preauthorize(DBO, 30, piiForTeam("Risk"));
+
+      assertThat(one.kind()).isEqualTo(Preauthorization.KIND);
+      assertThat(one.preauthorization()).isTrue();
+      assertThat(one.target().subject().principals())
+          .containsExactly(new Preauthorization.PrincipalRef("team", "Finance"));
+      assertThat(requests.find(two.id(), ANALYST_A).target().subject().principals())
+          .containsExactly(new Preauthorization.PrincipalRef("team", "Risk"));
+      // The ordinary kind still holds one open per person per table.
+      ask("analyst_a", CUSTOMER, 7);
+      assertThatThrownBy(() -> ask("analyst_a", CUSTOMER, 7))
+          .satisfies(e -> assertThat(kind(e)).isEqualTo(AccessRequestStore.RequestException.Kind.CONFLICT));
+
+      assertInvalid(
+          () ->
+              requests.create(
+                  new AccessRequestStore.NewRequest(
+                      DBO, idOf("analyst_a"), "analyst_a", null,
+                      "The fraud team reads PII tables under dbo every quarter", null, 7,
+                      "SELECT * FROM customer", "Denied by default", IP, null,
+                      Preauthorization.KIND, piiForTeam("Finance")),
+                  ANALYST_A));
+      assertInvalid(
+          () ->
+              requests.create(
+                  new AccessRequestStore.NewRequest(
+                      CUSTOMER, idOf("analyst_a"), "analyst_a", null,
+                      "The fraud team reads PII tables under dbo every quarter", null, 7, null,
+                      null, IP, null, Preauthorization.ASSET, piiForTeam("Finance")),
+                  ANALYST_A));
+      assertThatThrownBy(() -> preauthorize("prod-pg.NoSuchDB", 7, piiForTeam("Finance")))
+          .isInstanceOf(AccessRequestStore.RequestException.class);
+    }
+
+    @Test
+    @DisplayName("the review measures who and what it reaches, and offers the policy only as an unsaved draft")
+    void reviews() throws Exception {
+      administrator("admin");
+      AccessRequestStore.StoredRequest made = preauthorize(DBO, 90, piiForTeam("Finance"));
+
+      AccessReview.Review seen = review().review(made.id(), ADMIN, null);
+
+      assertThat(seen.kind()).isEqualTo(Preauthorization.KIND);
+      assertThat(seen.now()).isNull();
+      assertThat(seen.ifGranted()).isNull();
+      assertThat(seen.coverage().scopeType()).isEqualTo("SCHEMA");
+      assertThat(seen.coverage().tables()).isEqualTo(1);
+      assertThat(seen.coverage().tableSample()).containsExactly(CUSTOMER);
+      assertThat(seen.coverage().people()).isEqualTo(1);
+      assertThat(seen.coverage().peopleSample()).containsExactly("finance_lead");
+      assertThat(seen.recommendation().verdict()).isEqualTo("REVIEW");
+      assertThat(seen.conflicts())
+          .extracting(AccessReview.Conflict::code)
+          .containsExactly("POLICY_ONLY");
+      assertThat(seen.suggestions())
+          .extracting(AccessReview.Suggestion::kind)
+          .containsExactly("CREATE_POLICY_DRAFT", "DECLINE");
+
+      Policy draft = seen.suggestions().get(0).draft();
+      assertThat(draft.getPolicyType()).isEqualTo(Policy.PolicyType.SUBSCRIPTION);
+      assertThat(draft.getEffect()).isEqualTo(Policy.Effect.ALLOW);
+      assertThat(draft.getScopeFqn()).isEqualTo(DBO);
+      assertThat(draft.getScopeLevel()).isEqualTo(ResolvedColumnMask.ScopeLevel.SCHEMA);
+      assertThat(draft.getSelector().getCondition().getValue()).isEqualTo("PII.Sensitive");
+      assertThat(draft.getSubject().getPrincipals().get(0).getTeam()).isEqualTo("Finance");
+      assertThat(draft.getSubject().getTime().getValidTo())
+          .isEqualTo(java.time.LocalDate.now(java.time.ZoneOffset.UTC).plusDays(90));
+      assertThat(draft.getName()).startsWith("preauth-");
+      // Reviewing saved nothing and switched nothing on.
+      assertThat(jdbi.<Integer, RuntimeException>withHandle(h -> h.createQuery("SELECT count(*) FROM policy").mapTo(Integer.class).one()).intValue())
+          .isZero();
+
+      // Nobody in the team, no end date: both said, and the audience is not named to the asker.
+      AccessRequestStore.StoredRequest empty = preauthorize(DBO, null, piiForTeam("Nobody"));
+      AccessReview.Review open = review().review(empty.id(), ADMIN, null);
+      assertThat(open.conflicts())
+          .extracting(AccessReview.Conflict::code)
+          .containsExactly("NOBODY", "POLICY_ONLY");
+      assertThat(open.risk().factors()).extracting(AccessReview.Factor::code).contains("NO_END");
+      assertThat(review().coverage(DBO, piiForTeam("Finance")).peopleSample()).isEmpty();
+      assertThat(review().coverage(DBO, piiForTeam("Finance")).people()).isEqualTo(1);
+
+      // The address it was asked from is never in what a reviewer is sent.
+      assertThat(json.writeValueAsString(seen)).doesNotContain(IP);
+      assertThat(json.writeValueAsString(requests.find(made.id(), ADMIN))).doesNotContain(IP);
+    }
+
+    @Test
+    @DisplayName("configured by a policy only: a grant is refused and nothing is granted")
+    void noGrant() {
+      administrator("admin");
+      AccessRequestStore.StoredRequest made = preauthorize(DBO, 30, piiForTeam("Finance"));
+      requests.approve(made.id(), ADMIN, null, null);
+
+      assertThatThrownBy(() -> requests.complete(made.id(), ADMIN, grantFor(30)))
+          .isInstanceOf(AccessRequestStore.RequestException.class)
+          .hasMessageContaining("policy, not a grant");
+      assertThat(review().grantWouldNotOpen(requests.find(made.id(), ADMIN))).isEmpty();
+      assertThat(jdbi.<Integer, RuntimeException>withHandle(h -> h.createQuery("SELECT count(*) FROM access_grant").mapTo(Integer.class).one()).intValue())
+          .isZero();
+      assertThat(read("finance_lead", CUSTOMER)).isFalse();
+    }
+  }
+
+  @Nested
   @DisplayName("request templates")
   class Templates {
 

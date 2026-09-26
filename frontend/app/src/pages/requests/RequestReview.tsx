@@ -10,14 +10,18 @@ import {
   Lightbulb02,
   Stars02,
   User01,
+  Users01,
   XCircle,
 } from '@untitledui/icons';
 import { Chip as Badge } from '../../components/chips';
 import { relativeTime } from '../../components/widgets';
 import { apiErrorMessage } from '../../api/client';
 import {
+  describePeople,
+  describeTables,
   fetchAccessReview,
   type AccessReview,
+  type PreauthCoverage,
   type ColumnFateKind,
   type ConflictSeverity,
   type ReviewAccess,
@@ -320,6 +324,25 @@ function ReviewBody({ review }: { review: AccessReview }) {
           )}
         </Panel>
 
+        {review.coverage && review.target ? (
+          <Panel icon={Database01} title="What it covers">
+            <dl className={`${FACTS} tw:mt-0`}>
+              <Row label="Under">
+                <span className="tw:block tw:truncate tw:font-mono tw:text-xs" title={review.assetFqn}>
+                  {review.assetFqn}
+                </span>
+                <span className="tw:text-xs tw:text-tertiary">{review.coverage.scopeType.toLowerCase()}</span>
+              </Row>
+              <Row label="Tables where">{describeTables(review.target)}</Row>
+              <Row label="For">{describePeople(review.target)}</Row>
+              <Row label="Today">
+                {count(review.coverage.tables, 'table')} ·{' '}
+                {review.coverage.peopleAtLeast && 'at least '}
+                {count(review.coverage.people, 'person', 'people')}
+              </Row>
+            </dl>
+          </Panel>
+        ) : (
         <Panel icon={Database01} title="The table">
           <dl className={`${FACTS} tw:mt-0`}>
             <Row label="Owners">
@@ -335,23 +358,32 @@ function ReviewBody({ review }: { review: AccessReview }) {
               {table.columns}
               {table.sensitiveColumns > 0 && ` · ${table.sensitiveColumns} sensitive`}
             </Row>
-            <Row label="Today">
-              {review.now.allowed ? (
-                'They can already read it'
-              ) : (
-                <span>
-                  Refused{review.now.blockedBy && <span className="tw:text-tertiary"> — {review.now.blockedBy}</span>}
-                </span>
-              )}
-            </Row>
+            {review.now && (
+              <Row label="Today">
+                {review.now.allowed ? (
+                  'They can already read it'
+                ) : (
+                  <span>
+                    Refused{review.now.blockedBy && <span className="tw:text-tertiary"> — {review.now.blockedBy}</span>}
+                  </span>
+                )}
+              </Row>
+            )}
           </dl>
         </Panel>
+        )}
       </div>
 
-      <div>
-        <Heading>If you grant it</Heading>
-        <AccessColumns access={review.ifGranted} />
-      </div>
+      {review.coverage ? (
+        <Reaches coverage={review.coverage} />
+      ) : (
+        review.ifGranted && (
+          <div>
+            <Heading>If you grant it</Heading>
+            <AccessColumns access={review.ifGranted} />
+          </div>
+        )
+      )}
 
       {risk.factors.length > 0 && (
         <div>
@@ -372,6 +404,67 @@ function ReviewBody({ review }: { review: AccessReview }) {
       {review.suggestions.length > 0 && <Suggestions review={review} />}
     </>
   );
+}
+
+/**
+ * A pre-authorization's reach today: the tables and the people, named for the
+ * people deciding it. It changes as tables are tagged and people join, which is
+ * the point of it and the reason to read it.
+ */
+function Reaches({ coverage }: { coverage: PreauthCoverage }) {
+  return (
+    <div className="tw:grid tw:gap-4 tw:lg:grid-cols-2">
+      <div className="tw:min-w-0">
+        <Heading>Tables it reaches today</Heading>
+        {coverage.tableSample.length === 0 ? (
+          <p className="tw:mt-2 tw:text-sm tw:text-tertiary">None yet.</p>
+        ) : (
+          <ul aria-label="Tables it reaches" className="tw:mt-2 tw:flex tw:flex-col tw:gap-1 tw:text-sm">
+            {coverage.tableSample.map((fqn) => (
+              <li className="tw:truncate tw:font-mono tw:text-xs tw:text-secondary" key={fqn} title={fqn}>
+                {fqn}
+              </li>
+            ))}
+          </ul>
+        )}
+        <More shown={coverage.tableSample.length} total={coverage.tables} />
+      </div>
+      <div className="tw:min-w-0">
+        <Heading>People it reaches today</Heading>
+        {coverage.peopleSample.length === 0 ? (
+          <p className="tw:mt-2 tw:text-sm tw:text-tertiary">
+            {coverage.people === 0 ? 'Nobody yet.' : 'Not named here.'}
+          </p>
+        ) : (
+          <ul aria-label="People it reaches" className="tw:mt-2 tw:flex tw:flex-wrap tw:gap-1">
+            {coverage.peopleSample.map((name) => (
+              <li key={name}>
+                <Badge color="gray" size="sm" type="pill-color">
+                  <Users01 aria-hidden className="tw:mr-1 tw:size-3" />
+                  {name}
+                </Badge>
+              </li>
+            ))}
+          </ul>
+        )}
+        <More shown={coverage.peopleSample.length} total={coverage.people} atLeast={coverage.peopleAtLeast} />
+      </div>
+    </div>
+  );
+}
+
+function More({ shown, total, atLeast = false }: { shown: number; total: number; atLeast?: boolean }) {
+  if (shown === 0 || (shown >= total && !atLeast)) return null;
+  return (
+    <p className="tw:mt-1.5 tw:text-xs tw:text-quaternary">
+      The first {shown} of {atLeast ? 'at least ' : ''}
+      {total}.
+    </p>
+  );
+}
+
+function count(n: number, one: string, many = `${one}s`) {
+  return `${n} ${n === 1 ? one : many}`;
 }
 
 /** Column by column, what a reading of the table would show. */

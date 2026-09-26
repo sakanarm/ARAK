@@ -117,6 +117,13 @@ export interface AccessRequest {
   templateName?: string | null;
   /** The reference that template asked for, if any. */
   reference?: string | null;
+  /**
+   * ASSET: one table, for the person asking. PREAUTHORIZATION: every table
+   * under `assetFqn` that `target` names, for the people it names; fulfilled
+   * by a policy, never a grant.
+   */
+  kind?: RequestKind;
+  target?: PreauthTarget | null;
   currentStep?: number | null;
   /** Who took it to configure. */
   assignee?: string | null;
@@ -168,6 +175,96 @@ export interface NewAccessRequest {
   deniedBy?: string | null;
   /** What the table's template calls its reference: a change ticket, a DPIA number. */
   reference?: string | null;
+  kind?: RequestKind;
+  target?: PreauthTarget | null;
+}
+
+// ----------------------------------------------------------------- pre-authorization
+
+export type RequestKind = 'ASSET' | 'PREAUTHORIZATION';
+
+export type PreauthFacet =
+  | 'classifications'
+  | 'tags'
+  | 'glossaries'
+  | 'terms'
+  | 'domains'
+  | 'dataProducts'
+  | 'tier'
+  | 'certification';
+
+/** One thing every table must carry: `contains` takes what sits under it too. */
+export interface PreauthCondition {
+  facet: PreauthFacet;
+  operator: 'contains' | 'eq';
+  value: string;
+}
+
+export interface PreauthPrincipal {
+  type: 'group' | 'team';
+  name: string;
+}
+
+export interface PreauthAttribute {
+  key: string;
+  operator: 'eq' | 'ne' | 'gte' | 'lte';
+  value: string;
+}
+
+/** Who it is for: named groups and teams, or whoever holds some attributes. */
+export interface PreauthSubject {
+  kind: 'GROUP' | 'ATTRIBUTE';
+  principals: PreauthPrincipal[];
+  attributes: PreauthAttribute[];
+}
+
+/** Which tables, and for whom. Every condition must hold. */
+export interface PreauthTarget {
+  conditions: PreauthCondition[];
+  subject: PreauthSubject;
+}
+
+/**
+ * What a pre-authorization reaches today. The people are named only in a
+ * review, for those deciding; the person filling one in gets the count.
+ */
+export interface PreauthCoverage {
+  scopeFqn: string;
+  scopeType: string;
+  tables: number;
+  tableSample: string[];
+  people: number;
+  /** The directory was larger than was read: at least `people`. */
+  peopleAtLeast: boolean;
+  peopleSample: string[];
+}
+
+export async function measurePreauthorization(
+  scopeFqn: string,
+  target: PreauthTarget
+): Promise<PreauthCoverage> {
+  const { data } = await apiClient.post<PreauthCoverage>(
+    '/v1/access-requests/preauthorization/coverage',
+    { scopeFqn, target }
+  );
+  return data;
+}
+
+/** `tags contains PII.Sensitive and domains contains Finance`, as the server words it. */
+export function describeTables(target: PreauthTarget): string {
+  return target.conditions.map((c) => `${c.facet} ${c.operator} ${c.value}`).join(' and ');
+}
+
+/** `team Finance or group Risk`, or `people with clearance gte L2`. */
+export function describePeople(target: PreauthTarget): string {
+  if (target.subject.kind === 'GROUP') {
+    return target.subject.principals.map((p) => `${p.type} ${p.name}`).join(' or ');
+  }
+  return `people with ${target.subject.attributes.map((a) => `${a.key} ${a.operator} ${a.value}`).join(' and ')}`;
+}
+
+export function isPreauthorization(request: { kind?: RequestKind | string | null }): boolean {
+  return request.kind === 'PREAUTHORIZATION';
 }
 
 /**
@@ -535,14 +632,19 @@ export interface AccessReview {
   addressKnown: boolean;
   requester: ReviewRequester;
   table: ReviewTable;
-  now: ReviewAccess;
-  ifGranted: ReviewAccess;
+  /** Null for a pre-authorization: there is no one person to read it as. */
+  now: ReviewAccess | null;
+  ifGranted: ReviewAccess | null;
   ifPolicy: ReviewAccess | null;
   policy: PolicyCheck | null;
   risk: { level: RiskLevel; factors: { level: RiskLevel; code: string; detail: string }[] };
   conflicts: ReviewConflict[];
   suggestions: ReviewSuggestion[];
   recommendation: Recommendation;
+  kind?: RequestKind;
+  target?: PreauthTarget | null;
+  /** For a pre-authorization: the tables and people it reaches today, named. */
+  coverage?: PreauthCoverage | null;
 }
 
 /**

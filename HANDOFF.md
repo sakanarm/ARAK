@@ -619,7 +619,49 @@ M25 ทำแยกได้ (profile ผ่าน proxy ที่มีแล�
 
 ---
 
-## รอบนี้ — **ข้อ BN: Request access template — ฟอร์มขอสิทธิ์ตั้งค่าได้ใน Settings ตาม scope / tag ของตาราง** (Preauthorization เลื่อนเป็น BO — ยังไม่ commit · M28 ยังไม่ commit)
+## รอบนี้ — **ข้อ BO: Preauthorization — ขอล่วงหน้าให้กลุ่มคน ตาม tag/domain ของตารางใต้ scope** (M28 ยังไม่ commit)
+
+ผู้ใช้ขอไว้ใน roadmap (Preauthorization) → ทำต่อจาก BN · คำขอชนิดที่สอง: ไม่ได้ขอตารางเดียวให้ตัวเอง แต่ขอ **ล่วงหน้า** ให้ **กลุ่ม / ทีม / คนที่มี attribute** สำหรับ **ทุกตารางใต้ scope ที่มี tag / classification / glossary term / domain ตามที่ระบุ** — รวมถึงตารางที่จะถูกติด tag แบบเดียวกันในอนาคต
+
+### BO.1 Migration — **V30 `access_request_preauthorization`**
+- `access_request.kind` (`ASSET` default | `PREAUTHORIZATION`) + `target` jsonb · CHECK: `kind = PREAUTHORIZATION` ⇔ มี `target`
+- CHECK: pre-authorization เติมเต็มได้ด้วย `POLICY_UPDATED` / `POLICY_CREATED` เท่านั้น — **ไม่มีทางเป็น GRANT** แม้ข้าม service
+- unique "คำขอเปิดได้ใบเดียวต่อคนต่อตาราง" ใช้เฉพาะ `kind = ASSET` — คนเดียวเปิด pre-authorization บน scope เดียวกันได้หลายใบ (คนละกลุ่ม)
+- `asset_fqn` = scope (service / database / schema / table / view) → workflow และ owner ของ scope เป็นคนตัดสิน เหมือนคำขอตารางข้างใน
+
+### BO.2 Target (`Preauthorization.java`)
+- `conditions`: 1–8 ข้อ `{facet, operator, value}` · facet = tag / classification / glossary / term / domain / dataProduct · operator `contains` (ครอบลูกหลาน) | `eq` (ชั้นนั้นชั้นเดียว) · value ≤300
+- `subject`: ชนิดเดียวต่อคำขอ — `GROUP` (group / team ≤10) หรือ `ATTRIBUTE` (key + `eq/ne/gte/lte`) · `normalise()` ตัดช่องว่าง ตัดซ้ำ ตรวจทุกอย่างก่อนเขียน → ไม่ผ่าน = 400
+- `describeTables()` / `describePeople()` เป็นประโยคที่ใช้ทั้งในหน้า request และ review
+
+### BO.3 Coverage — `POST /v1/access-requests/preauthorization/coverage`
+- บอกว่า **วันนี้** ครอบกี่ตาราง (ตัวอย่างชื่อตาราง ≤20) และกี่คน — **ไม่บอกชื่อคน** (ผู้ขอไม่ควรได้รายชื่อคนในกลุ่มจากช่องนี้) · นับคนได้สูงสุด 5000 เกินนั้นเป็น "at least"
+- หน้า review ของผู้อนุมัติเท่านั้นที่เห็นชื่อ (ตัวอย่าง ≤20)
+
+### BO.4 Review + draft policy (`AccessReview.preauthorizationReview`)
+- กล่อง **What it covers**: Under (scope) · Tables where · For · Today: N tables · N people + รายการตาราง/คนที่เข้าถึง (Reaches / More)
+- คนเกิน 50 (หรือ "at least") → คำเตือน wide audience
+- เสนอ **"A policy for …"** เป็น subscription policy ที่ร่างจากคำขอ (selector จาก conditions ใต้ scope · subject จากกลุ่ม/attribute · validTo จากจำนวนวัน) → ปุ่ม **Open as draft policy** เปิด builder เป็น DRAFT ยังไม่ถูกบันทึก — **ต้อง activate ผ่าน policy lifecycle ปกติเท่านั้น** ไม่มีอะไรเปิดเองจากคำขอ
+
+### BO.5 Configure
+- เลือก GRANT ไม่ได้ (server ตอบ 400 "policy, not a grant" · ฟอร์ม Configure แสดงแค่ 2 ตัวเลือก policy)
+- template ของ scope (BN) บังคับกับ pre-authorization เหมือนคำขอทั่วไป — purpose / reference / จำนวนวัน / until revoked
+
+### BO.6 Frontend
+- หน้าใหม่ **`/requests/preauthorize`** (`PreauthorizePage.tsx`) — ปุ่ม **Pre-authorize** ในหน้า Access requests · 4 ขั้น: scope (ค้น catalog) → ตารางที่มี (facet + contains/eq) → ให้ใคร (group/team หรือ attribute) → ทำไม/นานแค่ไหน
+  - กล่อง "What it reaches today" นับสดจาก coverage
+  - ขั้น 4 ถามตาม template ของ scope: guidance (text ล้วน) · purpose (dropdown ถ้ามีรายการ) · reason นับตัวอักษร · reference · ปุ่มวันตาม template (Built-in = 30/90/180/365) · Until revoked เฉพาะที่ template อนุญาต
+- หน้า Access requests: badge **Pre-authorization** ในรายการและหัว detail · ไอคอนโล่ · กล่อง "Tables where / For" · ปุ่ม "Open in catalog"
+- `RequestReview.tsx`: panel What it covers + draft policy
+
+### BO.7 ผลทดสอบ
+- `AccessRequestIT` **77/77** (nested *Preauthorizing*: normalises · asks · reviews · noGrant) · `AccessRequestResourceTest` 9 · `RequestTemplateResourceTest` 5
+- tsc ผ่าน · jest **474/474** (`PreauthorizePage.test.tsx` 7 · `AccessRequestsPage.test.tsx` + pre-authorizations) · build ผ่าน
+- dev: analyst_a ขอ scope `demo-pg.salesdb.sales` · Domain contains Finance · team Finance → **REQ-000021** (template Sales database บังคับ purpose → หน้าถามตาม template) · admin เห็น What it covers (1 table · 3 people) + "A policy for team Finance" → Open as draft policy
+
+---
+
+## รอบก่อนหน้า — **ข้อ BN: Request access template — ฟอร์มขอสิทธิ์ตั้งค่าได้ใน Settings ตาม scope / tag ของตาราง** (Preauthorization เลื่อนเป็น BO — ยังไม่ commit · M28 ยังไม่ commit)
 
 ผู้ใช้: *"Request access ควรจะออกแบบเป็น Form ให้กรอกหรือเปล่า หรือมี Template ให้ใส่ โดยสามารถ Configure Template ได้ใน Setting"* → *"ทำต่อเลย Request access template ด้วยนะ"*
 
@@ -5913,6 +5955,7 @@ estate ที่ใช้: `prod-mssql.SalesDB.dbo.{customer, order}` + **`prod-
 - ✅ **ข้อ AY เสร็จแล้ว** (Open in OpenMetadata ไม่ 500 · Request access มุมขวาบน · หัวหน้า asset แบบ OM · seed เคส demo) — ต่อด้วย **M9 slice 2** ข้างล่าง
 
 0. ✅ **M10 เสร็จ (ข้อ BE)** — Query log ตามหน้าที่ (V25) + Access Control Dashboard · **ต่อไป:** M9 recertification · แนบไฟล์ในคำขอ · export / SIEM ของ M8
+0-BO. ✅ **ข้อ BO เสร็จ** — Preauthorization (V30): ขอล่วงหน้าให้ group/team/attribute สำหรับทุกตารางใต้ scope ที่มี tag/term/domain ตามที่ระบุ · coverage นับตาราง/คนโดยไม่บอกชื่อ · review เสนอ subscription policy เป็น DRAFT เท่านั้น · GRANT ถูกปฏิเสธ · template ของ scope บังคับด้วย · **ต่อไป:** M28 (AI ใน Catalog + Ask NokRak ใน global search) → Dashboard A/B/C
 0-BN. ✅ **ข้อ BN เสร็จ** — Request access template (V31): ฟอร์มขอสิทธิ์ตั้งได้ใน Settings → Request templates ตาม scope และ tag/term ของตาราง (PII → purpose + DPIA number + สูงสุด 30 วัน) · guidance เป็น text ล้วน · server บังคับตาม template เอง · **ต่อไป:** Preauthorization (BO — `git stash pop` preauth-wip แล้วแก้ conflict ใน AccessRequestStore: templateName/reference + kind/target) → M28 (AI ใน Catalog + Ask NokRak ใน global search) → Dashboard A/B/C
 0-BM. ✅ **ข้อ BM เสร็จ** — Catalog ติดป้าย Queryable / Metadata only + OpenMetadata / Read from source ทุกแถว (list · tree · detail) + filter 2 ตัว · ~~ชื่อผู้สร้างใต้ ©~~ (เอาออกแล้วตามที่ผู้ใช้สั่ง) · น้องรักษ์ (NokRak) มีกล่องคำพูดสุ่ม · **ต่อไป:** Preauthorization (BN) → Request access template ใน Settings → M28 (AI ใน Catalog + Ask NokRak ใน global search) → Dashboard A/B/C
 0-BL. ✅ **ข้อ BL เสร็จ** — หน้า Governance เป็นตารางเดียว หัว Name / Assets / Policies คอลัมน์ตรงกัน · FQN ยาวของ sub-domain ย้ายเป็น tooltip · empty state · **ต่อไป:** Preauthorization Access Request (V30 + store เขียนแล้ว ยังไม่ commit) · AI ใน Catalog / global search · Dashboard ปรับแต่งได้ · M28

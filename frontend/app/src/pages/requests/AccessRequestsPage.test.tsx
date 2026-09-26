@@ -995,7 +995,7 @@ describe('AccessRequestsPage configuring', () => {
 
 describe('AccessRequestsPage review', () => {
   const POLICY = '0b6f3c1e-2f4a-4c8e-9d1a-5e7b8c9d0a1b';
-  const refused = review().now;
+  const refused = review().now!;
 
   function panel() {
     return screen.findByRole('region', { name: 'Review' });
@@ -1537,5 +1537,71 @@ describe('a request on its own page', () => {
     expect(
       await screen.findByText('“banana” is not a ticket number. They look like REQ-000042.')
     ).toBeInTheDocument();
+  });
+});
+
+describe('pre-authorizations', () => {
+  const SCOPE = 'demo-pg.salesdb.sales';
+  const TARGET = {
+    conditions: [{ facet: 'tags' as const, operator: 'contains' as const, value: 'PII.Sensitive' }],
+    subject: { kind: 'GROUP' as const, principals: [{ type: 'team' as const, name: 'Finance' }], attributes: [] },
+  };
+  const preauth = (overrides: Partial<AccessRequest> = {}) =>
+    request({ assetFqn: SCOPE, kind: 'PREAUTHORIZATION', target: TARGET, ...overrides });
+
+  it('marks one in the list, and says which tables and for whom', async () => {
+    fetchInbox.mockResolvedValue([preauth()]);
+    fetchReview.mockResolvedValue(
+      review({
+        assetFqn: SCOPE,
+        kind: 'PREAUTHORIZATION',
+        target: TARGET,
+        now: null,
+        ifGranted: null,
+        coverage: {
+          scopeFqn: SCOPE,
+          scopeType: 'SCHEMA',
+          tables: 2,
+          tableSample: [`${SCOPE}.customer`, `${SCOPE}.invoice`],
+          people: 3,
+          peopleAtLeast: false,
+          peopleSample: ['finance_lead', 'finance_b'],
+        },
+        conflicts: [{ severity: 'INFO', code: 'POLICY_ONLY', detail: 'Configured by a policy, never a grant.', policyId: null, policyName: null }],
+      })
+    );
+    renderPage('/requests?tab=inbox');
+
+    const card = await screen.findByRole('article', { name: `Request for ${SCOPE}` });
+    expect(within(card).getAllByText('Pre-authorization').length).toBeGreaterThan(0);
+    const asks = within(card).getByLabelText('What it asks for');
+    expect(within(asks).getByText('tags contains PII.Sensitive')).toBeInTheDocument();
+    expect(within(asks).getByText('team Finance')).toBeInTheDocument();
+
+    const reviewed = await screen.findByRole('region', { name: 'Review' });
+    expect(await within(reviewed).findByText('What it covers')).toBeInTheDocument();
+    expect(within(reviewed).getByText('2 tables · 3 people')).toBeInTheDocument();
+    expect(within(reviewed).getByText(`${SCOPE}.invoice`)).toBeInTheDocument();
+    expect(within(reviewed).getByText('finance_lead')).toBeInTheDocument();
+    expect(within(reviewed).getByText('The first 2 of 3.')).toBeInTheDocument();
+    expect(within(reviewed).queryByText('If you grant it')).toBeNull();
+  });
+
+  it('is configured by a policy: there is no grant to choose', async () => {
+    fetchInbox.mockResolvedValue([
+      approved({ assetFqn: SCOPE, kind: 'PREAUTHORIZATION', target: TARGET, status: 'IN_PROGRESS', assignee: 'me' }),
+    ]);
+    renderPage('/requests?tab=inbox');
+
+    const panel = await screen.findByRole('region', { name: 'Configure the request' });
+    const choices = within(panel).getByRole('radiogroup', { name: 'How it was configured' });
+    expect(within(choices).queryByText('Grant access')).toBeNull();
+    expect(within(choices).getByRole('radio', { name: /I created a policy/ })).toHaveAttribute('aria-checked', 'true');
+    expect(within(panel).queryByLabelText('Grant days')).toBeNull();
+  });
+
+  it('is offered beside finding a table', async () => {
+    renderPage();
+    expect(await screen.findByRole('link', { name: 'Pre-authorize' })).toHaveAttribute('href', '/requests/preauthorize');
   });
 });

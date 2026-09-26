@@ -3,6 +3,7 @@ package com.mfec.dac.resources;
 import com.mfec.dac.access.AccessEligibility;
 import com.mfec.dac.access.AccessRequestStore;
 import com.mfec.dac.access.AccessReview;
+import com.mfec.dac.access.Preauthorization;
 import com.mfec.dac.access.RequestStatistics;
 import com.mfec.dac.auth.AuthenticatedUser;
 import com.mfec.dac.auth.Secured;
@@ -94,6 +95,9 @@ public class AccessRequestResource {
    * What a requester sends. {@code days} null means "until revoked".
    *
    * @param reference what the table's request template asks to reference, if it does
+   * @param kind ASSET (the default) or PREAUTHORIZATION; for a pre-authorization
+   *     {@code assetFqn} is the scope and {@code target} names the tables and
+   *     the people
    */
   public record Ask(
       String assetFqn,
@@ -103,7 +107,22 @@ public class AccessRequestResource {
       Integer days,
       String attemptedSql,
       String deniedBy,
-      String reference) {
+      String reference,
+      String kind,
+      Preauthorization.Target target) {
+
+    /** An ordinary ask, for one table. */
+    public Ask(
+        String assetFqn,
+        String sourceId,
+        String reason,
+        String purpose,
+        Integer days,
+        String attemptedSql,
+        String deniedBy,
+        String reference) {
+      this(assetFqn, sourceId, reason, purpose, days, attemptedSql, deniedBy, reference, null, null);
+    }
 
     /** An ask with no reference, as the form sent before templates. */
     public Ask(
@@ -133,6 +152,9 @@ public class AccessRequestResource {
   /** Which tables to check, for the caller only. */
   public record Check(List<String> assetFqns, String purpose) {}
 
+  /** A pre-authorization being filled in: the scope, and which tables for whom. */
+  public record Measure(String scopeFqn, Preauthorization.Target target) {}
+
   /**
    * Opens a request.
    *
@@ -140,14 +162,21 @@ public class AccessRequestResource {
    * person. If it would not -- a DENY, or a higher layer that refuses them -- the
    * request is refused here with the policy that is in the way, instead of
    * sitting in an owner's inbox waiting for a "yes" that changes nothing.
+   *
+   * <p>A pre-authorization skips that question: it is not for the caller, and
+   * what fulfils it is a policy the reviewer drafts, not a grant to them.
    */
   @POST
   @Consumes(MediaType.APPLICATION_JSON)
   public Response create(
       Ask ask, @Context SecurityContext security, @Context HttpServletRequest http) {
     AuthenticatedUser caller = caller(security);
+    boolean preauth = ask != null && Preauthorization.KIND.equalsIgnoreCase(trim(ask.kind()));
     if (ask == null || ask.assetFqn() == null || ask.assetFqn().isBlank()) {
-      throw new BadRequestException("Name the table you are asking for");
+      throw new BadRequestException(
+          preauth
+              ? "Choose the service, database, schema or table it is under"
+              : "Name the table you are asking for");
     }
     String fqn = ask.assetFqn().trim();
     UUID sourceId = null;
@@ -159,17 +188,19 @@ public class AccessRequestResource {
       }
     }
 
-    AccessEligibility.Verdict verdict =
-        eligibility.check(caller.username(), fqn, clientIp(http), ask.purpose());
-    if (verdict.readable()) {
-      throw conflict("You can already read " + fqn + "; there is nothing to ask for");
-    }
-    if (!verdict.requestable()) {
-      throw conflict(
-          "A grant from the owner would not open "
-              + fqn
-              + " for you, so the request was not sent. Still refusing: "
-              + verdict.blockedBy());
+    if (!preauth) {
+      AccessEligibility.Verdict verdict =
+          eligibility.check(caller.username(), fqn, clientIp(http), ask.purpose());
+      if (verdict.readable()) {
+        throw conflict("You can already read " + fqn + "; there is nothing to ask for");
+      }
+      if (!verdict.requestable()) {
+        throw conflict(
+            "A grant from the owner would not open "
+                + fqn
+                + " for you, so the request was not sent. Still refusing: "
+                + verdict.blockedBy());
+      }
     }
 
     UUID source = sourceId;
@@ -188,9 +219,43 @@ public class AccessRequestResource {
                         ask.attemptedSql(),
                         ask.deniedBy(),
                         clientIp(http),
-                        ask.reference()),
+                        ask.reference(),
+                        preauth ? Preauthorization.KIND : trimOr(ask.kind(), Preauthorization.ASSET),
+                        ask.target()),
                     actor(caller)));
     return Response.status(Response.Status.CREATED).entity(created).build();
+  }
+
+  /**
+   * What a pre-authorization would cover today, while it is being filled in.
+   *
+   * <p>Counts and table names only, for anybody signed in: the tables are
+   * already in the catalog, and the people are counted, never named -- the
+   * names are for the reviewer, in the review.
+   */
+  @POST
+  @Path("/preauthorization/coverage")
+  @Consumes(MediaType.APPLICATION_JSON)
+  public Preauthorization.Coverage coverage(Measure measure, @Context SecurityContext security) {
+    caller(security);
+    if (review == null) {
+      throw new NotFoundException();
+    }
+    if (measure == null) {
+      throw new BadRequestException("Send {\"scopeFqn\": \"…\", \"target\": {…}}");
+    }
+    return guarded(
+        () ->
+            review.coverage(
+                measure.scopeFqn(), Preauthorization.normalise(measure.target())));
+  }
+
+  private static String trim(String s) {
+    return s == null ? "" : s.trim();
+  }
+
+  private static String trimOr(String s, String fallback) {
+    return s == null || s.isBlank() ? fallback : s.trim().toUpperCase(java.util.Locale.ROOT);
   }
 
   /** What the caller has asked for, newest first. */

@@ -17,6 +17,7 @@ import {
   SearchLg,
   Send01,
   Settings01,
+  ShieldTick,
   Table,
   XClose,
 } from '@untitledui/icons';
@@ -31,10 +32,13 @@ import {
   describeOnReject,
   describeRule,
   describeSeat,
+  describePeople,
+  describeTables,
   fetchMyRequests,
   fetchRequest,
   fetchRequestByTicket,
   fetchRequestInbox,
+  isPreauthorization,
   matchesSearch,
   OPEN_STATUSES,
   ticketNumber,
@@ -122,12 +126,21 @@ export default function AccessRequestsPage() {
               </p>
             </div>
           </div>
-          <Link
-            className="tw:inline-flex tw:items-center tw:gap-1.5 tw:rounded-lg tw:border tw:border-primary tw:bg-primary tw:px-3 tw:py-2 tw:text-sm tw:font-semibold tw:text-secondary tw:shadow-xs tw:transition tw:hover:bg-primary_hover"
-            to="/catalog">
-            <Database01 className="tw:size-4 tw:text-fg-quaternary" />
-            Find a table to request
-          </Link>
+          <div className="tw:flex tw:flex-wrap tw:gap-2">
+            <Link
+              className="tw:inline-flex tw:items-center tw:gap-1.5 tw:rounded-lg tw:border tw:border-primary tw:bg-primary tw:px-3 tw:py-2 tw:text-sm tw:font-semibold tw:text-secondary tw:shadow-xs tw:transition tw:hover:bg-primary_hover"
+              title="Ask ahead of need for a class of tables, for a group"
+              to="/requests/preauthorize">
+              <ShieldTick className="tw:size-4 tw:text-fg-quaternary" />
+              Pre-authorize
+            </Link>
+            <Link
+              className="tw:inline-flex tw:items-center tw:gap-1.5 tw:rounded-lg tw:border tw:border-primary tw:bg-primary tw:px-3 tw:py-2 tw:text-sm tw:font-semibold tw:text-secondary tw:shadow-xs tw:transition tw:hover:bg-primary_hover"
+              to="/catalog">
+              <Database01 className="tw:size-4 tw:text-fg-quaternary" />
+              Find a table to request
+            </Link>
+          </div>
         </div>
 
         <dl className="tw:mt-5 tw:flex tw:flex-wrap tw:gap-y-4">
@@ -598,6 +611,11 @@ function RequestList({
                   <Badge color={status.colour} size="sm" type="pill-color">
                     {status.label}
                   </Badge>
+                  {isPreauthorization(request) && (
+                    <Badge color="brand" size="sm" type="pill-color">
+                      Pre-authorization
+                    </Badge>
+                  )}
                   {progress && (
                     <span className="tw:shrink-0 tw:text-xs tw:text-quaternary">{progress}</span>
                   )}
@@ -692,6 +710,7 @@ function RequestDetail({
   const own = side === 'mine';
   const open = OPEN_STATUSES.includes(request.status);
   const configuring = request.status === 'APPROVED' || request.status === 'IN_PROGRESS';
+  const preauth = isPreauthorization(request);
 
   return (
     <article
@@ -703,7 +722,11 @@ function RequestDetail({
         <span
           aria-hidden
           className="tw:flex tw:size-11 tw:shrink-0 tw:items-center tw:justify-center tw:rounded-lg tw:bg-utility-brand-50">
-          <Key01 className="tw:size-5 tw:text-fg-brand-primary" />
+          {preauth ? (
+            <ShieldTick className="tw:size-5 tw:text-fg-brand-primary" />
+          ) : (
+            <Key01 className="tw:size-5 tw:text-fg-brand-primary" />
+          )}
         </span>
         <div className="tw:min-w-0 tw:flex-1">
           <div className="tw:flex tw:flex-wrap tw:items-center tw:gap-2">
@@ -711,6 +734,11 @@ function RequestDetail({
             <Badge color={status.colour} size="sm" type="pill-color">
               {status.label}
             </Badge>
+            {preauth && (
+              <Badge color="brand" size="sm" type="pill-color">
+                Pre-authorization
+              </Badge>
+            )}
             <TicketNumber ticket={request.ticket} />
           </div>
           <Link
@@ -724,7 +752,7 @@ function RequestDetail({
           iconLeading={Table}
           onPress={() => navigate(`/catalog/${encodeURIComponent(request.assetFqn)}`)}
           size="sm">
-          Open table
+          {preauth ? 'Open in catalog' : 'Open table'}
         </Button>
         {!page && request.ticket && (
           <Link
@@ -757,6 +785,17 @@ function RequestDetail({
             </Fact>
           )}
         </dl>
+
+        {preauth && request.target && (
+          <dl
+            aria-label="What it asks for"
+            className="tw:grid tw:grid-cols-[7rem_minmax(0,1fr)] tw:gap-x-3 tw:gap-y-2 tw:rounded-lg tw:bg-secondary tw:px-4 tw:py-3 tw:text-sm">
+            <dt className="tw:text-tertiary">Tables where</dt>
+            <dd className="tw:min-w-0 tw:break-words tw:text-primary">{describeTables(request.target)}</dd>
+            <dt className="tw:text-tertiary">For</dt>
+            <dd className="tw:min-w-0 tw:break-words tw:text-primary">{describePeople(request.target)}</dd>
+          </dl>
+        )}
 
         <div>
           <h3 className="tw:text-xs tw:font-semibold tw:tracking-wide tw:text-quaternary tw:uppercase">
@@ -1293,7 +1332,9 @@ const FULFILMENTS: { value: Fulfilment; label: string; detail: string }[] = [
  */
 function Configure({ request }: { request: AccessRequest }) {
   const queryClient = useQueryClient();
-  const [fulfilment, setFulfilment] = useState<Fulfilment>('GRANT');
+  const preauth = isPreauthorization(request);
+  const [fulfilment, setFulfilment] = useState<Fulfilment>(preauth ? 'POLICY_CREATED' : 'GRANT');
+  const offered = preauth ? FULFILMENTS.filter((option) => option.value !== 'GRANT') : FULFILMENTS;
   const [days, setDays] = useState(request.requestedDays === null ? '' : String(request.requestedDays));
   const [policyId, setPolicyId] = useState('');
   const [note, setNote] = useState('');
@@ -1380,8 +1421,11 @@ function Configure({ request }: { request: AccessRequest }) {
         </p>
       ) : (
         <>
-          <div aria-label="How it was configured" className="tw:grid tw:gap-2 tw:sm:grid-cols-3" role="radiogroup">
-            {FULFILMENTS.map((option) => {
+          <div
+            aria-label="How it was configured"
+            className={`tw:grid tw:gap-2 ${preauth ? 'tw:sm:grid-cols-2' : 'tw:sm:grid-cols-3'}`}
+            role="radiogroup">
+            {offered.map((option) => {
               const active = option.value === fulfilment;
               return (
                 <button
