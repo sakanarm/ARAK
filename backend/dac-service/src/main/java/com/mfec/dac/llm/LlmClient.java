@@ -148,6 +148,94 @@ public class LlmClient {
         usage.path("completion_tokens").asInt(0));
   }
 
+  /** One tool the model asked for, with its arguments as the JSON text it wrote. */
+  public record ToolCall(String id, String name, String arguments) {}
+
+  /**
+   * One step of a conversation (M28).
+   *
+   * @param content what the model said, or null when it only asked for tools
+   * @param calls the tools it asked for; empty when this is its answer
+   * @param message the assistant message as the gateway returned it, to be put
+   *     back in the history verbatim so the tool results line up with it
+   */
+  public record Turn(
+      String content,
+      List<ToolCall> calls,
+      String model,
+      int promptTokens,
+      int completionTokens,
+      ObjectNode message) {}
+
+  /**
+   * One step of a conversation with tools, in the OpenAI shape the gateway
+   * speaks.
+   *
+   * <p>The caller owns the loop and the messages. This only sends them and says
+   * what came back; it runs no tool itself, so nothing here can act on what the
+   * model asked for.
+   */
+  public Turn converse(Gateway gateway, String model, ArrayNode messages, ArrayNode tools)
+      throws LlmException {
+    if (model == null || model.isBlank()) {
+      throw new LlmException("No model has been chosen, and the platform has no default.");
+    }
+    ObjectNode request = json.createObjectNode();
+    request.put("model", model);
+    request.set("messages", messages);
+    if (tools != null && !tools.isEmpty()) {
+      request.set("tools", tools);
+      request.put("tool_choice", "auto");
+    }
+    request.put("max_completion_tokens", 4000);
+
+    JsonNode body = post(gateway, "/v1/chat/completions", request);
+    JsonNode choice = body.path("choices").path(0);
+    JsonNode message = choice.path("message");
+    if (!message.isObject()) {
+      throw new LlmException("The gateway returned no message.");
+    }
+    List<ToolCall> calls = new ArrayList<>();
+    for (JsonNode call : message.path("tool_calls")) {
+      String name = call.path("function").path("name").asText("");
+      if (!name.isBlank()) {
+        calls.add(
+            new ToolCall(
+                call.path("id").asText(""),
+                name,
+                call.path("function").path("arguments").asText("{}")));
+      }
+    }
+    String content = message.path("content").isTextual() ? message.path("content").asText() : null;
+    if (calls.isEmpty() && content == null) {
+      String finish = choice.path("finish_reason").asText("");
+      throw new LlmException(
+          finish.isBlank()
+              ? "The gateway returned no message content."
+              : "The model returned no content (finish_reason: " + finish + ").");
+    }
+    // Only the fields the next request needs. Some gateways add their own keys
+    // to the message, and echoing an unknown key back is a 400 on others.
+    ObjectNode echo = json.createObjectNode();
+    echo.put("role", "assistant");
+    if (content != null) {
+      echo.put("content", content);
+    } else {
+      echo.putNull("content");
+    }
+    if (!calls.isEmpty()) {
+      echo.set("tool_calls", message.path("tool_calls").deepCopy());
+    }
+    JsonNode usage = body.path("usage");
+    return new Turn(
+        content,
+        List.copyOf(calls),
+        body.path("model").asText(model),
+        usage.path("prompt_tokens").asInt(0),
+        usage.path("completion_tokens").asInt(0),
+        echo);
+  }
+
   // ------------------------------------------------------------------ plumbing
 
   private JsonNode get(Gateway gateway, String path) throws LlmException {

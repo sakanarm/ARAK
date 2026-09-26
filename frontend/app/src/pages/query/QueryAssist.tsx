@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useMutation } from '@tanstack/react-query';
 import { Button } from '@openmetadata/ui-core-components/components/base/buttons/button';
 import { BookOpen01, MagicWand01, X } from '@untitledui/icons';
 import { apiErrorMessage } from '../../api/client';
@@ -7,7 +7,6 @@ import type { Refusal } from '../../api/accessRequests';
 import {
   assistExplain,
   assistFix,
-  fetchMyLlmSetting,
   type SqlDraft,
   type SqlExplanation,
 } from '../../api/llm';
@@ -23,19 +22,8 @@ import {
  * statement and the catalogue's table and column names, never a row.
  */
 
-/**
- * Whether this account has an assistant at all. Same key and freshness as the
- * dock, so the console costs no second request.
- */
-export function useAssistReady(): boolean {
-  const { data } = useQuery({
-    queryKey: ['llm-me'],
-    queryFn: fetchMyLlmSetting,
-    staleTime: 5 * 60_000,
-    retry: false,
-  });
-  return data?.available === true;
-}
+// Kept importable from here, where the console has always found it.
+export { useAssistReady, useOfferedFeatures } from '../../assist/useAssist';
 
 /** The explanation of the statement in the editor, and which text it was about. */
 export function useSqlExplanation() {

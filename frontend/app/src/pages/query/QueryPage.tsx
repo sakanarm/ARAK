@@ -162,7 +162,8 @@ export default function QueryPage() {
 
   // Explain and Fix with AI (M26). Drawn only for an account that has an
   // assistant; neither runs anything, and the assistant never sees a row.
-  const assistReady = useAssistReady();
+  const explainReady = useAssistReady('EXPLAIN_SQL');
+  const fixReady = useAssistReady('FIX_SQL');
   const { explain, about: explained } = useSqlExplanation();
 
   // What the editor suggests: the same catalog page the Explorer beside it
@@ -237,12 +238,23 @@ export default function QueryPage() {
   // A draft replaces the editor rather than being appended to it. Appending
   // produced two statements in one box and a syntax error on the first run,
   // which read as the assistant being broken when it was the paste that was.
+  // A statement from the chat names the source it was written for; the editor
+  // follows it there, so the tables in it are the tables in the explorer.
   useEffect(() => {
-    if (drafted) {
-      setSql(drafted.text);
-      takeSql();
+    if (!drafted) {
+      return;
     }
-  }, [drafted, takeSql]);
+    // Arriving from the chat, the source list may not have loaded yet; wait
+    // for it rather than dropping the source on the floor.
+    if (drafted.sourceId && sources === undefined) {
+      return;
+    }
+    setSql(drafted.text);
+    if (drafted.sourceId && usable.some((source) => source.id === drafted.sourceId)) {
+      setSourceId(drafted.sourceId);
+    }
+    takeSql();
+  }, [drafted, takeSql, usable, sources]);
 
 
   // What the last run was, for a request made from its refusal: the editor may
@@ -344,7 +356,7 @@ export default function QueryPage() {
               {run.isPending ? 'Running…' : 'Run'}
             </Button>
 
-            {assistReady && (
+            {explainReady && (
               <ExplainButton
                 disabled={sql.trim().length === 0}
                 onClick={() =>
@@ -476,7 +488,7 @@ export default function QueryPage() {
             <ResultPanel
               error={run.error}
               fix={
-                assistReady
+                fixReady
                   ? {
                       engine,
                       // Into the editor, and the old refusal goes: it was about

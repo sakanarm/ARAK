@@ -5,6 +5,7 @@ import {
   CheckCircle,
   CpuChip01 as CpuChip,
   Key01,
+  Lock01,
   Send01,
   Server01,
   Zap,
@@ -14,6 +15,7 @@ import { Chip as Badge } from '../../components/chips';
 import { apiErrorMessage } from '../../api/client';
 import {
   completeWithLlm,
+  fetchFeatureAccess,
   fetchLlmModels,
   fetchLlmProvider,
   fetchLlmUsers,
@@ -21,9 +23,13 @@ import {
   probeLlmProvider,
   saveLlmProvider,
   saveLlmUserEnabled,
+  saveFeatureAccess,
   saveMyLlmSetting,
+  type AssistFeature,
+  type FeatureAccess,
   type LlmUserRow,
 } from '../../api/llm';
+import { roleLabel } from '../../api/accessRequests';
 import { useAuthStore } from '../../auth/authStore';
 
 /**
@@ -73,6 +79,7 @@ export default function LlmSettingsPage() {
       <div className="tw:mt-8 tw:flex tw:flex-col tw:gap-8">
         <MySection />
         {isAdmin && <GatewaySection />}
+        {isAdmin && <FeatureAccessSection />}
         {isAdmin && <PeopleSection />}
       </div>
     </>
@@ -655,6 +662,139 @@ function PersonRow({
         {row.updatedBy ? `${row.updatedBy}` : '—'}
       </td>
     </tr>
+  );
+}
+
+/* ----------------------------------------------------- who gets which job */
+
+/** The roles a job can be given to, in the order the server lists them. */
+export const FEATURE_ROLES = [
+  'PLATFORM_ADMIN',
+  'POLICY_AUTHOR',
+  'DATA_OWNER',
+  'AUDITOR',
+  'REQUESTER',
+] as const;
+
+/**
+ * The roles after one box is ticked or unticked.
+ *
+ * Unticking Everyone does not switch the job off for everybody at once -- that
+ * is one careless click from a support queue. It becomes every role, ticked,
+ * which is the same access said the long way, and from there roles come off
+ * one at a time.
+ */
+export function toggleRole(current: string[], role: string, on: boolean): string[] {
+  if (role === 'EVERYONE') {
+    return on ? ['EVERYONE'] : [...FEATURE_ROLES];
+  }
+  const roles = current.includes('EVERYONE') ? [...FEATURE_ROLES] : [...current];
+  const next = on ? [...new Set([...roles, role])] : roles.filter((r) => r !== role);
+  return FEATURE_ROLES.filter((r) => next.includes(r));
+}
+
+/**
+ * Which roles are offered which of the assistant's jobs (M28).
+ *
+ * <p>It narrows and never opens: somebody still needs the assistant switched on
+ * and a gateway that answers, and a role ticked here gains nothing else. The
+ * server enforces it on every call; hiding the button is the courtesy.
+ */
+export function FeatureAccessSection() {
+  const client = useQueryClient();
+  const { data: rows, error } = useQuery({
+    queryKey: ['llm', 'features'],
+    queryFn: fetchFeatureAccess,
+  });
+
+  const save = useMutation({
+    mutationFn: ({ feature, roles }: { feature: AssistFeature; roles: string[] }) =>
+      saveFeatureAccess(feature, roles),
+    onSuccess: (saved) => {
+      client.setQueryData<FeatureAccess[]>(['llm', 'features'], (old) =>
+        old?.map((row) => (row.feature === saved.feature ? saved : row))
+      );
+      // Their own offer may have changed with it.
+      client.invalidateQueries({ queryKey: ['llm-offered'] });
+    },
+  });
+
+  return (
+    <Card
+      icon={Lock01}
+      subtitle="Which roles are offered each of the assistant's jobs. This only narrows: nobody gains data access from it, and the assistant still reads everything as the person asking."
+      title="Who gets which job">
+      {error && (
+        <Notice tone="error">
+          {apiErrorMessage(error, 'The feature list could not be loaded.')}
+        </Notice>
+      )}
+      <div className="tw:mt-4 tw:overflow-x-auto">
+        <table className="tw:w-full tw:text-sm">
+          <thead>
+            <tr className="tw:border-b tw:border-secondary tw:text-left tw:text-xs tw:font-semibold tw:uppercase tw:tracking-wide tw:text-tertiary">
+              <th className="tw:py-2 tw:pr-4">Job</th>
+              <th className="tw:px-2 tw:py-2 tw:text-center">Everyone</th>
+              {FEATURE_ROLES.map((role) => (
+                <th className="tw:px-2 tw:py-2 tw:text-center" key={role}>
+                  {roleLabel(role)}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {(rows ?? []).map((row) => {
+              const everyone = row.roles.includes('EVERYONE');
+              const pending = save.isPending && save.variables?.feature === row.feature;
+              const change = (role: string, on: boolean) =>
+                save.mutate({ feature: row.feature, roles: toggleRole(row.roles, role, on) });
+              return (
+                <tr className="tw:border-b tw:border-secondary tw:last:border-0" key={row.feature}>
+                  <td className="tw:py-2.5 tw:pr-4">
+                    <div className="tw:font-medium tw:text-primary">{row.label}</div>
+                    <div className="tw:max-w-md tw:text-xs tw:text-tertiary">
+                      {row.description}
+                    </div>
+                    {row.roles.length === 0 && (
+                      <Badge color="warning" size="sm" type="pill-color">
+                        off for everybody
+                      </Badge>
+                    )}
+                  </td>
+                  <td className="tw:px-2 tw:py-2.5 tw:text-center">
+                    <input
+                      aria-label={`${row.label}: everyone`}
+                      checked={everyone}
+                      className="tw:size-4 tw:cursor-pointer"
+                      disabled={pending}
+                      onChange={(event) => change('EVERYONE', event.target.checked)}
+                      type="checkbox"
+                    />
+                  </td>
+                  {FEATURE_ROLES.map((role) => (
+                    <td className="tw:px-2 tw:py-2.5 tw:text-center" key={role}>
+                      <input
+                        aria-label={`${row.label}: ${roleLabel(role)}`}
+                        checked={everyone || row.roles.includes(role)}
+                        className="tw:size-4 tw:cursor-pointer tw:disabled:cursor-default tw:disabled:opacity-50"
+                        disabled={everyone || pending}
+                        onChange={(event) => change(role, event.target.checked)}
+                        type="checkbox"
+                      />
+                    </td>
+                  ))}
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      {save.error && (
+        <Notice tone="error">
+          {apiErrorMessage(save.error, 'That change could not be saved.')}
+        </Notice>
+      )}
+    </Card>
   );
 }
 

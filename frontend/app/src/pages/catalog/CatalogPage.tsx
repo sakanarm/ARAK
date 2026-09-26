@@ -35,6 +35,7 @@ import { leaf, segments, shortFqn } from '../../lib/fqn';
 import { plainText } from '../../lib/text';
 import { AssetTree } from './hierarchy';
 import { ReachBadges } from './reach';
+import { AskArakButton } from '../../assist/AskArak';
 
 const PAGE_SIZE = 25;
 
@@ -288,6 +289,9 @@ export default function CatalogPage() {
           <Button size="md" type="submit">
             Search
           </Button>
+          {/* By meaning rather than by name: the assistant reads descriptions,
+            * columns and tags, of the tables this person may see. */}
+          <AskArakButton term={searchDraft} />
           {filtered && (
             <Button
               color="tertiary"
@@ -393,7 +397,7 @@ export default function CatalogPage() {
           )}
         </div>
 
-        {!isLoading && data?.items.length === 0 && <Empty filtered={filtered} />}
+        {!isLoading && data?.items.length === 0 && <Empty filtered={filtered} term={search} />}
 
         {/*
           * Boxes of one height in a column that scrolls on its own, the way
@@ -828,7 +832,7 @@ function FacetGroup({
   );
 }
 
-function Empty({ filtered }: { filtered: boolean }) {
+function Empty({ filtered, term }: { filtered: boolean; term: string }) {
   return (
     <div className="tw:mt-4 tw:rounded-xl tw:border tw:border-dashed tw:border-secondary tw:p-10 tw:text-center">
       <Database01 className="tw:mx-auto tw:size-6 tw:text-quaternary" />
@@ -840,6 +844,14 @@ function Empty({ filtered }: { filtered: boolean }) {
           ? 'Facet filters are AND-ed — an asset has to carry every one of them.'
           : 'No crawl has run yet, or it found nothing. A platform admin can start one from the sync endpoint.'}
       </p>
+      {filtered && term && (
+        <div className="tw:mt-4 tw:flex tw:flex-col tw:items-center tw:gap-2">
+          <p className="tw:text-sm tw:text-tertiary">
+            Nothing is called that. Asking by what the table holds may find it.
+          </p>
+          <AskArakButton term={term} />
+        </div>
+      )}
     </div>
   );
 }

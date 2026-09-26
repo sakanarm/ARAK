@@ -3,6 +3,9 @@ package com.mfec.dac.resources;
 import com.mfec.dac.auth.AuthenticatedUser;
 import com.mfec.dac.auth.Secured;
 import com.mfec.dac.llm.LlmClient;
+import com.mfec.dac.llm.LlmFeatureStore;
+import com.mfec.dac.llm.LlmFeatureStore.Access;
+import com.mfec.dac.llm.LlmFeatureStore.Feature;
 import com.mfec.dac.llm.LlmGatewayUrl;
 import com.mfec.dac.llm.LlmSecretRef;
 import com.mfec.dac.llm.LlmSettingStore;
@@ -14,6 +17,7 @@ import com.mfec.dac.llm.LlmSettings.ProviderView;
 import com.mfec.dac.llm.LlmSettings.UserEdit;
 import com.mfec.dac.llm.LlmSettings.UserRow;
 import jakarta.ws.rs.BadRequestException;
+import jakarta.ws.rs.NotFoundException;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.ForbiddenException;
 import jakarta.ws.rs.GET;
@@ -73,11 +77,19 @@ public class LlmResource {
   private final LlmSettingStore store;
   private final LlmClient client;
   private final LlmSecretRef secrets;
+  /** Who is offered which job (M28); null on a deployment without the table. */
+  private final LlmFeatureStore features;
 
   public LlmResource(LlmSettingStore store, LlmClient client, LlmSecretRef secrets) {
+    this(store, client, secrets, null);
+  }
+
+  public LlmResource(
+      LlmSettingStore store, LlmClient client, LlmSecretRef secrets, LlmFeatureStore features) {
     this.store = store;
     this.client = client;
     this.secrets = secrets;
+    this.features = features;
   }
 
   // ------------------------------------------------------ the shared gateway
@@ -285,6 +297,55 @@ public class LlmResource {
     }
     UserEdit narrowed = new UserEdit(edit.enabled(), null, null, null, null);
     return store.saveUser(principalId, narrowed, actor.username());
+  }
+
+  // ------------------------------------------------------- feature by role
+
+  /** Who may use one of the assistant's jobs. */
+  public record FeatureEdit(List<String> roles) {}
+
+  /**
+   * Every job the assistant does and the roles offered it (M28).
+   *
+   * <p>Narrowing only: a job offered to a role still needs the assistant
+   * switched on for the person, and every job still reads as the person.
+   */
+  @GET
+  @Path("/features")
+  @Secured("PLATFORM_ADMIN")
+  public List<Access> features() {
+    return featureStore().all();
+  }
+
+  @PUT
+  @Path("/features/{feature}")
+  @Secured("PLATFORM_ADMIN")
+  public Access putFeature(
+      @PathParam("feature") String name, FeatureEdit edit, @Context SecurityContext security) {
+    Feature feature = LlmFeatureStore.parse(name);
+    if (feature == null) {
+      throw new NotFoundException("No assistant feature called " + name);
+    }
+    if (edit == null) {
+      throw new BadRequestException("No body");
+    }
+    LlmFeatureStore store = featureStore();
+    try {
+      store.save(feature, edit.roles(), caller(security).username());
+    } catch (IllegalArgumentException e) {
+      throw new BadRequestException(e.getMessage());
+    }
+    return store.all().stream()
+        .filter(a -> a.feature() == feature)
+        .findFirst()
+        .orElseThrow();
+  }
+
+  private LlmFeatureStore featureStore() {
+    if (features == null) {
+      throw new ServiceUnavailableException("Feature access is not available on this deployment");
+    }
+    return features;
   }
 
   // --------------------------------------------------------------- one call

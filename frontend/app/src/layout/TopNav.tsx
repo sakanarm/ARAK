@@ -33,6 +33,7 @@ import {
   Plus,
   RefreshCcw01,
   SearchLg,
+  Stars01,
   Server01,
   Settings01,
   ShieldTick,
@@ -61,6 +62,9 @@ import {
   type SearchHit,
   type SearchKind,
 } from '../api/search';
+import { catalogQuestion, useCatalogAssist } from '../assist/AskArak';
+import { useAssistStore } from '../assist/assistStore';
+import { NOKRAK } from '../assist/nokrak';
 import {
   markRequestNoticesSeen,
   NOTICES_KEY,
@@ -217,6 +221,14 @@ function GlobalSearch() {
   const [debounced, setDebounced] = useState('');
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);
+  const canAsk = useCatalogAssist();
+  const askArak = useAssistStore((state) => state.askArak);
+
+  function askNokRak() {
+    setOpen(false);
+    input.current?.blur();
+    askArak(catalogQuestion(term));
+  }
 
   // Debounced, so that typing a table name is one request and not eleven.
   useEffect(() => {
@@ -385,6 +397,18 @@ function GlobalSearch() {
 
       {showPanel && (
         <div className="tw:absolute tw:top-12 tw:right-0 tw:left-0 tw:z-50 tw:max-h-[70vh] tw:overflow-y-auto tw:rounded-xl tw:border tw:border-secondary tw:bg-primary tw:py-1.5 tw:shadow-lg">
+          {canAsk && term.trim() && (
+            <button
+              className="tw:flex tw:w-full tw:cursor-pointer tw:items-center tw:gap-2 tw:border-b tw:border-secondary tw:px-4 tw:py-2 tw:text-left tw:text-sm tw:text-secondary tw:hover:bg-primary_hover"
+              onClick={askNokRak}
+              onMouseDown={(event) => event.preventDefault()}
+              type="button">
+              <Stars01 aria-hidden className="tw:size-4 tw:shrink-0 tw:text-brand-secondary" />
+              <span className="tw:min-w-0 tw:truncate">
+                Ask {NOKRAK.name} to find “{term.trim()}”
+              </span>
+            </button>
+          )}
           {ordered.length === 0 ? (
             <p className="tw:px-4 tw:py-6 tw:text-center tw:text-sm tw:text-tertiary">
               {isFetching

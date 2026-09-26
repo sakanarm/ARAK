@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { Check, Copy01, X } from '@untitledui/icons';
@@ -8,10 +8,13 @@ import {
   assistPolicy,
   assistSql,
   fetchMyLlmSetting,
+  type AssistFeature,
   type PolicyDraft,
   type SqlDraft,
 } from '../api/llm';
+import { AssistChat } from './AssistChat';
 import { useAssistStore, type AssistMode } from './assistStore';
+import { useOfferedFeatures } from './useAssist';
 import cheer from '../assets/mascot/cheer.png';
 import greet from '../assets/mascot/greet.png';
 import shield from '../assets/mascot/shield.png';
@@ -41,6 +44,11 @@ import { NOKRAK, pickLine } from './nokrak';
  * speech bubble with one of a few short offers of help, picked at random and
  * fitted to the page. It says it once when a session starts, for a few
  * seconds, and otherwise only when pointed at -- a greeting, not a nag.
+ *
+ * <p>Since M28 it also talks: the panel opens on a conversation (AssistChat)
+ * that can look things up and hand back cards, with the page's own job -- the
+ * query writer, the policy drafter -- one tab across. Each is drawn only for a
+ * role the administrator has offered it to; the server refuses the rest.
  */
 
 /** The four poses, and what each one means. */
@@ -87,13 +95,18 @@ export default function AssistDock() {
     return () => window.removeEventListener('keydown', onKey);
   }, [open, setOpen]);
 
-  if (!setting?.available || !setting.enabled) {
+  const ready = Boolean(setting?.available && setting.enabled);
+  const offered = useOfferedFeatures(ready);
+
+  if (!ready) {
     return null;
   }
 
   return (
     <>
-      {open && <AssistPanel mode={mode} onClose={() => setOpen(false)} />}
+      {open && (
+        <AssistPanel mode={mode} offered={offered ?? []} onClose={() => setOpen(false)} />
+      )}
       <DockButton mode={mode} onToggle={() => setOpen(!open)} open={open} />
     </>
   );
@@ -216,13 +229,44 @@ function markGreeted() {
   }
 }
 
+/** Which job serves the page the panel was opened on, if any. */
+const PAGE_JOB: Record<Exclude<AssistMode, 'idle'>, AssistFeature> = {
+  sql: 'WRITE_SQL',
+  policy: 'DRAFT_POLICY',
+};
+
+type Tab = 'chat' | 'page';
+
 function AssistPanel({
   mode,
+  offered,
   onClose,
 }: {
   mode: AssistMode;
+  offered: AssistFeature[];
   onClose: () => void;
 }) {
+  const chatOn = offered.includes('CHAT');
+  const pageOn = mode !== 'idle' && offered.includes(PAGE_JOB[mode]);
+  const ask = useAssistStore((state) => state.ask);
+  // The page's own job first where there is one: somebody who opens the panel
+  // on the query console most likely wants the query written.
+  const [tab, setTab] = useState<Tab>(pageOn ? 'page' : 'chat');
+  const [chatPose, setChatPose] = useState<Pose>('greet');
+  const onChatPending = useCallback((pending: boolean, failed: boolean) => {
+    setChatPose(pending ? 'thinking' : failed ? 'shield' : 'greet');
+  }, []);
+
+  // A question from search is for the conversation, wherever the panel was.
+  useEffect(() => {
+    if (ask && chatOn) {
+      setTab('chat');
+    }
+  }, [ask, chatOn]);
+
+  const shown: Tab | null =
+    tab === 'page' && pageOn ? 'page' : chatOn ? 'chat' : pageOn ? 'page' : null;
+
   const sourceId = useAssistStore((state) => state.sourceId);
   const engine = useAssistStore((state) => state.engine);
   const deliverSql = useAssistStore((state) => state.deliverSql);
@@ -234,7 +278,7 @@ function AssistPanel({
   // Focus goes to the one control anybody opened this for.
   useEffect(() => {
     box.current?.focus();
-  }, [mode]);
+  }, [mode, shown]);
 
   const sql = useMutation({
     mutationFn: () =>
@@ -250,6 +294,7 @@ function AssistPanel({
   });
 
   const job = mode === 'policy' ? policy : sql;
+  const onPage = shown === 'page';
   const draft = mode === 'policy' ? policy.data : sql.data;
 
   // A refusal is not a failure. The server answers 200 with an empty draft and
@@ -257,15 +302,16 @@ function AssistPanel({
   // it answered with something that was not a read-only query and it was
   // thrown away. Both are the guardrail working, so both get the shield.
   const refused = mode === 'sql' && Boolean(sql.data?.problem);
-  const pose: Pose = job.isPending
+  const pagePose: Pose = job.isPending
     ? 'thinking'
     : job.isError || refused
       ? 'shield'
       : draft
         ? 'cheer'
         : 'greet';
+  const pose: Pose = shown === 'chat' ? chatPose : pagePose;
 
-  function ask() {
+  function submit() {
     if (!question.trim() || job.isPending) {
       return;
     }
@@ -279,7 +325,7 @@ function AssistPanel({
   return (
     <aside
       aria-label="Assistant"
-      className="tw:fixed tw:right-5 tw:bottom-22 tw:z-50 tw:flex tw:max-h-[70vh] tw:w-96 tw:max-w-[calc(100vw-2.5rem)] tw:flex-col tw:overflow-hidden tw:rounded-2xl tw:border tw:border-secondary tw:bg-primary tw:shadow-xl"
+      className={`tw:fixed tw:right-5 tw:bottom-22 tw:z-50 tw:flex tw:max-h-[70vh] ${shown === 'chat' ? 'tw:h-[min(70vh,40rem)] ' : ''}tw:w-96 tw:max-w-[calc(100vw-2.5rem)] tw:flex-col tw:overflow-hidden tw:rounded-2xl tw:border tw:border-secondary tw:bg-primary tw:shadow-xl`}
       id="assist-panel">
       <header className="tw:flex tw:items-center tw:gap-3 tw:border-b tw:border-secondary tw:bg-secondary tw:px-4 tw:py-3">
         <img
@@ -295,11 +341,13 @@ function AssistPanel({
             </span>
           </p>
           <p className="tw:truncate tw:text-xs tw:text-tertiary">
-            {mode === 'sql'
-              ? 'Writes a query against this source'
-              : mode === 'policy'
-                ? 'Drafts a policy for you to check'
-                : 'Open a query or a policy to use it'}
+            {shown === 'chat'
+              ? 'Finds, explains and drafts. You decide.'
+              : mode === 'sql'
+                ? 'Writes a query against this source'
+                : mode === 'policy'
+                  ? 'Drafts a policy for you to check'
+                  : 'Open a query or a policy to use it'}
           </p>
         </div>
         <button
@@ -311,8 +359,25 @@ function AssistPanel({
         </button>
       </header>
 
+      {chatOn && pageOn && (
+        <div
+          aria-label="What the assistant does"
+          className="tw:flex tw:gap-1 tw:border-b tw:border-secondary tw:px-3 tw:pt-2"
+          role="tablist">
+          <PanelTab onSelect={() => setTab('chat')} selected={shown === 'chat'}>
+            Chat
+          </PanelTab>
+          <PanelTab onSelect={() => setTab('page')} selected={shown === 'page'}>
+            {mode === 'sql' ? 'Write a query' : 'Draft a policy'}
+          </PanelTab>
+        </div>
+      )}
+
+      {shown === 'chat' ? (
+        <AssistChat onPending={onChatPending} onUsed={onClose} />
+      ) : (
       <div className="tw:min-h-0 tw:flex-1 tw:overflow-y-auto tw:p-4">
-        {mode === 'idle' ? (
+        {!onPage ? (
           <Idle />
         ) : (
           <>
@@ -332,7 +397,7 @@ function AssistPanel({
                 // document. Shift+Enter is there for the rare long one.
                 if (event.key === 'Enter' && !event.shiftKey) {
                   event.preventDefault();
-                  ask();
+                  submit();
                 }
               }}
               placeholder={
@@ -359,7 +424,7 @@ function AssistPanel({
                   job.isPending ||
                   (mode === 'sql' && !sourceId)
                 }
-                onPress={ask}
+                onPress={submit}
                 size="sm">
                 {job.isPending
                   ? 'Thinking…'
@@ -403,6 +468,7 @@ function AssistPanel({
           </>
         )}
       </div>
+      )}
 
       {/*
         Standing, not dismissible, and worded as two facts rather than a
@@ -421,6 +487,31 @@ function AssistPanel({
 }
 
 /** What it says when the open page has nothing for it to do. */
+function PanelTab({
+  selected,
+  onSelect,
+  children,
+}: {
+  selected: boolean;
+  onSelect: () => void;
+  children: string;
+}) {
+  return (
+    <button
+      aria-selected={selected}
+      className={`tw:-mb-px tw:cursor-pointer tw:border-b-2 tw:px-3 tw:py-1.5 tw:text-sm tw:font-medium ${
+        selected
+          ? 'tw:border-brand tw:text-brand-secondary'
+          : 'tw:border-transparent tw:text-tertiary tw:hover:text-secondary'
+      }`}
+      onClick={onSelect}
+      role="tab"
+      type="button">
+      {children}
+    </button>
+  );
+}
+
 function Idle() {
   return (
     <div className="tw:text-sm tw:text-tertiary">

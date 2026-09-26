@@ -3,14 +3,20 @@ package com.mfec.dac.resources;
 import com.mfec.dac.auth.AuthenticatedUser;
 import com.mfec.dac.auth.Secured;
 import com.mfec.dac.catalog.CatalogQuery;
+import com.mfec.dac.llm.AgentPrompts;
+import com.mfec.dac.llm.ArakAgent;
 import com.mfec.dac.llm.AssistPrompts;
 import com.mfec.dac.llm.LlmClient;
+import com.mfec.dac.llm.LlmFeatureStore;
+import com.mfec.dac.llm.LlmFeatureStore.Feature;
 import com.mfec.dac.llm.LlmSettingStore;
 import com.mfec.dac.llm.LlmSettings.EffectiveSetting;
 import com.mfec.dac.llm.LlmSettings.Gateway;
 import jakarta.ws.rs.BadRequestException;
 import jakarta.ws.rs.Consumes;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.ws.rs.ForbiddenException;
+import jakarta.ws.rs.GET;
 import jakarta.ws.rs.POST;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.Produces;
@@ -22,6 +28,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.EnumSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
@@ -103,11 +110,26 @@ public class LlmAssistResource {
   private final LlmSettingStore store;
   private final LlmClient client;
   private final CatalogQuery catalog;
+  /** Which jobs each role is offered (M28); null offers every job to everyone. */
+  private final LlmFeatureStore features;
+  /** What the chat's tools read (M28); null when this deployment has no chat. */
+  private final AssistToolbox.Deps tools;
 
   public LlmAssistResource(LlmSettingStore store, LlmClient client, CatalogQuery catalog) {
+    this(store, client, catalog, null, null);
+  }
+
+  public LlmAssistResource(
+      LlmSettingStore store,
+      LlmClient client,
+      CatalogQuery catalog,
+      LlmFeatureStore features,
+      AssistToolbox.Deps tools) {
     this.store = store;
     this.client = client;
     this.catalog = catalog;
+    this.features = features;
+    this.tools = tools;
   }
 
   // ---------------------------------------------------------------- requests
@@ -145,6 +167,33 @@ public class LlmAssistResource {
   /** A policy document, as text, for the builder to load and a human to save. */
   public record PolicyDraft(String document, String model, boolean personal) {}
 
+  /**
+   * One message to the chat (M28).
+   *
+   * @param history the conversation so far, text only, as the console kept it
+   * @param path the page the person is on; context for the model, never trusted
+   * @param sourceId the source the query editor points at, if any
+   * @param assetFqn the table on screen, if any
+   */
+  public record ChatAsk(
+      String message,
+      List<AgentPrompts.Message> history,
+      String path,
+      UUID sourceId,
+      String assetFqn,
+      String model) {}
+
+  /** The answer, and cards the person may act on. Nothing in it has been run or saved. */
+  public record ChatReply(
+      String text,
+      List<ArakAgent.Card> cards,
+      List<String> toolsUsed,
+      String model,
+      boolean personal) {}
+
+  /** The assistant's jobs this caller is offered. */
+  public record Offered(List<Feature> features) {}
+
   // -------------------------------------------------------------- NL -> SQL
 
   /**
@@ -163,7 +212,7 @@ public class LlmAssistResource {
       throw new BadRequestException("Choose a source first, so the tables can be looked up");
     }
     AuthenticatedUser actor = caller(security);
-    EffectiveSetting mine = ready(actor);
+    EffectiveSetting mine = ready(actor, Feature.WRITE_SQL);
 
     List<AssistPrompts.Table> tables = tablesFor(ask.sourceId(), ask.question());
     if (tables.isEmpty()) {
@@ -207,7 +256,7 @@ public class LlmAssistResource {
       throw new BadRequestException("Choose a source first, so the tables can be looked up");
     }
     AuthenticatedUser actor = caller(security);
-    EffectiveSetting mine = ready(actor);
+    EffectiveSetting mine = ready(actor, Feature.FIX_SQL);
 
     List<AssistPrompts.Table> tables = tablesFor(ask.sourceId(), statement);
     String brief = AssistPrompts.schemaBrief(tables);
@@ -253,7 +302,7 @@ public class LlmAssistResource {
   public Explanation explain(ExplainAsk ask, @Context SecurityContext security) {
     String statement = statementOf(ask == null ? null : ask.sql());
     AuthenticatedUser actor = caller(security);
-    EffectiveSetting mine = ready(actor);
+    EffectiveSetting mine = ready(actor, Feature.EXPLAIN_SQL);
 
     List<AssistPrompts.Table> tables =
         ask.sourceId() == null ? List.of() : tablesFor(ask.sourceId(), statement);
@@ -343,27 +392,127 @@ public class LlmAssistResource {
       throw new BadRequestException("Say what the policy should do");
     }
     AuthenticatedUser actor = caller(security);
-    EffectiveSetting mine = ready(actor);
+    EffectiveSetting mine = ready(actor, Feature.DRAFT_POLICY);
+    String document = draftDocument(actor, mine, ask.model(), ask.intent(), ask.sourceId());
+    return new PolicyDraft(document, chosenModel(ask.model(), mine), mine.usingOwnGateway());
+  }
 
+  /** A policy document from a sentence, or the reason there is none. Never stored. */
+  private String draftDocument(
+      AuthenticatedUser actor,
+      EffectiveSetting mine,
+      String model,
+      String intent,
+      UUID sourceId) {
     String brief =
-        ask.sourceId() == null
-            ? ""
-            : AssistPrompts.schemaBrief(tablesFor(ask.sourceId(), ask.intent()));
+        sourceId == null ? "" : AssistPrompts.schemaBrief(tablesFor(sourceId, intent));
 
     String answer =
         ask(
             actor,
             mine,
-            ask.model(),
+            model,
             AssistPrompts.policySystem(policySchemas()),
-            AssistPrompts.policyUser(ask.intent(), brief));
+            AssistPrompts.policyUser(intent, brief));
 
     String document = AssistPrompts.extractJson(answer);
     if (document.isEmpty()) {
       throw new ServiceUnavailableException(
           "The assistant did not answer with a policy document. Try saying it a different way.");
     }
-    return new PolicyDraft(document, chosenModel(ask.model(), mine), mine.usingOwnGateway());
+    return document;
+  }
+
+  // -------------------------------------------------------------------- chat
+
+  /**
+   * The jobs this caller is offered, so the console shows only those.
+   *
+   * <p>Whether the assistant is switched on for them at all is a separate
+   * question, answered by their own settings; this narrows, it never opens.
+   */
+  @GET
+  @Path("/features")
+  public Offered offered(@Context SecurityContext security) {
+    return new Offered(List.copyOf(allowed(caller(security))));
+  }
+
+  /**
+   * One turn of the conversation in the assistant panel (M28).
+   *
+   * <p>The model may call tools, and every tool reads as this caller: the
+   * catalogue as their decisions let them see it, the query log as their log
+   * page shows it. What comes back is text and cards. A card is a statement to
+   * put in the editor, a draft to load into the builder, or a link; the person
+   * clicks it or does not. Nothing here runs a statement, saves a policy,
+   * approves a request or changes a setting.
+   */
+  @POST
+  @Path("/chat")
+  public ChatReply chat(
+      ChatAsk ask, @Context SecurityContext security, @Context HttpServletRequest request) {
+    if (ask == null || ask.message() == null || ask.message().isBlank()) {
+      throw new BadRequestException("Say something first");
+    }
+    if (ask.message().length() > AgentPrompts.MAX_MESSAGE) {
+      throw new BadRequestException(
+          "That message is too long; keep it under " + AgentPrompts.MAX_MESSAGE + " characters");
+    }
+    AuthenticatedUser actor = caller(security);
+    EffectiveSetting mine = ready(actor, Feature.CHAT);
+    if (tools == null) {
+      throw new ServiceUnavailableException("The chat is not available on this deployment");
+    }
+    Set<Feature> offered = allowed(actor);
+    String model = chosenModel(ask.model(), mine);
+    String ip = request == null ? null : request.getRemoteAddr();
+
+    AssistToolbox toolbox =
+        new AssistToolbox(
+            tools,
+            actor,
+            security,
+            ip,
+            new AssistToolbox.Here(ask.sourceId(), ask.assetFqn()),
+            (intent, sourceId) -> draftDocument(actor, mine, model, intent, sourceId));
+    String system =
+        AgentPrompts.system(
+            actor.displayName() == null || actor.displayName().isBlank()
+                ? actor.username()
+                : actor.displayName(),
+            new AgentPrompts.PageContext(
+                ask.path(),
+                ask.sourceId() == null ? null : ask.sourceId().toString(),
+                ask.assetFqn()),
+            offered);
+    try {
+      Gateway gateway = store.gatewayFor(actor.id());
+      ArakAgent.Reply reply =
+          new ArakAgent(tools.json())
+              .run(
+                  (messages, offeredTools) ->
+                      client.converse(gateway, model, messages, offeredTools),
+                  toolbox,
+                  system,
+                  ask.history(),
+                  ask.message(),
+                  AgentPrompts.tools(tools.json(), offered));
+      return new ChatReply(
+          reply.text().isBlank()
+              ? "I have no answer to that. Try asking it another way."
+              : reply.text(),
+          reply.cards(),
+          reply.toolsUsed(),
+          reply.model() == null ? model : reply.model(),
+          mine.usingOwnGateway());
+    } catch (LlmClient.LlmException e) {
+      throw new ServiceUnavailableException(e.getMessage());
+    }
+  }
+
+  /** The jobs this caller is offered; every one when nobody has narrowed them. */
+  private Set<Feature> allowed(AuthenticatedUser actor) {
+    return features == null ? EnumSet.allOf(Feature.class) : features.allowedFor(actor);
   }
 
   // ----------------------------------------------------------------- helpers
@@ -446,10 +595,13 @@ public class LlmAssistResource {
    * has to mean it is off, including for somebody who knows the URL of this
    * endpoint.
    */
-  private EffectiveSetting ready(AuthenticatedUser actor) {
+  private EffectiveSetting ready(AuthenticatedUser actor, Feature feature) {
     EffectiveSetting mine = store.effectiveFor(actor.id());
     if (!mine.enabled()) {
       throw new ForbiddenException("The assistant is not switched on for this account");
+    }
+    if (!allowed(actor).contains(feature)) {
+      throw new ForbiddenException(feature.label() + " is not offered to your role");
     }
     if (!mine.available()) {
       throw new ServiceUnavailableException(mine.problem());

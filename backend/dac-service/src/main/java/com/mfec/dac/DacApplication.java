@@ -17,6 +17,7 @@ import com.mfec.dac.home.RailStore;
 import com.mfec.dac.crypto.SecretBox;
 import com.mfec.dac.llm.LlmClient;
 import com.mfec.dac.llm.LlmSecretRef;
+import com.mfec.dac.llm.LlmFeatureStore;
 import com.mfec.dac.llm.LlmSettingStore;
 import com.mfec.dac.auth.AuthFilter;
 import com.mfec.dac.auth.JwtService;
@@ -50,6 +51,7 @@ import com.mfec.dac.resources.RequestTemplateResource;
 import com.mfec.dac.resources.AccessResource;
 import com.mfec.dac.resources.HomePersonaResource;
 import com.mfec.dac.resources.HomeResource;
+import com.mfec.dac.resources.AssistToolbox;
 import com.mfec.dac.resources.LlmAssistResource;
 import com.mfec.dac.resources.LlmResource;
 import com.mfec.dac.resources.RailResource;
@@ -300,7 +302,8 @@ public class DacApplication extends Application<DacConfiguration> {
     // rule is written about. Both are read-only: OpenMetadata and Entra own
     // this content, and an edit here would be reverted by the next sync.
     environment.jersey().register(new GovernanceResource(new GovernanceQuery(jdbi)));
-    environment.jersey().register(new SearchResource(new SearchQuery(jdbi)));
+    SearchQuery search = new SearchQuery(jdbi);
+    environment.jersey().register(new SearchResource(search));
     IdentityAdminStore identityAdmin = new IdentityAdminStore(jdbi, identities);
     PrincipalQuery principalQuery = new PrincipalQuery(jdbi);
     environment.jersey().register(new PrincipalResource(principalQuery, identityAdmin));
@@ -406,10 +409,12 @@ public class DacApplication extends Application<DacConfiguration> {
             eligibility));
     // The query log (FR-8.3, M10): each reader sees the rows that are theirs
     // to see, which AuditResource and QueryLog decide between them.
-    environment.jersey().register(new AuditResource(new QueryLog(jdbi)));
+    AuditResource audit = new AuditResource(new QueryLog(jdbi));
+    environment.jersey().register(audit);
     // The access-control dashboard (M10, FR-8.5): the whole estate at once, so
     // only for the roles that oversee everything.
-    environment.jersey().register(new DashboardResource(new DashboardQuery(jdbi), new QueryLog(jdbi)));
+    DashboardResource dashboard = new DashboardResource(new DashboardQuery(jdbi), new QueryLog(jdbi));
+    environment.jersey().register(dashboard);
     // Enforcement mode 5.1.2 (M5). The same resolver as every other source
     // connection: a second one without the Fernet opener would read a stored
     // credential as unresolvable. Reviews are held in this process, which is
@@ -456,12 +461,29 @@ public class DacApplication extends Application<DacConfiguration> {
     LlmSecretRef llmSecrets = new LlmSecretRef();
     LlmSettingStore llmSettings = new LlmSettingStore(jdbi, secretBox);
     LlmClient llmClient = new LlmClient(environment.getObjectMapper());
-    environment.jersey().register(new LlmResource(llmSettings, llmClient, llmSecrets));
+    LlmFeatureStore llmFeatures = new LlmFeatureStore(jdbi);
+    environment.jersey().register(new LlmResource(llmSettings, llmClient, llmSecrets, llmFeatures));
     // Where the setting earns its keep: a question becomes SQL on the console,
     // a sentence becomes a draft policy in the builder. Given the catalogue
     // and nothing else -- the assistant is shown metadata, never rows, and
     // returns text that a person still has to run or save (FR-2.6).
-    environment.jersey().register(new LlmAssistResource(llmSettings, llmClient, catalog));
+    // The chat (M28) calls the same resources the pages call, as the person
+    // chatting, so it can say nothing their own screens would not show them.
+    environment.jersey().register(
+        new LlmAssistResource(
+            llmSettings,
+            llmClient,
+            catalog,
+            llmFeatures,
+            new AssistToolbox.Deps(
+                environment.getObjectMapper(),
+                catalog,
+                search,
+                eligibility,
+                decisionService,
+                sources,
+                audit,
+                dashboard)));
 
     environment.jersey().register(
         new WebhookResource(

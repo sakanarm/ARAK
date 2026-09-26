@@ -55,7 +55,7 @@ Phase 1 รองรับ SQL Server + PostgreSQL · identity หลักค�
 | **M25 On-Demand Test Data Synthesis** | ⬜ **Roadmap ใหม่ — ผู้ใช้ขอ 2026-09-25** · สร้างข้อมูลจำลอง (synthetic data) จาก table จริงเพื่อใช้ทดสอบ / เทรนโมเดล · เรียนสถิติผ่าน proxy ด้วย Differential Privacy (ε กำหนดได้) · รักษาความสัมพันธ์ข้าม table ตาม PK / FK · ส่งออกเป็นไฟล์ หรือเขียนลง sandbox ที่ ARAK เป็นเจ้าของ · **ระวังคำโฆษณา:** "เหมือนจริง 100%" กับ "ปลอดภัย 100%" ทำพร้อมกันไม่ได้ — จะรายงานค่า ε และคะแนน fidelity / privacy ให้เห็นแทน · ดูข้อ AP.16 |
 | **M26 LLM Fix with AI + Explain query** | ⬜ **Roadmap ใหม่ — ผู้ใช้ขอ 2026-09-26** *"อยากให้มีปุ่ม ให้ LLM มา Correct ให้"* · *"อยากให้มีปุ่มให้ LLM AI อธิบาย Query ให้ได้ด้วย"* · **(ก) Fix with AI** — เมื่อ query ถูกปฏิเสธเพราะ parse ไม่ได้ / column ไม่มี / syntax ผิด ขึ้นปุ่มในกล่อง error · ส่งไป gateway ของ M11 เฉพาะ **SQL + ข้อความ error + metadata** (ชื่อ table / column / type ของ source ที่เลือก) · SQL ที่แก้แล้ว **วางลง editor เป็นข้อเสนอ ให้คนกด Run เอง** และยังต้องผ่าน proxy + policy (fail-closed) เหมือนเดิม · ห้ามใช้ Fix เพื่อหลบการปฏิเสธเพราะไม่มีสิทธิ์ — refusal เรื่องสิทธิ์ต่อปุ่มขอสิทธิ์ของ M13 ไม่ใช่ปุ่ม Fix · **(ข) Explain query** — ปุ่มบนหน้า Query อธิบายเป็นภาษาคนว่า SQL นี้ทำอะไร join อะไร กรองอะไร · ⚠️ **ห้ามส่งแถวผลลัพธ์ให้ LLM** |
 | **M27 ขอสิทธิ์ในนามกลุ่ม** | ⬜ **Roadmap ใหม่ — ผู้ใช้ถาม 2026-09-26** · ตอนนี้คำขอผูกกับผู้ขอคนเดียว (`access_request.requester_id`) · ต้องเพิ่ม subject เป็น group / team · approver ต้องเห็นรายชื่อสมาชิก ณ ตอนอนุมัติ · grant ที่ออกให้กลุ่มต้องตามสมาชิกที่เปลี่ยนภายหลัง (หรือ snapshot — ต้องตัดสินใจ) · คนขอต้องเป็นสมาชิก / owner ของกลุ่ม |
-| **M28 Conversational ARAK Agent** | ⬜ **Roadmap ใหม่ — ผู้ใช้ขอ 2026-09-26** *"Catalog ต้องสามารถแชทพูดคุยได้สิ หรือ ด้านขวาล่าง Mascot ต้องแชทคุยได้ อยากทำอะไร หาอะไร เปิดหน้าไหนในแอพ"* · *"หรือทำเป็น Agent ไปเลย"* · mascot มุมขวาล่าง (AssistDock) + ช่องใน Catalog กลายเป็นแชทโต้ตอบ: **ค้นใน catalog** ("มีข้อมูล employee ไหม" → รายการ table ที่เห็นได้) · **ตอบคำถามทั่วไป / SQL syntax** · **เขียน query** (ใช้ของเดิมในโหมด SQL) · **ร่าง policy** (ของเดิมในโหมด Policy) · **พาไปหน้าในแอพ** ("อยากขอสิทธิ์" → เปิด Requests) · ทำเป็น agent ที่มี tool ชุดเล็ก: `search_catalog` · `describe_asset` · `write_sql` · `draft_policy` · `navigate` — ทุก tool รันด้วยสิทธิ์ของคนที่คุย · ⚠️ **เห็นแค่ metadata ไม่เห็นแถวข้อมูล** · ผลค้นกรองด้วยสิทธิ์ก่อนถึง LLM · **ทำได้แค่แนะนำและพาไป — ไม่ Run / approve / apply / activate อะไรเอง** · ใช้ gateway ต่อคนของ M11 · ต่อยอด **M16** (ค้นหา) และ **M26** (Fix / Explain) |
+| **M28 Conversational ARAK Agent** | ✅ **เสร็จรอบนี้ (ข้อ BP)** · น้องรักษ์คุยได้ + tool calling (ค้น catalog ตามสิทธิ์ · เขียน SQL เป็น card · ร่าง policy · query log / dashboard · พาไปหน้าในแอป) · ปุ่ม Ask NokRak ใน Catalog + global search · สิทธิ์ต่องานของ AI ตั้งต่อ role ใน Settings (V29) · ไม่รัน / apply / approve อะไรเอง |
 
 **ที่รันอยู่ตอนนี้**
 | | |
@@ -74,7 +74,7 @@ Phase 1 รองรับ SQL Server + PostgreSQL · identity หลักค�
 |---|---|---|
 | Backend unit | dac-common 31 · dac-engine 277 · **dac-compiler-sql 51 (+17 — `RowEntitlementMaintainerTest`)** · dac-connector-openmetadata 91 · **dac-connector-source 25 (+6 — `SecureViewApplierTest`)** · dac-proxy 30 · **dac-service 347** = **852** (dac-service **347** — +39 ข้อ BE (`AuditResourceTest` · `DashboardResourceTest` · `QueryRefusalsTest`) · +15 `AccessDashboardResourceTest` · +4 `HomeLayoutValidatorTest` · +1 `HomeLayoutStoreTest` ข้อ BD · ก่อนหน้า **288** — +17 `AccessReviewTest` · +4 `AccessRequestResourceTest` ข้อ BC · ก่อนหน้า **267** — +23 `StageEngineTest` · +12 `AccessWorkflowTest` · +5 `ApproverDirectoryTest` · +5 `AccessRequestResourceTest` · +14 `AccessWorkflowResourceTest` ข้อ BB · ก่อนหน้า **208** — +6 `StewardshipTest` · +11 `StewardshipGuardsTest` ข้อ BA · ก่อนหน้า **191** — +4 `AccessEligibilityTest` · +1 `SpaServletTest.unusualCharacters` ข้อ AY) | `./mvnw -o test` |
 | Backend integration (Testcontainers `postgres:16-alpine`) | **278 tests** — **`QueryLogIT` 10 · `DashboardIT` 7 (ใหม่ ข้อ BE.6)** · `AccessDashboardIT` 10 (ข้อ BD.5) · **`AccessRequestIT` 65 (+9 `Reviewing` ข้อ BC.6 · +25 `Workflows` 17 · `Configuring` 4 · `Legacy` 4 ข้อ BB.6 · +3 `Deciding` ข้อ BA.1a/BA.4 · +5 `Notices` ข้อ AZ.5 · 23 ข้อ AX.8)** · `AssetStoreIT` 7 · `CatalogQueryIT` 18 · `DataSourceStoreIT` 13 · `GovernanceStoreIT` 10 · `GrantCompositionIT` 17 · **`HomeLayoutStoreIT` 14 (+8 รอบนี้ — persona)** · `IdentityAdminStoreIT` 24 · `ImpactAnalysisIT` 8 · `PolicyBindingMaterializerIT` 10 · `PolicyOverviewIT` 24 · `PolicyStoreIT` 10 · **`SecureViewApplierIT` 11 (ใหม่รอบนี้ — อยู่ใน `dac-connector-source` ไม่ใช่ `dac-service`)** · **`SecureViewServiceIT` 15 (ใหม่รอบนี้)** · `SourceEngineRegistryIT` 5 | `./mvnw verify -Pintegration` (ทั้ง reactor) |
-| Frontend | **40 suites / 396 tests** (รอบ BE: `QueryLogPage.test.tsx` ใหม่ 11 · `DashboardPage.test.tsx` ใหม่ 16 · รอบ BD: `accessWidgets.test.tsx` ใหม่ 12 · รอบ BC: `AccessRequestsPage.test.tsx` +8 · `PolicyBuilderPage.test.tsx` +2 · รอบ BB: `AccessWorkflowsPage.test.tsx` ใหม่ 17 · รอบ BA: `AccessTab.test.tsx` ใหม่ 4 · `accessRequests.test.ts` +1 · `AccessRequestsPage.test.tsx` แทน 2 เคส Grant-for ด้วย 1 + stranded 1 · รอบ AZ: `AccessRequestsPage.test.tsx` 22 (+9) · `RequestNotices.test.tsx` ใหม่ 10 — ดูข้อ AZ.5 · รอบ AY: +10 `AriaRouter.test.tsx` · `AssetRequestAccess.test.tsx` 9 · +4 `AssetDetailPage.test.tsx` — ดูข้อ AY.5 · รอบ AX: +20 `SqlEditor.test.tsx` · +16 `RequestAccess.test.tsx` · +13 `AccessRequestsPage.test.tsx` · +5 `accessRequests.test.ts` · `sqlCompletion.test.ts` — ดูข้อ AX.8 · ก่อนหน้า: +7 `EnforcementPage.test.tsx` — dry run → apply ส่งแค่ reviewId · non-admin ไม่มีปุ่ม Apply / Roll back · apply ที่ถูกปฏิเสธล้าง review · rollback ต้องยืนยัน · +9 `policyFlow.test.ts` — ลำดับด่าน · selector ว่าง = 0 asset ไม่ใช่ทุก asset · subject ว่าง = `open` ไม่ใช่ `set` · "ไม่ผ่านด่าน" ต้องไม่อ่านว่า deny · +3 `PolicyFlowChart.test.tsx` — ไม่ส่ง `onEdit` ต้องไม่มีปุ่มใดๆ · ก่อนหน้านี้ +4 ใน `HomePersonasPage.test.tsx` — หน้าที่คนหนึ่งจัดหน้าจอให้อีกคน: admin เท่านั้นที่เห็น · ครบทั้ง 5 role ไม่ว่าจะตั้งไว้หรือยัง · ประโยค "starting point ไม่ใช่ override" · เซฟแล้วต้องลง role ที่เปิดอยู่เท่านั้น) | `npx jest` ใน `frontend/app` |
+| Frontend | **50 suites / 505 tests** (รอบ BP: `AssistChat.test.tsx` ใหม่ 13 · `AssistDock.test.tsx` ใหม่ 6 · `AskArak.test.tsx` ใหม่ 5 · `LlmFeatureAccess.test.tsx` ใหม่ 7 · รอบ BE: `QueryLogPage.test.tsx` ใหม่ 11 · `DashboardPage.test.tsx` ใหม่ 16 · รอบ BD: `accessWidgets.test.tsx` ใหม่ 12 · รอบ BC: `AccessRequestsPage.test.tsx` +8 · `PolicyBuilderPage.test.tsx` +2 · รอบ BB: `AccessWorkflowsPage.test.tsx` ใหม่ 17 · รอบ BA: `AccessTab.test.tsx` ใหม่ 4 · `accessRequests.test.ts` +1 · `AccessRequestsPage.test.tsx` แทน 2 เคส Grant-for ด้วย 1 + stranded 1 · รอบ AZ: `AccessRequestsPage.test.tsx` 22 (+9) · `RequestNotices.test.tsx` ใหม่ 10 — ดูข้อ AZ.5 · รอบ AY: +10 `AriaRouter.test.tsx` · `AssetRequestAccess.test.tsx` 9 · +4 `AssetDetailPage.test.tsx` — ดูข้อ AY.5 · รอบ AX: +20 `SqlEditor.test.tsx` · +16 `RequestAccess.test.tsx` · +13 `AccessRequestsPage.test.tsx` · +5 `accessRequests.test.ts` · `sqlCompletion.test.ts` — ดูข้อ AX.8 · ก่อนหน้า: +7 `EnforcementPage.test.tsx` — dry run → apply ส่งแค่ reviewId · non-admin ไม่มีปุ่ม Apply / Roll back · apply ที่ถูกปฏิเสธล้าง review · rollback ต้องยืนยัน · +9 `policyFlow.test.ts` — ลำดับด่าน · selector ว่าง = 0 asset ไม่ใช่ทุก asset · subject ว่าง = `open` ไม่ใช่ `set` · "ไม่ผ่านด่าน" ต้องไม่อ่านว่า deny · +3 `PolicyFlowChart.test.tsx` — ไม่ส่ง `onEdit` ต้องไม่มีปุ่มใดๆ · ก่อนหน้านี้ +4 ใน `HomePersonasPage.test.tsx` — หน้าที่คนหนึ่งจัดหน้าจอให้อีกคน: admin เท่านั้นที่เห็น · ครบทั้ง 5 role ไม่ว่าจะตั้งไว้หรือยัง · ประโยค "starting point ไม่ใช่ override" · เซฟแล้วต้องลง role ที่เปิดอยู่เท่านั้น) | `npx jest` ใน `frontend/app` |
 
 `yarn type-check` · `yarn lint` · `yarn build` ผ่านหมด → **BUILD SUCCESS** ทั้งสองฝั่ง
 
@@ -619,7 +619,48 @@ M25 ทำแยกได้ (profile ผ่าน proxy ที่มีแล�
 
 ---
 
-## รอบนี้ — **ข้อ BO: Preauthorization — ขอล่วงหน้าให้กลุ่มคน ตาม tag/domain ของตารางใต้ scope** (M28 ยังไม่ commit)
+## รอบนี้ — **ข้อ BP: M28 Conversational ARAK Agent — น้องรักษ์คุยได้ · ค้น Catalog ด้วย LLM · สิทธิ์แต่ละงานของ AI ตั้งต่อ role ใน Settings**
+
+ผู้ใช้ขอ *"Catalog ต้องสามารถแชทพูดคุยได้สิ หรือ ด้านขวาล่าง Mascot ต้องแชทคุยได้ อยากทำอะไร หาอะไร เปิดหน้าไหนในแอพ"* · *"หรือทำเป็น Agent ไปเลย"* · *"Catalog ต้องสามารถให้ LLM มาช่วยในการค้นหาได้ด้วย"*
+
+### BP.1 Migration — **V29 `llm_feature_access`**
+- `(feature PK, roles text[], updated_at, updated_by)` · ไม่มีแถว = เปิดให้ทุกคน (`EVERYONE`) เหมือนก่อน M28
+- **deploy:** main มี V30/V31 อยู่แล้ว → V29 เข้าทีหลัง · `DacApplication` เปิด `outOfOrder(true)` ไว้ตั้งแต่ BN → Flyway รัน V29 เองตอน start ไม่ต้องทำอะไรเพิ่ม · **ไม่มี env ใหม่**
+- ⚠️ dev DB รัน V29 ไปแล้ว — ห้ามแก้เนื้อหา V29 (checksum)
+
+### BP.2 สิทธิ์ต่องาน (`LlmFeatureStore`)
+- งาน: `CHAT` · `WRITE_SQL` · `FIX_SQL` · `EXPLAIN_SQL` · `DRAFT_POLICY` · `CATALOG_SEARCH` · `INSIGHTS`
+- role: `PLATFORM_ADMIN` · `POLICY_AUTHOR` · `DATA_OWNER` · `AUDITOR` · `REQUESTER` · หรือ `EVERYONE`
+- **แคบลงอย่างเดียว** — ยังต้องเปิด assistant + gateway ตอบได้ · ติ๊ก role ไม่ได้ให้สิทธิ์ข้อมูลอะไรเพิ่ม
+- บังคับที่ server ทุก endpoint (`/assist/sql` `/fix` `/explain` `/policy` `/chat`) → 403 *"… is not offered to your role"* · ซ่อนปุ่มฝั่ง UI เป็นแค่มารยาท
+- `GET /v1/llm/assist/features` = งานที่ตัวเองได้ · `GET/PUT /v1/llm/features[/{feature}]` = PLATFORM_ADMIN เท่านั้น
+
+### BP.3 Agent (`ArakAgent` + `AgentPrompts` + `AssistToolbox`)
+- `POST /v1/llm/assist/chat` `{message, history, path, sourceId, assetFqn}` → `{text, cards, toolsUsed, model, personal}`
+- tool-calling loop กับ gateway (OpenAI-compatible `tools`) · model ได้เฉพาะ tool ของงานที่ role นั้นได้:
+  - `search_catalog` / `describe_asset` (CATALOG_SEARCH) — **กรองตามสิทธิ์ก่อนถึง model** · แต่ละตารางบอก `READABLE` / `REQUESTABLE`
+  - `write_sql` (WRITE_SQL) — ต้องผ่าน read-only check เดียวกับ M11 · เป็น card ให้กด *Put it in the editor* **ไม่รัน**
+  - `draft_policy` (DRAFT_POLICY) — เป็น DRAFT เสมอ
+  - `query_log` / `dashboard` (INSIGHTS) — scope เดียวกับหน้า Query log / Dashboard · **ไม่มี client_ip** · literal + reject reason ถูก redact
+  - `navigate` — route เฉพาะหน้าในแอป (allow-list) · ไม่มี URL ภายนอก
+- ทุก tool รันด้วยสิทธิ์ของคนที่คุย · IP ของ request ใช้ตัดสินใจเท่านั้น ไม่เคยส่งให้ model
+- ข้อความ ≤ 4000 ตัว · history ≤ 16 · history รับเฉพาะ role user/assistant (กัน client ยัด system/tool)
+- prompt สั่ง **plain text ไม่มี Markdown** และไม่ต้องไล่ชื่อตารางซ้ำกับ card (เจอตอนรันจริง: model ตอบ `**…**` + ไล่ชื่อตารางซ้ำ) · ฝั่ง UI มี `plainText()` ลอก `**` / backtick / `#` ออกอีกชั้น
+
+### BP.4 Frontend
+- `assist/AssistChat.tsx` — แชทใน panel น้องรักษ์ · ส่ง path + FQN ของหน้าที่เปิดอยู่ · ข้อความ model แสดงเป็น **text เท่านั้น** (ไม่มี `dangerouslySetInnerHTML`) · `safeRoute()` รับเฉพาะ `/…` ไม่รับ `//` หรือ `\`
+  - card: sql → *Put it in the editor* (ส่ง SQL + source ไปหน้า Query ไม่รัน) · policy → *Load into the builder* · asset → ลิงก์ + ป้าย *You can query it* / *Request access* · link → หน้าในแอป
+- `assist/AssistDock.tsx` — panel มีแท็บ *Chat* กับงานของหน้า (*Write a query* / *Draft a policy*) แสดงเฉพาะที่ role ได้
+- `assist/AskArak.tsx` — ปุ่ม **Ask NokRak** ข้างปุ่ม Search ในหน้า Catalog · ค้นไม่เจอ → *"Nothing is called that. Asking by what the table holds may find it."* + ปุ่ม · global search ด้านบนมี *Ask NokRak to find "…"* บนสุดของ dropdown · ต้องได้ทั้ง `CHAT` และ `CATALOG_SEARCH`
+- `assist/useAssist.ts` — `useAssistReady(feature)` / `useOfferedFeatures()` (ย้ายมาจาก QueryAssist) · Explain / Fix ในหน้า Query ใช้ gate ต่องานแล้ว
+- Settings → Assistant → การ์ด **Who gets which job** (admin) — ตาราง งาน × Everyone + 5 role · เอา Everyone ออก = ติ๊กทุก role แทน (ไม่ใช่ปิดทุกคนในคลิกเดียว)
+
+### BP.5 ผลทดสอบ
+- Backend unit: `AgentPromptsTest` 10 · `ArakAgentTest` 10 · `LlmFeatureStoreTest` 5 · `AssistToolboxTest` 15 · `LlmAssistChatTest` 10 · IT: `LlmFeatureStoreIT` 4
+- Frontend: `AssistChat.test.tsx` 13 · `AssistDock.test.tsx` 6 · `AskArak.test.tsx` 5 · `LlmFeatureAccess.test.tsx` 7 · **jest ทั้งหมด 50 suites / 505 tests ผ่าน** · backend unit suite ทั้งชุดผ่าน · tsc + build ผ่าน
+- รันจริง (Playwright บน `:8090/Arak/` + gateway จริง): Catalog พิมพ์ *phone numbers* → Ask NokRak → ได้ 6 ตารางเป็น card แยก query ได้ / ต้องขอ · global search มีปุ่ม Ask · หน้า Settings มีตาราง Who gets which job
+
+## รอบก่อนหน้า — **ข้อ BO: Preauthorization — ขอล่วงหน้าให้กลุ่มคน ตาม tag/domain ของตารางใต้ scope**
 
 ผู้ใช้ขอไว้ใน roadmap (Preauthorization) → ทำต่อจาก BN · คำขอชนิดที่สอง: ไม่ได้ขอตารางเดียวให้ตัวเอง แต่ขอ **ล่วงหน้า** ให้ **กลุ่ม / ทีม / คนที่มี attribute** สำหรับ **ทุกตารางใต้ scope ที่มี tag / classification / glossary term / domain ตามที่ระบุ** — รวมถึงตารางที่จะถูกติด tag แบบเดียวกันในอนาคต
 

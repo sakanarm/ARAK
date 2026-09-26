@@ -303,3 +303,108 @@ export async function assistExplain(ask: ExplainAsk): Promise<SqlExplanation> {
   const { data } = await apiClient.post<SqlExplanation>('/v1/llm/assist/explain', ask);
   return data;
 }
+
+// ------------------------------------------------------------- the agent (M28)
+
+/** The assistant's jobs, each of which an administrator can narrow by role. */
+export type AssistFeature =
+  | 'CHAT'
+  | 'WRITE_SQL'
+  | 'FIX_SQL'
+  | 'EXPLAIN_SQL'
+  | 'DRAFT_POLICY'
+  | 'CATALOG_SEARCH'
+  | 'INSIGHTS';
+
+/** One earlier line of the conversation, sent back so the model has context. */
+export interface ChatMessage {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
+/**
+ * One turn. The page the person is on goes with it, so "this table" means the
+ * table on screen; the server builds the prompt and nothing else.
+ */
+export interface ChatAsk {
+  message: string;
+  history: ChatMessage[];
+  path?: string;
+  sourceId?: string | null;
+  assetFqn?: string | null;
+  model?: string;
+}
+
+/**
+ * Something to press. A card is a statement for the editor, a draft for the
+ * builder, a page or a table; pressing it opens or fills, never runs or saves.
+ */
+export interface ChatCard {
+  kind: 'sql' | 'policy' | 'link' | 'asset';
+  title: string;
+  text: string | null;
+  /** Always a path inside this console. */
+  route: string | null;
+  sourceId: string | null;
+  engine: string | null;
+  assetFqn: string | null;
+  /** On an asset card: READABLE, or REQUESTABLE when it has to be asked for. */
+  access: 'READABLE' | 'REQUESTABLE' | null;
+}
+
+export interface ChatReply {
+  /** Plain text. The panel shows it as text and never as markup. */
+  text: string;
+  cards: ChatCard[];
+  toolsUsed: string[];
+  model: string;
+  personal: boolean;
+}
+
+/**
+ * Sends one message. Slower than the other calls on purpose: the model may look
+ * a few things up before it answers, and each look is a round trip to the
+ * gateway.
+ */
+export async function chatWithAssistant(ask: ChatAsk): Promise<ChatReply> {
+  const { data } = await apiClient.post<ChatReply>('/v1/llm/assist/chat', ask, {
+    timeout: 180_000,
+  });
+  return data;
+}
+
+/** The jobs this account is offered, so the console draws only those. */
+export async function fetchOfferedFeatures(): Promise<AssistFeature[]> {
+  const { data } = await apiClient.get<{ features: AssistFeature[] }>(
+    '/v1/llm/assist/features'
+  );
+  return data.features ?? [];
+}
+
+/** One job as the administrator's matrix shows it. */
+export interface FeatureAccess {
+  feature: AssistFeature;
+  label: string;
+  description: string;
+  /** `['EVERYONE']`, or the roles offered it; empty is off for everybody. */
+  roles: string[];
+  /** False while it is still the default. */
+  configured: boolean;
+  updatedAt: string | null;
+  updatedBy: string | null;
+}
+
+export async function fetchFeatureAccess(): Promise<FeatureAccess[]> {
+  const { data } = await apiClient.get<FeatureAccess[]>('/v1/llm/features');
+  return data;
+}
+
+export async function saveFeatureAccess(
+  feature: AssistFeature,
+  roles: string[]
+): Promise<FeatureAccess> {
+  const { data } = await apiClient.put<FeatureAccess>(`/v1/llm/features/${feature}`, {
+    roles,
+  });
+  return data;
+}
