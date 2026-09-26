@@ -161,6 +161,35 @@ class AssetMapperTest {
           .extracting(CrawledAsset.ColumnRow::dataType, CrawledAsset.ColumnRow::dataLength)
           .containsExactly(tuple("VARCHAR", 255));
     }
+
+    @Test
+    @DisplayName("carry each column's description, nested fields included")
+    void keepsColumnDescriptions() {
+      Column address =
+          column("address", Column.DataTypeEnum.STRUCT)
+              .description("Where the customer lives")
+              .children(
+                  List.of(
+                      new Column()
+                          .name("postcode")
+                          .fullyQualifiedName(TABLE_FQN + ".address.postcode")
+                          .dataType(Column.DataTypeEnum.VARCHAR)
+                          .description("Five-digit postal code")));
+      Table table =
+          new Table()
+              .name("customer")
+              .fullyQualifiedName(TABLE_FQN)
+              .columns(List.of(column("id", Column.DataTypeEnum.BIGINT), address));
+
+      // The description is what a reader, and the assistant, goes by to know
+      // what a column means. A column without one stays null, not "".
+      assertThat(AssetMapper.columns(table))
+          .extracting(CrawledAsset.ColumnRow::name, CrawledAsset.ColumnRow::description)
+          .containsExactly(
+              tuple("id", null),
+              tuple("address", "Where the customer lives"),
+              tuple("postcode", "Five-digit postal code"));
+    }
   }
 
   @Nested

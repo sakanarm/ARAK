@@ -28,7 +28,7 @@ Phase 1 รองรับ SQL Server + PostgreSQL · identity หลักค�
 |---|---|
 | **M0 Foundation** | ✅ เสร็จ — Maven multi-module, Dropwizard 5, Vite+React+Tailwind shell, vendor `ui-core-components`, JSON Schema → Java/TS codegen, OM client จาก swagger ที่ pin ไว้, Flyway V1–V10, docker-compose, CI 4 jobs |
 | **M1 OM Connector** | 🚧 ~95% — full crawl + governance + effective facet + FR-1.5 webhook/poller/reconcile + catalog read API + Catalog UI + governance read API + Governance UI · **sync กับ OM จริงสำเร็จแล้ว** · เหลือ FR-1.6 (reconcile กับ JDBC จริง), FR-1.7 (local tag + push-back — **ผู้ใช้สั่ง read-only ตอนนี้**) |
-| **M2 Identity** | 🚧 ~50% — local sign-in ใช้ได้ · schema `principal`/`principal_attribute`/`group_member`/`app_role_assignment` มีตั้งแต่ V2 · read API + หน้า People & attributes (**filter ตาม attribute + กดเข้าไปดูสมาชิกใน group ได้ที่ `/principals/:id`**) + **หน้า Application roles (`/settings/roles`) อ่านอย่างเดียว** เสร็จ · **เพิ่ม local account + assign/withdraw app role ได้จาก UI แล้ว (V10 + `IdentityAdminStore` + audit)** · **ยังไม่มี write API สำหรับ *attribute* — ต้อง seed ด้วย SQL** · ยังไม่มีหน้าจอเปลี่ยน password (ทุก account ที่สร้างเป็น `must_change`) · ยังไม่มี Entra OIDC / Graph sync |
+| **M2 Identity** | 🚧 ~50% — local sign-in ใช้ได้ · schema `principal`/`principal_attribute`/`group_member`/`app_role_assignment` มีตั้งแต่ V2 · read API + หน้า People & attributes (**filter ตาม attribute + กดเข้าไปดูสมาชิกใน group ได้ที่ `/principals/:id`**) + **หน้า Application roles (`/settings/roles`) อ่านอย่างเดียว** เสร็จ · **เพิ่ม local account + assign/withdraw app role ได้จาก UI แล้ว (V10 + `IdentityAdminStore` + audit)** · attribute ของ local account เขียนผ่าน API ได้แล้ว (`POST`/`DELETE /v1/principals/{id}/attributes`) · **local group สร้างและจัดสมาชิกได้จาก UI แล้ว (V35, ข้อ BT)** · ยังไม่มีหน้าจอเปลี่ยน password (ทุก account ที่สร้างเป็น `must_change`) · ยังไม่มี Entra OIDC / Graph sync |
 | **M3 Policy Engine** | 🚧 ~97% — engine **277 tests** (+10 รอบนี้ — `DataPolicyCompositionTest.MaskConflicts` ที่ทำให้เจอบั๊กการให้เครดิต policy ดูข้อ AH.3) (+101 รอบนี้ — `PolicyAlgebraTest` 34 ที่ assert **เซตของคนที่ผ่าน** ไม่ใช่ทีละคน + `ExpressionReferenceTest` ที่รันทุก example ในหน้า doc ผ่าน evaluator จริง) · เดิม **166 tests** (+10 รอบนี้ · **เจอบั๊กจริงสองตัวที่ grant โดนเต็มๆ ดูข้อ AE.1/AE.2**) (data policy 26 + subscription 45 เพิ่มรอบนี้ · เจอบั๊กจริง 2 ตัว ดูข้อ P) · persistence (`PolicyStore`) + `policy_binding` materializer + REST · `PolicyBindingMaterializerIT` 10 tests บน Postgres จริง · **decision cache (FR-5.5) ปิดแล้วรอบนี้ — 25 tests ดูข้อ AB** · เหลือ ANTLR grammar ของ `expr` (FR-3.2) ข้อเดียว |
 | **M4 Policy Authoring UI** | ✅ **เสร็จ** — Policy list + Policy builder + readback + capability matrix + `/policies/:id` หน้าสรุปอ่านอย่างเดียว + panel Policies ในหน้า asset (FR-3.1.5) + View-as-user (FR-5.2, ข้อ Z) · **รอบนี้ปิดข้อสุดท้าย: impact analysis (FR-5.3) — `GET /v1/policies/{id}/impact` + panel “Who it changes things for” ดูข้อ AA** · **รอบนี้เพิ่มหน้า `/docs/expressions` — syntax reference ที่ backend ส่งมาจาก jar ของ engine กดจากช่อง expression ได้ พร้อม 11 policy ตัวอย่างจริงใน DB (ข้อ AF.3/AF.4)** |
 | **M5 Secure View (5.1.2)** | 🚧 ~85% — **slice 1 จบ: `ViewCompiler` + golden-file test 2 dialect ดูข้อ AK.1** · **slice 2 จบ: `RowEntitlementMaintainer` (17 tests) — pure ทั้งคลาส · **refuse ไม่ใช่ skip** เมื่อ treatment/entitlement key ไม่ตรงกับ view ที่ติดตั้งอยู่ · ⚠️ **ไม่ต้องมี migration** (ตาราง `acl.*` อยู่ที่ source) — ดูข้อ AT** · `DecisionSql` + dialect ใช้ร่วมกับ 5.2 เหมือนเดิม · **slice 3 ครึ่งแรกจบ: `SecureViewApplier` — dry-run / apply / rollback ใน transaction เดียว · `StaleReviewException` เมื่อแถวเปลี่ยนหลังคนอนุมัติ · **11 tests บน Postgres จริง = ครั้งแรกที่ secure view ของ ARAK รันบนฐานข้อมูล** — ดูข้อ AU** · **slice 3 ครึ่งหลังจบรอบนี้: `SecureViewService` + `EnforcementResource` (`/api/v1/enforcement/secure-views` dry-run / apply / rollback) + V20 (`audit_enforcement` + ชื่อ view ที่ apply) + หน้า `/enforcement` + เมนูกลับมาแล้ว · apply ส่งแค่ `reviewId` · ทดสอบสดครบวงบน Postgres dev — ดูข้อ AW** · เหลือ slice 4 (MSSQL Testcontainers) · credential แยกสำหรับ DDL · cutover (FR-6.1.1) · `DbPrincipalProvisioner` |
@@ -619,7 +619,46 @@ M25 ทำแยกได้ (profile ผ่าน proxy ที่มีแล�
 
 ---
 
-## รอบนี้ — **ข้อ BS: ปุ่ม NokRak บนหน้า New policy และ Query · Query console จัดใหม่แบบ BigQuery · Policy draft ที่ได้ selector ว่าง**
+## รอบนี้ — **ข้อ BT: Local group สร้างและจัดสมาชิกได้ใน ARAK · Column description จาก OpenMetadata ขึ้นใน Query console · ชุด demo policy บน prod**
+
+ผู้ใช้สั่ง *"เน้น Data Access เพิ่มนะ ทั้งแบบ grant ตรง กับ policy เอาให้ครบทุก Case อาจจะจากหลายๆ User, Group"* · *"ต้องเอา Column Description จาก Openmetadata มาด้วยสิ แก้ใน local ก่อนด้วย"* · *"ใน prd ยังไม่เห็นมี policy เลย บอกให้ทดสอบ policy ทุกแบบไงครบ"*
+
+### BT.1 Migration — **V35 `local_groups`**
+- ไม่เปลี่ยน storage เลย เพราะ `principal` รับแถว GROUP ที่ source `local` ได้อยู่แล้ว และ `group_member.source` ก็รับ `local` อยู่แล้ว สมาชิกที่เพิ่มใน ARAK จึงไม่ถูก sync ทับ และไม่ไปทับของที่ sync มา
+- เปลี่ยนเฉพาะ CHECK ของ `audit_identity_change.action` ให้มี `ADD_MEMBER` / `REMOVE_MEMBER` · ชื่อสมาชิกเก็บใน `attr_value` โดยใช้ `attr_key = 'member'`
+
+### BT.2 Backend (`IdentityAdminStore` · `PrincipalResource`)
+- `POST /v1/principals` รับ `principalType: GROUP` ได้แล้ว group **ไม่มี password และไม่มี app role** เพราะไม่มีใคร sign in เป็น group และ role ที่ติดกับ group จะไม่มีผลกับใคร
+- `POST /v1/principals/{id}/members` (body `{memberId, reason}`) และ `DELETE /v1/principals/{id}/members/{memberId}?reason=` · ใช้ได้เฉพาะ PLATFORM_ADMIN · **reason บังคับ** · แก้ได้เฉพาะ group ที่ source เป็น `local` (group จาก directory → 400 เพราะรอบ sync ถัดไปจะย้อนการแก้) · ห้ามใส่ group เป็นสมาชิกของตัวเองหรือทำให้เกิดวงวน · เพิ่มซ้ำหรือลบคนที่ไม่ได้อยู่ใน group → `changed: false` ไม่เขียน audit
+- ทดสอบด้วย `IdentityAdminStoreIT` LocalGroups 9/9 (Testcontainers)
+
+### BT.3 Frontend
+- `PrincipalDetailPage` เพิ่ม `MemberEditor` สำหรับ local group เมื่อผู้ใช้เป็น admin: ค้นหาและเพิ่มสมาชิก / เอาสมาชิกออก ต้องกรอก Why ทั้งตอนเข้าและตอนออก · group ที่ sync มาหรือผู้ใช้ที่ไม่ใช่ admin จะเห็นแบบอ่านอย่างเดียว
+- `AppRolesPage` ในฟอร์มสร้าง account เลือก Group ได้ ช่อง password และ app role จะหายไป
+- `SettingsPage` การ์ด Local groups ลิงก์ไปที่ `/principals?type=GROUP`
+- `SchemaExplorer` (Query console) ชี้ที่ column แล้วเห็น description จาก OpenMetadata (`AssetMapperTest.keepsColumnDescriptions` ยืนยันว่า mapper เก็บ description ไว้)
+- **ข้อสังเกต:** ตาราง demo บน prod ยังไม่มี column description ใน OpenMetadata เลย (0 จาก 217 column) pipeline กับ tooltip พร้อมแล้ว แต่ต้องมีคนไปเขียน description ใน OM ก่อน การเขียนลง OM ของทีมต้องได้ OK จากผู้ใช้ก่อน
+
+### BT.4 ชุด demo policy บน prod (scratchpad `prod-demo-policies.mjs` ไม่ commit)
+- ชื่อขึ้นต้นด้วย `demo-po-` รันซ้ำได้: หาเจอตามชื่อแล้วใช้ของเดิม **ไม่ archive / disable / ลบอะไรเลย** (เก็บไว้ demo)
+- ผลรวม **29 policy + 26 demo user + grants + access requests ทุกสถานะ** ผ่าน **52/52** ข้อ (ข้าม P19 เพราะ owner ใน OM ไม่ใช่ principal ของ ARAK บน prod ซึ่งยังไม่มี identity sync · ข้าม Q0 เพราะ credential ของ source บน prod ยัง auth ไม่ผ่าน)
+- Subscription: ABAC · DENY พร้อม exemption (ยังไม่หมดอายุ / หมดอายุแล้ว / ไม่มีวันหมดอายุ → 400) · time window · purpose · `principals.user` · `principals.role` · `assetOwner` · expression · ipCidr · validFrom/validTo · schema DENY · table DENY
+- Data: RLS IN_LIST / ATTRIBUTE_COMPARE / ALWAYS_FALSE · mask NULLIFY / CONSTANT / HASH / PARTIAL / REGEX_REPLACE / ROUNDING (YEAR, bucket 100) · mask ตาม tag (Confirmed และ Suggested) · HIDE · cell mask · การปลด mask ที่ระดับ table โดย global ยินยอม (และกรณีที่ปลดไม่ได้เพราะ global ไม่ยินยอม)
+- Lifecycle: DRAFT · PENDING_APPROVAL ที่ผู้เขียนอนุมัติเองไม่ได้ (403) แล้ว steward อนุมัติ · แก้ policy แล้วได้ version ใหม่
+- Grant: ให้ตัวเอง 403 · ไม่มี reason 400 · ไม่ใช่ steward 403 · วันกลับหัว 400 · grant ผ่าน gate ได้เมื่อ global ยินยอม · grant ผ่าน DENY ที่ไม่ยินยอมไม่ได้ · amend แล้ว revoke (history เก็บครบ) · grant ล่วงหน้า
+- Access request: อ่านได้อยู่แล้ว 409 · grant ไม่ช่วยเพราะติด DENY 409 · approve → start → complete (GRANT) · reject · approve แล้ว decline · withdraw · ค้างใน inbox · ผู้ขอตัดสินคำขอของตัวเอง 403
+
+### BT.5 บทเรียนจาก demo (engine ถูกต้องตาม FR-5.1 แต่คนเขียน policy พลาดได้)
+- **ALLOW ที่ระดับล่างกว่าและมี selector จะผ่อน gate ของ global ให้ทุกคนที่มัน match ทันทีที่ ALLOW ระดับ global ทุกตัวตั้ง `allowLocalOverride: true`** (ซึ่งต้องตั้งถ้าอยากให้ grant ผ่าน gate ได้) · demo รอบแรกมี schema ALLOW `tenant eq ARAK-DEMO` ผลคือทุกคนใน tenant เข้าตารางได้หมด แก้เป็น schema **DENY** `tenant ne ARAK-DEMO` (ออกเป็น version ใหม่) · `ne` / `notIn` เมื่อไม่มี attribute นั้นจะได้ **true** DENY จึงครอบคนที่ไม่มี tenant ด้วย
+- การ "ให้คนคนเดียวเข้าที่ระดับ table" ต้องทำด้วย **grant** เพราะ policy ที่ไม่มี selector ถูก API ปฏิเสธ (มีแต่ grant ที่เป็น additive)
+- ข้อความตอน refuse ของ gate บอกว่า *"does not allow a lower layer to relax it"* กับ **ทุก** ALLOW ใน layer นั้น แม้ตัวที่ตั้ง override=true แล้วก็ตาม · ควรชี้เฉพาะตัวที่ไม่ยินยอม (ค้าง ดู BT.6)
+
+### BT.6 ค้าง
+- ข้อความ refuse ของ gate ควรชี้เฉพาะ policy ที่ไม่ยินยอม (BT.5)
+- credential ของ source บน prod ที่ auth ไม่ผ่าน ผู้ใช้เป็นคนตัดสิน · แก้แล้วให้รัน Q1–Q7 ใน `prod-demo-policies.mjs` อีกรอบ
+- กรณี group บน prod รอ push แล้ว deploy V35 ก่อน
+
+## รอบก่อนหน้า — **ข้อ BS: ปุ่ม NokRak บนหน้า New policy และ Query · Query console จัดใหม่แบบ BigQuery · Policy draft ที่ได้ selector ว่าง**
 
 ผู้ใช้ขอ *"ในหน้า New policy ให้มีปุ่ม NokRakช่วยด้วย"* · *"ตรง Query ก็มีปุ่ม NokRakเขียนให้หน่อย"* · *"เชื่อมกับ Engine AI เดิมที่เคยมีไว้"* · *"การจัดวางปุ่ในหน้า Query ยังไม่ดีพอ ไม่ดีเท่า bigquery"* · *"หน้า Policy นี่แก้ยังนะ"*
 

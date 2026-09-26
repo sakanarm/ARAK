@@ -228,8 +228,10 @@ export interface NewLocalPrincipal {
   username: string;
   displayName?: string | null;
   email?: string | null;
-  principalType: 'USER' | 'SERVICE';
-  password: string;
+  principalType: 'USER' | 'SERVICE' | 'GROUP';
+  /** Null for a group, which nobody signs in as. */
+  password: string | null;
+  /** Empty for a group: app roles are read from the account that signed in. */
   roles: { appRole: string; scopeFqn?: string | null }[];
 }
 
@@ -337,6 +339,41 @@ export async function removePrincipalAttribute(
     principal: PrincipalDetail;
   }>(
     `/v1/principals/${encodeURIComponent(principalId)}/attributes?${params}`
+  );
+  return { changed: data.changed, detail: data.principal };
+}
+
+/**
+ * Puts somebody into a group made here (FR-2.2).
+ *
+ * Only a local group: a synced one belongs to its directory, and the server
+ * refuses with the reason. The member may be a person, a service account or
+ * another group.
+ */
+export async function addGroupMember(
+  groupId: string,
+  change: { memberId: string; reason: string }
+): Promise<AttributeOutcome> {
+  const { data } = await apiClient.post<{
+    changed: boolean;
+    principal: PrincipalDetail;
+  }>(`/v1/principals/${encodeURIComponent(groupId)}/members`, change);
+  return { changed: data.changed, detail: data.principal };
+}
+
+/** Takes somebody out of a local group; the reason is required. */
+export async function removeGroupMember(
+  groupId: string,
+  change: { memberId: string; reason: string }
+): Promise<AttributeOutcome> {
+  const params = new URLSearchParams({ reason: change.reason });
+  const { data } = await apiClient.delete<{
+    changed: boolean;
+    principal: PrincipalDetail;
+  }>(
+    `/v1/principals/${encodeURIComponent(groupId)}/members/${encodeURIComponent(
+      change.memberId
+    )}?${params}`
   );
   return { changed: data.changed, detail: data.principal };
 }

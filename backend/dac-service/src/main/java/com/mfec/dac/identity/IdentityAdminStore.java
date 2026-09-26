@@ -37,8 +37,8 @@ public class IdentityAdminStore {
   public static final List<String> APP_ROLES =
       List.of("PLATFORM_ADMIN", "POLICY_AUTHOR", "DATA_OWNER", "AUDITOR", "REQUESTER");
 
-  /** Local principals this can create. A GROUP has no password and no login. */
-  private static final Set<String> CREATABLE_TYPES = Set.of("USER", "SERVICE");
+  /** Local principals this can create. A GROUP has no password, no login and no roles. */
+  private static final Set<String> CREATABLE_TYPES = Set.of("USER", "SERVICE", "GROUP");
 
   /**
    * Usernames that {@code lower()} keeps distinct and a person reading a log
@@ -151,6 +151,12 @@ public class IdentityAdminStore {
    *
    * <p>The password is always marked {@code must_change}. Whoever types it
    * here knows it, and a password two people know is not a credential.
+   *
+   * <p>A local GROUP is the exception to all three. It has no password because
+   * nobody signs in as it, and no roles because an app role is read from the
+   * account that signed in, never from its groups: a role given to a group
+   * would show on the roles screen and act on nobody. It exists for policies
+   * and grants, which do follow membership (FR-2.2).
    */
   public UUID createLocal(NewLocalPrincipal input, String actor, String clientIp) {
     if (input == null) {
@@ -175,17 +181,31 @@ public class IdentityAdminStore {
             : input.principalType().trim().toUpperCase(Locale.ROOT);
     if (!CREATABLE_TYPES.contains(type)) {
       throw new InvalidPrincipalException(
-          "A local principal is a USER or a SERVICE account; groups are synced, not created here");
+          "A local principal is a USER, a SERVICE account or a GROUP");
     }
-    String password = required(input.password(), "password");
-    if (password.length() < MIN_PASSWORD || password.length() > MAX_PASSWORD) {
-      throw new InvalidPrincipalException(
-          "A password is between " + MIN_PASSWORD + " and " + MAX_PASSWORD + " characters");
-    }
-    if (password.equalsIgnoreCase(username)) {
-      throw new InvalidPrincipalException("The password cannot be the username");
-    }
+    boolean group = "GROUP".equals(type);
     List<RoleRequest> roles = input.roles() == null ? List.of() : input.roles();
+    String password = input.password();
+    if (group) {
+      if (password != null && !password.isEmpty()) {
+        throw new InvalidPrincipalException("A group has no password; nobody signs in as a group");
+      }
+      if (!roles.isEmpty()) {
+        throw new InvalidPrincipalException(
+            "A group takes no app role: roles are read from the account that signed in, not "
+                + "from its groups. Give the role to the people instead");
+      }
+    } else {
+      password = required(password, "password");
+      if (password.length() < MIN_PASSWORD || password.length() > MAX_PASSWORD) {
+        throw new InvalidPrincipalException(
+            "A password is between " + MIN_PASSWORD + " and " + MAX_PASSWORD + " characters");
+      }
+      if (password.equalsIgnoreCase(username)) {
+        throw new InvalidPrincipalException("The password cannot be the username");
+      }
+    }
+    String firstPassword = password;
     for (RoleRequest role : roles) {
       checkRole(role);
     }
@@ -194,23 +214,28 @@ public class IdentityAdminStore {
     UUID created = jdbi.inTransaction(
         handle -> {
           // Checked here as well as by the unique index from V10, so the answer
-          // is a sentence rather than a constraint name.
+          // is a sentence rather than a constraint name. A group is checked
+          // against every local name, people included: a policy that reads
+          // "finance" should not leave anybody wondering which one it meant.
           boolean taken =
               handle
                       .createQuery(
                           """
                           SELECT count(*) FROM principal
                           WHERE source = 'local'
-                            AND principal_type <> 'GROUP'
+                            AND (:group OR principal_type <> 'GROUP')
                             AND lower(username) = lower(:username)
                           """)
+                      .bind("group", group)
                       .bind("username", username)
                       .mapTo(Long.class)
                       .one()
                   > 0;
           if (taken) {
             throw new IdentityConflictException(
-                "A local account named "
+                "A local "
+                    + (group ? "principal" : "account")
+                    + " named "
                     + username
                     + " already exists. Names differing only in case count as the same name, "
                     + "because signing in does not distinguish them.");
@@ -231,19 +256,20 @@ public class IdentityAdminStore {
                   .mapTo(UUID.class)
                   .one();
 
-          handle
-              .createUpdate(
-                  """
-                  INSERT INTO local_credential
-                      (principal_id, password_hash, must_change, password_changed_at)
-                  VALUES (:id, :hash, true, now())
-                  """)
-              .bind("id", id)
-              .bind("hash", PasswordHasher.hash(password.toCharArray()))
-              .execute();
-
           audit(handle, actor, "CREATE_PRINCIPAL", id, username, "local", null, null, null, ip);
-          audit(handle, actor, "SET_PASSWORD", id, username, "local", null, null, null, ip);
+          if (!group) {
+            handle
+                .createUpdate(
+                    """
+                    INSERT INTO local_credential
+                        (principal_id, password_hash, must_change, password_changed_at)
+                    VALUES (:id, :hash, true, now())
+                    """)
+                .bind("id", id)
+                .bind("hash", PasswordHasher.hash(firstPassword.toCharArray()))
+                .execute();
+            audit(handle, actor, "SET_PASSWORD", id, username, "local", null, null, null, ip);
+          }
           for (RoleRequest role : roles) {
             insertGrant(handle, id, username, "local", role, actor, null, ip);
           }
@@ -253,6 +279,126 @@ public class IdentityAdminStore {
     // cached under it has to go with it.
     changes.fire("local account " + username + " created");
     return created;
+  }
+
+  /**
+   * Puts a principal into a local group.
+   *
+   * <p>Only a local group: an Entra group or an OpenMetadata team belongs to
+   * its directory, and a member added here would be dropped by the next sync
+   * without anybody being told. The member may come from anywhere, because the
+   * row written is the platform's own ({@code source = 'local'}) and a sync
+   * never touches it.
+   *
+   * <p>A group inside a group is allowed, since policies follow nesting, but a
+   * loop is refused: it would make every group in it a member of itself, and
+   * nobody reading the members screen could say who is really in.
+   *
+   * @return false when the member was already in the group
+   */
+  public boolean addMember(
+      UUID groupId, UUID memberId, String reason, String actor, String clientIp) {
+    Target group = requireLocalGroup(groupId);
+    Target member = require(memberId);
+    if (groupId.equals(memberId)) {
+      throw new InvalidPrincipalException("A group cannot be a member of itself");
+    }
+    if (blankToNull(reason) == null) {
+      throw new InvalidPrincipalException("Say why " + member.username() + " joins this group");
+    }
+    String ip = ClientAddress.normalise(clientIp);
+    boolean added =
+        jdbi.inTransaction(
+            handle -> {
+              boolean loop =
+                  handle
+                          .createQuery(
+                              """
+                              WITH RECURSIVE above(group_id) AS (
+                                  SELECT group_id FROM group_member WHERE member_id = :group
+                                UNION
+                                  SELECT m.group_id FROM group_member m
+                                  JOIN above a ON m.member_id = a.group_id
+                              )
+                              SELECT count(*) FROM above WHERE group_id = :member
+                              """)
+                          .bind("group", groupId)
+                          .bind("member", memberId)
+                          .mapTo(Long.class)
+                          .one()
+                      > 0;
+              if (loop) {
+                throw new IdentityConflictException(
+                    group.username()
+                        + " is already inside "
+                        + member.username()
+                        + ", so adding it back would make a loop");
+              }
+              int inserted =
+                  handle
+                      .createUpdate(
+                          """
+                          INSERT INTO group_member (group_id, member_id, source)
+                          VALUES (:group, :member, 'local')
+                          ON CONFLICT DO NOTHING
+                          """)
+                      .bind("group", groupId)
+                      .bind("member", memberId)
+                      .execute();
+              if (inserted == 0) {
+                return false;
+              }
+              auditAttribute(handle, actor, "ADD_MEMBER", groupId, group.username(), "local",
+                  "member", member.username(), reason, ip);
+              return true;
+            });
+    if (added) {
+      changes.fire(member.username() + " joined " + group.username());
+    }
+    return added;
+  }
+
+  /**
+   * Takes a principal out of a local group.
+   *
+   * <p>The membership row is removed rather than closed, because
+   * {@code group_member} has no validity columns. The audit row written here
+   * is what answers "was this person in Finance in March".
+   *
+   * @return false when the member was not in the group
+   */
+  public boolean removeMember(
+      UUID groupId, UUID memberId, String reason, String actor, String clientIp) {
+    Target group = requireLocalGroup(groupId);
+    Target member = require(memberId);
+    if (blankToNull(reason) == null) {
+      throw new InvalidPrincipalException("Say why " + member.username() + " leaves this group");
+    }
+    String ip = ClientAddress.normalise(clientIp);
+    boolean removed =
+        jdbi.inTransaction(
+            handle -> {
+              int deleted =
+                  handle
+                      .createUpdate(
+                          """
+                          DELETE FROM group_member
+                          WHERE group_id = :group AND member_id = :member AND source = 'local'
+                          """)
+                      .bind("group", groupId)
+                      .bind("member", memberId)
+                      .execute();
+              if (deleted == 0) {
+                return false;
+              }
+              auditAttribute(handle, actor, "REMOVE_MEMBER", groupId, group.username(), "local",
+                  "member", member.username(), reason, ip);
+              return true;
+            });
+    if (removed) {
+      changes.fire(member.username() + " left " + group.username());
+    }
+    return removed;
   }
 
   /**
@@ -688,6 +834,22 @@ public class IdentityAdminStore {
               + target.source()
               + ", which owns that account. Change it there — the next sync would overwrite "
               + "anything changed here.");
+    }
+    return target;
+  }
+
+  private Target requireLocalGroup(UUID groupId) {
+    Target target = requireLocal(groupId);
+    String type =
+        jdbi.withHandle(
+            handle ->
+                handle
+                    .createQuery("SELECT principal_type FROM principal WHERE id = :id")
+                    .bind("id", groupId)
+                    .mapTo(String.class)
+                    .one());
+    if (!"GROUP".equals(type)) {
+      throw new InvalidPrincipalException(target.username() + " is not a group");
     }
     return target;
   }

@@ -616,12 +616,15 @@ function AccountForm({
   const [username, setUsername] = useState('');
   const [displayName, setDisplayName] = useState('');
   const [email, setEmail] = useState('');
-  const [principalType, setPrincipalType] = useState<'USER' | 'SERVICE'>('USER');
+  const [principalType, setPrincipalType] = useState<'USER' | 'SERVICE' | 'GROUP'>('USER');
   const [password, setPassword] = useState('');
   const [appRole, setAppRole] = useState('');
   const [scopeFqn, setScopeFqn] = useState<string | null>(null);
 
-  const scoped = appRole === 'DATA_OWNER';
+  // A group is for policies and grants to point at. Nobody signs in as one,
+  // and an app role on it would act on nobody, so it takes neither.
+  const group = principalType === 'GROUP';
+  const scoped = !group && appRole === 'DATA_OWNER';
 
   const create = useMutation({
     mutationFn: () =>
@@ -630,8 +633,8 @@ function AccountForm({
         displayName: displayName.trim(),
         email: email.trim() || null,
         principalType,
-        password,
-        roles: appRole ? [{ appRole, scopeFqn: scoped ? scopeFqn : null }] : [],
+        password: group ? null : password,
+        roles: !group && appRole ? [{ appRole, scopeFqn: scoped ? scopeFqn : null }] : [],
       }),
     onSuccess: () => {
       onSaved();
@@ -645,7 +648,7 @@ function AccountForm({
   const ready =
     username.trim().length >= 2 &&
     displayName.trim().length >= 2 &&
-    password.length >= 10 &&
+    (group || password.length >= 10) &&
     (!scoped || Boolean(scopeFqn));
 
   return (
@@ -676,13 +679,18 @@ function AccountForm({
         </Field>
         <Field label="Kind">
           <Select
-            onChange={(next) => setPrincipalType(next as 'USER' | 'SERVICE')}
+            onChange={(next) => setPrincipalType(next as 'USER' | 'SERVICE' | 'GROUP')}
             options={[
               { value: 'USER', label: 'Person', hint: 'Somebody who signs in.' },
               {
                 value: 'SERVICE',
                 label: 'Service account',
                 hint: 'A job or integration that calls the API.',
+              },
+              {
+                value: 'GROUP',
+                label: 'Group',
+                hint: 'People that policies and grants name together. No sign-in.',
               },
             ]}
             value={principalType}
@@ -698,6 +706,7 @@ function AccountForm({
             value={email}
           />
         </Field>
+        {!group && (
         <Field hint="Ten characters at least, and not the username." label="First password">
           <TextField
             onChange={setPassword}
@@ -706,6 +715,8 @@ function AccountForm({
             value={password}
           />
         </Field>
+        )}
+        {!group && (
         <Field hint="Optional — more can be granted afterwards." label="Role to start with">
           <Select
             onChange={(next) => {
@@ -726,6 +737,7 @@ function AccountForm({
             value={appRole}
           />
         </Field>
+        )}
         {scoped && (
           <Field hint="The asset this owner owns." label="Scope">
             <ScopePicker onChange={setScopeFqn} value={scopeFqn} />
@@ -745,7 +757,7 @@ function AccountForm({
           isDisabled={!ready || create.isPending}
           onPress={() => create.mutate()}
           size="sm">
-          {create.isPending ? 'Creating…' : 'Create account'}
+          {create.isPending ? 'Creating…' : group ? 'Create group' : 'Create account'}
         </Button>
         <Button color="tertiary" onPress={onDone} size="sm">
           Cancel

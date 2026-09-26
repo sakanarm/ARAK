@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.mfec.dac.auth.LocalIdentityDao;
 import com.mfec.dac.auth.PasswordHasher;
+import com.mfec.dac.policy.PrincipalLoader;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -368,6 +369,190 @@ class IdentityAdminStoreIT {
           .hasMessageContaining("entra");
       assertThatThrownBy(() -> store.resetPassword(id, "a passable password", "admin", null))
           .isInstanceOf(IdentityAdminStore.InvalidPrincipalException.class);
+    }
+  }
+
+  @Nested
+  @DisplayName("groups made here")
+  class LocalGroups {
+
+    private UUID group(String name) {
+      return store.createLocal(
+          new IdentityAdminStore.NewLocalPrincipal(name, name, null, "GROUP", null, List.of()),
+          "admin",
+          "192.0.2.10");
+    }
+
+    @Test
+    @DisplayName("have no password, so nobody can sign in as one")
+    void noCredential() {
+      UUID id = group("finance");
+
+      assertThat(new LocalIdentityDao(jdbi).findLocalAccount("finance")).isEmpty();
+      long credentials =
+          jdbi.withHandle(
+              handle ->
+                  handle
+                      .createQuery("SELECT count(*) FROM local_credential WHERE principal_id = :id")
+                      .bind("id", id)
+                      .mapTo(Long.class)
+                      .one());
+      assertThat(credentials).isZero();
+    }
+
+    @Test
+    @DisplayName("refuse a password or an app role, which would look real and act on nobody")
+    void refusePasswordAndRoles() {
+      assertThatThrownBy(
+              () ->
+                  store.createLocal(
+                      new IdentityAdminStore.NewLocalPrincipal(
+                          "finance", "Finance", null, "GROUP", "a passable password", List.of()),
+                      "admin",
+                      null))
+          .isInstanceOf(IdentityAdminStore.InvalidPrincipalException.class);
+      assertThatThrownBy(
+              () ->
+                  store.createLocal(
+                      new IdentityAdminStore.NewLocalPrincipal(
+                          "finance",
+                          "Finance",
+                          null,
+                          "GROUP",
+                          null,
+                          List.of(new IdentityAdminStore.RoleRequest("AUDITOR", null))),
+                      "admin",
+                      null))
+          .isInstanceOf(IdentityAdminStore.InvalidPrincipalException.class)
+          .hasMessageContaining("people");
+    }
+
+    @Test
+    @DisplayName("cannot share a name with a person, in either order")
+    void namesAreShared() {
+      create("analyst_a");
+      group("finance");
+
+      assertThatThrownBy(() -> group("Analyst_A"))
+          .isInstanceOf(IdentityAdminStore.IdentityConflictException.class);
+      assertThatThrownBy(() -> group("FINANCE"))
+          .isInstanceOf(IdentityAdminStore.IdentityConflictException.class);
+    }
+
+    @Test
+    @DisplayName("take members once, and say so when nothing changed")
+    void membersAreIdempotent() {
+      UUID finance = group("finance");
+      UUID analyst = create("analyst_a");
+
+      assertThat(store.addMember(finance, analyst, "joined FIN", "admin", null)).isTrue();
+      assertThat(store.addMember(finance, analyst, "joined FIN", "admin", null)).isFalse();
+      assertThat(store.removeMember(finance, analyst, "moved team", "admin", null)).isTrue();
+      assertThat(store.removeMember(finance, analyst, "moved team", "admin", null)).isFalse();
+    }
+
+    @Test
+    @DisplayName("need a reason, and refuse a member that is not a group's to take")
+    void refusals() {
+      UUID finance = group("finance");
+      UUID analyst = create("analyst_a");
+
+      assertThatThrownBy(() -> store.addMember(finance, analyst, " ", "admin", null))
+          .isInstanceOf(IdentityAdminStore.InvalidPrincipalException.class);
+      assertThatThrownBy(() -> store.removeMember(finance, analyst, null, "admin", null))
+          .isInstanceOf(IdentityAdminStore.InvalidPrincipalException.class);
+      // A person is not a group, so nobody can be put "into" them.
+      assertThatThrownBy(() -> store.addMember(analyst, finance, "why", "admin", null))
+          .isInstanceOf(IdentityAdminStore.InvalidPrincipalException.class)
+          .hasMessageContaining("not a group");
+      assertThatThrownBy(() -> store.addMember(finance, finance, "why", "admin", null))
+          .isInstanceOf(IdentityAdminStore.InvalidPrincipalException.class);
+    }
+
+    @Test
+    @DisplayName("a synced group takes no members here, because the next sync would drop them")
+    void syncedGroupsAreNotOurs() {
+      UUID entraGroup =
+          jdbi.withHandle(
+              handle ->
+                  handle
+                      .createQuery(
+                          """
+                          INSERT INTO principal
+                              (principal_type, username, display_name, source, enabled)
+                          VALUES ('GROUP', 'entra_finance', 'Finance', 'entra', true)
+                          RETURNING id
+                          """)
+                      .mapTo(UUID.class)
+                      .one());
+      UUID analyst = create("analyst_a");
+
+      assertThatThrownBy(() -> store.addMember(entraGroup, analyst, "why", "admin", null))
+          .isInstanceOf(IdentityAdminStore.InvalidPrincipalException.class);
+    }
+
+    @Test
+    @DisplayName("nest, but refuse a loop")
+    void refuseLoops() {
+      UUID finance = group("finance");
+      UUID risk = group("finance_risk");
+      UUID credit = group("finance_risk_credit");
+
+      store.addMember(finance, risk, "sub-team", "admin", null);
+      store.addMember(risk, credit, "sub-team", "admin", null);
+
+      assertThatThrownBy(() -> store.addMember(credit, finance, "loop", "admin", null))
+          .isInstanceOf(IdentityAdminStore.IdentityConflictException.class)
+          .hasMessageContaining("loop");
+      assertThatThrownBy(() -> store.addMember(risk, finance, "loop", "admin", null))
+          .isInstanceOf(IdentityAdminStore.IdentityConflictException.class);
+    }
+
+    @Test
+    @DisplayName("reach a decision: a member of a nested group carries every group above it")
+    void decisionsFollowMembership() {
+      UUID finance = group("finance");
+      UUID risk = group("finance_risk");
+      UUID analyst = create("analyst_a");
+      store.addMember(finance, risk, "sub-team", "admin", null);
+      store.addMember(risk, analyst, "joined", "admin", null);
+
+      var principal =
+          jdbi.withHandle(handle -> new PrincipalLoader().require(handle, "analyst_a"));
+      assertThat(principal.groups()).contains("finance", "finance_risk");
+
+      store.removeMember(risk, analyst, "left", "admin", null);
+      var after = jdbi.withHandle(handle -> new PrincipalLoader().require(handle, "analyst_a"));
+      assertThat(after.groups()).doesNotContain("finance", "finance_risk");
+    }
+
+    @Test
+    @DisplayName("the audit trail says who joined which group, and why")
+    void audited() {
+      UUID finance = group("finance");
+      UUID analyst = create("analyst_a");
+      store.addMember(finance, analyst, "CAB-201", "admin", "192.0.2.10");
+      store.removeMember(finance, analyst, "moved team", "admin", "192.0.2.10");
+
+      List<String> trail =
+          jdbi.withHandle(
+              handle ->
+                  handle
+                      .createQuery(
+                          """
+                          SELECT action || ' ' || coalesce(attr_value, '-') || ' ' ||
+                                 coalesce(reason, '-')
+                          FROM audit_identity_change
+                          WHERE target_username = 'finance'
+                          ORDER BY id
+                          """)
+                      .mapTo(String.class)
+                      .list());
+      assertThat(trail)
+          .containsExactly(
+              "CREATE_PRINCIPAL - -",
+              "ADD_MEMBER analyst_a CAB-201",
+              "REMOVE_MEMBER analyst_a moved team");
     }
   }
 

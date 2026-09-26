@@ -223,3 +223,43 @@ describe('somebody who is not an administrator', () => {
     expect(fetchRoleGrants).not.toHaveBeenCalled();
   });
 });
+
+describe('a local group', () => {
+  it('is made without a password or a role, since nobody signs in as one', async () => {
+    fetchRoleGrants.mockResolvedValue({
+      grants: [grant({})],
+      appRoles: ['PLATFORM_ADMIN', 'AUDITOR'],
+      globalAdminCount: 1,
+    });
+    renderPage();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Add local account' }));
+    expect(screen.getByText('First password')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /Kind/ }));
+    fireEvent.click(await screen.findByRole('option', { name: /Group/ }));
+
+    // A password box or a role picker here would look like it did something.
+    expect(screen.queryByText('First password')).toBeNull();
+    expect(screen.queryByText('Role to start with')).toBeNull();
+
+    const create = screen.getByRole('button', { name: 'Create group' });
+    expect(create).toBeDisabled();
+    fireEvent.change(screen.getByPlaceholderText('analyst_a'), { target: { value: 'finance' } });
+    fireEvent.change(screen.getByPlaceholderText('Analyst A'), { target: { value: 'Finance' } });
+    expect(create).toBeEnabled();
+    fireEvent.click(create);
+
+    await waitFor(() =>
+      expect(createLocalPrincipal).toHaveBeenCalledWith(
+        expect.objectContaining({
+          username: 'finance',
+          displayName: 'Finance',
+          principalType: 'GROUP',
+          password: null,
+          roles: [],
+        })
+      )
+    );
+  });
+});

@@ -8,6 +8,9 @@ const fetchPrincipalDetail = jest.fn();
 const fetchAttributeVocabulary = jest.fn();
 const addPrincipalAttribute = jest.fn();
 const removePrincipalAttribute = jest.fn();
+const fetchPrincipals = jest.fn();
+const addGroupMember = jest.fn();
+const removeGroupMember = jest.fn();
 
 let isAdmin = false;
 
@@ -17,6 +20,9 @@ jest.mock('../../api/governance', () => ({
   addPrincipalAttribute: (...args: unknown[]) => addPrincipalAttribute(...args),
   removePrincipalAttribute: (...args: unknown[]) =>
     removePrincipalAttribute(...args),
+  fetchPrincipals: (...args: unknown[]) => fetchPrincipals(...args),
+  addGroupMember: (...args: unknown[]) => addGroupMember(...args),
+  removeGroupMember: (...args: unknown[]) => removeGroupMember(...args),
 }));
 
 jest.mock('../../api/client', () => ({
@@ -70,6 +76,10 @@ beforeEach(() => {
   fetchAttributeVocabulary.mockResolvedValue({ keys: [], appRoles: [] });
   addPrincipalAttribute.mockReset();
   removePrincipalAttribute.mockReset();
+  fetchPrincipals.mockReset();
+  fetchPrincipals.mockResolvedValue([]);
+  addGroupMember.mockReset();
+  removeGroupMember.mockReset();
 });
 
 test('a group lists the people in it, each one openable', async () => {
@@ -80,6 +90,7 @@ test('a group lists the people in it, each one openable', async () => {
       username: 'Finance',
       displayName: 'Finance',
       email: null,
+      source: 'entra',
       attributeCount: 0,
       memberCount: 2,
       groupCount: 0,
@@ -340,4 +351,103 @@ test('a group whose members carry nothing says so', async () => {
   });
 
   expect(await screen.findByText('None of its members carries an attribute.')).toBeInTheDocument();
+});
+
+function localGroup(members: Principal[]): PrincipalDetail {
+  return {
+    principal: principal({
+      id: GROUP_ID,
+      principalType: 'GROUP',
+      username: 'finance',
+      displayName: 'Finance',
+      email: null,
+      attributeCount: 0,
+      memberCount: members.length,
+      groupCount: 0,
+    }),
+    attributes: [],
+    groups: [],
+    members,
+  };
+}
+
+test('an admin adds somebody to a group made here, with a reason', async () => {
+  isAdmin = true;
+  const analystB = principal({
+    id: USER_ID.replace(/1/g, '3'),
+    username: 'analyst_b',
+    displayName: 'Analyst B',
+  });
+  // The group itself and those already in it are not offered.
+  fetchPrincipals.mockResolvedValue([
+    principal({}),
+    analystB,
+    localGroup([]).principal,
+  ]);
+  addGroupMember.mockResolvedValue({
+    changed: true,
+    detail: localGroup([principal({}), analystB]),
+  });
+  renderAt(GROUP_ID, localGroup([principal({})]));
+
+  expect(await screen.findByText('1 member, kept in this console.')).toBeInTheDocument();
+  const add = screen.getByRole('button', { name: 'Add member' });
+  expect(add).toBeDisabled();
+
+  const search = screen.getByLabelText('Person, service account or group');
+  await waitFor(() => expect(fetchPrincipals).toHaveBeenCalled());
+  await waitFor(() =>
+    expect(document.querySelectorAll('#member-candidates option')).toHaveLength(1)
+  );
+  fireEvent.change(search, { target: { value: 'analyst_b' } });
+  expect(add).toBeDisabled();
+  fireEvent.change(screen.getByLabelText('Why'), { target: { value: 'Joined FIN' } });
+  expect(add).toBeEnabled();
+  fireEvent.click(add);
+
+  await waitFor(() =>
+    expect(addGroupMember).toHaveBeenCalledWith(GROUP_ID, {
+      memberId: analystB.id,
+      reason: 'Joined FIN',
+    })
+  );
+  expect(await screen.findByText('2 members, kept in this console.')).toBeInTheDocument();
+});
+
+test('taking somebody out of a group asks why first', async () => {
+  isAdmin = true;
+  removeGroupMember.mockResolvedValue({ changed: true, detail: localGroup([]) });
+  renderAt(GROUP_ID, localGroup([principal({})]));
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Remove analyst_a' }));
+  expect(screen.getByText(/Say why analyst_a leaves/)).toBeInTheDocument();
+  expect(removeGroupMember).not.toHaveBeenCalled();
+
+  fireEvent.change(screen.getByLabelText('Why'), { target: { value: 'Moved team' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Remove analyst_a' }));
+  await waitFor(() =>
+    expect(removeGroupMember).toHaveBeenCalledWith(GROUP_ID, {
+      memberId: USER_ID,
+      reason: 'Moved team',
+    })
+  );
+  expect(await screen.findByText('Nobody yet. Add the first member below.')).toBeInTheDocument();
+});
+
+test('a synced group takes no members here, even from an admin', async () => {
+  isAdmin = true;
+  const synced = localGroup([principal({})]);
+  synced.principal = { ...synced.principal, source: 'entra' };
+  renderAt(GROUP_ID, synced);
+
+  expect(await screen.findByText('1 person, as of the last sync.')).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Add member' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: /Remove/ })).not.toBeInTheDocument();
+});
+
+test('a non-admin sees a local group read-only', async () => {
+  renderAt(GROUP_ID, localGroup([principal({})]));
+
+  expect(await screen.findByRole('link', { name: /Analyst A/ })).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Add member' })).not.toBeInTheDocument();
 });

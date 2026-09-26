@@ -14,9 +14,12 @@ import { Chip as Badge } from '../../components/chips';
 import { apiErrorMessage } from '../../api/client';
 import { useAuthStore } from '../../auth/authStore';
 import {
+  addGroupMember,
   addPrincipalAttribute,
   fetchAttributeVocabulary,
   fetchPrincipalDetail,
+  fetchPrincipals,
+  removeGroupMember,
   removePrincipalAttribute,
   type AttributeOutcome,
   type MemberAttribute,
@@ -71,6 +74,9 @@ export default function PrincipalDetailPage() {
   const { principal, attributes, groups, members } = data;
   const memberAttributes = data.memberAttributes ?? [];
   const isGroup = principal.principalType === 'GROUP';
+  // Only a group made here takes members here. A synced group's membership
+  // belongs to its directory, and the next sync would undo an edit.
+  const editsMembers = isAdmin && isGroup && principal.source === 'local';
 
   return (
     <>
@@ -108,10 +114,14 @@ export default function PrincipalDetailPage() {
               subtitle={
                 members.length === 0
                   ? 'Nobody is in this group. A rule naming it matches no one.'
-                  : `${members.length} ${members.length === 1 ? 'person' : 'people'}, as of the last sync.`
+                  : principal.source === 'local'
+                    ? `${members.length} ${members.length === 1 ? 'member' : 'members'}, kept in this console.`
+                    : `${members.length} ${members.length === 1 ? 'person' : 'people'}, as of the last sync.`
               }
               title="Members">
-              {members.length === 0 ? (
+              {editsMembers ? (
+                <MemberEditor cacheKey={id} groupId={principal.id} members={members} />
+              ) : members.length === 0 ? (
                 <Note>
                   A subject rule that names this group is a denial for everyone
                   until somebody is added to it — in {principal.source}, not
@@ -642,7 +652,158 @@ function AttributeTable({
   );
 }
 
-function PrincipalList({ rows }: { rows: Principal[] }) {
+/**
+ * The members of a group made here, with the means to change them.
+ *
+ * A reason is required both ways, because joining a group is how somebody
+ * comes to see data a policy gives that group, and the audit trail is where
+ * anybody will look for why.
+ */
+function MemberEditor({
+  groupId,
+  cacheKey,
+  members,
+}: {
+  groupId: string;
+  cacheKey: string;
+  members: Principal[];
+}) {
+  const queryClient = useQueryClient();
+  const [search, setSearch] = useState('');
+  const [picked, setPicked] = useState<Principal | null>(null);
+  const [reason, setReason] = useState('');
+  const [failure, setFailure] = useState<string | null>(null);
+
+  const candidates = useQuery({
+    queryKey: ['principals', 'member-candidates', search.trim()],
+    queryFn: () => fetchPrincipals({ search: search.trim() || undefined, limit: 20 }),
+    staleTime: 30 * 1000,
+  });
+  const inGroup = new Set(members.map((member) => member.id));
+  const offered = (candidates.data ?? []).filter(
+    (candidate) => candidate.id !== groupId && !inGroup.has(candidate.id)
+  );
+
+  function landed(outcome: AttributeOutcome) {
+    queryClient.setQueryData(['principal', cacheKey], outcome.detail);
+    queryClient.invalidateQueries({ queryKey: ['principals'] });
+    setFailure(null);
+  }
+
+  const add = useMutation({
+    mutationFn: (input: { memberId: string; reason: string }) =>
+      addGroupMember(groupId, input),
+    onSuccess: (outcome) => {
+      landed(outcome);
+      setPicked(null);
+      setSearch('');
+      setReason('');
+    },
+    onError: (error) => setFailure(apiErrorMessage(error, 'Could not add that member.')),
+  });
+
+  const remove = useMutation({
+    mutationFn: (input: { memberId: string; reason: string }) =>
+      removeGroupMember(groupId, input),
+    onSuccess: landed,
+    onError: (error) => setFailure(apiErrorMessage(error, 'Could not remove that member.')),
+  });
+
+  return (
+    <>
+      {members.length === 0 ? (
+        <Note>Nobody yet. Add the first member below.</Note>
+      ) : (
+        <PrincipalList
+          busy={remove.isPending ? remove.variables?.memberId : undefined}
+          onRemove={(row) => {
+            if (reason.trim() === '') {
+              setFailure(`Say why ${row.username} leaves, in the Why box below.`);
+              return;
+            }
+            remove.mutate({ memberId: row.id, reason: reason.trim() });
+          }}
+          rows={members}
+        />
+      )}
+
+      <form
+        className="tw:mt-4 tw:rounded-lg tw:border tw:border-secondary tw:bg-secondary tw:p-3"
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (picked) {
+            add.mutate({ memberId: picked.id, reason: reason.trim() });
+          }
+        }}>
+        <div className="tw:flex tw:flex-wrap tw:items-end tw:gap-3">
+          <div className="tw:min-w-48 tw:flex-1">
+            <label className="tw:text-xs tw:font-medium tw:text-secondary" htmlFor="member-search">
+              Person, service account or group
+            </label>
+            <input
+              className={`${INPUT} tw:mt-1.5`}
+              id="member-search"
+              list="member-candidates"
+              onChange={(event) => {
+                const text = event.target.value;
+                setSearch(text);
+                setPicked(offered.find((candidate) => candidate.username === text) ?? null);
+              }}
+              placeholder="analyst_a"
+              value={search}
+            />
+            <datalist id="member-candidates">
+              {offered.map((candidate) => (
+                <option key={candidate.id} value={candidate.username}>
+                  {`${candidate.displayName || candidate.username} · ${candidate.principalType.toLowerCase()} · ${candidate.source}`}
+                </option>
+              ))}
+            </datalist>
+          </div>
+
+          <div className="tw:min-w-48 tw:flex-1">
+            <label className="tw:text-xs tw:font-medium tw:text-secondary" htmlFor="member-reason">
+              Why
+            </label>
+            <input
+              className={`${INPUT} tw:mt-1.5`}
+              id="member-reason"
+              onChange={(event) => setReason(event.target.value)}
+              placeholder="Joined the finance team, HR-2291"
+              value={reason}
+            />
+          </div>
+
+          <Button
+            iconLeading={Plus}
+            isDisabled={add.isPending || !picked || reason.trim() === ''}
+            size="md"
+            type="submit">
+            {add.isPending ? 'Adding…' : 'Add member'}
+          </Button>
+        </div>
+
+        {failure && <p className="tw:mt-3 tw:text-xs tw:text-error-primary">{failure}</p>}
+
+        <p className="tw:mt-3 tw:text-xs tw:text-quaternary">
+          A member of a group inside this one is a member of this one too, so a
+          policy naming this group reaches them. Every join and leave is written
+          to the identity audit trail with the reason.
+        </p>
+      </form>
+    </>
+  );
+}
+
+function PrincipalList({
+  rows,
+  onRemove,
+  busy,
+}: {
+  rows: Principal[];
+  onRemove?: (row: Principal) => void;
+  busy?: string;
+}) {
   return (
     <table className="tw:w-full tw:text-sm">
       <thead>
@@ -656,6 +817,7 @@ function PrincipalList({ rows }: { rows: Principal[] }) {
           <th className="tw:py-2 tw:text-right tw:text-xs tw:font-medium tw:text-tertiary">
             Attributes
           </th>
+          {onRemove && <th aria-label="Remove" />}
         </tr>
       </thead>
       <tbody>
@@ -679,6 +841,18 @@ function PrincipalList({ rows }: { rows: Principal[] }) {
             <td className="tw:py-2 tw:text-right tw:align-top tw:tabular-nums tw:text-tertiary">
               {row.attributeCount || '—'}
             </td>
+            {onRemove && (
+              <td className="tw:w-10 tw:py-2 tw:pl-2 tw:text-right tw:align-top">
+                <button
+                  aria-label={`Remove ${row.username}`}
+                  className="tw:cursor-pointer tw:rounded tw:p-1 tw:text-quaternary tw:hover:bg-secondary tw:hover:text-error-primary tw:disabled:opacity-50"
+                  disabled={busy === row.id}
+                  onClick={() => onRemove(row)}
+                  type="button">
+                  <Trash01 className="tw:size-4" />
+                </button>
+              </td>
+            )}
           </tr>
         ))}
       </tbody>

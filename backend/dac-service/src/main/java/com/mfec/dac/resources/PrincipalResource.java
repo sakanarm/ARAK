@@ -150,6 +150,9 @@ public class PrincipalResource {
   /** One attribute value to give somebody, and why. */
   public record AttributeChange(String key, String value, String reason) {}
 
+  /** Who joins a local group, and why. */
+  public record MemberChange(UUID memberId, String reason) {}
+
   /**
    * Every role in force, with the count of administrators beside it.
    *
@@ -324,6 +327,59 @@ public class PrincipalResource {
             () ->
                 admin.removeAttribute(
                     id, key, value, reason, actor.username(), clientIp(request)));
+    return Map.of(
+        "changed",
+        changed,
+        "principal",
+        principals.detail(id.toString()).orElseThrow(() -> new NotFoundException("No principal " + id)));
+  }
+
+  /**
+   * Puts a principal into a local group (FR-2.2).
+   *
+   * <p>Only a group made here takes members here: a synced group belongs to
+   * its directory, and a member added on this side would vanish at the next
+   * sync. 200 either way, with {@code changed} saying whether anything moved.
+   */
+  @POST
+  @Path("/{id}/members")
+  @Consumes(MediaType.APPLICATION_JSON)
+  @Secured({"PLATFORM_ADMIN"})
+  public Map<String, Object> addMember(
+      @PathParam("id") UUID id,
+      MemberChange change,
+      @Context SecurityContext security,
+      @Context HttpServletRequest request) {
+    AuthenticatedUser actor = caller(security);
+    if (change == null || change.memberId() == null) {
+      throw new BadRequestException("Say who joins the group");
+    }
+    boolean changed =
+        translate(
+            () ->
+                admin.addMember(
+                    id, change.memberId(), change.reason(), actor.username(), clientIp(request)));
+    return Map.of(
+        "changed",
+        changed,
+        "principal",
+        principals.detail(id.toString()).orElseThrow(() -> new NotFoundException("No principal " + id)));
+  }
+
+  /** Takes a principal out of a local group; the reason is a query parameter, as for roles. */
+  @DELETE
+  @Path("/{id}/members/{memberId}")
+  @Secured({"PLATFORM_ADMIN"})
+  public Map<String, Object> removeMember(
+      @PathParam("id") UUID id,
+      @PathParam("memberId") UUID memberId,
+      @QueryParam("reason") String reason,
+      @Context SecurityContext security,
+      @Context HttpServletRequest request) {
+    AuthenticatedUser actor = caller(security);
+    boolean changed =
+        translate(
+            () -> admin.removeMember(id, memberId, reason, actor.username(), clientIp(request)));
     return Map.of(
         "changed",
         changed,

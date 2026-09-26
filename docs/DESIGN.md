@@ -186,7 +186,7 @@ conf/dac.yml                 config เดียวที่ commit — ใช�
 | # | Feature | สถานะ |
 |---|---|---|
 | FR-2.1 | Login ผ่าน Entra ID (OIDC) + ดึง group/attribute ผ่าน Microsoft Graph | ⬜ |
-| FR-2.2 | Local user / group / attribute (สำหรับ test + service account) | ✅ บางส่วน — local sign-in ใช้ได้แล้ว (`local_credential`, bcrypt, lockout, must-change) |
+| FR-2.2 | Local user / group / attribute (สำหรับ test + service account) | ✅ บางส่วน — local sign-in ใช้ได้แล้ว (`local_credential`, bcrypt, lockout, must-change) · **local group (V35): admin สร้าง group และเพิ่ม/เอาสมาชิกออกได้ พร้อม reason บังคับ และ audit `ADD_MEMBER`/`REMOVE_MEMBER` · group ที่ sync มาแก้ใน ARAK ไม่ได้** |
 | FR-2.3 | ใช้ OpenMetadata Team เป็นแหล่ง group | ⬜ |
 | FR-2.4 | Attribute store key–value รองรับ multi-value + `source` (entra/om/local) + ลำดับความสำคัญ | ⬜ (ตาราง `principal_attribute` มีแล้ว) |
 | FR-2.5 | Sync membership ตามรอบ + cache TTL · token claim ใช้ได้ทันที | ⬜ |
@@ -244,6 +244,8 @@ conf/dac.yml                 config เดียวที่ commit — ใช�
 | FR-4.5 | ซ่อน column ทั้งคอลัมน์ (ไม่โผล่ใน schema) | ✅ `hiddenColumns` |
 
 ### FR-5 Policy Engine — M3
+
+> **ข้อควรระวังตอนเขียน policy (เจอตอนทำ demo บน prod):** เมื่อ ALLOW ระดับ global ทุกตัวตั้ง `allowLocalOverride: true` (ซึ่งต้องตั้งถ้าอยากให้ grant ผ่าน gate ได้) ALLOW ที่มี selector ในชั้นล่างกว่าจะผ่อน gate ของ global ให้**ทุกคนที่มัน match** ถ้าจะบีบให้แคบลงในชั้นล่าง ให้ใช้ **DENY** · ถ้าจะให้คนคนเดียวเข้า ให้ใช้ **grant**
 
 | # | Feature | สถานะ |
 |---|---|---|

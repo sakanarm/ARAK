@@ -9,6 +9,7 @@ import {
   Table,
 } from '@untitledui/icons';
 import { fetchAsset, fetchAssets, type AssetSummary } from '../../api/client';
+import { plainText } from '../../lib/text';
 import { TextField } from '../policies/controls';
 
 /**
@@ -264,6 +265,9 @@ function Columns({
           key={column.fqn}
           onClick={() => onInsert(column.name)}
           style={{ paddingLeft: `${depth * 12 + 24}px` }}
+          // What the column means comes from OpenMetadata. The tree has no
+          // room for it on the row, so it shows on hover instead.
+          title={plainText(column.description) || undefined}
           type="button">
           <span className="tw:min-w-0 tw:truncate tw:text-[11px] tw:text-secondary">
             {column.name}

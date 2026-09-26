@@ -56,14 +56,14 @@ class IdentityAdminStoreTest {
     }
 
     @Test
-    @DisplayName("will not create a group, because groups are synced")
+    @DisplayName("will not give a group a password, because nobody signs in as one")
     void type() {
       IdentityAdminStore.NewLocalPrincipal group =
           new IdentityAdminStore.NewLocalPrincipal(
               "Finance", "Finance", null, "GROUP", "correct horse battery", List.of());
       assertThatThrownBy(() -> store.createLocal(group, "admin", null))
           .isInstanceOf(IdentityAdminStore.InvalidPrincipalException.class)
-          .hasMessageContaining("synced");
+          .hasMessageContaining("no password");
     }
 
     @Test

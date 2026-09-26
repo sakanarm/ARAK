@@ -139,10 +139,9 @@ const GROUPS: SettingGroup[] = [
       {
         title: 'Local groups',
         description:
-          'Groups defined here rather than in Entra, for service accounts, external users and tests.',
-        to: '/settings/groups',
+          'Groups defined here rather than in Entra, for service accounts, external users and tests. Make one under Application roles, then add its members from its page.',
+        to: '/principals?type=GROUP',
         icon: Users01,
-        milestone: 'M2',
         adminOnly: true,
       },
     ],
