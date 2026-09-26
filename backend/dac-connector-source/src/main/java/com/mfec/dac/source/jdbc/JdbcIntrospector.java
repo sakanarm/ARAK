@@ -10,6 +10,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.BiPredicate;
 
 /**
  * Reads the real shape of a source database (FR-1.6).
@@ -46,6 +47,14 @@ public final class JdbcIntrospector {
    */
   public record Column(
       String name, int ordinal, String dataType, Integer length, boolean nullable) {}
+
+  /** A table or view by name only, for questions that do not need its columns. */
+  public record Name(String schema, String name, String kind) {
+
+    public String qualified() {
+      return schema + "." + name;
+    }
+  }
 
   /** Schemas that belong to the engine, never to the business. */
   private static final Set<String> SYSTEM_SCHEMAS =
@@ -84,30 +93,41 @@ public final class JdbcIntrospector {
    */
   public List<Table> tables(SourceProbe.Target target, String credentialRef, String schemaFilter)
       throws SQLException, CredentialResolver.UnresolvableCredentialException {
+    return tables(target, credentialRef, schemaFilter, (schema, name) -> true);
+  }
+
+  /**
+   * The tables {@code keep} accepts, with their columns.
+   *
+   * <p>The test is applied to the list of names, before any column is read, so
+   * a scope that leaves out ten thousand scratch tables also leaves out their
+   * columns rather than reading them and throwing them away.
+   *
+   * @param keep given a schema and a table name, whether to read the table
+   */
+  public List<Table> tables(
+      SourceProbe.Target target,
+      String credentialRef,
+      String schemaFilter,
+      BiPredicate<String, String> keep)
+      throws SQLException, CredentialResolver.UnresolvableCredentialException {
 
     CredentialResolver.Credential credential = credentials.resolve(credentialRef);
     try (Connection connection = JdbcTargets.open(target, credential, timeoutSeconds)) {
-      String database = connection.getCatalog();
-      if (database == null || database.isBlank()) {
-        database = target.database();
-      }
+      String database = database(connection, target);
       DatabaseMetaData metadata = connection.getMetaData();
 
       // Keyed by schema.name so the column pass can find its table again
       // without a nested query per table, which on a wide catalog is the
       // difference between one round trip and a thousand.
       Map<String, Draft> drafts = new LinkedHashMap<>();
-      try (ResultSet rs =
-          metadata.getTables(database, schemaFilter, "%", new String[] {"TABLE", "VIEW"})) {
-        while (rs.next()) {
-          String schema = rs.getString("TABLE_SCHEM");
-          if (schema == null || SYSTEM_SCHEMAS.contains(schema.toLowerCase(Locale.ROOT))) {
-            continue;
-          }
-          String name = rs.getString("TABLE_NAME");
-          String kind = "VIEW".equalsIgnoreCase(rs.getString("TABLE_TYPE")) ? "VIEW" : "TABLE";
-          drafts.put(schema + "." + name, new Draft(schema, name, kind));
+      for (Name found : list(metadata, database, schemaFilter)) {
+        if (keep.test(found.schema(), found.name())) {
+          drafts.put(found.qualified(), new Draft(found.schema(), found.name(), found.kind()));
         }
+      }
+      if (drafts.isEmpty()) {
+        return List.of();
       }
 
       try (ResultSet rs = metadata.getColumns(database, schemaFilter, "%", "%")) {
@@ -136,6 +156,46 @@ public final class JdbcIntrospector {
       }
       return out;
     }
+  }
+
+  /**
+   * Every non-system table and view by name, without reading a column.
+   *
+   * <p>What a scope is checked against before it is saved: one catalog call,
+   * so trying a rule out against a large database costs about as much as
+   * testing the connection.
+   */
+  public List<Name> names(SourceProbe.Target target, String credentialRef, String schemaFilter)
+      throws SQLException, CredentialResolver.UnresolvableCredentialException {
+
+    CredentialResolver.Credential credential = credentials.resolve(credentialRef);
+    try (Connection connection = JdbcTargets.open(target, credential, timeoutSeconds)) {
+      return list(connection.getMetaData(), database(connection, target), schemaFilter);
+    }
+  }
+
+  private static String database(Connection connection, SourceProbe.Target target)
+      throws SQLException {
+    String database = connection.getCatalog();
+    return database == null || database.isBlank() ? target.database() : database;
+  }
+
+  private static List<Name> list(DatabaseMetaData metadata, String database, String schemaFilter)
+      throws SQLException {
+    List<Name> out = new ArrayList<>();
+    try (ResultSet rs =
+        metadata.getTables(database, schemaFilter, "%", new String[] {"TABLE", "VIEW"})) {
+      while (rs.next()) {
+        String schema = rs.getString("TABLE_SCHEM");
+        if (schema == null || SYSTEM_SCHEMAS.contains(schema.toLowerCase(Locale.ROOT))) {
+          continue;
+        }
+        String name = rs.getString("TABLE_NAME");
+        String kind = "VIEW".equalsIgnoreCase(rs.getString("TABLE_TYPE")) ? "VIEW" : "TABLE";
+        out.add(new Name(schema, name, kind));
+      }
+    }
+    return out;
   }
 
   private static final class Draft {

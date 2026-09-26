@@ -1,5 +1,7 @@
 package com.mfec.dac.source;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.Instant;
 import java.util.List;
 import java.util.Locale;
@@ -60,6 +62,8 @@ public class DataSourceStore {
   /**
    * One registered source.
    *
+   * @param tableScope which tables the catalogue import reads; never null, and
+   *     {@link TableScope#EVERYTHING} when nothing has been left out
    * @param assetCount tables the crawl has attributed to this source; it is what
    *     makes the difference between an unused row and one that is load-bearing
    *     visible before anybody edits or removes it
@@ -77,6 +81,7 @@ public class DataSourceStore {
       String omServiceFqn,
       String secureSchema,
       String secureObjectPattern,
+      TableScope tableScope,
       boolean enabled,
       Instant createdAt,
       Instant updatedAt,
@@ -92,6 +97,9 @@ public class DataSourceStore {
    * and never a secret. Anything that reaches the row is either a pointer or
    * ciphertext, which is what makes a backup of this table safe to hand to
    * somebody without also handing them the key.
+   *
+   * <p>{@code tableScope} left out of an update keeps the scope already stored,
+   * so a client written before scopes existed cannot widen one by saving.
    */
   public record SourceInput(
       String name,
@@ -107,7 +115,42 @@ public class DataSourceStore {
       String secureObjectPattern,
       Boolean enabled,
       String username,
-      String password) {
+      String password,
+      TableScope tableScope) {
+
+    /** The shape every caller used before a table scope could be set. */
+    public SourceInput(
+        String name,
+        String engine,
+        String engineVersion,
+        String host,
+        Integer port,
+        String defaultDatabase,
+        String credentialRef,
+        String defaultEnforcementMode,
+        String omServiceFqn,
+        String secureSchema,
+        String secureObjectPattern,
+        Boolean enabled,
+        String username,
+        String password) {
+      this(
+          name,
+          engine,
+          engineVersion,
+          host,
+          port,
+          defaultDatabase,
+          credentialRef,
+          defaultEnforcementMode,
+          omServiceFqn,
+          secureSchema,
+          secureObjectPattern,
+          enabled,
+          username,
+          password,
+          null);
+    }
 
     /** The shape every caller used before a credential could be typed in. */
     public SourceInput(
@@ -136,6 +179,7 @@ public class DataSourceStore {
           secureSchema,
           secureObjectPattern,
           enabled,
+          null,
           null,
           null);
     }
@@ -180,11 +224,14 @@ public class DataSourceStore {
       """
       s.id, s.name, s.engine, s.engine_version, s.host, s.port, s.default_database,
       s.credential_ref, s.default_enforcement_mode, s.om_service_fqn, s.secure_schema,
-      s.secure_object_pattern, s.enabled, s.created_at, s.updated_at,
+      s.secure_object_pattern, s.table_scope, s.enabled, s.created_at, s.updated_at,
       (SELECT count(*) FROM asset a
         WHERE a.data_source_id = s.id AND a.is_current
           AND a.asset_type IN ('TABLE', 'VIEW')) AS asset_count
       """;
+
+  /** Writes and reads the scope column; the scope is plain records and enums. */
+  private static final ObjectMapper JSON = new ObjectMapper();
 
   private final Jdbi jdbi;
 
@@ -238,6 +285,8 @@ public class DataSourceStore {
                                  om_service_fqn = :omServiceFqn,
                                  secure_schema = :secureSchema,
                                  secure_object_pattern = :securePattern,
+                                 table_scope = CASE WHEN :keepScope THEN table_scope
+                                                    ELSE CAST(:scope AS jsonb) END,
                                  enabled = :enabled,
                                  updated_at = now()
                            WHERE id = :id
@@ -254,6 +303,8 @@ public class DataSourceStore {
                       .bind("omServiceFqn", v.omServiceFqn)
                       .bind("secureSchema", v.secureSchema)
                       .bind("securePattern", v.securePattern)
+                      .bind("keepScope", v.scope == null)
+                      .bind("scope", stored(v.scope))
                       .bind("enabled", v.enabled)
                       .execute());
       if (rows == 0) {
@@ -361,6 +412,7 @@ public class DataSourceStore {
       String omServiceFqn,
       String secureSchema,
       String securePattern,
+      TableScope scope,
       boolean enabled) {}
 
   private Validated validate(SourceInput in, boolean requireCredential) {
@@ -438,6 +490,13 @@ public class DataSourceStore {
           "The OpenMetadata service name is the first segment of an FQN and cannot contain a dot");
     }
 
+    TableScope scope;
+    try {
+      scope = in.tableScope() == null ? null : TableScope.normalise(in.tableScope());
+    } catch (TableScope.InvalidScopeException e) {
+      throw new InvalidSourceException(e.getMessage());
+    }
+
     return new Validated(
         name,
         engine,
@@ -450,6 +509,7 @@ public class DataSourceStore {
         omServiceFqn,
         secureSchema,
         pattern,
+        scope,
         in.enabled() == null || in.enabled());
   }
 
@@ -463,10 +523,11 @@ public class DataSourceStore {
                       INSERT INTO data_source (name, engine, engine_version, host, port,
                                                default_database, credential_ref,
                                                default_enforcement_mode, om_service_fqn,
-                                               secure_schema, secure_object_pattern, enabled)
+                                               secure_schema, secure_object_pattern,
+                                               table_scope, enabled)
                       VALUES (:name, :engine, :engineVersion, :host, :port, :defaultDatabase,
                               :credentialRef, :mode, :omServiceFqn, :secureSchema,
-                              :securePattern, :enabled)
+                              :securePattern, CAST(:scope AS jsonb), :enabled)
                       RETURNING id
                       """)
                   .bind("name", v.name)
@@ -480,6 +541,7 @@ public class DataSourceStore {
                   .bind("omServiceFqn", v.omServiceFqn)
                   .bind("secureSchema", v.secureSchema)
                   .bind("securePattern", v.securePattern)
+                  .bind("scope", stored(v.scope))
                   .bind("enabled", v.enabled)
                   .mapTo(UUID.class)
                   .findOne());
@@ -522,6 +584,39 @@ public class DataSourceStore {
     return sb.toString();
   }
 
+  /**
+   * The column value for a scope: null when every table is read.
+   *
+   * <p>Stored as absent rather than as {@code {"mode":"ALL"}} so that "never
+   * narrowed" and "narrowed, then widened again" read the same, and a source
+   * registered before this column existed needs no backfill.
+   */
+  private static String stored(TableScope scope) {
+    if (scope == null || scope.scansEverything()) {
+      return null;
+    }
+    try {
+      return JSON.writeValueAsString(scope);
+    } catch (JsonProcessingException e) {
+      throw new IllegalStateException("Could not write a table scope", e);
+    }
+  }
+
+  private static TableScope readScope(String json, String source) {
+    if (json == null || json.isBlank()) {
+      return TableScope.EVERYTHING;
+    }
+    try {
+      return JSON.readValue(json, TableScope.class);
+    } catch (JsonProcessingException e) {
+      // Only reachable by editing the row by hand: everything written here went
+      // through TableScope.normalise. Guessing would import tables somebody
+      // chose to leave out, or leave out ones they wanted.
+      throw new IllegalStateException(
+          "The table scope stored for source " + source + " cannot be read", e);
+    }
+  }
+
   private static int defaultPort(Engine engine) {
     return engine == Engine.SQLSERVER ? 1433 : 5432;
   }
@@ -548,6 +643,7 @@ public class DataSourceStore {
         rs.getString("om_service_fqn"),
         rs.getString("secure_schema"),
         rs.getString("secure_object_pattern"),
+        readScope(rs.getString("table_scope"), rs.getString("name")),
         rs.getBoolean("enabled"),
         rs.getTimestamp("created_at").toInstant(),
         rs.getTimestamp("updated_at").toInstant(),

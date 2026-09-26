@@ -330,11 +330,11 @@ public class DacApplication extends Application<DacConfiguration> {
     // opener would read a sealed credential as unresolvable -- a source that
     // tests green and then cannot be crawled or queried.
     CredentialResolver credentials = new CredentialResolver(System::getenv, secretBox::open);
-    SourceCatalogImporter importer =
-        new SourceCatalogImporter(jdbi, sources, new JdbcIntrospector(credentials, 15));
+    JdbcIntrospector introspector = new JdbcIntrospector(credentials, 15);
+    SourceCatalogImporter importer = new SourceCatalogImporter(jdbi, sources, introspector);
     SourceProbe sourceProbe = new SourceProbe(credentials, 5);
     environment.jersey()
-        .register(new SourceResource(sources, sourceProbe, importer, secretBox));
+        .register(new SourceResource(sources, sourceProbe, importer, secretBox, introspector));
 
     // Runtime enforcement, mode 5.2. This is the first place the engine is
     // asked anything at request time rather than at authoring time, and the

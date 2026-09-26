@@ -1,6 +1,6 @@
 # HANDOFF — ARAK (Data Access Control Platform)
 
-> อัปเดต: 2026-09-26 · commit ล่าสุดที่ push สำเร็จ `0029375` · **local นำหน้าอยู่หลาย commit — `git push` ยังค้าง ดู What Didn't Work** · repo https://github.com/sakanarm/ARAK (**public**)
+> อัปเดต: 2026-09-26 · commit ล่าสุดที่ push สำเร็จ `dfa90f5` (ข้อ BP) · ข้อ BQ commit บน main แล้ว ยังไม่ push · repo https://github.com/sakanarm/ARAK (**public**)
 >
 > อ่านคู่กับ **[docs/DESIGN.md](docs/DESIGN.md)** — ไฟล์นั้นคือ requirement + feature catalogue + สถานะครบทุกข้อ
 > ไฟล์นี้บอกเฉพาะ "ทำถึงไหน จะไปต่อยังไง อะไรที่ลองแล้วไม่เวิร์ค"
@@ -619,7 +619,41 @@ M25 ทำแยกได้ (profile ผ่าน proxy ที่มีแล�
 
 ---
 
-## รอบนี้ — **ข้อ BP: M28 Conversational ARAK Agent — น้องรักษ์คุยได้ · ค้น Catalog ด้วย LLM · สิทธิ์แต่ละงานของ AI ตั้งต่อ role ใน Settings**
+## รอบนี้ — **ข้อ BQ: Add new connection แบบ OpenMetadata · Table scope ตอน import · import กับ OM crawl เป็น object เดียวกัน**
+
+ผู้ใช้ขอ *"หน้า add new connection อยากให้ทำสวยๆ เหมือนของ openmetdata"* · *"สามารถ Scope ได้ด้วย"* · *"อย่าลืมว่าต้องสามารถไป deploy ได้นะ"* · และถามว่า *"ตอน Sync มาที่ Arak Table จะตรงกัน … เป็น Object เดียวกัน"*
+
+### BQ.1 Migration — **V32 `data_source.table_scope`**
+- `jsonb` nullable · null = scan ทุกตารางเหมือนเดิม → source เก่าไม่เปลี่ยนพฤติกรรม
+- **deploy:** Flyway รันเองตอน start · **ไม่มี env ใหม่** · ไม่แตะ customer DB
+
+### BQ.2 Table scope (`TableScope.java` + `pages/sources/tableScope.ts`)
+- `mode` = `ALL` (scan all) / `ONLY` (เฉพาะที่ระบุ) · `include[]` / `exclude[]` · rule = `STARTS_WITH` / `ENDS_WITH` / `CONTAINS` / `EQUALS` + text
+- **เทียบ text ธรรมดา ไม่ใช่ regex / LIKE** · ไม่สนตัวพิมพ์ · text มีจุด = เทียบ `schema.table` · exclude ชนะ include · ≤ 50 rule ต่อฝั่ง · ≤ 256 ตัว · ห้ามขึ้นบรรทัด
+- `ONLY` ที่ไม่มี include = server ปฏิเสธ (กัน source ที่ import ไม่ได้อะไรเลยแบบเงียบๆ)
+- **scope มีผลกับการ import เท่านั้น — ไม่ใช่สิทธิ์** · ตารางที่อยู่นอก scope ยังถูก policy คุมตามปกติถ้า OM crawl มา
+- `POST /v1/sources/scope-preview` = ลอง scope กับ login จริงก่อนบันทึก (บอก Read / Left out) · import รายงาน `excluded` + `outOfScope`
+- ฝั่ง frontend เป็นสำเนาไว้ preview เท่านั้น — กติกาเดียวกับ `TableScopeTest` (import ใช้ของ server)
+
+### BQ.3 Wizard (`pages/sources/ConnectionWizard.tsx` · `Notice.tsx` · `ImportReport.tsx`)
+- stepper 3 ขั้น: **Select service → Connect → Scope & finish** แบบ OM · card Name / Connection / Authentication / Scope & Options / Advanced · แถบ **Test connection** ล่าง
+- badge ต่อ card (*1 required* / *Complete* / *Given*) · Register กดได้เมื่อครบ name + host + credential · ช่อง password มีปุ่มตา
+- แก้ source เดิม = เปิดที่ขั้น Connect · credential เดิมขึ้นเป็น *Stored* (ส่ง `fernet:stored` — server เก็บของเดิม) · ไม่เคยส่ง secret กลับมาที่ browser
+- หลัง Register มีปุ่ม **Import tables now** + รายงานผล · หน้า Sources มีปุ่ม Import tables ต่อ card + บรรทัด *Tables* บอก scope เป็นประโยค
+
+### BQ.4 Import กับ OM crawl = **asset เดียวกัน** (`SourceCatalogImporter`)
+- ปัญหาที่เจอตอนรันจริง: import ตั้งชื่อ asset ด้วย **ชื่อ source ใน ARAK** แต่ OM ตั้งด้วย **ชื่อ service ใน OM** → ตารางเดียวกันกลายเป็น 2 asset และ import รอบสองจอง physical table ไม่ได้ (`asset_fqn_map` unique ต่อ physical)
+- แก้: `serviceOf(source)` = `omServiceFqn` ถ้าตั้งไว้ ไม่งั้นใช้ชื่อ source · ตาราง OM crawl มาแล้ว → import แค่ยืนยัน (MATCHED) ไม่สร้างซ้ำ ไม่ทับ description / tag / owner ของ OM
+- `map()` ปล่อย physical tuple จาก FQN เก่าก่อน upsert · `retireSuperseded()` retire asset `discovered` ของ source นี้ที่อยู่นอกชื่อ service ใหม่ (table → column → schema → database → service ที่ไม่มีลูกเหลือ) · asset ของ OM / local ไม่ถูกแตะ
+- วิธีผูก: หน้า Sources → แก้ source → Advanced → **OpenMetadata service** = ชื่อ service ใน OM (hint บอกแล้วว่า import จะใช้ชื่อนี้)
+- ⚠️ tag จาก OM ที่เป็น `Suggested` **ไม่ถูก enforce** ตาม FR-1.3a จนกว่าจะ Confirm ใน OM
+
+### BQ.5 ผลทดสอบ
+- Backend unit: `TableScopeTest` · `SourceResourceScopeTest` · IT: `SourceCatalogImporterIT` 7 (รวม *aLinkedSourceImportsUnderTheServiceName* · *linkingLaterMovesTheImport* · *theCrawledTableIsTheSameAsset*) · `DataSourceStoreIT`
+- Frontend: `tableScope.test.ts` 13 · `ConnectionWizard.test.tsx` 9 · `SourcesPage.test.tsx` 4 · **jest ทั้งหมด 53 suites / 531 tests ผ่าน** · tsc + build ผ่าน
+- รันจริงบน dev (`:8090/Arak/`): ผูก source ของ PG จริงกับ service ใน OM → sync → import รายงาน `newTables: 0` · catalog เหลือ asset ปัจจุบันตัวเดียว (provenance openmetadata · ผูก source · `MATCHED`) · asset ชื่อเก่า retire แล้ว
+
+## รอบก่อนหน้า — **ข้อ BP: M28 Conversational ARAK Agent — น้องรักษ์คุยได้ · ค้น Catalog ด้วย LLM · สิทธิ์แต่ละงานของ AI ตั้งต่อ role ใน Settings**
 
 ผู้ใช้ขอ *"Catalog ต้องสามารถแชทพูดคุยได้สิ หรือ ด้านขวาล่าง Mascot ต้องแชทคุยได้ อยากทำอะไร หาอะไร เปิดหน้าไหนในแอพ"* · *"หรือทำเป็น Agent ไปเลย"* · *"Catalog ต้องสามารถให้ LLM มาช่วยในการค้นหาได้ด้วย"*
 

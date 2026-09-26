@@ -1,36 +1,28 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import {
-  AlertTriangle,
-  CheckCircle,
-  Database01,
-  Plus,
-  Server01,
-} from '@untitledui/icons';
+import { Database01, Plus, Server01 } from '@untitledui/icons';
 import { Chip as Badge } from '../components/chips';
 import { Button } from '@openmetadata/ui-core-components/components/base/buttons/button';
 import { apiErrorMessage } from '../api/client';
 import {
-  CREDENTIAL_SCHEMES,
   ENFORCEMENT_MODES,
-  createSource,
   deleteSource,
   fetchSources,
-  SEALED_CREDENTIAL,
+  importSourceCatalog,
   isSealed,
   setSourceEnabled,
   testSource,
-  testSourceTarget,
-  updateSource,
   type EnforcementMode,
+  type ImportReport,
   type ProbeResult,
   type Source,
-  type SourceEngine,
-  type SourceInput,
 } from '../api/sources';
-import { engineLabel, engineOptions, enginePort, useSourceEngines } from '../engines';
+import { engineLabel, useSourceEngines } from '../engines';
 import { useAuthStore } from '../auth/authStore';
-import { Field, Select, TextField } from './policies/controls';
+import ConnectionWizard from './sources/ConnectionWizard';
+import { ImportReportView } from './sources/ImportReport';
+import { Notice } from './sources/Notice';
+import { describeScope, scopeBadge } from './sources/tableScope';
 
 /**
  * The source registry (FR-6.0a) — where enforcement lands.
@@ -49,25 +41,6 @@ import { Field, Select, TextField } from './policies/controls';
  * stored and is never served back — the form shows that a credential exists,
  * not what it is.
  */
-
-const BLANK: SourceInput = {
-  name: '',
-  // Filled from the engine list once it arrives. Naming one here would be a
-  // seventh copy of a list this screen no longer keeps, and would quietly
-  // submit an engine the server had stopped offering.
-  engine: '',
-  host: '',
-  port: null,
-  defaultDatabase: null,
-  credentialRef: '',
-  username: '',
-  password: '',
-  defaultEnforcementMode: 'NONE',
-  omServiceFqn: null,
-  secureSchema: 'sec',
-  secureObjectPattern: '',
-  enabled: true,
-};
 
 export default function SourcesPage() {
   const isAdmin = useAuthStore((state) => state.hasRole('PLATFORM_ADMIN'));
@@ -104,7 +77,7 @@ export default function SourcesPage() {
       </header>
 
       {editing !== null && (
-        <SourceForm
+        <ConnectionWizard
           onDone={() => setEditing(null)}
           source={editing === 'new' ? null : editing}
         />
@@ -168,6 +141,7 @@ function SourceCard({
   const queryClient = useQueryClient();
   const { data: engines } = useSourceEngines();
   const [probe, setProbe] = useState<ProbeResult | null>(null);
+  const [report, setReport] = useState<ImportReport | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
 
@@ -190,6 +164,23 @@ function SourceCard({
     onSuccess: invalidate,
     onError: (error) =>
       setProblem(apiErrorMessage(error, 'The source could not be changed.')),
+  });
+
+  // Reads the source's own catalog, within its table scope. The report stays
+  // under the card rather than in a toast: its new-column names are the part
+  // somebody has to act on.
+  const importTables = useMutation({
+    mutationFn: () => importSourceCatalog(source.id),
+    onMutate: () => {
+      setProblem(null);
+      setReport(null);
+    },
+    onSuccess: (result) => {
+      setReport(result);
+      invalidate();
+    },
+    onError: (error) =>
+      setProblem(apiErrorMessage(error, 'The catalog could not be imported.')),
   });
 
   const remove = useMutation({
@@ -265,6 +256,10 @@ function SourceCard({
               label="Secure objects"
               value={`${source.secureSchema}.${source.secureObjectPattern || '<name>'}`}
             />
+            <Pair
+              label="Tables"
+              value={`${scopeBadge(source.tableScope)} — ${describeScope(source.tableScope)}`}
+            />
             <Pair label="Updated" value={new Date(source.updatedAt).toLocaleString()} />
           </dl>
         </div>
@@ -277,6 +272,13 @@ function SourceCard({
               onPress={() => test.mutate()}
               size="sm">
               {test.isPending ? 'Testing…' : 'Test connection'}
+            </Button>
+            <Button
+              color="secondary"
+              isDisabled={importTables.isPending || !source.enabled}
+              onPress={() => importTables.mutate()}
+              size="sm">
+              {importTables.isPending ? 'Importing…' : 'Import tables'}
             </Button>
             <Button color="tertiary" onPress={onEdit} size="sm">
               Edit
@@ -316,7 +318,7 @@ function SourceCard({
         )}
       </div>
 
-      {(probe || problem) && (
+      {(probe || problem || report) && (
         <div className="tw:border-t tw:border-secondary tw:px-5 tw:py-3">
           {problem && <Notice tone="error">{problem}</Notice>}
           {probe && !problem && (
@@ -326,351 +328,14 @@ function SourceCard({
                 : probe.message}
             </Notice>
           )}
+          {report && !problem && (
+            <div className={probe ? 'tw:mt-3' : undefined}>
+              <ImportReportView report={report} />
+            </div>
+          )}
         </div>
       )}
     </li>
-  );
-}
-
-/**
- * Register or edit one source.
- *
- * Inline rather than in a dialog: half of these fields need the page behind
- * them to be readable — the enforcement mode is chosen by comparing it against
- * what the other sources are set to.
- */
-function SourceForm({
-  source,
-  onDone,
-}: {
-  source: Source | null;
-  onDone: () => void;
-}) {
-  const queryClient = useQueryClient();
-  const { data: engines } = useSourceEngines();
-  const [draft, setDraft] = useState<SourceInput>(() =>
-    source
-      ? {
-          name: source.name,
-          engine: source.engine,
-          host: source.host,
-          port: source.port,
-          defaultDatabase: source.defaultDatabase,
-          // Served as `fernet:stored` for a sealed credential. Kept as-is and
-          // sent back unchanged, which the server reads as "leave it alone";
-          // blanking it here would make every edit demand the password again.
-          credentialRef: source.credentialRef,
-          username: '',
-          password: '',
-          defaultEnforcementMode: source.defaultEnforcementMode,
-          omServiceFqn: source.omServiceFqn,
-          secureSchema: source.secureSchema,
-          secureObjectPattern: source.secureObjectPattern,
-          enabled: source.enabled,
-          // Carried through rather than dropped: the server writes this column
-          // from whatever the form sends, and the capability matrix reads it.
-          engineVersion: source.engineVersion,
-        }
-      : BLANK
-  );
-  const [problem, setProblem] = useState<string | null>(null);
-  const hasStoredCredential = source != null && isSealed(source.credentialRef);
-  // An existing sealed credential opens on the mode that can replace it; a
-  // pointer opens on the pointer. A new source opens on typing, because that
-  // is what somebody registering their first source has in front of them.
-  const [credentialMode, setCredentialMode] = useState<'typed' | 'pointer'>(
-    () => (source && !hasStoredCredential ? 'pointer' : 'typed')
-  );
-
-  const trial = useMutation({
-    mutationFn: () =>
-      testSourceTarget({
-        ...draft,
-        // Sent so the server can fall back to the stored credential for a
-        // source being edited without its password retyped.
-        id: source?.id,
-      }),
-    onError: (error) =>
-      setProblem(apiErrorMessage(error, 'The connection could not be tested.')),
-  });
-
-  // A new source opens on whichever engine the server lists first, so the
-  // form is never submitted with an empty engine and the person registering a
-  // source is never asked to choose before anything is on offer.
-  useEffect(() => {
-    const first = engines?.[0]?.id;
-    if (first) setDraft((current) => (current.engine ? current : { ...current, engine: first }));
-  }, [engines]);
-
-  const defaultPort = enginePort(engines, draft.engine);
-
-  function patch(next: Partial<SourceInput>) {
-    setDraft((current) => ({ ...current, ...next }));
-    // A result that outlived the host it was measured against reads as a
-    // guarantee about the new one.
-    trial.reset();
-  }
-
-  const save = useMutation({
-    mutationFn: () =>
-      source ? updateSource(source.id, draft) : createSource(draft),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['sources'] });
-      onDone();
-    },
-    onError: (error) =>
-      setProblem(apiErrorMessage(error, 'The source could not be saved.')),
-  });
-
-  return (
-    <section className="tw:rounded-xl tw:border tw:border-secondary tw:bg-primary tw:p-5">
-      <h2 className="tw:text-md tw:font-semibold tw:text-primary">
-        {source ? `Edit ${source.name}` : 'Register a source'}
-      </h2>
-
-      <div className="tw:mt-4 tw:grid tw:gap-4 tw:sm:grid-cols-2">
-        <Field
-          hint="How this source is named in policies and reports."
-          label="Name">
-          <TextField
-            onChange={(next) => patch({ name: next })}
-            placeholder="prod-mssql"
-            value={draft.name}
-          />
-        </Field>
-
-        <Field label="Engine">
-          <Select
-            onChange={(next) => {
-              const engine = next as SourceEngine;
-              patch({
-                engine,
-                // Only when the box is empty, so a deliberate port survives a
-                // change of mind about the engine.
-                port: draft.port ?? enginePort(engines, engine) ?? null,
-              });
-            }}
-            options={engineOptions(engines)}
-            value={draft.engine}
-          />
-        </Field>
-
-        <Field label="Host">
-          <TextField
-            onChange={(next) => patch({ host: next })}
-            placeholder="db.internal"
-            value={draft.host}
-          />
-        </Field>
-
-        <Field
-          hint={
-            defaultPort
-              ? `Blank uses the engine default (${defaultPort}).`
-              : 'Blank uses the engine default.'
-          }
-          label="Port">
-          <TextField
-            onChange={(next) =>
-              patch({ port: next.trim() === '' ? null : Number(next) })
-            }
-            placeholder={defaultPort ? String(defaultPort) : ''}
-            type="number"
-            value={draft.port === null ? '' : String(draft.port)}
-          />
-        </Field>
-
-        <Field label="Default database">
-          <TextField
-            onChange={(next) => patch({ defaultDatabase: next || null })}
-            placeholder="SalesDB"
-            value={draft.defaultDatabase ?? ''}
-          />
-        </Field>
-
-        <div className="tw:sm:col-span-2 tw:rounded-lg tw:border tw:border-secondary tw:bg-secondary tw:p-4">
-          <div className="tw:flex tw:flex-wrap tw:items-center tw:justify-between tw:gap-3">
-            <div>
-              <h3 className="tw:text-sm tw:font-semibold tw:text-primary">
-                Credential
-              </h3>
-              <p className="tw:mt-0.5 tw:text-xs tw:text-tertiary">
-                Arak connects as this login to read the catalog and to create
-                secure objects. It is never shown again once saved.
-              </p>
-            </div>
-            <div className="tw:flex tw:gap-1 tw:rounded-lg tw:bg-primary tw:p-1">
-              {(
-                [
-                  ['typed', 'Username and password'],
-                  ['pointer', 'Secret store'],
-                ] as const
-              ).map(([value, label]) => (
-                <button
-                  className={`tw:cursor-pointer tw:rounded-md tw:px-3 tw:py-1.5 tw:text-xs tw:font-medium ${
-                    credentialMode === value
-                      ? 'tw:bg-brand-solid tw:text-white'
-                      : 'tw:text-tertiary hover:tw:text-primary'
-                  }`}
-                  key={value}
-                  onClick={() => {
-                    setCredentialMode(value);
-                    // Switching away from a half-typed credential must not
-                    // leave it queued behind the other mode's field.
-                    patch(
-                      value === 'typed'
-                        ? { credentialRef: '' }
-                        : { username: '', password: '' }
-                    );
-                  }}
-                  type="button">
-                  {label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {credentialMode === 'typed' ? (
-            <div>
-              {hasStoredCredential && (
-                <p className="tw:mt-3 tw:text-xs tw:text-tertiary">
-                  A credential is already stored for this source. Leave both
-                  fields blank to keep it, or fill both to replace it — the
-                  password cannot be re-sealed without the username beside it.
-                </p>
-              )}
-              <div className="tw:mt-3 tw:grid tw:gap-4 tw:sm:grid-cols-2">
-                <Field label="Username">
-                  <TextField
-                    onChange={(next) => patch({ username: next })}
-                    placeholder="arak"
-                    value={draft.username ?? ''}
-                  />
-                </Field>
-                <Field
-                  hint="Encrypted with the deployment key before it is stored."
-                  label="Password">
-                  <TextField
-                    onChange={(next) => patch({ password: next })}
-                    type="password"
-                    value={draft.password ?? ''}
-                  />
-                </Field>
-              </div>
-            </div>
-          ) : (
-            <div className="tw:mt-4">
-              <Field
-                hint={`A pointer to where the secret is kept. Accepted: ${CREDENTIAL_SCHEMES.join(', ')}`}
-                label="Credential reference">
-                <TextField
-                  onChange={(next) => patch({ credentialRef: next })}
-                  placeholder="vault://secret/data/dac/prod-mssql"
-                  value={
-                    draft.credentialRef === SEALED_CREDENTIAL
-                      ? ''
-                      : draft.credentialRef
-                  }
-                />
-              </Field>
-            </div>
-          )}
-
-          <div className="tw:mt-4 tw:flex tw:flex-wrap tw:items-center tw:gap-3">
-            <Button
-              color="secondary"
-              isDisabled={trial.isPending || !draft.host}
-              onPress={() => trial.mutate()}
-              size="sm">
-              {trial.isPending ? 'Connecting…' : 'Test connection'}
-            </Button>
-            <span className="tw:text-xs tw:text-quaternary">
-              Opens one read-only connection. Nothing is saved.
-            </span>
-          </div>
-
-          {trial.data && (
-            <div className="tw:mt-3">
-              <Notice tone={trial.data.reachable ? 'success' : 'error'}>
-                {trial.data.reachable
-                  ? `${trial.data.productName} ${trial.data.engineVersion} answered in ${trial.data.millis} ms.`
-                  : trial.data.message}
-              </Notice>
-            </div>
-          )}
-        </div>
-
-        <Field
-          className="tw:sm:col-span-2"
-          hint={
-            ENFORCEMENT_MODES.find(
-              (entry) => entry.value === draft.defaultEnforcementMode
-            )?.what
-          }
-          label="Default enforcement mode">
-          <Select
-            onChange={(next) =>
-              patch({ defaultEnforcementMode: next as EnforcementMode })
-            }
-            options={ENFORCEMENT_MODES.map((entry) => ({
-              value: entry.value,
-              label: entry.label,
-            }))}
-            value={draft.defaultEnforcementMode}
-          />
-        </Field>
-
-        <Field
-          hint="The service FQN in OpenMetadata whose tables live on this database, so a crawled asset can be traced to the machine it is on."
-          label="OpenMetadata service">
-          <TextField
-            onChange={(next) => patch({ omServiceFqn: next || null })}
-            placeholder="prod-mssql"
-            value={draft.omServiceFqn ?? ''}
-          />
-        </Field>
-
-        <Field
-          hint="Where generated secure views are created. Letters, digits and underscores only — it is concatenated into DDL."
-          label="Secure schema">
-          <TextField
-            onChange={(next) => patch({ secureSchema: next })}
-            placeholder="sec"
-            value={draft.secureSchema}
-          />
-        </Field>
-
-        <Field
-          className="tw:sm:col-span-2"
-          hint="Appended to the table name to form the view name. Blank keeps the table's own name inside the secure schema."
-          label="Secure object suffix">
-          <TextField
-            onChange={(next) => patch({ secureObjectPattern: next })}
-            placeholder="_secure"
-            value={draft.secureObjectPattern}
-          />
-        </Field>
-      </div>
-
-      {problem && (
-        <div className="tw:mt-4">
-          <Notice tone="error">{problem}</Notice>
-        </div>
-      )}
-
-      <div className="tw:mt-5 tw:flex tw:gap-3">
-        <Button
-          color="primary"
-          isDisabled={save.isPending}
-          onPress={() => save.mutate()}
-          size="md">
-          {save.isPending ? 'Saving…' : source ? 'Save changes' : 'Register'}
-        </Button>
-        <Button color="secondary" onPress={onDone} size="md">
-          Cancel
-        </Button>
-      </div>
-    </section>
   );
 }
 
@@ -680,27 +345,6 @@ function Pair({ label, value }: { label: string; value: string }) {
       <dt className="tw:shrink-0 tw:text-quaternary">{label}</dt>
       <dd className="tw:truncate tw:text-tertiary">{value}</dd>
     </div>
-  );
-}
-
-function Notice({
-  tone,
-  children,
-}: {
-  tone: 'error' | 'success';
-  children: React.ReactNode;
-}) {
-  const Icon = tone === 'error' ? AlertTriangle : CheckCircle;
-  return (
-    <p
-      className={`tw:flex tw:items-start tw:gap-2 tw:rounded-lg tw:px-3 tw:py-2 tw:text-sm ${
-        tone === 'error'
-          ? 'tw:bg-utility-error-50 tw:text-error-primary'
-          : 'tw:bg-utility-success-50 tw:text-success-primary'
-      }`}>
-      <Icon className="tw:mt-0.5 tw:size-4 tw:shrink-0" />
-      <span>{children}</span>
-    </p>
   );
 }
 

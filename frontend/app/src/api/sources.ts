@@ -47,6 +47,34 @@ export type EnforcementMode =
   | 'PROXY'
   | 'NONE';
 
+/**
+ * Which tables an import reads: every one, or only those named, less the
+ * names always left out.
+ *
+ * A rule compares text, never a pattern. A rule with a dot in it is compared
+ * with `schema.table`, which is how a whole schema is scoped (`staging.`);
+ * without one it is compared with the table name. Case never matters.
+ *
+ * The scope decides what the catalog reads and nothing more. A table left out
+ * is not hidden from anybody, and enforcement still reads every column of the
+ * table it is enforcing.
+ */
+export type ScopeMode = 'ALL' | 'ONLY';
+export type ScopeMatch = 'STARTS_WITH' | 'ENDS_WITH' | 'CONTAINS' | 'EQUALS';
+
+export interface ScopeRule {
+  match: ScopeMatch;
+  value: string;
+}
+
+export interface TableScope {
+  mode: ScopeMode;
+  include: ScopeRule[];
+  exclude: ScopeRule[];
+}
+
+export const EVERY_TABLE: TableScope = { mode: 'ALL', include: [], exclude: [] };
+
 export interface Source {
   id: string;
   name: string;
@@ -60,6 +88,8 @@ export interface Source {
   omServiceFqn: string | null;
   secureSchema: string;
   secureObjectPattern: string;
+  /** Never null: a source that reads every table says so. */
+  tableScope: TableScope;
   enabled: boolean;
   createdAt: string;
   updatedAt: string;
@@ -86,6 +116,8 @@ export interface SourceInput {
   secureSchema: string;
   secureObjectPattern: string;
   enabled: boolean;
+  /** Left out, an edit keeps the stored scope. */
+  tableScope?: TableScope | null;
   /**
    * A username and password typed into the form rather than pointed at.
    *
@@ -216,6 +248,52 @@ export async function testSourceTarget(
   input: Partial<SourceInput> & { id?: string }
 ): Promise<ProbeResult> {
   const { data } = await apiClient.post<ProbeResult>('/v1/sources/test', input);
+  return data;
+}
+
+/** What a scope would read, counted against the database itself. */
+export interface ScopePreview {
+  total: number;
+  inScope: number;
+  excluded: number;
+  /** The first few names on each side; the counts above are exact. */
+  inScopeSample: string[];
+  excludedSample: string[];
+}
+
+/**
+ * Lists the tables the form's login can see and says which the scope keeps.
+ *
+ * Names only — no column is read and nothing is written — over the same
+ * connection Test makes, so it answers for what is on screen rather than what
+ * was last saved.
+ */
+export async function previewScope(
+  input: Partial<SourceInput> & { id?: string }
+): Promise<ScopePreview> {
+  const { data } = await apiClient.post<ScopePreview>('/v1/sources/scope-preview', input);
+  return data;
+}
+
+/** What one import of a source's own catalog found. */
+export interface ImportReport {
+  source: string;
+  tables: number;
+  columns: number;
+  newTables: number;
+  /** Named, because each is unprotected until a policy covers it. */
+  newColumns: string[];
+  /** In scope, catalogued before, and gone from the database now. */
+  missingTables: string[];
+  /** How many tables the scope left out of this run. */
+  excluded: number;
+  /** Catalogued before and now outside the scope: kept, and not called gone. */
+  outOfScope: string[];
+}
+
+/** Reads the source's catalog into Arak, within its table scope. */
+export async function importSourceCatalog(id: string): Promise<ImportReport> {
+  const { data } = await apiClient.post<ImportReport>(`/v1/sources/${id}/introspect`);
   return data;
 }
 

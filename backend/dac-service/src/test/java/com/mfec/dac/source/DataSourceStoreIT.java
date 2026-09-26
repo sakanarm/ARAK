@@ -3,6 +3,7 @@ package com.mfec.dac.source;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.util.List;
 import java.util.UUID;
 import org.flywaydb.core.Flyway;
 import org.jdbi.v3.core.Jdbi;
@@ -272,6 +273,82 @@ class DataSourceStoreIT {
 
     store.delete(created.id());
     assertThat(store.find(created.id())).isEmpty();
+  }
+
+  private static DataSourceStore.SourceInput withScope(
+      DataSourceStore.SourceInput base, TableScope scope) {
+    return new DataSourceStore.SourceInput(
+        base.name(), base.engine(), base.engineVersion(), base.host(), base.port(),
+        base.defaultDatabase(), base.credentialRef(), base.defaultEnforcementMode(),
+        base.omServiceFqn(), base.secureSchema(), base.secureObjectPattern(), base.enabled(),
+        null, null, scope);
+  }
+
+  private static final TableScope NO_SCRATCH =
+      new TableScope(
+          TableScope.Mode.ALL,
+          List.of(),
+          List.of(new TableScope.Rule(TableScope.Match.STARTS_WITH, " tmp_ ")));
+
+  @Test
+  @DisplayName("a source registered without a scope reads every table, and stores nothing")
+  void noScopeIsEverything() {
+    DataSourceStore.Source created = store.create(valid("prod_pg"));
+
+    assertThat(created.tableScope()).isEqualTo(TableScope.EVERYTHING);
+    assertThat(storedScope(created.id())).isNull();
+  }
+
+  @Test
+  @DisplayName("a scope is stored as it was checked, and served back the same")
+  void scopeRoundTrips() {
+    DataSourceStore.Source created = store.create(withScope(valid("prod_pg"), NO_SCRATCH));
+
+    assertThat(created.tableScope().exclude())
+        .containsExactly(new TableScope.Rule(TableScope.Match.STARTS_WITH, "tmp_"));
+    assertThat(created.tableScope().includes("sales", "TMP_orders")).isFalse();
+    assertThat(storedScope(created.id())).contains("STARTS_WITH").contains("tmp_");
+    assertThat(store.find(created.id()).orElseThrow().tableScope())
+        .isEqualTo(created.tableScope());
+  }
+
+  @Test
+  @DisplayName("an update that says nothing about the scope keeps it; one that widens it clears it")
+  void updateKeepsOrReplacesTheScope() {
+    DataSourceStore.Source created = store.create(withScope(valid("prod_pg"), NO_SCRATCH));
+
+    DataSourceStore.Source kept = store.update(created.id(), valid("prod_pg"));
+    assertThat(kept.tableScope()).isEqualTo(created.tableScope());
+
+    DataSourceStore.Source widened =
+        store.update(created.id(), withScope(valid("prod_pg"), TableScope.EVERYTHING));
+    assertThat(widened.tableScope()).isEqualTo(TableScope.EVERYTHING);
+    assertThat(storedScope(created.id())).isNull();
+  }
+
+  @Test
+  @DisplayName("a scope that would read nothing is refused with the form's sentence")
+  void anEmptyOnlyScopeIsRefused() {
+    assertThatThrownBy(
+            () ->
+                store.create(
+                    withScope(
+                        valid("prod_pg"),
+                        new TableScope(TableScope.Mode.ONLY, List.of(), List.of()))))
+        .isInstanceOf(DataSourceStore.InvalidSourceException.class)
+        .hasMessageContaining("at least one table");
+    assertThat(store.list()).isEmpty();
+  }
+
+  private String storedScope(UUID id) {
+    return jdbi.withHandle(
+        handle ->
+            handle
+                .createQuery("SELECT table_scope::text FROM data_source WHERE id = :id")
+                .bind("id", id)
+                .mapTo(String.class)
+                .findOne()
+                .orElse(null));
   }
 
   private void insertAsset(UUID sourceId, String type, String fqn) {

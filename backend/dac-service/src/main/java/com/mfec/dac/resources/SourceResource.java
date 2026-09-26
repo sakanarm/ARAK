@@ -1,12 +1,15 @@
 package com.mfec.dac.resources;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mfec.dac.auth.AuthenticatedUser;
 import com.mfec.dac.auth.Secured;
 import com.mfec.dac.catalog.SourceCatalogImporter;
 import com.mfec.dac.common.engine.SourceEngines;
 import com.mfec.dac.crypto.SecretBox;
 import com.mfec.dac.source.DataSourceStore;
+import com.mfec.dac.source.TableScope;
 import com.mfec.dac.source.jdbc.CredentialResolver;
+import com.mfec.dac.source.jdbc.JdbcIntrospector;
 import com.mfec.dac.source.jdbc.SourceProbe;
 import jakarta.ws.rs.BadRequestException;
 import jakarta.ws.rs.Consumes;
@@ -25,6 +28,8 @@ import jakarta.ws.rs.core.Context;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import jakarta.ws.rs.core.SecurityContext;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -55,20 +60,28 @@ import java.util.UUID;
 @Secured
 public class SourceResource {
 
+  /** How many names of each kind a scope preview lists; the counts are exact. */
+  static final int PREVIEW_SAMPLE = 25;
+
+  private static final ObjectMapper JSON = new ObjectMapper();
+
   private final DataSourceStore sources;
   private final SourceProbe probe;
   private final SourceCatalogImporter importer;
   private final SecretBox secretBox;
+  private final JdbcIntrospector introspector;
 
   public SourceResource(
       DataSourceStore sources,
       SourceProbe probe,
       SourceCatalogImporter importer,
-      SecretBox secretBox) {
+      SecretBox secretBox,
+      JdbcIntrospector introspector) {
     this.sources = sources;
     this.probe = probe;
     this.importer = importer;
     this.secretBox = secretBox;
+    this.introspector = introspector;
   }
 
   /** The scheme a typed-in credential is stored under. */
@@ -104,6 +117,7 @@ public class SourceResource {
         source.omServiceFqn(),
         source.secureSchema(),
         source.secureObjectPattern(),
+        source.tableScope(),
         source.enabled(),
         source.createdAt(),
         source.updatedAt(),
@@ -167,7 +181,8 @@ public class SourceResource {
         input.secureObjectPattern(),
         input.enabled(),
         null,
-        null);
+        null,
+        input.tableScope());
   }
 
   @GET
@@ -294,8 +309,94 @@ public class SourceResource {
   @Path("/test")
   public Map<String, Object> testTarget(Map<String, Object> body, @Context SecurityContext security) {
     requireAdmin(security);
+    Unsaved unsaved = unsaved(body, "test");
+    SourceProbe.Result result = probe.probe(unsaved.target(), unsaved.credentialRef());
+    return Map.of(
+        "reachable", result.reachable(),
+        "engineVersion", result.engineVersion() == null ? "" : result.engineVersion(),
+        "productName", result.productName() == null ? "" : result.productName(),
+        "message", result.message(),
+        "millis", result.millis());
+  }
+
+  /**
+   * Which tables a scope would read, before it is saved (read-only).
+   *
+   * <p>A rule is easy to get subtly wrong — {@code TMP} where the tables are
+   * called {@code tmp_}, a schema rule without its dot — and the first time
+   * anybody would find out is an import that brought in the wrong tables, or
+   * none. This answers it against the database itself: the same connection
+   * {@code /test} makes, one catalog call for names only, no columns read and
+   * nothing written.
+   *
+   * <p>The body is what {@code /test} takes, plus {@code tableScope}. The reply
+   * gives exact counts and the first {@value #PREVIEW_SAMPLE} names on each
+   * side, which is enough to see what a rule catches without shipping the
+   * whole catalogue of a large database to the browser.
+   */
+  @POST
+  @Path("/scope-preview")
+  public Map<String, Object> previewScope(
+      Map<String, Object> body, @Context SecurityContext security) {
+    requireAdmin(security);
+    Unsaved unsaved = unsaved(body, "check a scope against");
+    TableScope scope = scopeFrom(body.get("tableScope"));
+
+    List<JdbcIntrospector.Name> names;
+    try {
+      names = introspector.names(unsaved.target(), unsaved.credentialRef(), null);
+    } catch (Exception e) {
+      throw new WebApplicationException(
+          Response.status(Response.Status.BAD_GATEWAY)
+              .entity(Map.of("message", "Could not list the tables: " + e.getMessage()))
+              .type(MediaType.APPLICATION_JSON)
+              .build());
+    }
+
+    int inScope = 0;
+    List<String> inSample = new ArrayList<>();
+    List<String> outSample = new ArrayList<>();
+    for (JdbcIntrospector.Name name : names) {
+      if (scope.includes(name.schema(), name.name())) {
+        inScope++;
+        if (inSample.size() < PREVIEW_SAMPLE) {
+          inSample.add(name.qualified());
+        }
+      } else if (outSample.size() < PREVIEW_SAMPLE) {
+        outSample.add(name.qualified());
+      }
+    }
+    Map<String, Object> out = new LinkedHashMap<>();
+    out.put("total", names.size());
+    out.put("inScope", inScope);
+    out.put("excluded", names.size() - inScope);
+    out.put("inScopeSample", inSample);
+    out.put("excludedSample", outSample);
+    return out;
+  }
+
+  /** A scope as the form sent it, checked the way it will be when saved. */
+  private static TableScope scopeFrom(Object raw) {
+    if (raw == null) {
+      return TableScope.EVERYTHING;
+    }
+    try {
+      return TableScope.normalise(JSON.convertValue(raw, TableScope.class));
+    } catch (TableScope.InvalidScopeException e) {
+      throw new BadRequestException(e.getMessage());
+    } catch (IllegalArgumentException e) {
+      throw new BadRequestException(
+          "A scope is {mode: ALL or ONLY, include: [...], exclude: [...]}, each rule being"
+              + " {match: STARTS_WITH, ENDS_WITH, CONTAINS or EQUALS, value}");
+    }
+  }
+
+  /** Where to connect and as whom, for a source that may not be saved yet. */
+  private record Unsaved(SourceProbe.Target target, String credentialRef) {}
+
+  private Unsaved unsaved(Map<String, Object> body, String what) {
     if (body == null) {
-      throw new BadRequestException("Send a source to test");
+      throw new BadRequestException("Send a source to " + what);
     }
     String engine = blankToNull(asText(body.get("engine")));
     String host = blankToNull(asText(body.get("host")));
@@ -315,7 +416,7 @@ public class SourceResource {
       host = existing.host();
     }
     if (engine == null || host == null) {
-      throw new BadRequestException("Give at least an engine and a host to test");
+      throw new BadRequestException("Give at least an engine and a host to " + what);
     }
 
     int port;
@@ -358,17 +459,9 @@ public class SourceResource {
       credentialRef = existing.credentialRef();
     } else {
       throw new BadRequestException(
-          "Give a username and password, or a credential reference, to test with");
+          "Give a username and password, or a credential reference, to " + what + " with");
     }
-
-    SourceProbe.Result result =
-        probe.probe(new SourceProbe.Target(engine, host, port, database), credentialRef);
-    return Map.of(
-        "reachable", result.reachable(),
-        "engineVersion", result.engineVersion() == null ? "" : result.engineVersion(),
-        "productName", result.productName() == null ? "" : result.productName(),
-        "message", result.message(),
-        "millis", result.millis());
+    return new Unsaved(new SourceProbe.Target(engine, host, port, database), credentialRef);
   }
 
   /**
@@ -429,7 +522,9 @@ public class SourceResource {
           "columns", report.columns(),
           "newTables", report.newTables(),
           "newColumns", report.newColumns(),
-          "missingTables", report.missingTables());
+          "missingTables", report.missingTables(),
+          "excluded", report.excluded(),
+          "outOfScope", report.outOfScope());
     } catch (IllegalArgumentException e) {
       throw new NotFoundException(e.getMessage());
     } catch (SourceCatalogImporter.IntrospectionFailedException e) {
