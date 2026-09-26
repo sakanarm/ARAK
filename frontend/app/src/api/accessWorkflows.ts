@@ -108,6 +108,51 @@ export async function fetchWorkflowHistory(id: string): Promise<WorkflowChange[]
   return data;
 }
 
+/** One request a workflow ran: its ticket, never its id, and nobody's name. */
+export interface WorkflowExecution {
+  ticket: string;
+  kind: 'ASSET' | 'PREAUTHORIZATION';
+  assetFqn: string | null;
+  status: string;
+  /** The step it has reached; null once it is decided. */
+  currentStep: number | null;
+  /** The stages waiting on an answer now. */
+  openStages: string[];
+  /** How many steps it was asked with. */
+  steps: number;
+  createdAt: string;
+  closedAt: string | null;
+}
+
+export interface WorkflowExecutions {
+  executions: WorkflowExecution[];
+  /** Requests by status, over every page. */
+  counts: Record<string, number>;
+  /** How many match the chosen status, over every page. */
+  total: number;
+}
+
+/**
+ * The requests a workflow has run, newest first. Only an administrator, an
+ * auditor or whoever governs the workflow's scope may list them.
+ */
+export async function fetchWorkflowExecutions(
+  id: string | 'built-in',
+  params: { status?: string | null; limit?: number; offset?: number } = {}
+): Promise<WorkflowExecutions> {
+  const { data } = await apiClient.get<WorkflowExecutions>(
+    `/v1/access-workflows/${id === 'built-in' ? 'built-in' : encodeURIComponent(id)}/requests`,
+    {
+      params: {
+        ...(params.status ? { status: params.status } : {}),
+        limit: params.limit ?? 50,
+        offset: params.offset ?? 0,
+      },
+    }
+  );
+  return data;
+}
+
 /** Stages grouped by step, in order: what runs together, then what follows. */
 export function stepsOf<T extends { step: number }>(stages: T[]): T[][] {
   const byStep = new Map<number, T[]>();

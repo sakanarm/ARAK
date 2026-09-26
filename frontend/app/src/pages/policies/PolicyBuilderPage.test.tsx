@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import PolicyBuilderPage from './PolicyBuilderPage';
 
@@ -144,4 +144,24 @@ test('a plain new policy carries no note about a request', async () => {
 
   await screen.findByRole('button', { name: /environment/i });
   expect(screen.queryByText(/Drafted from an access request/)).not.toBeInTheDocument();
+});
+
+test('the diagram is a third view, and a node in it opens the step that writes it', async () => {
+  // jsdom lays nothing out, so it has no scrolling to offer.
+  const scroll = jest.fn();
+  Element.prototype.scrollIntoView = scroll;
+  renderNew();
+  await screen.findByRole('button', { name: /environment/i });
+
+  fireEvent.click(screen.getByRole('button', { name: 'Diagram' }));
+  const figure = await screen.findByRole('figure');
+  expect(screen.queryByRole('button', { name: /environment/i })).not.toBeInTheDocument();
+
+  fireEvent.click(within(figure).getByRole('button', { name: /Is the asset one of these/ }));
+
+  // Back on the form, where the step lives.
+  expect(await screen.findByRole('button', { name: /environment/i })).toBeInTheDocument();
+  expect(screen.queryByRole('figure')).not.toBeInTheDocument();
+  await waitFor(() => expect(scroll).toHaveBeenCalled());
+  localStorage.clear();
 });

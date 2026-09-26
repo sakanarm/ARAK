@@ -1,36 +1,25 @@
 import { useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button } from '@openmetadata/ui-core-components/components/base/buttons/button';
-import { AlertTriangle, Edit03, Plus, Trash01, XClose } from '@untitledui/icons';
+import { AlertTriangle, Dataflow03, Plus, Trash01 } from '@untitledui/icons';
 import { Chip as Badge } from '../../components/chips';
 import { relativeTime } from '../../components/widgets';
 import { apiErrorMessage } from '../../api/client';
-import { fetchPrincipals } from '../../api/governance';
+import { describeOnReject, describeRule, describeSeat } from '../../api/accessRequests';
 import {
-  describeOnReject,
-  describeRule,
-  describeSeat,
-  type OnReject,
-  type Seat,
-  type SeatKind,
-  type StageRule,
-} from '../../api/accessRequests';
-import {
-  createWorkflow,
   deleteWorkflow,
   fetchWorkflowHistory,
   fetchWorkflows,
   stepsOf,
-  updateWorkflow,
   WORKFLOWS_KEY,
   type AccessWorkflow,
-  type WorkflowDraft,
   type WorkflowRow,
   type WorkflowStage,
 } from '../../api/accessWorkflows';
 import { useAuthStore } from '../../auth/authStore';
-import { FIELD, Field, Select, type SelectOption } from '../policies/controls';
-import { ScopePicker } from './pickers';
+
+export { describeSteps, problemOf } from './workflowParts';
 
 /**
  * Access workflows (M9 slice 2a): who approves a request, in what order, and
@@ -42,51 +31,13 @@ import { ScopePicker } from './pickers';
  * always ends with it: somebody reading the list should never have to guess
  * what happens to a table no workflow names.
  *
- * <p>The editor writes stages as the server keeps them: a step number and a
- * rule each. Stages that share a step are asked at the same time; the preview
- * under the stages says how they will run, in the words the requester and the
- * approvers will later read, because a number typed into a box is easy to get
- * wrong and a sentence is not. The server checks the draft again and its
- * answer is shown as it is; nothing here is the last word on who may save.
+ * <p>Each card reads a workflow in words; designing one happens in the
+ * workflow builder ({@code WorkflowBuilderPage}), where the stages are drawn
+ * as the request will walk them and each is edited beside the drawing.
  */
 
-const RULES: SelectOption[] = [
-  { value: 'ANY', label: 'Any one approves' },
-  { value: 'ALL', label: 'Everyone asked approves' },
-  { value: 'AT_LEAST', label: 'At least a number approve' },
-];
-
-const ON_REJECT: OnReject[] = ['VETO', 'QUORUM', 'FIRST_RESPONSE'];
-
-const SEAT_KINDS: SelectOption[] = [
-  { value: 'ASSET_OWNERS', label: 'Owners of the table', hint: 'As OpenMetadata records them' },
-  { value: 'DATA_STEWARD', label: 'Data steward', hint: "The table's dataSteward property" },
-  { value: 'DATA_CUSTODIAN', label: 'Data custodian', hint: "The table's dataCustodian property" },
-  { value: 'USER', label: 'A person', hint: 'By username or email' },
-  { value: 'TEAM', label: 'A team', hint: 'Everyone in it, nested teams too' },
-  { value: 'ROLE', label: 'An app role', hint: 'Whoever holds it over the table' },
-];
-
-/** Not REQUESTER: everybody holds it, and a stage anybody may pass is no stage. */
-const ROLES: SelectOption[] = [
-  { value: 'DATA_OWNER', label: 'Data owner' },
-  { value: 'POLICY_AUTHOR', label: 'Policy author' },
-  { value: 'AUDITOR', label: 'Auditor' },
-  { value: 'PLATFORM_ADMIN', label: 'Platform administrator' },
-];
-
-const NAMED: ReadonlySet<SeatKind> = new Set<SeatKind>(['USER', 'TEAM', 'ROLE']);
-
-const MAX_STAGES = 12;
-const MAX_SEATS = 25;
-
-/** What is being edited: a new workflow (no id) or an existing one. */
-interface Editing {
-  id: string | null;
-  initial: AccessWorkflow;
-}
-
 export default function AccessWorkflowsPage() {
+  const navigate = useNavigate();
   const mayDesign = useAuthStore((state) =>
     state.hasRole('PLATFORM_ADMIN', 'POLICY_AUTHOR', 'DATA_OWNER')
   );
@@ -95,7 +46,6 @@ export default function AccessWorkflowsPage() {
     queryFn: fetchWorkflows,
     retry: false,
   });
-  const [editing, setEditing] = useState<Editing | null>(null);
 
   const rows = [...(data?.workflows ?? [])].sort((a, b) =>
     (a.workflow.scopeFqn ?? '').localeCompare(b.workflow.scopeFqn ?? '')
@@ -103,9 +53,6 @@ export default function AccessWorkflowsPage() {
   const byDefault = rows.find((row) => row.workflow.scopeFqn === null) ?? null;
   const scoped = rows.filter((row) => row.workflow.scopeFqn !== null);
   const canCreateDefault = data?.canCreateDefault ?? false;
-
-  const startNew = (from: AccessWorkflow, name: string) =>
-    setEditing({ id: null, initial: { ...from, id: null, name, scopeFqn: null, enabled: true } });
 
   return (
     <div className="tw:flex tw:flex-col tw:gap-5">
@@ -119,11 +66,11 @@ export default function AccessWorkflowsPage() {
             asked with, so a change here reaches only requests made after it.
           </p>
         </div>
-        {data && mayDesign && !editing && (
+        {data && mayDesign && (
           <Button
             color="primary"
             iconLeading={Plus}
-            onPress={() => startNew(data.builtIn, '')}
+            onPress={() => navigate('/settings/workflows/new')}
             size="sm">
             New workflow
           </Button>
@@ -140,34 +87,25 @@ export default function AccessWorkflowsPage() {
       )}
       {isLoading && <p className="tw:text-sm tw:text-tertiary">Loading workflows…</p>}
 
-      {editing && editing.id === null && data && (
-        <WorkflowEditor
-          canCreateDefault={canCreateDefault && !byDefault}
-          editing={editing}
-          onDone={() => setEditing(null)}
-        />
-      )}
-
       {data && (
         <>
           <Section
             blurb="Every table that no workflow below covers."
             heading="Organisation default">
             {byDefault ? (
-              <RowOrEditor editing={editing} onEdit={setEditing} row={byDefault} />
+              <WorkflowCard row={byDefault} workflow={byDefault.workflow} />
             ) : (
               <p className="tw:rounded-xl tw:border tw:border-secondary tw:bg-primary tw:px-4 tw:py-3 tw:text-sm tw:text-tertiary">
                 No default is set, so the built-in workflow below applies to every table without a
                 workflow of its own.
-                {canCreateDefault && !editing && (
+                {canCreateDefault && mayDesign && (
                   <>
                     {' '}
-                    <button
-                      className="tw:cursor-pointer tw:font-semibold tw:text-brand-secondary tw:hover:underline"
-                      onClick={() => startNew(data.builtIn, 'Organisation default')}
-                      type="button">
+                    <Link
+                      className="tw:font-semibold tw:text-brand-secondary tw:hover:underline"
+                      to="/settings/workflows/new?default=1">
                       Set a default
-                    </button>
+                    </Link>
                   </>
                 )}
               </p>
@@ -182,14 +120,7 @@ export default function AccessWorkflowsPage() {
                 No scope has a workflow of its own.
               </p>
             ) : (
-              scoped.map((row) => (
-                <RowOrEditor
-                  editing={editing}
-                  key={row.workflow.id}
-                  onEdit={setEditing}
-                  row={row}
-                />
-              ))
+              scoped.map((row) => <WorkflowCard key={row.workflow.id} row={row} workflow={row.workflow} />)
             )}
           </Section>
 
@@ -224,39 +155,16 @@ function Section({
   );
 }
 
-function RowOrEditor({
-  row,
-  editing,
-  onEdit,
-}: {
-  row: WorkflowRow;
-  editing: Editing | null;
-  onEdit: (editing: Editing | null) => void;
-}) {
-  if (editing && editing.id === row.workflow.id) {
-    return <WorkflowEditor canCreateDefault={false} editing={editing} onDone={() => onEdit(null)} />;
-  }
-  return (
-    <WorkflowCard
-      onEdit={editing ? undefined : () => onEdit({ id: row.workflow.id, initial: row.workflow })}
-      row={row}
-      workflow={row.workflow}
-    />
-  );
-}
-
 // ------------------------------------------------------------------ reading
 
 function WorkflowCard({
   workflow,
   row,
   builtIn = false,
-  onEdit,
 }: {
   workflow: AccessWorkflow;
   row?: WorkflowRow;
   builtIn?: boolean;
-  onEdit?: () => void;
 }) {
   const queryClient = useQueryClient();
   const [confirming, setConfirming] = useState(false);
@@ -304,27 +212,28 @@ function WorkflowCard({
             <p className="tw:mt-1 tw:text-sm tw:text-secondary">{workflow.description}</p>
           )}
         </div>
-        {row && (
-          <div className="tw:flex tw:flex-wrap tw:items-center tw:gap-2">
+        <div className="tw:flex tw:flex-wrap tw:items-center tw:gap-2">
+          <Link
+            className="tw:inline-flex tw:items-center tw:gap-1.5 tw:rounded-lg tw:border tw:border-primary tw:bg-primary tw:px-3 tw:py-2 tw:text-sm tw:font-semibold tw:text-secondary tw:shadow-xs tw:hover:bg-primary_hover"
+            to={`/settings/workflows/${builtIn ? 'built-in' : workflow.id}`}>
+            <Dataflow03 className="tw:size-4" />
+            {row?.canEdit ? 'Open in builder' : 'View diagram'}
+          </Link>
+          {row && (
             <Button color="secondary" onPress={() => setHistory((open) => !open)} size="sm">
-              {history ? 'Hide history' : 'History'}
+              {history ? 'Hide changes' : 'Changes'}
             </Button>
-            {row.canEdit && onEdit && (
-              <>
-                <Button color="secondary" iconLeading={Edit03} onPress={onEdit} size="sm">
-                  Edit
-                </Button>
-                <Button
-                  color="secondary-destructive"
-                  iconLeading={Trash01}
-                  onPress={() => setConfirming(true)}
-                  size="sm">
-                  Delete
-                </Button>
-              </>
-            )}
-          </div>
-        )}
+          )}
+          {row?.canEdit && (
+            <Button
+              color="secondary-destructive"
+              iconLeading={Trash01}
+              onPress={() => setConfirming(true)}
+              size="sm">
+              Delete
+            </Button>
+          )}
+        </div>
       </div>
 
       <div className="tw:border-t tw:border-secondary tw:px-4 tw:py-3">
@@ -449,456 +358,5 @@ function History({ id }: { id: string }) {
         </ul>
       )}
     </div>
-  );
-}
-
-// ------------------------------------------------------------------ editing
-
-/** The first thing the server would refuse, said the same way, or null. */
-export function problemOf(draft: WorkflowDraft, scopeRequired: boolean): string | null {
-  if (!draft.name.trim()) return 'Name the workflow';
-  if (scopeRequired && !draft.scopeFqn) return 'Choose the tables it applies to';
-  if (draft.stages.length === 0) return 'A workflow needs at least one stage';
-  const names = new Set<string>();
-  for (const stage of draft.stages) {
-    const label = stage.name.trim();
-    if (!label) return 'Name every stage';
-    const where = `Stage "${label}"`;
-    if (names.has(label.toLowerCase())) return `${where} appears twice; give each stage its own name`;
-    names.add(label.toLowerCase());
-    if (!Number.isInteger(stage.step) || stage.step < 1) return `${where}: steps count from 1`;
-    if (stage.approvers.length === 0) return `${where}: name at least one approver`;
-    const unnamed = stage.approvers.find((seat) => NAMED.has(seat.kind) && !seat.name?.trim());
-    if (unnamed) return `${where}: name the ${unnamed.kind === 'TEAM' ? 'team' : unnamed.kind === 'ROLE' ? 'role' : 'person'}`;
-    if (stage.rule === 'AT_LEAST' && !(stage.minApprovals && stage.minApprovals >= 1)) {
-      return `${where}: say how many approvals, at least 1`;
-    }
-  }
-  const unnamed = (draft.configurers ?? []).find((seat) => NAMED.has(seat.kind) && !seat.name?.trim());
-  if (unnamed) return 'Configured by: name every person, team and role';
-  return null;
-}
-
-/** "Owner approval, then Security and Compliance together": how the stages will run. */
-export function describeSteps(stages: WorkflowStage[]): string {
-  const named = stages.filter((stage) => stage.name.trim());
-  if (named.length === 0) return '';
-  return stepsOf(named)
-    .map((group) =>
-      group.length === 1
-        ? group[0].name.trim()
-        : `${group.map((stage) => stage.name.trim()).join(' and ')} together`
-    )
-    .join(', then ');
-}
-
-function cleanSeats(seats: Seat[]): Seat[] {
-  return seats.map((seat) =>
-    NAMED.has(seat.kind) ? { kind: seat.kind, name: seat.name?.trim() ?? '' } : { kind: seat.kind }
-  );
-}
-
-function WorkflowEditor({
-  editing,
-  canCreateDefault,
-  onDone,
-}: {
-  editing: Editing;
-  /** A new workflow may be the default: its scope may stay empty. */
-  canCreateDefault: boolean;
-  onDone: () => void;
-}) {
-  const queryClient = useQueryClient();
-  const isNew = editing.id === null;
-  const isDefault = !isNew && editing.initial.scopeFqn === null;
-  const [name, setName] = useState(editing.initial.name);
-  const [description, setDescription] = useState(editing.initial.description ?? '');
-  const [scopeFqn, setScopeFqn] = useState<string | null>(editing.initial.scopeFqn || null);
-  const [enabled, setEnabled] = useState(editing.initial.enabled);
-  const [stages, setStages] = useState<WorkflowStage[]>(editing.initial.stages.map((stage) => ({ ...stage })));
-  const [configurers, setConfigurers] = useState<Seat[]>(editing.initial.configurers);
-
-  const draft: WorkflowDraft = {
-    name: name.trim(),
-    description: description.trim() || null,
-    scopeFqn: isDefault ? null : scopeFqn,
-    enabled,
-    stages: stages.map((stage) => ({
-      step: stage.step,
-      name: stage.name.trim(),
-      rule: stage.rule,
-      minApprovals: stage.rule === 'AT_LEAST' ? (stage.minApprovals ?? null) : null,
-      onReject: stage.onReject,
-      approvers: cleanSeats(stage.approvers),
-    })),
-    configurers: cleanSeats(configurers),
-  };
-  const problem = problemOf(draft, !isDefault && !(isNew && canCreateDefault));
-
-  const save = useMutation({
-    mutationFn: () => (isNew ? createWorkflow(draft) : updateWorkflow(editing.id!, draft)),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: WORKFLOWS_KEY });
-      // A route shown before somebody asks comes from the workflow.
-      void queryClient.invalidateQueries({ queryKey: ['access-requests'] });
-      onDone();
-    },
-  });
-
-  const change = (index: number, next: Partial<WorkflowStage>) =>
-    setStages((current) => current.map((stage, i) => (i === index ? { ...stage, ...next } : stage)));
-
-  const addStage = () =>
-    setStages((current) => [
-      ...current,
-      {
-        step: Math.max(0, ...current.map((stage) => stage.step)) + 1,
-        name: `Stage ${current.length + 1}`,
-        rule: 'ANY',
-        minApprovals: null,
-        onReject: 'VETO',
-        approvers: [{ kind: 'ASSET_OWNERS' }],
-      },
-    ]);
-
-  const preview = describeSteps(stages);
-
-  return (
-    <form
-      aria-label={isNew ? 'New workflow' : `Edit ${editing.initial.name}`}
-      className="tw:rounded-xl tw:border tw:border-brand tw:bg-primary tw:shadow-md"
-      onSubmit={(event) => {
-        event.preventDefault();
-        if (!problem && !save.isPending) save.mutate();
-      }}>
-      <div className="tw:border-b tw:border-secondary tw:px-4 tw:py-3">
-        <p className="tw:text-sm tw:font-semibold tw:text-primary">
-          {isNew ? 'New workflow' : `Edit ${editing.initial.name}`}
-        </p>
-      </div>
-
-      <div className="tw:flex tw:flex-col tw:gap-4 tw:px-4 tw:py-4">
-        <div className="tw:grid tw:gap-4 tw:md:grid-cols-2">
-          <Field label="Name">
-            <input
-              aria-label="Workflow name"
-              className={FIELD}
-              onChange={(event) => setName(event.target.value)}
-              value={name}
-            />
-          </Field>
-          <div className="tw:flex tw:flex-col tw:gap-1.5">
-            <span className="tw:text-sm tw:font-medium tw:text-secondary">Applies to</span>
-            {isDefault ? (
-              <p className="tw:text-sm tw:text-tertiary">
-                Every table without a workflow of its own (the organisation's default).
-              </p>
-            ) : (
-              <>
-                <ScopePicker onChange={setScopeFqn} value={scopeFqn} />
-                <span className="tw:text-xs tw:text-tertiary">
-                  {isNew && canCreateDefault
-                    ? 'Leave empty for the organisation’s default. A scope covers everything under it.'
-                    : 'A service, database, schema or table you govern; it covers everything under it.'}
-                </span>
-              </>
-            )}
-          </div>
-        </div>
-        <Field label="Description">
-          <textarea
-            aria-label="Workflow description"
-            className={`${FIELD} tw:min-h-16 tw:resize-y`}
-            onChange={(event) => setDescription(event.target.value)}
-            placeholder="When this workflow is the right one, for whoever reads the list"
-            value={description}
-          />
-        </Field>
-        <label className="tw:flex tw:items-center tw:gap-2 tw:text-sm tw:text-secondary">
-          <input checked={enabled} onChange={(event) => setEnabled(event.target.checked)} type="checkbox" />
-          On — while off, requests follow the next workflow up
-        </label>
-
-        <fieldset className="tw:flex tw:flex-col tw:gap-3">
-          <legend className="tw:text-sm tw:font-medium tw:text-secondary">Stages</legend>
-          {stages.map((stage, index) => (
-            <StageEditor
-              index={index}
-              key={index}
-              onChange={(next) => change(index, next)}
-              onRemove={
-                stages.length > 1 ? () => setStages((current) => current.filter((_, i) => i !== index)) : undefined
-              }
-              stage={stage}
-            />
-          ))}
-          <div className="tw:flex tw:flex-wrap tw:items-center tw:gap-3">
-            <Button
-              color="secondary"
-              iconLeading={Plus}
-              isDisabled={stages.length >= MAX_STAGES}
-              onPress={addStage}
-              size="sm">
-              Add stage
-            </Button>
-            {preview && (
-              <p className="tw:text-sm tw:text-tertiary" data-testid="steps-preview">
-                Runs as: {preview}.
-              </p>
-            )}
-          </div>
-        </fieldset>
-
-        <fieldset className="tw:flex tw:flex-col tw:gap-2">
-          <legend className="tw:text-sm tw:font-medium tw:text-secondary">Configured by</legend>
-          <p className="tw:text-xs tw:text-tertiary">
-            Who sets up the access once the stages approve it: a grant, or a change to a policy they
-            then name. Empty means the owners of the table or its data custodian.
-          </p>
-          <SeatsEditor label="Configurer" onChange={setConfigurers} seats={configurers} />
-        </fieldset>
-
-        {save.isError && (
-          <p
-            className="tw:flex tw:items-start tw:gap-2 tw:rounded-lg tw:bg-utility-error-50 tw:px-3 tw:py-2 tw:text-sm tw:text-error-primary"
-            role="alert">
-            <AlertTriangle className="tw:mt-0.5 tw:size-4 tw:shrink-0" />
-            <span>{apiErrorMessage(save.error, 'The workflow was not saved.')}</span>
-          </p>
-        )}
-      </div>
-
-      <div className="tw:flex tw:flex-wrap tw:items-center tw:justify-end tw:gap-2 tw:border-t tw:border-secondary tw:px-4 tw:py-3">
-        {problem && <span className="tw:mr-auto tw:text-xs tw:text-tertiary">{problem}.</span>}
-        <Button color="secondary" onPress={onDone} size="sm">
-          Cancel
-        </Button>
-        <Button color="primary" isDisabled={!!problem || save.isPending} size="sm" type="submit">
-          {save.isPending ? 'Saving…' : isNew ? 'Create workflow' : 'Save workflow'}
-        </Button>
-      </div>
-    </form>
-  );
-}
-
-function StageEditor({
-  stage,
-  index,
-  onChange,
-  onRemove,
-}: {
-  stage: WorkflowStage;
-  index: number;
-  onChange: (next: Partial<WorkflowStage>) => void;
-  onRemove?: () => void;
-}) {
-  const n = index + 1;
-  const onRejectOptions: SelectOption[] = ON_REJECT.map((value) => ({
-    value,
-    label: describeOnReject(value),
-    isDisabled: value === 'FIRST_RESPONSE' && stage.rule !== 'ANY',
-    hint: value === 'FIRST_RESPONSE' && stage.rule !== 'ANY' ? 'Only when any one approval passes it' : undefined,
-  }));
-  return (
-    <div
-      aria-label={`Stage ${n}`}
-      className="tw:flex tw:flex-col tw:gap-3 tw:rounded-lg tw:border tw:border-secondary tw:px-3 tw:py-3"
-      role="group">
-      <div className="tw:flex tw:flex-wrap tw:items-end tw:gap-3">
-        <label className="tw:flex tw:w-20 tw:flex-col tw:gap-1.5">
-          <span className="tw:text-xs tw:font-medium tw:text-secondary">Step</span>
-          <input
-            aria-label={`Stage ${n} step`}
-            className={FIELD}
-            inputMode="numeric"
-            onChange={(event) => {
-              const digits = event.target.value.replace(/[^0-9]/g, '');
-              onChange({ step: digits === '' ? 0 : Number.parseInt(digits, 10) });
-            }}
-            value={stage.step === 0 ? '' : String(stage.step)}
-          />
-        </label>
-        <label className="tw:flex tw:min-w-48 tw:flex-1 tw:flex-col tw:gap-1.5">
-          <span className="tw:text-xs tw:font-medium tw:text-secondary">Stage name</span>
-          <input
-            aria-label={`Stage ${n} name`}
-            className={FIELD}
-            onChange={(event) => onChange({ name: event.target.value })}
-            value={stage.name}
-          />
-        </label>
-        {onRemove && (
-          <Button color="secondary" iconLeading={Trash01} onPress={onRemove} size="sm">
-            Remove stage
-          </Button>
-        )}
-      </div>
-      <div className="tw:flex tw:flex-wrap tw:items-end tw:gap-3">
-        <div className="tw:flex tw:min-w-56 tw:flex-col tw:gap-1.5">
-          <span className="tw:text-xs tw:font-medium tw:text-secondary">Passes when</span>
-          <Select
-            ariaLabel={`Stage ${n} rule`}
-            onChange={(value) => {
-              const rule = value as StageRule;
-              onChange({
-                rule,
-                minApprovals: rule === 'AT_LEAST' ? (stage.minApprovals ?? 2) : null,
-                // The first answer cannot decide a stage that needs more than one.
-                onReject: rule !== 'ANY' && stage.onReject === 'FIRST_RESPONSE' ? 'VETO' : stage.onReject,
-              });
-            }}
-            options={RULES}
-            value={stage.rule}
-          />
-        </div>
-        {stage.rule === 'AT_LEAST' && (
-          <label className="tw:flex tw:w-24 tw:flex-col tw:gap-1.5">
-            <span className="tw:text-xs tw:font-medium tw:text-secondary">How many</span>
-            <input
-              aria-label={`Stage ${n} approvals needed`}
-              className={FIELD}
-              inputMode="numeric"
-              onChange={(event) => {
-                const digits = event.target.value.replace(/[^0-9]/g, '');
-                onChange({ minApprovals: digits === '' ? null : Number.parseInt(digits, 10) });
-              }}
-              value={stage.minApprovals == null ? '' : String(stage.minApprovals)}
-            />
-          </label>
-        )}
-        <div className="tw:flex tw:min-w-72 tw:flex-1 tw:flex-col tw:gap-1.5">
-          <span className="tw:text-xs tw:font-medium tw:text-secondary">A rejection</span>
-          <Select
-            ariaLabel={`Stage ${n} on reject`}
-            onChange={(value) => onChange({ onReject: value as OnReject })}
-            options={onRejectOptions}
-            value={stage.onReject}
-          />
-        </div>
-      </div>
-      <div className="tw:flex tw:flex-col tw:gap-1.5">
-        <span className="tw:text-xs tw:font-medium tw:text-secondary">Asks</span>
-        <SeatsEditor
-          label={`Stage ${n} approver`}
-          onChange={(approvers) => onChange({ approvers })}
-          seats={stage.approvers}
-        />
-      </div>
-    </div>
-  );
-}
-
-function SeatsEditor({
-  seats,
-  onChange,
-  label,
-}: {
-  seats: Seat[];
-  onChange: (seats: Seat[]) => void;
-  /** Names each control: "Stage 1 approver 2 kind". */
-  label: string;
-}) {
-  const set = (index: number, seat: Seat) => onChange(seats.map((s, i) => (i === index ? seat : s)));
-  return (
-    <div className="tw:flex tw:flex-col tw:gap-2">
-      {seats.map((seat, index) => {
-        const where = `${label} ${index + 1}`;
-        return (
-          <div className="tw:flex tw:flex-wrap tw:items-center tw:gap-2" key={index}>
-            <Select
-              ariaLabel={`${where} kind`}
-              className="tw:w-56"
-              onChange={(value) => {
-                const kind = value as SeatKind;
-                set(index, { kind, name: kind === 'ROLE' ? 'DATA_OWNER' : NAMED.has(kind) ? '' : null });
-              }}
-              options={SEAT_KINDS}
-              value={seat.kind}
-            />
-            {seat.kind === 'ROLE' && (
-              <Select
-                ariaLabel={`${where} role`}
-                className="tw:w-56"
-                onChange={(value) => set(index, { kind: 'ROLE', name: value })}
-                options={ROLES}
-                value={seat.name ?? 'DATA_OWNER'}
-              />
-            )}
-            {(seat.kind === 'USER' || seat.kind === 'TEAM') && (
-              <NameField
-                ariaLabel={`${where} name`}
-                kind={seat.kind}
-                onChange={(name) => set(index, { kind: seat.kind, name })}
-                value={seat.name ?? ''}
-              />
-            )}
-            <button
-              aria-label={`Remove ${where}`}
-              className="tw:flex tw:size-8 tw:cursor-pointer tw:items-center tw:justify-center tw:rounded-md tw:text-quaternary tw:hover:bg-secondary tw:hover:text-secondary"
-              onClick={() => onChange(seats.filter((_, i) => i !== index))}
-              type="button">
-              <XClose className="tw:size-4" />
-            </button>
-          </div>
-        );
-      })}
-      <div>
-        <Button
-          color="secondary"
-          iconLeading={Plus}
-          isDisabled={seats.length >= MAX_SEATS}
-          onPress={() => onChange([...seats, { kind: 'USER', name: '' }])}
-          size="sm">
-          {`Add ${label.toLowerCase().replace(/^stage \d+ /, '')}`}
-        </Button>
-      </div>
-    </div>
-  );
-}
-
-/**
- * A username or a team, typed, with the directory's matches offered.
- *
- * <p>Free text because a seat is matched by name when its step opens -- a
- * person who joins after the workflow is saved is still found -- but the
- * suggestions come from the directory, so a typo is the exception.
- */
-function NameField({
-  kind,
-  value,
-  onChange,
-  ariaLabel,
-}: {
-  kind: 'USER' | 'TEAM';
-  value: string;
-  onChange: (value: string) => void;
-  ariaLabel: string;
-}) {
-  const search = value.trim();
-  const { data } = useQuery({
-    queryKey: ['workflow-seat-names', kind, search],
-    queryFn: () => fetchPrincipals({ type: kind === 'USER' ? 'USER' : 'GROUP', search, limit: 8 }),
-    enabled: search.length > 0,
-    staleTime: 30 * 1000,
-  });
-  const listId = `${ariaLabel.replace(/\s+/g, '-').toLowerCase()}-options`;
-  return (
-    <>
-      <input
-        aria-label={ariaLabel}
-        className={`${FIELD} tw:w-56`}
-        list={listId}
-        onChange={(event) => onChange(event.target.value)}
-        placeholder={kind === 'USER' ? 'Username or email' : 'Team name'}
-        value={value}
-      />
-      <datalist id={listId}>
-        {(data ?? []).map((principal) => (
-          <option key={principal.id} value={principal.username}>
-            {principal.displayName ?? principal.username}
-          </option>
-        ))}
-      </datalist>
-    </>
   );
 }

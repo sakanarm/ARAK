@@ -1,11 +1,13 @@
 import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
   AlertTriangle,
   ArrowLeft,
   Columns03,
   Edit03,
+  EyeOff,
+  Key01,
   RefreshCw01,
   Users01,
   Table as TableIcon,
@@ -29,6 +31,8 @@ import {
 import { describePolicy, describeSelector } from './policyLanguage';
 import { useViewMode, ViewToggle } from './controls';
 import PolicyFlowChart from './PolicyFlowChart';
+import PolicyDiagram from './PolicyDiagram';
+import TabStrip, { panelId, tabId, type TabItem } from '../../components/TabStrip';
 
 /**
  * One policy, read rather than edited.
@@ -42,6 +46,9 @@ import PolicyFlowChart from './PolicyFlowChart';
  *
  * Editing is one button away and lives on its own route.
  */
+
+type DetailTab = 'overview' | 'coverage' | 'impact' | 'conflicts';
+const TABS: DetailTab[] = ['overview', 'coverage', 'impact', 'conflicts'];
 
 const STATE_TONE: Record<string, 'success' | 'gray' | 'warning'> = {
   ACTIVE: 'success',
@@ -106,10 +113,18 @@ export default function PolicyDetailPage() {
   // Two readings of the same document, remembered per browser. Text stays the
   // default: the sentence is the one a reviewer can quote in an approval, and
   // nobody should have to switch back to a page they already knew.
-  const [reading, setReading] = useViewMode<'text' | 'flow'>(
+  const [reading, setReading] = useViewMode<'text' | 'flow' | 'diagram'>(
     'arak.policy.reading',
     'text',
   );
+
+  // The open section rides in the address, so a link can land on the impact
+  // of a policy rather than on its overview.
+  const [params, setParams] = useSearchParams();
+  const asked = params.get('tab') as DetailTab | null;
+  const tab: DetailTab = asked && TABS.includes(asked) ? asked : 'overview';
+  const setTab = (next: DetailTab) =>
+    setParams(next === 'overview' ? {} : { tab: next }, { replace: true });
 
   const { data: policy, error } = useQuery({
     queryKey: ['policy', id],
@@ -184,77 +199,111 @@ export default function PolicyDetailPage() {
   const blocking = (conflicts.data ?? []).filter(
     (row) => row.relation === 'BLOCKED_BY'
   );
+  const isData = document.policyType === 'DATA';
+  const tabs: TabItem<DetailTab>[] = [
+    { id: 'overview', label: 'Overview' },
+    { id: 'coverage', label: 'Applies to', count: coverage.data?.tableCount },
+    { id: 'impact', label: 'Impact', count: impact.data?.principalsAffected },
+    { id: 'conflicts', label: 'Other policies', count: conflicts.data?.length },
+  ];
+  const diagram = reading === 'diagram';
 
   return (
-    <>
+    <div className="tw:flex tw:flex-col tw:gap-5">
       <BackLink />
 
-      <header className="tw:mt-4 tw:flex tw:flex-wrap tw:items-start tw:justify-between tw:gap-4">
-        <div className="tw:min-w-0">
-          <div className="tw:flex tw:flex-wrap tw:items-center tw:gap-2">
-            <h1 className="tw:text-display-xs tw:font-semibold tw:text-primary">
-              {document.displayName || document.name}
-            </h1>
-            <Badge
-              color={STATE_TONE[policy.lifecycleState] ?? 'gray'}
-              size="sm"
-              type="pill-color">
-              {policy.lifecycleState.replace('_', ' ').toLowerCase()}
-            </Badge>
-            <Badge color="gray" size="sm" type="pill-color">
-              {document.policyType === 'DATA'
-                ? 'data — what they see'
-                : 'subscription — who gets in'}
-            </Badge>
-            <Badge color="gray" size="sm" type="pill-color">
-              {policy.environment}
-            </Badge>
+      <header className="tw:rounded-xl tw:border tw:border-secondary tw:bg-primary tw:p-5 tw:shadow-xs">
+        <div className="tw:flex tw:flex-wrap tw:items-start tw:justify-between tw:gap-4">
+          <div className="tw:flex tw:min-w-0 tw:items-start tw:gap-4">
+            <span
+              className={`tw:flex tw:size-12 tw:shrink-0 tw:items-center tw:justify-center tw:rounded-xl ${
+                isData
+                  ? 'tw:bg-utility-purple-50 tw:text-utility-purple-600'
+                  : 'tw:bg-utility-brand-50 tw:text-utility-brand-600'
+              }`}>
+              {isData ? <EyeOff className="tw:size-6" /> : <Key01 className="tw:size-6" />}
+            </span>
+            <div className="tw:min-w-0">
+              <div className="tw:flex tw:flex-wrap tw:items-center tw:gap-2">
+                <h1 className="tw:text-xl tw:font-semibold tw:text-primary">
+                  {document.displayName || document.name}
+                </h1>
+                <Badge
+                  color={STATE_TONE[policy.lifecycleState] ?? 'gray'}
+                  size="sm"
+                  type="pill-color">
+                  {policy.lifecycleState.replace('_', ' ').toLowerCase()}
+                </Badge>
+              </div>
+              <p className="tw:mt-0.5 tw:font-mono tw:text-xs tw:break-all tw:text-quaternary">
+                {document.name}
+              </p>
+              {document.description && (
+                <p className="tw:mt-2 tw:max-w-3xl tw:text-pretty tw:text-sm tw:text-tertiary">
+                  {document.description}
+                </p>
+              )}
+            </div>
           </div>
-          <p className="tw:mt-2 tw:font-mono tw:text-xs tw:break-all tw:text-quaternary">
-            {document.name}
-          </p>
+
+          <div className="tw:flex tw:shrink-0 tw:items-center tw:gap-2">
+            {policy.lifecycleState === 'DRAFT' && (
+              <Button
+                color="secondary"
+                isDisabled={lifecycle.isPending}
+                onPress={() => lifecycle.mutate('ACTIVE')}
+                size="md">
+                Activate
+              </Button>
+            )}
+            {policy.lifecycleState === 'ACTIVE' && (
+              <Button
+                color="secondary"
+                isDisabled={lifecycle.isPending}
+                onPress={() => lifecycle.mutate('DISABLED')}
+                size="md">
+                Disable
+              </Button>
+            )}
+            {/* The only way into the form. Everything on this page is a reading
+                of the document, so nothing here can change it by accident. */}
+            <Button
+              iconLeading={Edit03}
+              onPress={() => navigate(`/policies/${policy.id}/edit`)}
+              size="md">
+              Edit
+            </Button>
+          </div>
         </div>
 
-        <div className="tw:flex tw:shrink-0 tw:items-center tw:gap-2">
-          {/* The only way into the form. Everything on this page is a reading
-              of the document, so nothing here can change it by accident. */}
-          <Button
-            iconLeading={Edit03}
-            onPress={() => navigate(`/policies/${policy.id}/edit`)}
-            size="md">
-            Edit
-          </Button>
-          {policy.lifecycleState === 'DRAFT' && (
-            <Button
-              color="secondary"
-              isDisabled={lifecycle.isPending}
-              onPress={() => lifecycle.mutate('ACTIVE')}
-              size="md">
-              Activate
-            </Button>
-          )}
-          {policy.lifecycleState === 'ACTIVE' && (
-            <Button
-              color="secondary"
-              isDisabled={lifecycle.isPending}
-              onPress={() => lifecycle.mutate('DISABLED')}
-              size="md">
-              Disable
-            </Button>
-          )}
-        </div>
+        <dl className="tw:mt-5 tw:grid tw:grid-cols-2 tw:gap-4 tw:border-t tw:border-secondary tw:pt-4 tw:md:grid-cols-4">
+          <Fact
+            label="Kind"
+            value={isData ? 'Data · what they see' : 'Subscription · who gets in'}
+          />
+          <Fact
+            label="Applies at"
+            mono={Boolean(document.scopeFqn)}
+            value={document.scopeFqn || (document.scopeLevel === 'ORG' ? 'The organisation' : document.scopeLevel)}
+          />
+          <Fact
+            label={isData ? 'Environment' : 'Effect'}
+            value={isData ? policy.environment : `${document.effect ?? 'ALLOW'} · ${policy.environment}`}
+          />
+          <Fact label="Version" value={`v${policy.version} · ${when(policy.updatedAt, false)}`} />
+        </dl>
       </header>
 
       {actionError && (
-        <p className="tw:mt-4 tw:rounded-lg tw:border tw:border-error tw:bg-error-primary tw:p-4 tw:text-sm tw:text-error-primary">
+        <p className="tw:rounded-lg tw:border tw:border-error tw:bg-error-primary tw:p-4 tw:text-sm tw:text-error-primary">
           {actionError}
         </p>
       )}
 
       {/* Hoisted out of the conflict list. Somebody looking at a policy that
-          grants nothing should not have to scroll to find that out. */}
+          grants nothing should not have to open a tab to find that out. */}
       {blocking.length > 0 && (
-        <div className="tw:mt-4 tw:flex tw:items-start tw:gap-2 tw:rounded-xl tw:border tw:border-error_subtle tw:bg-error-primary tw:p-4">
+        <div className="tw:flex tw:items-start tw:gap-2 tw:rounded-xl tw:border tw:border-error_subtle tw:bg-error-primary tw:p-4">
           <AlertTriangle className="tw:mt-0.5 tw:size-4 tw:shrink-0 tw:text-error-primary" />
           <p className="tw:text-sm tw:text-pretty tw:text-error-primary">
             {blocking.length === 1
@@ -264,99 +313,115 @@ export default function PolicyDetailPage() {
         </div>
       )}
 
-      <div className="tw:mt-6 tw:grid tw:gap-6 tw:lg:grid-cols-3">
-        <div className="tw:lg:col-span-2 tw:space-y-6">
-          <Panel
-            action={
-              <ViewToggle
-                label="How to read this policy"
-                onChange={setReading}
-                options={[
-                  { value: 'text', label: 'Text' },
-                  { value: 'flow', label: 'Flowchart' },
-                ]}
-                value={reading}
-              />
-            }
-            title={reading === 'flow' ? 'How a request runs through it' : 'In plain words'}>
-            {reading === 'flow' ? (
-              <PolicyFlowChart policy={document} />
-            ) : (
-              <div className="tw:flex tw:flex-col tw:gap-1.5 tw:text-sm tw:text-secondary">
-                {describePolicy(document).map((line, index) => (
-                  <p className="tw:text-pretty" key={index}>
-                    {line}
-                  </p>
-                ))}
-              </div>
-            )}
-          </Panel>
+      <TabStrip idPrefix="policy" label="Policy sections" onChange={setTab} tabs={tabs} value={tab} />
 
+      <div
+        aria-labelledby={tabId('policy', tab)}
+        id={panelId('policy', tab)}
+        role="tabpanel">
+        {tab === 'overview' && (
+          <div className="tw:grid tw:gap-6 tw:lg:grid-cols-3">
+            <div className={diagram ? 'tw:lg:col-span-3' : 'tw:lg:col-span-2'}>
+              <Panel
+                action={
+                  <ViewToggle
+                    label="How to read this policy"
+                    onChange={setReading}
+                    options={[
+                      { value: 'text', label: 'Text' },
+                      { value: 'flow', label: 'Flowchart' },
+                      { value: 'diagram', label: 'Diagram' },
+                    ]}
+                    value={reading}
+                  />
+                }
+                title={
+                  reading === 'flow'
+                    ? 'How a request runs through it'
+                    : diagram
+                      ? 'How it decides'
+                      : 'In plain words'
+                }>
+                {reading === 'flow' ? (
+                  <PolicyFlowChart policy={document} />
+                ) : diagram ? (
+                  <PolicyDiagram policy={document} />
+                ) : (
+                  <div className="tw:flex tw:flex-col tw:gap-2 tw:text-sm tw:leading-6 tw:text-secondary">
+                    {describePolicy(document).map((line, index) => (
+                      <p className="tw:text-pretty" key={index}>
+                        {line}
+                      </p>
+                    ))}
+                  </div>
+                )}
+              </Panel>
+            </div>
+
+            <aside
+              className={
+                diagram
+                  ? 'tw:grid tw:gap-6 tw:lg:col-span-3 tw:lg:grid-cols-2'
+                  : 'tw:flex tw:flex-col tw:gap-6'
+              }>
+              <Panel title="Configuration">
+                <dl className="tw:space-y-2.5 tw:text-sm">
+                  <Row label="Selects" value={describeSelector(document.selector)} />
+                  <Row
+                    label="Level"
+                    value={document.scopeLevel === 'ORG' ? 'Organisation' : document.scopeLevel}
+                  />
+                  <Row
+                    label="A grant may pass this"
+                    value={
+                      document.allowLocalOverride
+                        ? 'Yes — recorded in the audit log'
+                        : 'No — everybody must match this policy'
+                    }
+                  />
+                </dl>
+              </Panel>
+
+              <Panel title="History">
+                <dl className="tw:space-y-2.5 tw:text-sm">
+                  <Row label="Version" value={`v${policy.version}`} />
+                  <Row label="Created by" value={policy.createdBy} />
+                  <Row label="Last edit" value={policy.updatedBy} />
+                  <Row label="When" value={when(policy.updatedAt)} />
+                </dl>
+              </Panel>
+            </aside>
+          </div>
+        )}
+
+        {tab === 'coverage' && (
           <Coverage
             data={coverage.data}
             error={coverage.error}
             isPending={resolve.isPending}
             onResolve={() => resolve.mutate()}
           />
+        )}
 
-          <Impact data={impact.data} error={impact.error} />
+        {tab === 'impact' && <Impact data={impact.data} error={impact.error} />}
 
-          <Conflicts data={conflicts.data} error={conflicts.error} />
-        </div>
-
-        <aside className="tw:space-y-6">
-          <Panel title="Configuration">
-            <dl className="tw:space-y-2 tw:text-sm">
-              <Row label="Kind" value={document.policyType} />
-              <Row
-                label="Level"
-                value={
-                  document.scopeLevel === 'ORG'
-                    ? 'Organisation'
-                    : document.scopeLevel
-                }
-              />
-              <Row label="Anchor" value={document.scopeFqn} />
-              {document.policyType === 'SUBSCRIPTION' && (
-                <Row label="Effect" value={document.effect ?? 'ALLOW'} />
-              )}
-              <Row
-                label="A grant may pass this"
-                value={
-                  document.allowLocalOverride
-                    ? 'Yes — recorded in the audit log'
-                    : 'No — everybody must match this policy'
-                }
-              />
-              <Row label="Environment" value={policy.environment} />
-              <Row label="Selects" value={describeSelector(document.selector)} />
-            </dl>
-          </Panel>
-
-          {document.description && (
-            <Panel title="Why it exists">
-              <p className="tw:text-pretty tw:text-sm tw:text-secondary">
-                {document.description}
-              </p>
-            </Panel>
-          )}
-
-          <Panel title="History">
-            <dl className="tw:space-y-2 tw:text-sm">
-              <Row label="Version" value={`v${policy.version}`} />
-              <Row label="Created by" value={policy.createdBy} />
-              <Row label="Last edit" value={policy.updatedBy} />
-              <Row label="When" value={when(policy.updatedAt)} />
-            </dl>
-            <Link
-              className="tw:mt-3 tw:inline-block tw:text-sm tw:text-brand-secondary tw:hover:underline"
-              to={`/policies/${policy.id}/edit`}>
-              Open in the builder →
-            </Link>
-          </Panel>
-        </aside>
+        {tab === 'conflicts' && <Conflicts data={conflicts.data} error={conflicts.error} />}
       </div>
-    </>
+    </div>
+  );
+}
+
+/** One figure in the header's summary strip. */
+function Fact({ label, value, mono = false }: { label: string; value: string; mono?: boolean }) {
+  return (
+    <div className="tw:min-w-0">
+      <dt className="tw:text-xs tw:font-medium tw:text-quaternary">{label}</dt>
+      <dd
+        className={`tw:mt-0.5 tw:truncate tw:text-sm tw:font-medium tw:text-primary ${mono ? 'tw:font-mono tw:text-xs' : ''}`}
+        title={value}>
+        {value}
+      </dd>
+    </div>
   );
 }
 
@@ -854,10 +919,12 @@ function count(n: number, noun: string): string {
   return `${n} ${noun}${n === 1 ? '' : 's'}`;
 }
 
-function when(iso: string | null): string {
+function when(iso: string | null, withTime = true): string {
   if (!iso) {
     return '';
   }
   const at = new Date(iso);
-  return Number.isNaN(at.getTime()) ? iso : at.toLocaleString();
+  return Number.isNaN(at.getTime())
+    ? iso
+    : at.toLocaleString(undefined, withTime ? { dateStyle: 'medium', timeStyle: 'short' } : { dateStyle: 'medium' });
 }

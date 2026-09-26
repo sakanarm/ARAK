@@ -1,6 +1,6 @@
 # HANDOFF — ARAK (Data Access Control Platform)
 
-> อัปเดต: 2026-09-26 · commit ล่าสุดที่ push สำเร็จ `dfa90f5` (ข้อ BP) · ข้อ BQ commit บน main แล้ว ยังไม่ push · repo https://github.com/sakanarm/ARAK (**public**)
+> อัปเดต: 2026-09-26 · commit ล่าสุดที่ push สำเร็จ `dfa90f5` (ข้อ BP) · ข้อ BQ · BR commit บน main แล้ว ยังไม่ push · repo https://github.com/sakanarm/ARAK (**public**)
 >
 > อ่านคู่กับ **[docs/DESIGN.md](docs/DESIGN.md)** — ไฟล์นั้นคือ requirement + feature catalogue + สถานะครบทุกข้อ
 > ไฟล์นี้บอกเฉพาะ "ทำถึงไหน จะไปต่อยังไง อะไรที่ลองแล้วไม่เวิร์ค"
@@ -619,7 +619,47 @@ M25 ทำแยกได้ (profile ผ่าน proxy ที่มีแล�
 
 ---
 
-## รอบนี้ — **ข้อ BQ: Add new connection แบบ OpenMetadata · Table scope ตอน import · import กับ OM crawl เป็น object เดียวกัน**
+## รอบนี้ — **ข้อ BR: Workflow Builder แบบ OpenMetadata · Policy มี Diagram ทั้งตอนสร้างและตอนอ่าน · หน้า Policy จัดใหม่ให้สะอาด**
+
+ผู้ใช้ขอ *"อันนี้ตัวอย่าง Workflow Builder ของ Openmetadata อยากให้มาทำฝั่ง Arak ในการกำหนด Workflow Access Request บ้าง"* · *"อยากให้ UI นี้ใช้กับ Diagram ของ Policies นอกจาก text, workflow เพิ่ม Diagram ด้วยทั้งตอนสร้าง และ Display"* · *"ปรับหน้า Policy อันนี้ให้ดู Clean ใช้งานง่าย และดูไม่รกตา"*
+
+### BR.1 ชิ้นส่วนกลาง — `components/diagram/FlowDiagram.tsx` + `components/TabStrip.tsx`
+- canvas จุดแบบ OM · node เป็น HTML (เลือกข้อความได้ · focus ได้ · อ่านตามลำดับ flow) · ไม่ใช้ graph library (เหตุผลเดียวกับ `PolicyFlowChart`)
+- ผู้เรียกวาง node บน grid (column = ไกลแค่ไหนใน flow · row = อะไรวิ่งข้างกัน) · edge `across` ออกจุดขวา · edge `down` ออกจุดล่างแล้วเลี้ยวขวาตาม lane ล่าง = ทางของทุก "No" ไม่ตัดผ่าน node
+- node เป็นปุ่มเฉพาะเมื่อส่ง `onSelect` · `selectable: false` ให้เป็น text เสมอ
+- **zoom พอดีกว้างเอง** (`fitZoom`) — scale ต่อเนื่อง ≤ 100% ไม่ต่ำกว่า 50% (ต่ำกว่านั้นให้ scroll) · ผู้ใช้กด zoom แล้วไม่ fit ทับอีก · clientWidth = 0 (jsdom / tab ซ่อน) = 100%
+- `TabStrip` = role tablist/tab + count pill · ใช้ทั้ง Workflow Builder และหน้า Policy
+
+### BR.2 Workflow Builder — `/settings/workflows/:id` (`WorkflowBuilderPage` · `workflowParts` · `workflowDiagram`)
+- หน้า list `/settings/workflows` เหลือแค่ตาราง → กดเข้าไปเป็น builder เต็มหน้า: diagram ซ้าย · แผงแก้ stage ที่เลือกขวา · tab Executions
+- **Executions** `GET /v1/access-workflows/{id}/requests` และ `/built-in/requests` (`WorkflowStore.executions`) — คำขอที่ workflow นี้ตัดสิน · เลข ticket · สถานะ · **ไม่มี requester_ip ในคำตอบ** (IT assert แล้ว) · สิทธิ์เดียวกับอ่าน workflow
+- test: `AccessWorkflowResourceTest` + `AccessRequestIT` (executions) · `WorkflowBuilderPage.test` 13 · `AccessWorkflowsPage.test` 13
+
+### BR.3 Policy Diagram — `pages/policies/PolicyDiagram.tsx`
+- อ่าน `buildFlow(policy)` ตัวเดียวกับ Text / Flowchart → ไม่มีทางวาดคนละเรื่องกับที่ engine ทำ
+- Read requested → Which assets (check) → Who (check) → What happens → ทางออก · ทุก gate ที่มีทางออกมี "No" เส้นประลงไปที่ node เดียว **"Policy does not apply"** · gate ที่ใครก็ผ่าน (subject ว่าง) เป็นสีเตือนและไม่มี No · DENY เป็นสีแดง + "Nothing is read"
+- ใต้ canvas: การ์ด "If not · …" ต่อ gate + note ของ gate
+- **ตอนสร้าง** (Policy builder มุม Form / Flowchart / **Diagram**) — กด node → กลับไป Form แล้ว scroll ไปที่ step ที่เขียนมัน · มุม Diagram ใช้เต็มกว้าง rail ย้ายลงล่าง
+- **ตอนอ่าน** (หน้า `/policies/:id` มุม Text / Flowchart / **Diagram**) — ไม่มีปุ่มใน node (อ่านอย่างเดียว · แก้ต้องกด Edit)
+- test: `PolicyDiagram.test` 5 · Builder +1 · Detail +2
+
+### BR.4 หน้า Policy จัดใหม่ (`PolicyDetailPage.tsx`)
+- header card: icon ตามชนิด (data = ตาสีม่วง · subscription = กุญแจ) · ชื่อ · state · ชื่อ mono · description · ปุ่ม Activate/Disable + Edit
+- แถบ facts 4 ช่อง: Kind · Applies at · Effect/Environment · Version + วันที่ (รูปแบบ medium ตาม locale)
+- ส่วนที่เหลือเป็น tab: **Overview · Applies to (นับ table) · Impact (นับคน) · Other policies (นับ)** · tab อยู่ใน URL `?tab=` ลิงก์ตรงได้ · alert "โดน DENY ทับ" ยังอยู่นอก tab เสมอ
+- Overview = การอ่าน policy + Configuration + History (Diagram เปิด → ใช้เต็มกว้าง แผงข้างลงไปอยู่ล่าง 2 คอลัมน์)
+- ตัด panel "Why it exists" (ซ้ำกับ description) และลิงก์ "Open in the builder" (ซ้ำกับ Edit)
+- Policy builder: back link · header card แบบเดียวกัน · แถบ view toggle เหนือเนื้อหา
+
+### BR.5 ทดสอบ
+- `tsc` สะอาด · jest เต็ม **56 suites / 555 tests ผ่าน** · build ผ่าน
+- Playwright จริงที่ :8090/Arak — list / detail (text · diagram · applies to · impact) / builder (form · diagram) · 0 response 5xx / page error · diagram fit 67% ที่ 1440px ไม่ตกขอบ
+
+### BR.6 ไม่เปลี่ยน / ไม่มี
+- **ไม่มี migration · ไม่มี env ใหม่** · backend เพิ่มแค่ endpoint อ่าน executions
+- diagram อ่านอย่างเดียวบนหน้า policy — ไม่มีทาง activate / แก้จาก diagram
+
+## รอบก่อนหน้า — **ข้อ BQ: Add new connection แบบ OpenMetadata · Table scope ตอน import · import กับ OM crawl เป็น object เดียวกัน**
 
 ผู้ใช้ขอ *"หน้า add new connection อยากให้ทำสวยๆ เหมือนของ openmetdata"* · *"สามารถ Scope ได้ด้วย"* · *"อย่าลืมว่าต้องสามารถไป deploy ได้นะ"* · และถามว่า *"ตอน Sync มาที่ Arak Table จะตรงกัน … เป็น Object เดียวกัน"*
 

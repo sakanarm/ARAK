@@ -23,6 +23,7 @@ import AccessRequestsPage, { RequestPage } from './pages/requests/AccessRequests
 import PreauthorizePage from './pages/requests/PreauthorizePage';
 import SimulatorPage from './pages/simulator/SimulatorPage';
 import AccessWorkflowsPage from './pages/settings/AccessWorkflowsPage';
+import WorkflowBuilderPage from './pages/settings/WorkflowBuilderPage';
 import RequestTemplatesPage from './pages/settings/RequestTemplatesPage';
 import AppRolesPage from './pages/settings/AppRolesPage';
 import HomePersonasPage from './pages/settings/HomePersonasPage';
@@ -106,6 +107,7 @@ export default function App() {
           />
           <Route element={<AppRolesPage />} path="/settings/roles" />
           <Route element={<AccessWorkflowsPage />} path="/settings/workflows" />
+          <Route element={<WorkflowBuilderPage />} path="/settings/workflows/:id" />
           <Route element={<RequestTemplatesPage />} path="/settings/request-templates" />
           <Route element={<HomePersonasPage />} path="/settings/home" />
           <Route element={<LlmSettingsPage />} path="/settings/assistant" />

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { AlertTriangle, CheckCircle, XCircle } from '@untitledui/icons';
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { AlertTriangle, ArrowLeft, CheckCircle, EyeOff, Key01, XCircle } from '@untitledui/icons';
 import { Chip as Badge } from '../../components/chips';
 import { Button } from '@openmetadata/ui-core-components/components/base/buttons/button';
 import { apiErrorMessage } from '../../api/client';
@@ -24,6 +24,7 @@ import type { Policy } from '../../generated/entity/policy/policy';
 import { Field, Select, Step, TextField, useViewMode, ViewToggle } from './controls';
 import DataPolicyBuilder from './DataPolicyBuilder';
 import PolicyFlowChart from './PolicyFlowChart';
+import PolicyDiagram from './PolicyDiagram';
 import SelectorBuilder from './SelectorBuilder';
 import SubjectBuilder from './SubjectBuilder';
 import { capabilities, MODES, type Engine } from './enforcement';
@@ -132,7 +133,7 @@ export default function PolicyBuilderPage() {
   // Which reading of the draft the form column shows. It defaults to the form
   // and is remembered per browser, so an author who never opens the chart sees
   // the page exactly as it has always been.
-  const [view, setView] = useViewMode<'form' | 'flow'>('arak.policy.view', 'form');
+  const [view, setView] = useViewMode<'form' | 'flow' | 'diagram'>('arak.policy.view', 'form');
   // Null until the engine list arrives, then the first one the server lists.
   // Naming one here would be this page keeping its own copy of a list that
   // exists precisely so it does not have to.
@@ -294,45 +295,40 @@ export default function PolicyBuilderPage() {
 
   return (
     <>
-      <header className="tw:flex tw:flex-wrap tw:items-end tw:justify-between tw:gap-4">
-        <div>
-          <h1 className="tw:text-display-sm tw:font-semibold tw:text-primary">
-            {isNew ? 'New policy' : draft.displayName || draft.name}
-          </h1>
-          <p className="tw:mt-2 tw:text-md tw:text-tertiary">
-            One document, three places it can be enforced. What you write here is
-            the same in every mode; only where it is carried out changes.
-          </p>
+      <Link
+        className="tw:inline-flex tw:items-center tw:gap-1 tw:text-sm tw:text-tertiary tw:hover:text-primary"
+        to={loaded ? `/policies/${loaded.id}` : '/policies'}>
+        <ArrowLeft className="tw:size-4" />
+        {loaded ? 'Back to the policy' : 'Policies'}
+      </Link>
+
+      <header className="tw:mt-4 tw:flex tw:flex-wrap tw:items-center tw:justify-between tw:gap-4 tw:rounded-xl tw:border tw:border-secondary tw:bg-primary tw:p-5 tw:shadow-xs">
+        <div className="tw:flex tw:min-w-0 tw:items-center tw:gap-4">
+          <span
+            className={`tw:flex tw:size-12 tw:shrink-0 tw:items-center tw:justify-center tw:rounded-xl ${
+              draft.policyType === 'DATA'
+                ? 'tw:bg-utility-purple-50 tw:text-utility-purple-600'
+                : 'tw:bg-utility-brand-50 tw:text-utility-brand-600'
+            }`}>
+            {draft.policyType === 'DATA' ? <EyeOff className="tw:size-6" /> : <Key01 className="tw:size-6" />}
+          </span>
+          <div className="tw:min-w-0">
+            <div className="tw:flex tw:flex-wrap tw:items-center tw:gap-2">
+              <h1 className="tw:text-xl tw:font-semibold tw:text-primary">
+                {isNew ? 'New policy' : draft.displayName || draft.name}
+              </h1>
+              {loaded && (
+                <Badge color="gray" size="sm" type="pill-color">
+                  v{loaded.version} · {loaded.lifecycleState.toLowerCase()}
+                </Badge>
+              )}
+            </div>
+            <p className="tw:mt-0.5 tw:text-sm tw:text-tertiary">
+              Written once; enforced the same wherever it runs.
+            </p>
+          </div>
         </div>
-        <div className="tw:flex tw:items-center tw:gap-2">
-          <ViewToggle
-            label="How to show this policy"
-            onChange={setView}
-            options={[
-              { value: 'form', label: 'Form' },
-              { value: 'flow', label: 'Flowchart' },
-            ]}
-            value={view}
-          />
-          {loaded && (
-            <Badge color="gray" size="sm" type="pill-color">
-              v{loaded.version} · {loaded.lifecycleState.toLowerCase()}
-            </Badge>
-          )}
-          {loaded && (
-            <Button
-              color="link-gray"
-              onPress={() => navigate(`/policies/${loaded.id}`)}
-              size="md">
-              Done
-            </Button>
-          )}
-          <Button
-            isDisabled={incomplete || save.isPending}
-            onPress={() => save.mutate()}
-            size="md">
-            {save.isPending ? 'Saving…' : isNew ? 'Create draft' : 'Save'}
-          </Button>
+        <div className="tw:flex tw:flex-wrap tw:items-center tw:gap-2">
           {loaded && loaded.lifecycleState === 'DRAFT' && (
             <Button
               color="secondary"
@@ -351,6 +347,20 @@ export default function PolicyBuilderPage() {
               Disable
             </Button>
           )}
+          {loaded && (
+            <Button
+              color="secondary"
+              onPress={() => navigate(`/policies/${loaded.id}`)}
+              size="md">
+              Done
+            </Button>
+          )}
+          <Button
+            isDisabled={incomplete || save.isPending}
+            onPress={() => save.mutate()}
+            size="md">
+            {save.isPending ? 'Saving…' : isNew ? 'Create draft' : 'Save'}
+          </Button>
         </div>
       </header>
 
@@ -366,12 +376,40 @@ export default function PolicyBuilderPage() {
         </p>
       )}
 
-      <div className="tw:mt-8 tw:grid tw:gap-6 tw:xl:grid-cols-[minmax(0,1fr)_380px]">
+      {/* The diagram needs the width of the page to be read at a legible size,
+          so beside it the rail drops below instead of narrowing it. */}
+      <div
+        className={`tw:mt-8 tw:grid tw:gap-6 ${
+          view === 'diagram'
+            ? 'tw:grid-cols-[minmax(0,1fr)]'
+            : 'tw:xl:grid-cols-[minmax(0,1fr)_380px]'
+        }`}>
         {/* ------------------------------------------------------- the form */}
         <div className="tw:flex tw:flex-col tw:gap-5">
+          <div className="tw:flex tw:flex-wrap tw:items-center tw:justify-between tw:gap-3">
+            <p className="tw:text-sm tw:text-tertiary">
+              {view === 'form'
+                ? 'Fill it in top to bottom; the summary beside it follows what you write.'
+                : 'Click a step to jump to the fields that write it.'}
+            </p>
+            <ViewToggle
+              label="How to show this policy"
+              onChange={setView}
+              options={[
+                { value: 'form', label: 'Form' },
+                { value: 'flow', label: 'Flowchart' },
+                { value: 'diagram', label: 'Diagram' },
+              ]}
+              value={view}
+            />
+          </div>
           {view === 'flow' ? (
             <section className="tw:rounded-xl tw:border tw:border-secondary tw:bg-primary tw:p-5">
               <PolicyFlowChart onEdit={editStep} policy={draft} />
+            </section>
+          ) : view === 'diagram' ? (
+            <section className="tw:rounded-xl tw:border tw:border-secondary tw:bg-primary tw:p-5">
+              <PolicyDiagram onEdit={editStep} policy={draft} />
             </section>
           ) : (
             <>
@@ -585,7 +623,12 @@ export default function PolicyBuilderPage() {
         </div>
 
         {/* ------------------------------------------------------- the rail */}
-        <aside className="tw:flex tw:flex-col tw:gap-4 tw:xl:sticky tw:xl:top-6 tw:xl:self-start">
+        <aside
+          className={
+            view === 'diagram'
+              ? 'tw:grid tw:items-start tw:gap-4 tw:xl:grid-cols-3'
+              : 'tw:flex tw:flex-col tw:gap-4 tw:xl:sticky tw:xl:top-6 tw:xl:self-start'
+          }>
           <section className="tw:rounded-xl tw:border tw:border-brand tw:bg-brand-primary tw:p-4">
             <h2 className="tw:text-sm tw:font-semibold tw:text-primary">
               In plain words

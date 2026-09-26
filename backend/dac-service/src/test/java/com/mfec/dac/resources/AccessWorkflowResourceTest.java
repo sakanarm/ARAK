@@ -264,6 +264,66 @@ class AccessWorkflowResourceTest {
     }
   }
 
+  @Nested
+  @DisplayName("execution history")
+  class Executions {
+
+    final WorkflowStore.Executions none = new WorkflowStore.Executions(List.of(), java.util.Map.of(), 0);
+
+    @Test
+    @DisplayName("a scope's requests are its governors', an administrator's and an auditor's")
+    void scoped() {
+      UUID id = UUID.randomUUID();
+      when(store.find(id)).thenReturn(Optional.of(stored(id, SALES)));
+      when(store.executions(eq(id), any(), org.mockito.ArgumentMatchers.anyInt(), org.mockito.ArgumentMatchers.anyInt()))
+          .thenReturn(none);
+      for (AuthenticatedUser reader : List.of(ADMIN, AUTHOR, SALES_OWNER, AUDITOR)) {
+        assertThat(resource.executions(id, null, 50, 0, as(reader))).as(reader.username()).isSameAs(none);
+      }
+      UUID hr = UUID.randomUUID();
+      when(store.find(hr)).thenReturn(Optional.of(stored(hr, HR)));
+      assertThatThrownBy(() -> resource.executions(hr, null, 50, 0, as(SALES_OWNER)))
+          .isInstanceOf(ForbiddenException.class)
+          .hasMessage("You do not govern " + HR + ", so its requests are not yours to list");
+      assertThatThrownBy(() -> resource.executions(id, null, 50, 0, as(REQUESTER)))
+          .isInstanceOf(ForbiddenException.class);
+    }
+
+    @Test
+    @DisplayName("the default's and the built-in one's cover everything, so only oversight sees them")
+    void everything() {
+      UUID id = UUID.randomUUID();
+      when(store.find(id)).thenReturn(Optional.of(stored(id, null)));
+      when(store.executions(any(), any(), org.mockito.ArgumentMatchers.anyInt(), org.mockito.ArgumentMatchers.anyInt()))
+          .thenReturn(none);
+      assertThat(resource.executions(id, null, 50, 0, as(AUDITOR))).isSameAs(none);
+      assertThat(resource.builtInExecutions(null, 50, 0, as(ADMIN))).isSameAs(none);
+      verify(store).executions(null, null, 50, 0);
+      for (AuthenticatedUser other : List.of(AUTHOR, SALES_OWNER)) {
+        assertThatThrownBy(() -> resource.executions(id, null, 50, 0, as(other)))
+            .as(other.username())
+            .isInstanceOf(ForbiddenException.class);
+        assertThatThrownBy(() -> resource.builtInExecutions(null, 50, 0, as(other)))
+            .as(other.username())
+            .isInstanceOf(ForbiddenException.class);
+      }
+    }
+
+    @Test
+    @DisplayName("a status filter is one of the request statuses, in any case")
+    void status() {
+      UUID id = UUID.randomUUID();
+      when(store.find(id)).thenReturn(Optional.of(stored(id, SALES)));
+      resource.executions(id, " pending ", 20, 40, as(ADMIN));
+      verify(store).executions(id, "PENDING", 20, 40);
+      assertThatThrownBy(() -> resource.executions(id, "LOST", 50, 0, as(ADMIN)))
+          .isInstanceOf(BadRequestException.class)
+          .hasMessage("Unknown request status LOST");
+      assertThatThrownBy(() -> resource.executions(UUID.randomUUID(), null, 50, 0, as(ADMIN)))
+          .isInstanceOf(NotFoundException.class);
+    }
+  }
+
   @Test
   @DisplayName("no caller at all is refused")
   void noCaller() {

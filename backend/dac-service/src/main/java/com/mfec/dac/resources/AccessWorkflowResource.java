@@ -10,6 +10,7 @@ import com.mfec.dac.auth.Stewardship;
 import jakarta.ws.rs.BadRequestException;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.DELETE;
+import jakarta.ws.rs.DefaultValue;
 import jakarta.ws.rs.ForbiddenException;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.NotFoundException;
@@ -18,6 +19,7 @@ import jakarta.ws.rs.PUT;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.QueryParam;
 import jakarta.ws.rs.WebApplicationException;
 import jakarta.ws.rs.core.Context;
 import jakarta.ws.rs.core.MediaType;
@@ -26,6 +28,7 @@ import jakarta.ws.rs.core.SecurityContext;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.function.Supplier;
 
@@ -153,6 +156,62 @@ public class AccessWorkflowResource {
     reader(security);
     workflows.find(id).orElseThrow(() -> new NotFoundException("No access workflow " + id));
     return workflows.history(id);
+  }
+
+  /**
+   * The requests that walked a workflow: its execution history.
+   *
+   * <p>Narrower than reading the workflow. Whoever governs its scope sees the
+   * requests on it, and a platform administrator or an auditor sees any; the
+   * organisation's default and the built-in one cover every table, so only
+   * those two see theirs. A data owner reading the default to copy it does not
+   * thereby see every request in the organisation.
+   */
+  @GET
+  @Path("/{id}/requests")
+  public WorkflowStore.Executions executions(
+      @PathParam("id") UUID id,
+      @QueryParam("status") String status,
+      @QueryParam("limit") @DefaultValue("50") int limit,
+      @QueryParam("offset") @DefaultValue("0") int offset,
+      @Context SecurityContext security) {
+    AuthenticatedUser caller = reader(security);
+    WorkflowStore.Stored s = workflows.find(id).orElseThrow(() -> new NotFoundException("No access workflow " + id));
+    requireOversight(caller, s.workflow().scopeFqn());
+    return workflows.executions(id, statusOf(status), limit, offset);
+  }
+
+  /** The built-in workflow's execution history: requests on tables nothing else covered. */
+  @GET
+  @Path("/built-in/requests")
+  public WorkflowStore.Executions builtInExecutions(
+      @QueryParam("status") String status,
+      @QueryParam("limit") @DefaultValue("50") int limit,
+      @QueryParam("offset") @DefaultValue("0") int offset,
+      @Context SecurityContext security) {
+    requireOversight(reader(security), null);
+    return workflows.executions(null, statusOf(status), limit, offset);
+  }
+
+  static final Set<String> STATUSES =
+      Set.of("PENDING", "APPROVED", "IN_PROGRESS", "COMPLETED", "REJECTED", "WITHDRAWN");
+
+  private static String statusOf(String status) {
+    if (status == null || status.isBlank()) return null;
+    String upper = status.trim().toUpperCase(java.util.Locale.ROOT);
+    if (!STATUSES.contains(upper)) {
+      throw new BadRequestException("Unknown request status " + status);
+    }
+    return upper;
+  }
+
+  private static void requireOversight(AuthenticatedUser caller, String scope) {
+    if (caller.isPlatformAdmin() || caller.hasAnyRole("AUDITOR")) return;
+    if (scope != null && Stewardship.governs(caller, scope)) return;
+    throw new ForbiddenException(
+        scope == null
+            ? "Only a platform administrator or an auditor sees every request this workflow ran"
+            : "You do not govern " + scope + ", so its requests are not yours to list");
   }
 
   // --------------------------------------------------------------- plumbing

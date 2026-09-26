@@ -1127,6 +1127,56 @@ class AccessRequestIT {
     }
 
     @Test
+    @DisplayName("a workflow lists the requests that walked it, and where each got to")
+    void executions() {
+      // Asked before any workflow existed, so it walked the built-in one.
+      AccessRequestStore.StoredRequest early = ask("analyst_a", LEDGER, 7);
+      WorkflowStore.Stored flow =
+          workflow(
+              DBO,
+              List.of(),
+              stage(1, "Owner", Rule.ANY, null, OnReject.VETO, Seat.of(Kind.ASSET_OWNERS)),
+              stage(2, "Security", Rule.ANY, null, OnReject.VETO, user("sec_a")));
+      UUID id = flow.workflow().id();
+      AccessRequestStore.StoredRequest refused = ask("analyst_a", CUSTOMER, 7);
+      AccessRequestStore.StoredRequest waiting = ask("analyst_b", CUSTOMER, 7);
+      requests.reject(refused.id(), OWNER, "Not this quarter");
+      requests.approve(waiting.id(), OWNER, null, null);
+
+      WorkflowStore.Executions all = workflows.executions(id, null, 50, 0);
+      assertThat(all.total()).isEqualTo(2);
+      assertThat(all.counts()).containsExactly(Map.entry("PENDING", 1), Map.entry("REJECTED", 1));
+      assertThat(all.executions()).extracting(WorkflowStore.Execution::ticket)
+          .containsExactly(waiting.ticket(), refused.ticket());
+      WorkflowStore.Execution open = all.executions().get(0);
+      assertThat(open.ticket()).startsWith("REQ-");
+      assertThat(open.assetFqn()).isEqualTo(CUSTOMER);
+      assertThat(open.status()).isEqualTo("PENDING");
+      assertThat(open.currentStep()).isEqualTo(2);
+      assertThat(open.openStages()).containsExactly("Security");
+      assertThat(open.steps()).isEqualTo(2);
+      assertThat(open.closedAt()).isNull();
+      WorkflowStore.Execution closed = all.executions().get(1);
+      assertThat(closed.status()).isEqualTo("REJECTED");
+      assertThat(closed.openStages()).isEmpty();
+      assertThat(closed.closedAt()).isNotNull();
+
+      WorkflowStore.Executions rejected = workflows.executions(id, "REJECTED", 50, 0);
+      assertThat(rejected.total()).isEqualTo(1);
+      assertThat(rejected.executions()).extracting(WorkflowStore.Execution::ticket)
+          .containsExactly(refused.ticket());
+      WorkflowStore.Executions page = workflows.executions(id, null, 1, 1);
+      assertThat(page.total()).isEqualTo(2);
+      assertThat(page.executions()).extracting(WorkflowStore.Execution::ticket)
+          .containsExactly(refused.ticket());
+
+      assertThat(workflows.executions(null, null, 50, 0).executions())
+          .extracting(WorkflowStore.Execution::ticket)
+          .containsExactly(early.ticket());
+      assertThat(workflows.executions(UUID.randomUUID(), null, 50, 0).total()).isZero();
+    }
+
+    @Test
     @DisplayName("a request keeps the workflow it started with; editing or deleting it changes new requests only")
     void keepsItsCopy() {
       WorkflowStore.Stored first =

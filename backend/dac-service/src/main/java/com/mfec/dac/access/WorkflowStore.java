@@ -212,6 +212,111 @@ public class WorkflowStore {
                 .list());
   }
 
+  /**
+   * One request that walked a workflow, as its execution history lists it.
+   *
+   * <p>Deliberately thin: the ticket, the table, where it got to and when. Who
+   * asked, why and from where stay on the request itself, which keeps its own
+   * visibility -- a workflow's designer is not by that alone somebody who may
+   * read everyone's reasons.
+   */
+  public record Execution(
+      String ticket,
+      String kind,
+      String assetFqn,
+      String status,
+      Integer currentStep,
+      List<String> openStages,
+      int steps,
+      Instant createdAt,
+      Instant closedAt) {}
+
+  /** A page of executions, newest first, with how many there are in each status. */
+  public record Executions(List<Execution> executions, Map<String, Integer> counts, int total) {}
+
+  public static final int MAX_EXECUTIONS = 200;
+
+  /**
+   * The requests that walked a workflow, newest first.
+   *
+   * @param workflowId the workflow, or null for the built-in one
+   * @param status only requests in this status, or null for every status
+   */
+  public Executions executions(UUID workflowId, String status, int limit, int offset) {
+    int size = Math.max(1, Math.min(limit, MAX_EXECUTIONS));
+    int skip = Math.max(0, offset);
+    // The built-in workflow has no row, so its requests are the ones that
+    // copied its name with no id; a deleted workflow's keep their own name.
+    String which =
+        workflowId == null
+            ? "r.workflow_id IS NULL AND r.workflow_name = 'Built-in'"
+            : "r.workflow_id = :id";
+    return jdbi.withHandle(
+        handle -> {
+          Map<String, Integer> counts = new LinkedHashMap<>();
+          var countQuery =
+              handle.createQuery(
+                  "SELECT r.status, count(*) AS n FROM access_request r WHERE "
+                      + which
+                      + " GROUP BY r.status ORDER BY r.status");
+          if (workflowId != null) countQuery.bind("id", workflowId);
+          countQuery
+              .map((rs, ctx) -> Map.entry(rs.getString("status"), rs.getInt("n")))
+              .forEach(e -> counts.put(e.getKey(), e.getValue()));
+          int total =
+              status == null
+                  ? counts.values().stream().mapToInt(Integer::intValue).sum()
+                  : counts.getOrDefault(status, 0);
+
+          var query =
+              handle.createQuery(
+                  """
+                  SELECT r.ticket_no, r.kind, r.asset_fqn, r.status, r.current_step,
+                         r.created_at, coalesce(r.completed_at, r.decided_at) AS closed_at,
+                         (SELECT count(DISTINCT s.step) FROM access_request_stage s
+                           WHERE s.request_id = r.id) AS steps,
+                         (SELECT coalesce(json_agg(s.name ORDER BY s.idx), '[]'::json)::text
+                            FROM access_request_stage s
+                           WHERE s.request_id = r.id AND s.status = 'OPEN') AS open_stages
+                  FROM access_request r
+                  WHERE """
+                      + " "
+                      + which
+                      + (status == null ? "" : " AND r.status = :status")
+                      + " ORDER BY r.created_at DESC, r.ticket_no DESC LIMIT :limit OFFSET :offset");
+          if (workflowId != null) query.bind("id", workflowId);
+          if (status != null) query.bind("status", status);
+          List<Execution> rows =
+              query
+                  .bind("limit", size)
+                  .bind("offset", skip)
+                  .map(
+                      (rs, ctx) ->
+                          new Execution(
+                              AccessRequestStore.ticket(rs.getLong("ticket_no")),
+                              rs.getString("kind"),
+                              rs.getString("asset_fqn"),
+                              rs.getString("status"),
+                              (Integer) rs.getObject("current_step"),
+                              names(rs.getString("open_stages")),
+                              rs.getInt("steps"),
+                              rs.getTimestamp("created_at").toInstant(),
+                              rs.getTimestamp("closed_at") == null
+                                  ? null
+                                  : rs.getTimestamp("closed_at").toInstant()))
+                  .list();
+          return new Executions(rows, counts, total);
+        });
+  }
+
+  private List<String> names(String array) {
+    try {
+      return array == null ? List.of() : json.readValue(array, new TypeReference<List<String>>() {});
+    } catch (JsonProcessingException e) {
+      throw new IllegalStateException("Unreadable stage names", e);
+    }
+  }
+
   /** A second workflow on the same scope. */
   public static class ScopeTakenException extends RuntimeException {
     public ScopeTakenException(String scope) {

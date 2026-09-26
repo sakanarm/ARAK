@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import PolicyDetailPage from './PolicyDetailPage';
 import type {
@@ -148,6 +148,12 @@ function renderPage() {
   );
 }
 
+/** Waits for the policy, then opens one of its sections. */
+async function openTab(name: RegExp) {
+  await screen.findByText('Mask PII columns');
+  fireEvent.click(screen.getByRole('tab', { name }));
+}
+
 beforeEach(() => {
   fetchPolicy.mockReset().mockResolvedValue(stored());
   fetchPolicyCoverage.mockReset().mockResolvedValue(coverage());
@@ -171,6 +177,7 @@ test('opening a policy reads it — no form until Edit is pressed', async () => 
 
 test('what it applies to is grouped by table, with the columns under it', async () => {
   renderPage();
+  await openTab(/Applies to/);
 
   expect(await screen.findByText(TABLE)).toBeInTheDocument();
   expect(screen.getByText('email')).toBeInTheDocument();
@@ -197,6 +204,7 @@ test('a table present only through a column says so', async () => {
     })
   );
   renderPage();
+  await openTab(/Applies to/);
 
   expect(await screen.findByText('columns only')).toBeInTheDocument();
 });
@@ -206,6 +214,7 @@ test('a policy bound to nothing says it enforces nothing', async () => {
     coverage({ tableCount: 0, columnCount: 0, sample: [], resolvedAt: null })
   );
   renderPage();
+  await openTab(/Applies to/);
 
   expect(
     await screen.findByText(/currently affects no data/)
@@ -229,7 +238,8 @@ test('a denial that overrules this policy is raised above the fold', async () =>
       /Deny offshore access denies what this policy allows/
     )
   ).toBeInTheDocument();
-  // And it is still in the list below with its own verdict.
+  // And it is still in the list with its own verdict.
+  fireEvent.click(screen.getByRole('tab', { name: /Other policies/ }));
   expect(screen.getByText('Overrules this')).toBeInTheDocument();
   expect(screen.getByText('Applies alongside')).toBeInTheDocument();
 });
@@ -244,6 +254,7 @@ test('a policy that outranks this one says who may change it', async () => {
     }),
   ]);
   renderPage();
+  await openTab(/Other policies/);
 
   // Authority, not effect: the verdict below still says the two simply
   // compose, and both statements are true at once.
@@ -254,6 +265,7 @@ test('a policy that outranks this one says who may change it', async () => {
 test('an overlap with no authority note shows none', async () => {
   fetchPolicyConflicts.mockResolvedValue([overlap()]);
   renderPage();
+  await openTab(/Other policies/);
 
   expect(await screen.findByText('Applies alongside')).toBeInTheDocument();
   expect(screen.queryByText(/may only tighten it/)).not.toBeInTheDocument();
@@ -268,6 +280,7 @@ test('no overlap at all is stated rather than left blank', async () => {
 
 test('re-resolving asks the server and reloads both readings', async () => {
   renderPage();
+  await openTab(/Applies to/);
 
   fireEvent.click(await screen.findByRole('button', { name: 'Re-resolve' }));
 
@@ -309,6 +322,7 @@ test('a policy that changes nothing for anyone says so, however much it binds', 
   );
 
   renderPage();
+  await openTab(/Impact/);
 
   expect(
     await screen.findByText(/would change nothing for anyone/i)
@@ -343,6 +357,7 @@ test('the people who lose access are named, with the table they lose', async () 
   );
 
   renderPage();
+  await openTab(/Impact/);
 
   expect(
     await screen.findByText(/Activating this would change what 1 person sees/i)
@@ -381,6 +396,7 @@ test('a policy already in force is described in the present tense', async () => 
   );
 
   renderPage();
+  await openTab(/Impact/);
 
   expect(
     await screen.findByText(/This policy is the reason 2 people/i)
@@ -409,6 +425,7 @@ test('a sampled run says "at least" rather than a bare number', async () => {
   );
 
   renderPage();
+  await openTab(/Impact/);
 
   expect(
     await screen.findByText(/at least 180 people/i)
@@ -422,8 +439,36 @@ test('a policy bound to nothing is told to resolve, not shown a zero', async () 
   );
 
   renderPage();
+  await openTab(/Impact/);
 
   expect(
     await screen.findByText(/bound to no tables/i)
   ).toBeInTheDocument();
+});
+
+test('the policy reads as text, a flowchart or a diagram', async () => {
+  renderPage();
+  expect(await screen.findByText('In plain words')).toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole('button', { name: 'Diagram' }));
+
+  const figure = await screen.findByRole('figure', { name: /How Mask PII columns decides/ });
+  expect(within(figure).getByText('Is the asset one of these?')).toBeInTheDocument();
+  // Read-only here: the diagram offers no node to press.
+  expect(within(figure).queryByRole('button', { name: /Is the asset/ })).not.toBeInTheDocument();
+  localStorage.clear();
+});
+
+test('each section is a tab, and the overview is where a policy opens', async () => {
+  renderPage();
+
+  await screen.findByText('Mask PII columns');
+  expect(screen.getByRole('tab', { name: 'Overview' })).toHaveAttribute('aria-selected', 'true');
+  // The sections behind the other tabs are not drawn until they are opened.
+  expect(screen.queryByText(TABLE)).not.toBeInTheDocument();
+  expect(screen.getByRole('tab', { name: /Applies to/ })).toHaveTextContent('1');
+
+  fireEvent.click(screen.getByRole('tab', { name: /Applies to/ }));
+  expect(await screen.findByText(TABLE)).toBeInTheDocument();
+  expect(screen.queryByText('In plain words')).not.toBeInTheDocument();
 });
