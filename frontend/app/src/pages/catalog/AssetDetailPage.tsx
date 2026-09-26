@@ -38,6 +38,7 @@ import { Field, Panel } from './panels';
 import { ChildrenPanel, childLabel, childrenTitle, isContainer } from './hierarchy';
 import { plainText } from '../../lib/text';
 import { isAncestor, leaf, segments } from '../../lib/fqn';
+import { ReachBadges, reachSentence } from './reach';
 
 /**
  * One asset, with everything a policy can select it by.
@@ -231,7 +232,14 @@ export default function AssetDetailPage() {
               <None />
             )}
           </Stat>
-          <Stat label="Source">{asset.dataSource ?? <None />}</Stat>
+          <Stat label="Connection">
+            <span className="tw:flex tw:flex-col tw:items-start tw:gap-1">
+              <ReachBadges asset={asset} />
+              <span className="tw:max-w-72 tw:text-xs tw:font-normal tw:text-tertiary">
+                {reachSentence(asset)}
+              </span>
+            </span>
+          </Stat>
           {container ? (
             <Stat label="Contains">{childLabel(asset.assetType, asset.childCount ?? 0)}</Stat>
           ) : (

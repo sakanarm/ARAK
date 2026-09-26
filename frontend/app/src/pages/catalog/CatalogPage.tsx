@@ -34,6 +34,7 @@ import { PAGE_SIZES, Pager } from '../../components/Pager';
 import { leaf, segments, shortFqn } from '../../lib/fqn';
 import { plainText } from '../../lib/text';
 import { AssetTree } from './hierarchy';
+import { ReachBadges } from './reach';
 
 const PAGE_SIZE = 25;
 
@@ -68,11 +69,13 @@ export default function CatalogPage() {
   // What matches, or where things live. In the URL so "look under SalesDB"
   // can be sent as a link like any other view of the catalog.
   const view: 'list' | 'tree' = params.get('view') === 'tree' ? 'tree' : 'list';
+  const reach = params.get('reach') ?? '';
+  const origin = params.get('origin') ?? '';
 
   const { data, isLoading, error, isFetching } = useQuery({
-    queryKey: ['catalog-assets', search, assetType, facets, offset, pageSize],
+    queryKey: ['catalog-assets', search, assetType, facets, reach, origin, offset, pageSize],
     queryFn: () =>
-      fetchAssets({ search, assetType, facets, limit: pageSize, offset }),
+      fetchAssets({ search, assetType, facets, reach, origin, limit: pageSize, offset }),
     enabled: view === 'list',
     // Without this the table empties on every keystroke-driven refetch and the
     // page jumps; the stale rows are correct until the new ones arrive.
@@ -161,7 +164,7 @@ export default function CatalogPage() {
       beside.removeEventListener('change', measure);
     };
   }, [rail]);
-  const filtered = Boolean(search || assetType || facets.length);
+  const filtered = Boolean(search || assetType || facets.length || reach || origin);
 
   return (
     <>
@@ -171,6 +174,17 @@ export default function CatalogPage() {
           <p className="tw:mt-2 tw:text-md tw:text-tertiary">
             Assets cached from OpenMetadata with the tags, terms, domains and owners a
             policy can select them by.
+          </p>
+          {/* The key to the two marks every row carries. */}
+          <p className="tw:mt-2 tw:flex tw:flex-wrap tw:items-center tw:gap-x-4 tw:gap-y-1 tw:text-xs tw:text-tertiary">
+            <span className="tw:inline-flex tw:items-center tw:gap-1.5">
+              <span className="tw:size-2 tw:rounded-full tw:bg-utility-green-500" />
+              Queryable — a connected source serves it
+            </span>
+            <span className="tw:inline-flex tw:items-center tw:gap-1.5">
+              <span className="tw:size-2 tw:rounded-full tw:border tw:border-current" />
+              Metadata only — ARAK holds its description, not a connection
+            </span>
           </p>
         </div>
         {summary && (
@@ -229,6 +243,47 @@ export default function CatalogPage() {
               })),
             ]}
             value={assetType}
+          />
+          {/* Two separate questions, two separate filters: whether ARAK can
+            * query it, and whether OpenMetadata knows about it. */}
+          <Select
+            ariaLabel="Connection"
+            className="tw:min-w-44"
+            onChange={(next) =>
+              update((draft) => {
+                if (next) {
+                  draft.set('reach', next);
+                } else {
+                  draft.delete('reach');
+                }
+              })
+            }
+            options={[
+              { value: '', label: 'Any connection' },
+              { value: 'queryable', label: 'Queryable' },
+              { value: 'metadata', label: 'Metadata only' },
+            ]}
+            value={reach}
+          />
+          <Select
+            ariaLabel="Catalogued by"
+            className="tw:min-w-48"
+            onChange={(next) =>
+              update((draft) => {
+                if (next) {
+                  draft.set('origin', next);
+                } else {
+                  draft.delete('origin');
+                }
+              })
+            }
+            options={[
+              { value: '', label: 'Any origin' },
+              { value: 'openmetadata', label: 'From OpenMetadata' },
+              { value: 'discovered', label: 'Read from source' },
+              { value: 'local', label: 'ARAK only' },
+            ]}
+            value={origin}
           />
           <Button size="md" type="submit">
             Search
@@ -446,9 +501,12 @@ function AssetCard({ asset }: { asset: AssetSummary }) {
       <div className="tw:pointer-events-none tw:relative tw:z-10 tw:flex tw:flex-1 tw:flex-col tw:px-4 tw:py-3.5">
         {/* Where it lives, above what it is called -- the breadcrumb reads
           * first because two tables named `customer` are told apart by it. */}
-        <p className="tw:truncate tw:font-mono tw:text-xs tw:text-quaternary">
-          {asset.fqn}
-        </p>
+        <div className="tw:flex tw:items-center tw:gap-3">
+          <p className="tw:min-w-0 tw:flex-1 tw:truncate tw:font-mono tw:text-xs tw:text-quaternary">
+            {asset.fqn}
+          </p>
+          <ReachBadges asset={asset} />
+        </div>
 
         <div className="tw:mt-1.5 tw:flex tw:gap-3.5">
           <span

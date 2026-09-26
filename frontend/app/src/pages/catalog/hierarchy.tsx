@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom';
 import { ChevronRight, SearchLg } from '@untitledui/icons';
 import { lookFor } from './assetLook';
 import { Chip as Badge } from '../../components/chips';
+import { ReachBadges } from './reach';
 import { FacetChip, listFacets } from './facets';
 import { Panel } from './panels';
 import {
@@ -175,11 +176,12 @@ function Branch({
         <Badge color={look.badge} size="sm" type="color">
           {asset.assetType}
         </Badge>
-        {what && (
-          <span className="tw:ml-auto tw:shrink-0 tw:text-xs tw:tabular-nums tw:text-tertiary">
-            {what}
-          </span>
-        )}
+        <span className="tw:ml-auto tw:flex tw:shrink-0 tw:items-center tw:gap-3">
+          {what && (
+            <span className="tw:text-xs tw:tabular-nums tw:text-tertiary">{what}</span>
+          )}
+          <ReachBadges asset={asset} />
+        </span>
       </div>
 
       {holds && open && (
@@ -332,6 +334,7 @@ function ChildRow({ asset }: { asset: AssetSummary }) {
           <Badge color={look.badge} size="sm" type="color">
             {asset.assetType}
           </Badge>
+          <ReachBadges asset={asset} />
         </div>
         {description && (
           <p className="tw:mt-0.5 tw:max-w-xl tw:truncate tw:pl-8 tw:text-xs tw:text-tertiary">

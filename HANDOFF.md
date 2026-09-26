@@ -619,7 +619,36 @@ M25 ทำแยกได้ (profile ผ่าน proxy ที่มีแล�
 
 ---
 
-## รอบนี้ — **ข้อ BL: หน้า Governance จัดเป็นตารางเดียว คอลัมน์ตรงกัน** (Preauthorization กำลังทำ — ยังไม่ commit · M28 ยังไม่ commit)
+## รอบนี้ — **ข้อ BM: Catalog บอกว่าอะไร Query ได้จริง / เป็นแค่ Metadata · มาจาก OpenMetadata หรือไม่ · ชื่อผู้สร้างใต้ © · น้องรักษ์ (NokRak) พูดได้** (Preauthorization กำลังทำ — ยังไม่ commit · M28 ยังไม่ commit)
+
+ผู้ใช้: *"ในหน้า Catalog แสดงให้เห็นด้วย ว่าอันไหน ไม่ได้ต่อจริง database ใน Arak เป็นแค่ Metadata หรือจะแสดงว่าอันไหนต่อจริง Query ได้"* + *"ในทางกลับกันก็ควรต้องมีบอกว่าอันไหนมีต่อ Catalog มาจาก OpenMetadata อันไหนไม่ได้ต่อ"* · *"© 2026 MFEC ข้างล่างเขียนตัวเล็กๆว่า Sakan Punyanon"* · *"ตรง icon mascot มี quote … แบบสุ่ม"* + *"Assistance Mascot ชื่อ NokRak · ภาษาไทยคือน้องรักษ์"*
+
+### BM.1 Catalog — 2 แกน แสดงทั้งสองขั้วเสมอ
+- **Connection**: `Queryable · <source>` (เขียว จุดทึบ) หรือ `Metadata only` (เทา ขอบประ จุดกลวง) — ขั้วบวกมีสี ขั้วลบเป็นเทา → ตาหาตัวที่ query ได้เจอทันที ส่วนตัวที่เป็น metadata (ส่วนใหญ่ของ catalog) ไม่ตะโกน
+- **Catalogued by**: `OpenMetadata` (ม่วง) · `Read from source` (ARAK อ่านจาก DB ผ่าน JDBC — ไม่มีใน OM) · `ARAK only` (local)
+- นิยาม Queryable = มีแถว `asset_fqn_map` (ไม่ ORPHANED) ของ asset นี้หรือของอะไรข้างใต้ ชี้ไป `data_source` ที่ **enabled** — **คือ mapping ชุดเดียวกับที่ `QueryService` ใช้ resolve ตาราง** → ป้ายกับสิ่งที่ query ได้จริงเป็นชุดเดียวกันโดยโครงสร้าง ไม่ใช่บังเอิญตรงกัน · ปิด source (enabled=false) → ป้ายหายทันที
+- backend: `CatalogQuery.AssetSummary` + `provenance`, `querySource` (ทั้ง list และ detail) · `assets(... Boolean queryable, String origin ...)` overload ใหม่ (ตัวเดิม 7/8 arg ยังอยู่ — mock เดิมไม่พัง) · `GET /v1/catalog/assets?reach=queryable|metadata&origin=openmetadata|discovered|local` ค่าแปลก → 400 (มาจาก picker เหมือน sourceId)
+- frontend: `pages/catalog/reach.tsx` (`ReachBadges`, `ReachBadge`, `OriginBadge`, `reachSentence`) · การ์ดใน List (มุมขวาบนข้าง FQN) · แถวใน Hierarchy · ตาราง Contents ของ container · หน้า detail: stat **Connection** แทน Source พร้อมประโยคอธิบาย · filter 2 ตัว **Any connection / Queryable / Metadata only** และ **Any origin / From OpenMetadata / Read from source / ARAK only** (อยู่ใน URL) · legend ใต้หัวหน้า
+- dev ตอนนี้: `dtp-iprm` (OM, 33 ตาราง) = Metadata only ทั้งหมด · `demo-pg` = Read from source + Queryable
+
+### BM.2 Footer
+- `AppShell.tsx`: ใต้ `© 2026 MFEC` มีบรรทัดเล็ก `Sakan Punyanon` (ผู้ใช้ขอชื่อตัวเองเอง — ข้อยกเว้นเรื่องชื่อจริงใน public repo) · tooltip "Built by Sakan Punyanon."
+
+### BM.3 น้องรักษ์ (NokRak)
+- `assist/nokrak.ts`: ชื่อ + ชุดคำพูดตามหน้า (idle / sql / policy) มีไทยปน · `pickLine(mode, random)` สุ่ม · ไม่มีคำพูดไหนอ้างว่า run / approve / activate ได้ (ตรงกฎ LLM draft-only) · หน้าที่ไม่มี query console ไม่เสนอเขียน SQL
+- `AssistDock`: กล่องคำพูดข้างปุ่มมุมขวาล่าง — ทักครั้งเดียวต่อ session 7 วิ (`sessionStorage`, try/catch) + ขึ้นเมื่อ hover/focus (สุ่มใหม่ทุกครั้ง) · หัว panel เป็น "NokRak · น้องรักษ์ · Assistant" · aria-label ของปุ่มคงเดิม
+- เทสต์ `nokrak.test.ts` (ขอบของการสุ่ม · SQL เฉพาะหน้า sql · ไม่มีคำอ้างว่าทำแทนคน)
+
+### BM.4 ผลทดสอบ
+- `CatalogQueryIT` **22/22** (+2: `marksWhatAQueryCanReach` รวมเคส source ถูกปิด · `filtersByOrigin`) · `LlmAssistResourceTest` ผ่าน · tsc ผ่าน · jest **452/452** · build ผ่าน · screenshot ตรวจด้วยตา
+
+### BM.5 คำถามผู้ใช้ที่ตอบแล้ว (ยังไม่ได้ทำ)
+- *Request access ควรเป็นฟอร์มหรือ Template ที่ Configure ได้ใน Setting?* → แนะนำ **Template ที่ admin ตั้งใน Settings** แล้ว render เป็นฟอร์ม (ช่องบังคับตาม classification ของตาราง เช่น PII ต้องมี purpose + เลขอ้างอิง · ระยะเวลาให้เลือกจาก preset · ข้อความแนะนำ) — ลง Roadmap ต่อจาก Preauthorization
+- *AI ใน Catalog / global search* → M28 ต่อจากนี้: โหมด catalog ใน dock + "Ask NokRak" ในช่องค้นหาด้านบน
+
+---
+
+## รอบก่อนหน้า — **ข้อ BL: หน้า Governance จัดเป็นตารางเดียว คอลัมน์ตรงกัน**
 
 ผู้ใช้: *"หน้า Governance ยังจัดเรียงไม่ค่อยสวย"* — เดิมทุกค่าเป็นการ์ดแยกมีขอบของตัวเอง ลูกเยื้องด้วย margin · ตัวเลข assets / policies ลอยไม่ตรงคอลัมน์ · ปุ่ม Expand / Collapse ลอยกลางแถว · sub-domain โชว์ FQN ยาวซ้ำชื่อพ่อ + description ที่ซ้ำชื่อตัวเอง
 
@@ -5843,6 +5872,7 @@ estate ที่ใช้: `prod-mssql.SalesDB.dbo.{customer, order}` + **`prod-
 - ✅ **ข้อ AY เสร็จแล้ว** (Open in OpenMetadata ไม่ 500 · Request access มุมขวาบน · หัวหน้า asset แบบ OM · seed เคส demo) — ต่อด้วย **M9 slice 2** ข้างล่าง
 
 0. ✅ **M10 เสร็จ (ข้อ BE)** — Query log ตามหน้าที่ (V25) + Access Control Dashboard · **ต่อไป:** M9 recertification · แนบไฟล์ในคำขอ · export / SIEM ของ M8
+0-BM. ✅ **ข้อ BM เสร็จ** — Catalog ติดป้าย Queryable / Metadata only + OpenMetadata / Read from source ทุกแถว (list · tree · detail) + filter 2 ตัว · ชื่อ Sakan Punyanon ใต้ © · น้องรักษ์ (NokRak) มีกล่องคำพูดสุ่ม · **ต่อไป:** Preauthorization (BN) → Request access template ใน Settings → M28 (AI ใน Catalog + Ask NokRak ใน global search) → Dashboard A/B/C
 0-BL. ✅ **ข้อ BL เสร็จ** — หน้า Governance เป็นตารางเดียว หัว Name / Assets / Policies คอลัมน์ตรงกัน · FQN ยาวของ sub-domain ย้ายเป็น tooltip · empty state · **ต่อไป:** Preauthorization Access Request (V30 + store เขียนแล้ว ยังไม่ commit) · AI ใน Catalog / global search · Dashboard ปรับแต่งได้ · M28
 0-BK. ✅ **ข้อ BK เสร็จ** — คำขอเปิดเต็มหน้าที่ `/requests/REQ-000042` (ปุ่ม Full page / ลิงก์เลข ticket / วาง URL) · ช่องค้นหาคำขอรอ Enter · **ต่อไป:** Preauthorization Access Request · Dashboard ปรับแต่งได้ (coverage แยกตาม classification + เลือก measure + จัด layout เอง) · M28
 0-BJ. ✅ **ข้อ BJ เสร็จ** — Catalog แสดง hierarchy: ปุ่ม List / Hierarchy (tree โหลดทีละชั้น) + แท็บ Databases / Schemas / Tables ในหน้า container · `?parent=` + `childCount` · **ต่อไป:** Preauthorization Access Request · M28 แชท agent

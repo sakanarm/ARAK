@@ -91,7 +91,29 @@ public class CatalogQuery {
       List<FacetRow> facets,
       List<Owner> owners,
       /** What sits directly under it: a database's schemas, a schema's tables. */
-      int childCount) {}
+      int childCount,
+      /** Where the entry came from: openmetadata, discovered (read off the source) or local. */
+      String provenance,
+      /**
+       * The connected source a query can reach it through, or null when ARAK only
+       * holds its metadata. For a service, database or schema: a source reaches
+       * something under it.
+       */
+      String querySource) {}
+
+  /**
+   * The enabled source a query reaches the asset -- or anything under it --
+   * through. It reads the same mapping the query proxy resolves a table against,
+   * so "queryable" in the catalog and what a query can actually reach are one
+   * set rather than two that happen to agree.
+   */
+  private static final String QUERY_SOURCE =
+      """
+      (SELECT qs.name FROM asset_fqn_map qm
+       JOIN data_source qs ON qs.id = qm.data_source_id AND qs.enabled
+       WHERE qm.verification_status <> 'ORPHANED'
+         AND (qm.om_fqn = a.fqn OR qm.om_fqn LIKE a.fqn || '.%')
+       ORDER BY qs.name LIMIT 1) AS query_source""";
 
   /** One page of {@link AssetSummary}, with what it took to get there. */
   public record AssetPage(List<AssetSummary> items, int total, int limit, int offset) {}
@@ -189,6 +211,26 @@ public class CatalogQuery {
       String parent,
       int limit,
       int offset) {
+    return assets(search, assetType, facets, owner, sourceId, parent, null, null, limit, offset);
+  }
+
+  /**
+   * As above, narrowed by how the entry reaches ARAK: {@code queryable} true
+   * keeps what a query can reach (see {@link #QUERY_SOURCE}), false keeps what
+   * ARAK only holds the metadata of; {@code origin} keeps one provenance --
+   * openmetadata, discovered or local. Null leaves either unfiltered.
+   */
+  public AssetPage assets(
+      String search,
+      String assetType,
+      List<FacetFilter> facets,
+      String owner,
+      UUID sourceId,
+      String parent,
+      Boolean queryable,
+      String origin,
+      int limit,
+      int offset) {
 
     int capped = Math.max(1, Math.min(limit, MAX_LIMIT));
     int from = Math.max(0, offset);
@@ -234,6 +276,20 @@ public class CatalogQuery {
                 """);
             binds.put("sourceId", sourceId);
           }
+          if (queryable != null) {
+            where.append(
+                (queryable ? " AND " : " AND NOT ")
+                    + """
+                    EXISTS (SELECT 1 FROM asset_fqn_map qm
+                            JOIN data_source qs ON qs.id = qm.data_source_id AND qs.enabled
+                            WHERE qm.verification_status <> 'ORPHANED'
+                              AND (qm.om_fqn = a.fqn OR qm.om_fqn LIKE a.fqn || '.%'))
+                    """);
+          }
+          if (origin != null && !origin.isBlank()) {
+            where.append(" AND a.provenance = :origin");
+            binds.put("origin", origin.trim().toLowerCase());
+          }
           if (owner != null && !owner.isBlank()) {
             where.append(
                 """
@@ -270,6 +326,11 @@ public class CatalogQuery {
                           """
                           SELECT a.id, a.fqn, a.name, a.display_name, a.asset_type, a.parent_fqn,
                                  a.description, a.tier, a.certification, s.name AS data_source,
+                                 a.provenance,
+                          """
+                              + QUERY_SOURCE
+                              + """
+                          ,
                                  (SELECT count(*) FROM asset_column c
                                   WHERE c.asset_id = a.id AND c.is_current) AS column_count,
                                  (SELECT count(DISTINCT f.column_id) FROM asset_facet f
@@ -303,7 +364,9 @@ public class CatalogQuery {
                               rs.getInt("tagged_column_count"),
                               new ArrayList<>(),
                               new ArrayList<>(),
-                              rs.getInt("child_count")))
+                              rs.getInt("child_count"),
+                              rs.getString("provenance"),
+                              rs.getString("query_source")))
                   .list();
 
           if (rows.isEmpty()) {
@@ -333,6 +396,11 @@ public class CatalogQuery {
                       """
                       SELECT a.id, a.fqn, a.name, a.display_name, a.asset_type, a.parent_fqn,
                              a.description, a.tier, a.certification, s.name AS data_source,
+                             a.provenance,
+                      """
+                          + QUERY_SOURCE
+                          + """
+                      ,
                              a.om_id,
                              (SELECT count(*) FROM asset_column c
                               WHERE c.asset_id = a.id AND c.is_current) AS column_count,
@@ -364,7 +432,9 @@ public class CatalogQuery {
                               rs.getInt("tagged_column_count"),
                               new ArrayList<>(),
                               new ArrayList<>(),
-                              rs.getInt("child_count")))
+                              rs.getInt("child_count"),
+                              rs.getString("provenance"),
+                              rs.getString("query_source")))
                   .findOne();
           if (summary.isEmpty()) {
             return Optional.empty();

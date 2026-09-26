@@ -172,6 +172,10 @@ export interface AssetSummary {
   owners: AssetOwner[];
   /** What sits directly under it: a database's schemas, a schema's tables. */
   childCount: number;
+  /** Where ARAK learned of it: openmetadata, discovered (read off the source) or local. */
+  provenance?: string | null;
+  /** The connected source a query reaches it (or what is under it) through; null = metadata only. */
+  querySource?: string | null;
 }
 
 export interface AssetPage {
@@ -228,6 +232,10 @@ export interface AssetQuery {
   sourceId?: string;
   /** Only what sits directly under this FQN -- one branch of the hierarchy. */
   parent?: string;
+  /** `queryable` (a connected source serves it) or `metadata` (ARAK holds its description only). */
+  reach?: string;
+  /** `openmetadata`, `discovered` or `local`. */
+  origin?: string;
   limit?: number;
   offset?: number;
 }
@@ -242,6 +250,8 @@ export async function fetchAssets(query: AssetQuery): Promise<AssetPage> {
   if (query.owner) params.set('owner', query.owner);
   if (query.sourceId) params.set('sourceId', query.sourceId);
   if (query.parent) params.set('parent', query.parent);
+  if (query.reach) params.set('reach', query.reach);
+  if (query.origin) params.set('origin', query.origin);
   for (const facet of query.facets ?? []) params.append('facet', facet);
   params.set('limit', String(query.limit ?? 50));
   params.set('offset', String(query.offset ?? 0));

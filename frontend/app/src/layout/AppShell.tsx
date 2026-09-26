@@ -215,11 +215,17 @@ export function Sidebar({
         } ${collapsed ? 'tw:justify-center' : compact ? 'tw:gap-2 tw:pl-2.5' : 'tw:gap-2 tw:pl-3.5'}`}>
         {!collapsed && (
           <p
-            className={`tw:min-w-0 tw:flex-1 tw:truncate tw:text-quaternary ${
+            className={`tw:min-w-0 tw:flex-1 tw:text-quaternary ${
               compact ? 'tw:text-xs' : 'tw:text-sm'
             }`}
-            title="© 2026 MFEC. All rights reserved.">
-            &copy; 2026 MFEC
+            title="© 2026 MFEC. All rights reserved. Built by Sakan Punyanon.">
+            <span className="tw:block tw:truncate">&copy; 2026 MFEC</span>
+            <span
+              className={`tw:block tw:truncate tw:leading-tight ${
+                compact ? 'tw:text-[10px]' : 'tw:text-xs'
+              }`}>
+              Sakan Punyanon
+            </span>
           </p>
         )}
         <button

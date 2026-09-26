@@ -385,6 +385,88 @@ class CatalogQueryIT {
   }
 
   @Test
+  @DisplayName("say which entries a query can reach, and which are metadata only")
+  void marksWhatAQueryCanReach() {
+    // The catalog holds two kinds of thing that look the same in a list: a
+    // table ARAK has a working connection to, and a table it only knows the
+    // description of. The mark has to follow the mapping the query proxy
+    // resolves against, or the page promises a query that ends in a refusal.
+    crawl(
+        Instant.now().plusSeconds(60),
+        List.of(
+            container(SERVICE, "SERVICE", null, "prod-mssql"),
+            container(DATABASE, "DATABASE", SERVICE, "SalesDB"),
+            container(SCHEMA, "SCHEMA", DATABASE, "dbo"),
+            customer(),
+            order(),
+            container("dtp-iprm", "SERVICE", null, "dtp-iprm"),
+            container("dtp-iprm.iprm", "DATABASE", "dtp-iprm", "iprm")));
+
+    Map<String, CatalogQuery.AssetSummary> byFqn = new java.util.HashMap<>();
+    catalog.assets(null, null, List.of(), null, null, 50, 0).items()
+        .forEach(row -> byFqn.put(row.fqn(), row));
+
+    // A table and every container above it name the source that serves it.
+    assertThat(byFqn.get(CUSTOMER).querySource()).isEqualTo("prod-mssql");
+    assertThat(byFqn.get(SERVICE).querySource()).isEqualTo("prod-mssql");
+    // A service OpenMetadata ingested but nobody connected is metadata only.
+    assertThat(byFqn.get("dtp-iprm").querySource()).isNull();
+    assertThat(byFqn.get("dtp-iprm.iprm").querySource()).isNull();
+    // Both came from OpenMetadata all the same.
+    assertThat(byFqn.get(CUSTOMER).provenance()).isEqualTo("openmetadata");
+    assertThat(byFqn.get("dtp-iprm").provenance()).isEqualTo("openmetadata");
+
+    assertThat(reach(true)).containsExactly(SERVICE, DATABASE, SCHEMA, CUSTOMER, ORDER);
+    assertThat(reach(false)).containsExactly("dtp-iprm", "dtp-iprm.iprm");
+
+    // The detail page reads the same mark as the list.
+    assertThat(catalog.asset(ORDER).orElseThrow().asset().querySource()).isEqualTo("prod-mssql");
+
+    // Switching the source off takes the mark away: a disabled source serves
+    // nothing, and saying otherwise is the promise this mark exists to keep.
+    jdbi.useHandle(handle -> handle.execute("UPDATE data_source SET enabled = false"));
+    assertThat(catalog.asset(CUSTOMER).orElseThrow().asset().querySource()).isNull();
+    assertThat(reach(true)).isEmpty();
+  }
+
+  @Test
+  @DisplayName("tell an entry OpenMetadata supplied from one ARAK read off a source")
+  void filtersByOrigin() {
+    UUID discovered = newSource("demo-pg");
+    jdbi.useHandle(
+        handle ->
+            handle
+                .createUpdate(
+                    """
+                    INSERT INTO asset (data_source_id, fqn, asset_type, name, provenance,
+                                       valid_from, is_current, last_seen_at)
+                    VALUES (:source, 'demo-pg.salesdb.sales.orders', 'TABLE', 'orders',
+                            'discovered', now(), true, now())
+                    """)
+                .bind("source", discovered)
+                .execute());
+
+    assertThat(
+            catalog.assets(null, null, List.of(), null, null, null, null, "discovered", 50, 0)
+                .items())
+        .extracting(CatalogQuery.AssetSummary::fqn)
+        .containsExactly("demo-pg.salesdb.sales.orders");
+    assertThat(
+            catalog.assets(null, null, List.of(), null, null, null, null, "openmetadata", 50, 0)
+                .items())
+        .extracting(CatalogQuery.AssetSummary::fqn)
+        .doesNotContain("demo-pg.salesdb.sales.orders")
+        .contains(CUSTOMER);
+  }
+
+  private List<String> reach(boolean queryable) {
+    return catalog.assets(null, null, List.of(), null, null, null, queryable, null, 50, 0).items()
+        .stream()
+        .map(CatalogQuery.AssetSummary::fqn)
+        .toList();
+  }
+
+  @Test
   @DisplayName("find a table by a tag that sits on one of its columns")
   void findsATableByItsColumnTag() {
     // The case a policy author is in most of the time: they know the data is

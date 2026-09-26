@@ -16,6 +16,7 @@ import cheer from '../assets/mascot/cheer.png';
 import greet from '../assets/mascot/greet.png';
 import shield from '../assets/mascot/shield.png';
 import thinking from '../assets/mascot/thinking.png';
+import { NOKRAK, pickLine } from './nokrak';
 
 /**
  * The assistant, in the corner, behind a button.
@@ -35,6 +36,11 @@ import thinking from '../assets/mascot/thinking.png';
  * <p>The poses are states, not decoration. It changes pose when the state
  * changes and at no other time — no idle animation, no bounce, no attention
  * it did not earn.
+ *
+ * <p>It has a name, NokRak (น้องรักษ์), and a line to say from the corner: a
+ * speech bubble with one of a few short offers of help, picked at random and
+ * fitted to the page. It says it once when a session starts, for a few
+ * seconds, and otherwise only when pointed at -- a greeting, not a nag.
  */
 
 /** The four poses, and what each one means. */
@@ -109,13 +115,58 @@ function DockButton({
   open: boolean;
   onToggle: () => void;
 }) {
+  const [line, setLine] = useState(() => pickLine(mode));
+  const [hover, setHover] = useState(false);
+  // Once per browser session, and only for a moment.
+  const [greeting, setGreeting] = useState(() => !greetedThisSession());
+
+  // A new page may be a new kind of page; the line should fit where it is.
+  useEffect(() => {
+    setLine(pickLine(mode));
+  }, [mode]);
+
+  useEffect(() => {
+    if (!greeting) {
+      return;
+    }
+    markGreeted();
+    const timer = window.setTimeout(() => setGreeting(false), 7000);
+    return () => window.clearTimeout(timer);
+  }, [greeting]);
+
+  function pointAt() {
+    setLine(pickLine(mode));
+    setHover(true);
+  }
+
+  const speaking = !open && (greeting || hover);
+
   return (
+    <>
+    {speaking && (
+      <div
+        aria-hidden
+        className="tw:fixed tw:right-22 tw:bottom-7 tw:z-50 tw:max-w-64 tw:rounded-2xl tw:rounded-br-sm tw:border tw:border-secondary tw:bg-primary tw:px-3.5 tw:py-2.5 tw:shadow-lg"
+        data-testid="nokrak-bubble">
+        <p className="tw:text-xs tw:font-semibold tw:text-brand-secondary">
+          {NOKRAK.name} <span className="tw:font-normal tw:text-quaternary">· {NOKRAK.thai}</span>
+        </p>
+        <p className="tw:mt-0.5 tw:text-sm tw:text-secondary">{line}</p>
+      </div>
+    )}
     <button
       aria-controls="assist-panel"
       aria-expanded={open}
       aria-label={open ? 'Close the assistant' : 'Open the assistant'}
       className="tw:fixed tw:right-5 tw:bottom-5 tw:z-50 tw:flex tw:size-14 tw:cursor-pointer tw:items-center tw:justify-center tw:rounded-full tw:border tw:border-secondary tw:bg-primary tw:shadow-lg tw:outline-focus-ring tw:transition tw:duration-150 tw:hover:scale-105 tw:hover:border-brand tw:focus-visible:outline-2"
-      onClick={onToggle}
+      onBlur={() => setHover(false)}
+      onClick={() => {
+        setGreeting(false);
+        onToggle();
+      }}
+      onFocus={pointAt}
+      onMouseEnter={pointAt}
+      onMouseLeave={() => setHover(false)}
       title={
         mode === 'sql'
           ? 'Ask for a query in plain words'
@@ -141,7 +192,28 @@ function DockButton({
         <span className="tw:absolute tw:top-0.5 tw:right-0.5 tw:size-3 tw:rounded-full tw:border-2 tw:border-primary tw:bg-brand-solid" />
       )}
     </button>
+    </>
   );
+}
+
+const GREETED = 'arak.nokrak.greeted';
+
+// Storage can throw (private windows, blocked site data); a greeting that
+// cannot be remembered is simply not shown again this page load.
+function greetedThisSession(): boolean {
+  try {
+    return window.sessionStorage.getItem(GREETED) === '1';
+  } catch {
+    return true;
+  }
+}
+
+function markGreeted() {
+  try {
+    window.sessionStorage.setItem(GREETED, '1');
+  } catch {
+    // Nothing to do: see greetedThisSession.
+  }
 }
 
 function AssistPanel({
@@ -217,7 +289,10 @@ function AssistPanel({
         />
         <div className="tw:min-w-0 tw:flex-1">
           <p className="tw:text-sm tw:font-semibold tw:text-primary">
-            Assistant
+            {NOKRAK.name}{' '}
+            <span className="tw:text-xs tw:font-normal tw:text-tertiary">
+              · {NOKRAK.thai} · Assistant
+            </span>
           </p>
           <p className="tw:truncate tw:text-xs tw:text-tertiary">
             {mode === 'sql'

@@ -62,6 +62,13 @@ public class CatalogResource {
    * <p>{@code parent} narrows to what sits directly under one asset -- the
    * schemas of a database, the tables of a schema -- which is how the
    * hierarchy is walked one branch at a time.
+   *
+   * <p>{@code reach} is {@code queryable} (a connected source can serve it) or
+   * {@code metadata} (ARAK only holds what the catalog says about it);
+   * {@code origin} is where the entry came from -- {@code openmetadata},
+   * {@code discovered} (read off a source over JDBC) or {@code local}. An
+   * unknown value is a 400 for the same reason as {@code sourceId}: it comes
+   * from a picker, and ignoring it would widen the list silently.
    */
   @GET
   @Path("/assets")
@@ -72,6 +79,8 @@ public class CatalogResource {
       @QueryParam("owner") String owner,
       @QueryParam("sourceId") String sourceId,
       @QueryParam("parent") String parent,
+      @QueryParam("reach") String reach,
+      @QueryParam("origin") String origin,
       @QueryParam("limit") @jakarta.ws.rs.DefaultValue("50") int limit,
       @QueryParam("offset") @jakarta.ws.rs.DefaultValue("0") int offset) {
 
@@ -89,7 +98,24 @@ public class CatalogResource {
         throw new BadRequestException("sourceId must be the UUID of a registered source");
       }
     }
-    return catalog.assets(search, assetType, parsed, owner, source, parent, limit, offset);
+    Boolean queryable = null;
+    if (reach != null && !reach.isBlank()) {
+      queryable =
+          switch (reach.trim().toLowerCase()) {
+            case "queryable" -> true;
+            case "metadata" -> false;
+            default -> throw new BadRequestException("reach must be queryable or metadata");
+          };
+    }
+    String provenance = null;
+    if (origin != null && !origin.isBlank()) {
+      provenance = origin.trim().toLowerCase();
+      if (!List.of("openmetadata", "discovered", "local").contains(provenance)) {
+        throw new BadRequestException("origin must be openmetadata, discovered or local");
+      }
+    }
+    return catalog.assets(
+        search, assetType, parsed, owner, source, parent, queryable, provenance, limit, offset);
   }
 
   /**
