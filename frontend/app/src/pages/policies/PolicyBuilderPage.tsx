@@ -6,6 +6,9 @@ import { Chip as Badge } from '../../components/chips';
 import { Button } from '@openmetadata/ui-core-components/components/base/buttons/button';
 import { apiErrorMessage } from '../../api/client';
 import { useAssistStore } from '../../assist/assistStore';
+import { NokRakButton, NokRakPrompt } from '../../assist/NokRakAsk';
+import { useAssistReady } from '../../assist/useAssist';
+import { assistPolicy } from '../../api/llm';
 import {
   fetchAttributeVocabulary,
   fetchPrincipals,
@@ -165,29 +168,61 @@ export default function PolicyBuilderPage() {
     return () => withdraw('policy');
   }, [offer, withdraw]);
 
-  useEffect(() => {
-    if (!drafted) {
-      return;
-    }
-    takePolicy();
+  // One way in for a drafted document, whether it came from the dock or from
+  // the button on this page, so the two cannot load it differently.
+  const loadDrafted = (text: string): boolean => {
     try {
-      const parsed = JSON.parse(drafted.text) as Partial<Policy>;
+      const document = JSON.parse(text) as unknown;
+      if (!document || typeof document !== 'object' || Array.isArray(document)) {
+        throw new Error('not a document');
+      }
+      // Stripped as a suggestion from a request is: an id or a lifecycle
+      // state would make the form pass for a stored, perhaps active, policy.
+      const { id: _id, lifecycleState: _state, ...parsed } = document as Partial<Policy> & {
+        id?: unknown;
+        lifecycleState?: unknown;
+      };
       // Merged over the empty document rather than used as-is. A model that
       // leaves a field out would otherwise hand the form an undefined where
       // it expects a value, and the control bound to it would go uncontrolled
       // mid-edit -- which looks like the form losing your typing.
       setDraft((current) => ({ ...EMPTY, ...current, ...parsed }));
       setAssistNote(
-        'Loaded a draft from the assistant. Read every step before you save it'
+        'Loaded a draft from NokRak. Read every step before you save it'
           + ' — it is a suggestion, and it is your name on the policy.'
       );
+      return true;
     } catch {
       setAssistNote(
-        'The assistant answered with something that was not a policy document,'
+        'NokRak answered with something that was not a policy document,'
           + ' so nothing was loaded. Try saying the rule a different way.'
       );
+      return false;
     }
+  };
+
+  useEffect(() => {
+    if (!drafted) {
+      return;
+    }
+    takePolicy();
+    loadDrafted(drafted.text);
+    // loadDrafted only calls state setters, which never change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [drafted, takePolicy]);
+
+  // The same drafting on the page, for a new policy only: over a stored one
+  // it would overwrite a document somebody already signed, field by field.
+  // It returns a document and stores nothing; "Create draft" is still the
+  // only save, and the lifecycle the only way to switch it on.
+  const draftReady = useAssistReady('DRAFT_POLICY');
+  const [asking, setAsking] = useState(false);
+  const ask = useMutation({
+    mutationFn: (intent: string) => assistPolicy({ intent }),
+    onSuccess: (answer) => {
+      if (loadDrafted(answer.document)) setAsking(false);
+    },
+  });
 
   const { data: existing, error: loadError } = useQuery({
     queryKey: ['policy', id],
@@ -355,6 +390,14 @@ export default function PolicyBuilderPage() {
               Done
             </Button>
           )}
+          {isNew && draftReady && (
+            <NokRakButton
+              label="NokRak, help me"
+              onPress={() => setAsking((open) => !open)}
+              open={asking}
+              size="md"
+            />
+          )}
           <Button
             isDisabled={incomplete || save.isPending}
             onPress={() => save.mutate()}
@@ -363,6 +406,26 @@ export default function PolicyBuilderPage() {
           </Button>
         </div>
       </header>
+
+      {isNew && draftReady && asking && (
+        <div className="tw:mt-4">
+          <NokRakPrompt
+            askLabel="Draft it"
+            error={
+              ask.isError
+                ? apiErrorMessage(ask.error, 'NokRak could not draft a policy.')
+                : null
+            }
+            hint="Fills the form below. Nothing is saved until you press Create draft, and it stays a draft until it is activated."
+            onAsk={(intent) => ask.mutate(intent)}
+            onClose={() => setAsking(false)}
+            pending={ask.isPending}
+            pendingLabel="Drafting…"
+            placeholder="e.g. Mask every column tagged PII for anyone below clearance L2, and let the Finance team read the sales schema on weekdays."
+            title="Tell NokRak the rule"
+          />
+        </div>
+      )}
 
       {assistNote && (
         <p className="tw:mt-4 tw:rounded-lg tw:border tw:border-secondary tw:bg-secondary tw:p-4 tw:text-sm tw:text-tertiary">

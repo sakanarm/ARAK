@@ -4,9 +4,11 @@ import { Button } from '@openmetadata/ui-core-components/components/base/buttons
 import { BookOpen01, MagicWand01, X } from '@untitledui/icons';
 import { apiErrorMessage } from '../../api/client';
 import type { Refusal } from '../../api/accessRequests';
+import { NokRakPrompt } from '../../assist/NokRakAsk';
 import {
   assistExplain,
   assistFix,
+  assistSql,
   type SqlDraft,
   type SqlExplanation,
 } from '../../api/llm';
@@ -226,5 +228,85 @@ export function FixWithAi({
           </section>
         ))}
     </div>
+  );
+}
+
+/**
+ * "Write it for me": a question in plain words, a statement back (M25 on the
+ * page rather than only in the dock).
+ *
+ * The same `/v1/llm/assist/sql` the dock calls, with the source and dialect on
+ * screen. The answer is shown before it reaches the editor, and reaching the
+ * editor is all "Use this" does -- the reader still presses Run, and the run
+ * goes through the proxy like a statement they typed.
+ */
+export function WriteWithNokRak({
+  sourceId,
+  engine,
+  onUse,
+  onClose,
+}: {
+  sourceId: string;
+  engine?: string;
+  onUse: (sql: string) => void;
+  onClose: () => void;
+}) {
+  const write = useMutation({
+    mutationFn: (question: string): Promise<SqlDraft> =>
+      assistSql({ question, sourceId, engine }),
+  });
+  const draft = write.data;
+
+  return (
+    <NokRakPrompt
+      askLabel="Write it"
+      disabled={!sourceId}
+      error={write.isError ? apiErrorMessage(write.error, 'NokRak could not write a statement.') : null}
+      floating
+      hint={
+        sourceId
+          ? 'Nothing reaches the editor until you press Use this, and nothing runs until you press Run.'
+          : 'Choose a source first, so NokRak writes against its tables.'
+      }
+      onAsk={(question) => write.mutate(question)}
+      onClose={onClose}
+      pending={write.isPending}
+      pendingLabel="Writing…"
+      placeholder="e.g. How many customers signed up each month this year?"
+      title="Ask NokRak to write the query">
+      {draft &&
+        (draft.problem || !draft.sql ? (
+          <p className="tw:rounded-lg tw:border tw:border-secondary tw:bg-secondary tw:px-3 tw:py-2 tw:text-sm tw:text-secondary">
+            {draft.problem ?? 'NokRak did not write a statement for that. Try asking another way.'}
+          </p>
+        ) : (
+          <section
+            aria-label="Statement NokRak wrote"
+            className="tw:rounded-lg tw:border tw:border-secondary tw:bg-primary">
+            <header className="tw:flex tw:items-center tw:gap-2 tw:border-b tw:border-secondary tw:px-3 tw:py-2">
+              <MagicWand01 className="tw:size-4 tw:text-fg-quaternary" />
+              <h3 className="tw:text-sm tw:font-semibold tw:text-primary">Suggested statement</h3>
+              <span className="tw:truncate tw:text-xs tw:text-quaternary">{draft.model}</span>
+            </header>
+            <pre className="tw:max-h-60 tw:overflow-auto tw:whitespace-pre-wrap tw:px-3 tw:py-2 tw:font-mono tw:text-xs tw:text-primary">
+              {draft.sql}
+            </pre>
+            {draft.tables.length > 0 && (
+              <p className="tw:border-t tw:border-secondary tw:px-3 tw:py-2 tw:text-xs tw:text-tertiary">
+                Written from the columns of{' '}
+                <span className="tw:font-mono">{draft.tables.join(', ')}</span>
+              </p>
+            )}
+            <footer className="tw:flex tw:flex-wrap tw:items-center tw:gap-2 tw:border-t tw:border-secondary tw:px-3 tw:py-2">
+              <Button color="primary" onClick={() => onUse(draft.sql)} size="sm">
+                Use this
+              </Button>
+              <span className="tw:text-xs tw:text-tertiary">
+                Replaces what is in the editor. It is checked against your access when you run it.
+              </span>
+            </footer>
+          </section>
+        ))}
+    </NokRakPrompt>
   );
 }

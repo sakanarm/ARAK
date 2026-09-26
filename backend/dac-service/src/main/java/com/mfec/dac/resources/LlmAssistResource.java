@@ -569,11 +569,23 @@ public class LlmAssistResource {
    * model is asked for is the same file the engine's classes are generated
    * from. A prose summary of a schema is a second source of truth and would be
    * the one that rots.
+   *
+   * <p>{@code type/facet.json} is sent too: the selector and every column rule
+   * are {@code $ref}s into it. Without it the model saw a reference it could
+   * not follow and invented a selector of its own ({@code {"tags": [...]}}),
+   * which the builder has no field for, so the form opened with no condition.
    */
+  static final List<String> POLICY_SCHEMAS =
+      List.of(
+          "entity/policy/policy.json",
+          "entity/policy/subjectRule.json",
+          "entity/policy/dataPolicy.json",
+          "type/facet.json");
+
   private String policySchemas() {
     StringBuilder out = new StringBuilder();
-    for (String name : List.of("policy.json", "subjectRule.json", "dataPolicy.json")) {
-      String path = "json/schema/entity/policy/" + name;
+    for (String name : POLICY_SCHEMAS) {
+      String path = "json/schema/" + name;
       try (InputStream in = getClass().getClassLoader().getResourceAsStream(path)) {
         if (in == null) {
           LOG.warn("Policy schema {} is not on the classpath; drafting without it", path);

@@ -1,5 +1,11 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import {
+  Button as AriaButton,
+  Dialog,
+  DialogTrigger,
+  Popover,
+} from 'react-aria-components';
 import { useMutation, useQueries, useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { Button } from '@openmetadata/ui-core-components/components/base/buttons/button';
@@ -15,6 +21,7 @@ import {
   FilterLines,
   Minimize01,
   Play,
+  Settings01,
   Shield01,
 } from '@untitledui/icons';
 import { apiErrorMessage, fetchAsset, fetchAssets } from '../../api/client';
@@ -31,7 +38,7 @@ import {
   type QueryResult,
 } from '../../api/query';
 import { download, exportName, toCsv, toXlsx } from '../../lib/tabular';
-import { Select, TextField } from '../policies/controls';
+import { Field, Select, TextField } from '../policies/controls';
 import RequestAccess from './RequestAccess';
 import {
   ExplainButton,
@@ -39,7 +46,9 @@ import {
   FixWithAi,
   useAssistReady,
   useSqlExplanation,
+  WriteWithNokRak,
 } from './QueryAssist';
+import { NokRakButton } from '../../assist/NokRakAsk';
 import SchemaExplorer from './SchemaExplorer';
 import SqlEditor, { type SqlCompletionSource } from './SqlEditor';
 import { asCompletionTable, type CompletionTable } from './sqlCompletion';
@@ -164,6 +173,8 @@ export default function QueryPage() {
   // assistant; neither runs anything, and the assistant never sees a row.
   const explainReady = useAssistReady('EXPLAIN_SQL');
   const fixReady = useAssistReady('FIX_SQL');
+  const writeReady = useAssistReady('WRITE_SQL');
+  const [writing, setWriting] = useState(false);
   const { explain, about: explained } = useSqlExplanation();
 
   // What the editor suggests: the same catalog page the Explorer beside it
@@ -343,32 +354,15 @@ export default function QueryPage() {
 
         <SideSplitter onChange={setSidebarWidth} width={sidebarWidth} />
 
-        <div className="tw:flex tw:min-h-0 tw:min-w-0 tw:flex-1 tw:flex-col tw:gap-3">
-          <div className="tw:flex tw:flex-wrap tw:items-center tw:gap-2">
-            <Button
-              color="primary"
-              iconLeading={Play}
-              isDisabled={
-                run.isPending || !effectiveSource || sql.trim().length === 0
-              }
-              onClick={() => run.mutate()}
-              size="sm">
-              {run.isPending ? 'Running…' : 'Run'}
-            </Button>
-
-            {explainReady && (
-              <ExplainButton
-                disabled={sql.trim().length === 0}
-                onClick={() =>
-                  explain.mutate({ sql: latest.current.sql, sourceId: effectiveSource, engine })
-                }
-                pending={explain.isPending}
-              />
-            )}
-
+        <div className="tw:flex tw:min-h-0 tw:min-w-0 tw:flex-1 tw:flex-col tw:gap-2">
+          {/* Where the statement goes and whose access it is judged by: set
+              once, then left alone, so it sits apart from the buttons pressed
+              on every run -- the way BigQuery keeps the project out of the
+              editor's own bar. */}
+          <div className="tw:flex tw:items-center tw:gap-2">
             <Select
               ariaLabel="Source"
-              className="tw:w-56"
+              className="tw:w-60 tw:shrink-0"
               onChange={setSourceId}
               options={usable.map((source) => ({
                 value: source.id,
@@ -382,7 +376,7 @@ export default function QueryPage() {
             {isAdmin && (
               <Select
                 ariaLabel="Run as"
-                className="tw:w-52"
+                className="tw:w-56 tw:shrink-0"
                 onChange={setAsPrincipal}
                 options={[
                   // Spelled out because the obvious reading of "as myself" is
@@ -399,80 +393,105 @@ export default function QueryPage() {
               />
             )}
 
-            {/* Typed, not picked from a list: a fixed set of four numbers is
-                never the number somebody wants, and the server clamps to
-                MAX_ROWS anyway, so there is nothing a free field can break. */}
-            <div className="tw:flex tw:items-center tw:gap-1.5">
-              <TextField
-                ariaLabel="Row limit"
-                className="tw:w-24"
-                onChange={(value) => setMaxRows(value.replace(/[^0-9]/g, ''))}
-                placeholder={String(DEFAULT_ROWS)}
-                value={maxRows}
-              />
-              <span className="tw:whitespace-nowrap tw:text-xs tw:text-tertiary">
-                rows{rowLimitNote}
+            {/* Shown either way. Saying nothing when no role is picked is what
+                made people read the blank state as "no policy" and then read
+                the refusal that followed as a bug in the platform. One line
+                now, beside the choice it describes; the whole of it is on
+                hover. */}
+            <p
+              className="tw:flex tw:min-w-0 tw:flex-1 tw:items-center tw:gap-1.5 tw:text-xs tw:text-tertiary"
+              title={
+                asPrincipal
+                  ? `Running as ${asPrincipal}. This is the enforcement path itself, not a preview of it — the rows below are the rows they would get, and the attempt is audited under your name.`
+                  : 'Running as yourself. Being a platform administrator grants no access to data — every query is evaluated against the same policies, and an account no policy names is denied.'
+              }>
+              <Eye className="tw:size-3.5 tw:shrink-0 tw:text-fg-quaternary" />
+              <span className="tw:truncate">
+                {asPrincipal ? (
+                  <>
+                    Running as <strong>{asPrincipal}</strong> — the real enforcement
+                    path, audited under your name.
+                  </>
+                ) : (
+                  <>
+                    Running as yourself. Being an administrator grants no data —
+                    the same policies apply to you.
+                  </>
+                )}
               </span>
-            </div>
+            </p>
 
-            <Select
-              ariaLabel="Purpose"
-              className="tw:w-48"
-              onChange={setPurpose}
-              options={[
-                { value: '', label: 'No purpose' },
-                { value: 'fraud-analysis', label: 'fraud-analysis' },
-                { value: 'reporting', label: 'reporting' },
-                { value: 'support', label: 'support' },
-              ]}
-              value={purpose}
-            />
-
-            {/* One group, so the hint never wraps away from the button it
-                sits beside and the pair stays inside the right edge. */}
-            <div className="tw:ml-auto tw:flex tw:shrink-0 tw:items-center tw:gap-3">
-              <span className="tw:hidden tw:text-xs tw:text-quaternary tw:xl:inline">
-                Ctrl/⌘ + Enter to run
-              </span>
-
-              {fullscreen && fullscreenToggle}
-            </div>
+            {fullscreen && <div className="tw:ml-auto tw:shrink-0">{fullscreenToggle}</div>}
           </div>
 
-          {/* Shown either way. Saying nothing when no role is picked is what
-              made people read the blank state as "no policy" and then read the
-              refusal that followed as a bug in the platform. */}
-          <p className="tw:flex tw:items-center tw:gap-2 tw:rounded-lg tw:border tw:border-secondary tw:bg-secondary tw:px-3 tw:py-2 tw:text-xs tw:text-secondary">
-            <Eye className="tw:size-3.5 tw:shrink-0 tw:text-tertiary" />
-            {asPrincipal ? (
-              <span>
-                Running as <strong>{asPrincipal}</strong>. This is the
-                enforcement path itself, not a preview of it — the rows below
-                are the rows they would get, and the attempt is audited under
-                your name.
-              </span>
-            ) : (
-              <span>
-                Running as yourself. Being a platform administrator grants no
-                access to data — every query is evaluated against the same
-                policies, and an account no policy names is denied. Pick
-                somebody in <strong>Run as</strong> to see what they would get.
-              </span>
-            )}
-          </p>
+          {/* The editor's own bar: what you press on every statement, in one
+              row that does not wrap. The NokRak panel opens over the editor
+              rather than above it, so asking for help does not move the text
+              you are asking about. */}
+          <div className="tw:relative tw:shrink-0">
+            <div className="tw:flex tw:items-center tw:gap-2 tw:rounded-lg tw:border tw:border-secondary tw:bg-secondary tw:px-2 tw:py-1.5">
+              <Button
+                color="primary"
+                iconLeading={Play}
+                isDisabled={
+                  run.isPending || !effectiveSource || sql.trim().length === 0
+                }
+                onClick={() => run.mutate()}
+                size="sm">
+                {run.isPending ? 'Running…' : 'Run'}
+              </Button>
 
-          <ExplanationCard
-            about={explained}
-            current={sql}
-            error={explain.error}
-            explanation={explain.data}
-            onDismiss={() => explain.reset()}
-            pending={explain.isPending}
-          />
+              {writeReady && (
+                <NokRakButton
+                  label="NokRak, write it"
+                  onPress={() => setWriting((open) => !open)}
+                  open={writing}
+                />
+              )}
+
+              {explainReady && (
+                <ExplainButton
+                  disabled={sql.trim().length === 0}
+                  onClick={() =>
+                    explain.mutate({ sql: latest.current.sql, sourceId: effectiveSource, engine })
+                  }
+                  pending={explain.isPending}
+                />
+              )}
+
+              <span aria-hidden className="tw:mx-1 tw:h-5 tw:w-px tw:shrink-0 tw:bg-border-secondary" />
+
+              <QuerySettings
+                maxRows={maxRows}
+                onMaxRows={setMaxRows}
+                onPurpose={setPurpose}
+                purpose={purpose}
+                rowLimitNote={rowLimitNote}
+              />
+
+              <span className="tw:ml-auto tw:hidden tw:shrink-0 tw:pr-1 tw:text-xs tw:text-quaternary tw:lg:inline">
+                Ctrl/⌘ + Enter to run
+              </span>
+            </div>
+
+            {writeReady && writing && (
+              <div className="tw:absolute tw:left-0 tw:top-full tw:z-30 tw:mt-2 tw:w-[min(40rem,100%)]">
+                <WriteWithNokRak
+                  engine={engine}
+                  onClose={() => setWriting(false)}
+                  onUse={(text) => {
+                    setSql(text);
+                    setWriting(false);
+                  }}
+                  sourceId={effectiveSource}
+                />
+              </div>
+            )}
+          </div>
 
           <div className="tw:flex tw:min-h-0 tw:flex-1 tw:flex-col" ref={setPaneNode}>
             <div
-              className="tw:flex tw:shrink-0"
+              className="tw:flex tw:shrink-0 tw:gap-3"
               style={{ height: shownEditorHeight }}>
               <SqlEditor
                 completion={effectiveSource ? completion : undefined}
@@ -481,6 +500,21 @@ export default function QueryPage() {
                 onRun={() => run.mutate()}
                 value={sql}
               />
+              {/* Beside the statement it is about, as BigQuery puts Gemini
+                  beside the editor: read side by side, and the editor keeps
+                  its place. */}
+              {(explain.isPending || explain.data || explain.error) && (
+                <div className="tw:flex tw:min-h-0 tw:w-80 tw:shrink-0 tw:flex-col tw:*:h-full tw:*:max-h-full! tw:xl:w-96">
+                  <ExplanationCard
+                    about={explained}
+                    current={sql}
+                    error={explain.error}
+                    explanation={explain.data}
+                    onDismiss={() => explain.reset()}
+                    pending={explain.isPending}
+                  />
+                </div>
+              )}
             </div>
 
             <Splitter height={shownEditorHeight} onChange={setEditorHeight} />
@@ -518,6 +552,75 @@ export default function QueryPage() {
   // so `inset-0` resolved to the page area, not the viewport, and the sticky
   // top bar kept painting over an overlay nominally twenty layers above it.
   return fullscreen ? createPortal(consoleTree, document.body) : consoleTree;
+}
+
+/**
+ * Row limit and purpose, behind one button that says what they are set to.
+ *
+ * Both are set now and then, not per statement, so they do not earn a place in
+ * the bar -- BigQuery keeps the same kind of thing under "Query settings". The
+ * button reads "200 rows · No purpose", so nobody has to open it to know.
+ */
+function QuerySettings({
+  maxRows,
+  onMaxRows,
+  purpose,
+  onPurpose,
+  rowLimitNote,
+}: {
+  maxRows: string;
+  onMaxRows: (value: string) => void;
+  purpose: string;
+  onPurpose: (value: string) => void;
+  rowLimitNote: string;
+}) {
+  const rows = maxRows || String(DEFAULT_ROWS);
+  return (
+    <DialogTrigger>
+      <AriaButton className="tw:inline-flex tw:min-w-0 tw:cursor-pointer tw:items-center tw:gap-1.5 tw:rounded-lg tw:px-2.5 tw:py-1.5 tw:text-sm tw:font-semibold tw:text-secondary tw:outline-none tw:hover:bg-primary_hover tw:focus-visible:outline-2 tw:focus-visible:outline-brand">
+        <Settings01 className="tw:size-4 tw:shrink-0 tw:text-fg-quaternary" />
+        <span className="tw:sr-only">Query settings: </span>
+        <span className="tw:whitespace-nowrap">
+          {rows} rows{rowLimitNote}
+        </span>
+        <span aria-hidden className="tw:text-quaternary">
+          ·
+        </span>
+        <span className="tw:truncate tw:font-medium tw:text-tertiary">{purpose || 'No purpose'}</span>
+      </AriaButton>
+      <Popover
+        className="tw:w-72 tw:rounded-xl tw:border tw:border-secondary tw:bg-primary tw:shadow-lg tw:outline-none"
+        offset={6}
+        placement="bottom start">
+        <Dialog aria-label="Query settings" className="tw:flex tw:flex-col tw:gap-4 tw:p-4 tw:outline-none">
+          {/* Typed, not picked from a list: a fixed set of four numbers is
+              never the number somebody wants, and the server clamps to
+              MAX_ROWS anyway, so there is nothing a free field can break. */}
+          <Field hint={`At most ${MAX_ROWS}; the server holds to that.`} label="Row limit">
+            <TextField
+              ariaLabel="Row limit"
+              onChange={(value) => onMaxRows(value.replace(/[^0-9]/g, ''))}
+              placeholder={String(DEFAULT_ROWS)}
+              value={maxRows}
+            />
+          </Field>
+          <Field hint="A policy that asks for a purpose allows only a query that states it." label="Purpose">
+            <Select
+              ariaLabel="Purpose"
+              onChange={onPurpose}
+              options={[
+                { value: '', label: 'No purpose' },
+                { value: 'fraud-analysis', label: 'fraud-analysis' },
+                { value: 'reporting', label: 'reporting' },
+                { value: 'support', label: 'support' },
+              ]}
+              value={purpose}
+            />
+          </Field>
+        </Dialog>
+      </Popover>
+    </DialogTrigger>
+  );
 }
 
 const SIDEBAR_WIDTH_KEY = 'arak.query.sidebarWidth';
@@ -830,7 +933,7 @@ function ResultPanel({
 
   if (!result) {
     return (
-      <section className="tw:shrink-0 tw:rounded-lg tw:border tw:border-dashed tw:border-secondary tw:p-6 tw:text-center tw:text-sm tw:text-tertiary">
+      <section className="tw:flex tw:min-h-0 tw:flex-1 tw:items-center tw:justify-center tw:rounded-lg tw:border tw:border-dashed tw:border-secondary tw:p-6 tw:text-center tw:text-sm tw:text-tertiary">
         Results appear here. Qualify every table with its schema — the proxy
         refuses a bare name rather than guessing which one was meant.
       </section>

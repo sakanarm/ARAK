@@ -619,7 +619,42 @@ M25 ทำแยกได้ (profile ผ่าน proxy ที่มีแล�
 
 ---
 
-## รอบนี้ — **ข้อ BR: Workflow Builder แบบ OpenMetadata · Policy มี Diagram ทั้งตอนสร้างและตอนอ่าน · หน้า Policy จัดใหม่ให้สะอาด**
+## รอบนี้ — **ข้อ BS: ปุ่ม NokRak บนหน้า New policy และ Query · Query console จัดใหม่แบบ BigQuery · Policy draft ที่ได้ selector ว่าง**
+
+ผู้ใช้ขอ *"ในหน้า New policy ให้มีปุ่ม NokRakช่วยด้วย"* · *"ตรง Query ก็มีปุ่ม NokRakเขียนให้หน่อย"* · *"เชื่อมกับ Engine AI เดิมที่เคยมีไว้"* · *"การจัดวางปุ่ในหน้า Query ยังไม่ดีพอ ไม่ดีเท่า bigquery"* · *"หน้า Policy นี่แก้ยังนะ"*
+
+### BS.1 ชิ้นส่วนกลาง — `assist/NokRakAsk.tsx`
+- `NokRakButton` — ปุ่ม secondary หน้าน้องรักษ์ · `aria-expanded`
+- `NokRakPrompt` — ประโยคเดียวเข้า draft ออก · Enter = ถาม · Shift+Enter = ขึ้นบรรทัด · **Esc = ปิด** · `disabled` (ยังถามไม่ได้ -> hint บอกเหตุผล ไม่ขึ้น alert แดง) · `floating` (ลอยทับหน้า ไม่ดันอะไรลง)
+- ใช้ engine เดิมทั้งหมด: `/v1/llm/assist/sql` และ `/v1/llm/assist/policy` · แสดงเฉพาะ role ที่มีงาน `WRITE_SQL` / `DRAFT_POLICY` (`useAssistReady` — สิทธิ์ต่องานของ AI จาก M28 บังคับที่ server)
+
+### BS.2 New policy — ปุ่ม "NokRak, help me"
+- อยู่ข้าง Create draft (เฉพาะหน้า new) · พิมพ์กฎเป็นภาษาคน -> `assistPolicy` -> `loadDrafted` เติม form
+- **ตัด `id` / `lifecycleState` ทิ้งเสมอ** · ไม่ save · ไม่ activate — ต้องกด Create draft เอง · note บอกให้อ่านทุก step
+- คำตอบที่ไม่ใช่ policy document -> ไม่โหลดอะไร บอกให้ลองพูดใหม่ · dock ใช้ `loadDrafted` ตัวเดียวกัน
+- **บั๊กที่ผู้ใช้เจอ: form ได้ selector/operator ว่าง** — prompt ของ `/policy` ส่ง schema แค่ `policy.json` / `subjectRule.json` / `dataPolicy.json` แต่ `assetSelector` กับ `facetOperator` อยู่ใน **`type/facet.json`** -> model เดารูปเอง (`"selector":{"tags":["PII"]}`, `"subject":{"expression":...}`) · แก้ `LlmAssistResource.POLICY_SCHEMAS` ให้ส่ง `type/facet.json` ด้วย (header `// <path>` ต่อไฟล์) · test `LlmAssistResourceTest$PolicyDraft`
+- ยืนยันกับ gpt-5 จริง: ได้ `selector.condition {facet, operator}` · `subject.attributes` · `data.columnRules` ครบ แล้ว form แสดงทุก step
+
+### BS.3 Query — ปุ่ม "NokRak, write it" + จัดหน้าใหม่แบบ BigQuery (`QueryPage.tsx` · `QueryAssist.tsx`)
+- `WriteWithNokRak` — คำถาม + source + dialect -> SQL แสดงก่อน · **Use this = ใส่ editor เท่านั้น ไม่ run** · run ผ่าน proxy เหมือนพิมพ์เอง · ยังไม่เลือก source -> ปุ่ม Write disabled + hint (ไม่ขึ้น alert แดงก่อนถามอะไร)
+- layout ใหม่ (เดิม toolbar wrap 2 แถว · panel NokRak + Explanation ดัน editor ลง):
+  - **แถวบริบท**: Source · Run as · บรรทัดเดียว "Running as yourself…" (ข้อความเต็มอยู่ใน `title`) · ปุ่ม Exit full screen ตอน full screen
+  - **แถบของ editor แถวเดียวไม่ wrap**: Run · NokRak, write it · Explain · | · **Query settings** (`200 rows · No purpose` -> popover react-aria มี Row limit + Purpose) · Ctrl/⌘+Enter ขวาสุด
+  - panel NokRak **ลอยทับ editor** (`absolute`, กว้างสุด 40rem) — ไม่ดัน editor
+  - "What this statement does" ไป **อยู่ข้าง editor** สูงเท่า editor scroll ในตัว
+  - ช่อง "Results appear here" ยืดเต็มที่เหลือ (เดิม shrink-0 เหลือที่ว่างครึ่งจอ)
+- test: `QueryAssist.test` NokRak 5 (Use this · problem · ไม่มี source = disabled ไม่มี alert · ปิดด้วยปุ่ม · Esc)
+
+### BS.4 ทดสอบ
+- `tsc` สะอาด · jest เต็ม **56 suites / 564 tests ผ่าน** · build ผ่าน · backend `LlmAssist*` 27 ผ่าน
+- Playwright จริงที่ :8090/Arak (1440px, gpt-5): New policy -> draft เติม form ครบ · Query -> toolbar แถวเดียว · settings popover · NokRak เขียน SQL ของ `procurement.po` -> Use this -> Explain ข้าง editor · 0 response 5xx / page error
+
+### BS.5 ไม่เปลี่ยน / ไม่มี
+- **ไม่มี migration · ไม่มี env ใหม่** · ไม่มี endpoint ใหม่
+- ปุ่ม NokRak ไม่ run SQL · ไม่ save / activate policy เอง
+- ข้อสังเกตที่ยังเป็นแบบเดิม (ตามดีไซน์ที่บันทึกไว้): prompt ของ `/sql` และ `/policy` ใช้ metadata ของ catalog ที่ไม่ได้กรองตามสิทธิ์ (metadata ไม่ถือเป็นความลับ) — ต่างจาก agent M28 ที่กรองก่อน
+
+## รอบก่อนหน้า — **ข้อ BR: Workflow Builder แบบ OpenMetadata · Policy มี Diagram ทั้งตอนสร้างและตอนอ่าน · หน้า Policy จัดใหม่ให้สะอาด**
 
 ผู้ใช้ขอ *"อันนี้ตัวอย่าง Workflow Builder ของ Openmetadata อยากให้มาทำฝั่ง Arak ในการกำหนด Workflow Access Request บ้าง"* · *"อยากให้ UI นี้ใช้กับ Diagram ของ Policies นอกจาก text, workflow เพิ่ม Diagram ด้วยทั้งตอนสร้าง และ Display"* · *"ปรับหน้า Policy อันนี้ให้ดู Clean ใช้งานง่าย และดูไม่รกตา"*
 

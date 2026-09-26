@@ -24,6 +24,16 @@ jest.mock('../../api/governance', () => ({
     Promise.resolve({ tags: [], terms: [], domains: [], dataProducts: [] }),
 }));
 
+const assistPolicy = jest.fn();
+const fetchMyLlmSetting = jest.fn();
+const fetchOfferedFeatures = jest.fn();
+
+jest.mock('../../api/llm', () => ({
+  assistPolicy: (...args: unknown[]) => assistPolicy(...args),
+  fetchMyLlmSetting: () => fetchMyLlmSetting(),
+  fetchOfferedFeatures: () => fetchOfferedFeatures(),
+}));
+
 jest.mock('../../api/client', () => ({
   apiErrorMessage: (_error: unknown, fallback: string) => fallback,
 }));
@@ -46,6 +56,9 @@ function renderNew() {
 beforeEach(() => {
   jest.clearAllMocks();
   createPolicy.mockResolvedValue({ id: 'new-id' });
+  // No assistant unless a test says so, so the form reads as it always has.
+  fetchMyLlmSetting.mockRejectedValue(new Error('403'));
+  fetchOfferedFeatures.mockResolvedValue([]);
 });
 
 /*
@@ -164,4 +177,104 @@ test('the diagram is a third view, and a node in it opens the step that writes i
   expect(screen.queryByRole('figure')).not.toBeInTheDocument();
   await waitFor(() => expect(scroll).toHaveBeenCalled());
   localStorage.clear();
+});
+
+/*
+ * NokRak on the form (the same /v1/llm/assist/policy the dock calls). It fills
+ * the form and nothing more: nothing is saved until "Create draft", and a
+ * lifecycle state in the answer is not carried into the form or the save.
+ */
+describe('NokRak, help me', () => {
+  function withAssistant(features = ['DRAFT_POLICY']) {
+    fetchMyLlmSetting.mockResolvedValue({ available: true });
+    fetchOfferedFeatures.mockResolvedValue(features);
+  }
+
+  async function openPrompt() {
+    fireEvent.click(await screen.findByRole('button', { name: /NokRak, help me/ }));
+    return screen.getByRole('region', { name: 'Tell NokRak the rule' });
+  }
+
+  test('drafts the rule into the form and saves nothing until asked', async () => {
+    withAssistant();
+    assistPolicy.mockResolvedValue({
+      model: 'test-model',
+      personal: false,
+      document: JSON.stringify({
+        id: 'made-up-id',
+        lifecycleState: 'ACTIVE',
+        name: 'finance-reads-pii',
+        policyType: 'SUBSCRIPTION',
+        scopeLevel: 'TABLE',
+        scopeFqn: 'demo-pg.salesdb.sales.customer',
+        selector: {
+          condition: { facet: 'table', operator: 'eq', value: 'demo-pg.salesdb.sales.customer' },
+        },
+        subject: { principals: [{ group: 'finance' }] },
+        effect: 'ALLOW',
+      }),
+    });
+    renderNew();
+
+    const prompt = await openPrompt();
+    fireEvent.change(within(prompt).getByRole('textbox'), {
+      target: { value: 'Let finance read PII tables' },
+    });
+    fireEvent.click(within(prompt).getByRole('button', { name: 'Draft it' }));
+
+    await waitFor(() =>
+      expect(assistPolicy).toHaveBeenCalledWith({ intent: 'Let finance read PII tables' })
+    );
+    expect(await screen.findByDisplayValue('finance-reads-pii')).toBeInTheDocument();
+    expect(screen.getByText(/Loaded a draft from NokRak/)).toBeInTheDocument();
+    // The prompt closes once the form holds the draft.
+    expect(screen.queryByRole('region', { name: 'Tell NokRak the rule' })).not.toBeInTheDocument();
+    expect(createPolicy).not.toHaveBeenCalled();
+    expect(transitionPolicy).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Create draft' }));
+    await waitFor(() => expect(createPolicy).toHaveBeenCalledTimes(1));
+    const saved = createPolicy.mock.calls[0][0];
+    expect(saved).toMatchObject({ name: 'finance-reads-pii' });
+    expect(saved).not.toHaveProperty('id');
+    expect(saved).not.toHaveProperty('lifecycleState');
+    expect(transitionPolicy).not.toHaveBeenCalled();
+  });
+
+  test('an answer that is not a policy loads nothing and says so', async () => {
+    withAssistant();
+    assistPolicy.mockResolvedValue({ model: 'm', personal: false, document: 'Sorry, I cannot.' });
+    renderNew();
+
+    const prompt = await openPrompt();
+    const box = within(prompt).getByRole('textbox');
+    fireEvent.change(box, { target: { value: 'something' } });
+    fireEvent.keyDown(box, { key: 'Enter' });
+
+    expect(await screen.findByText(/was not a policy document/)).toBeInTheDocument();
+    // Left open, so the author can say it another way.
+    expect(screen.getByRole('region', { name: 'Tell NokRak the rule' })).toBeInTheDocument();
+  });
+
+  test('a refused draft is said in the prompt', async () => {
+    withAssistant();
+    assistPolicy.mockRejectedValue(new Error('503'));
+    renderNew();
+
+    const prompt = await openPrompt();
+    fireEvent.change(within(prompt).getByRole('textbox'), { target: { value: 'x' } });
+    fireEvent.click(within(prompt).getByRole('button', { name: 'Draft it' }));
+
+    expect(await within(prompt).findByRole('alert')).toHaveTextContent(
+      'NokRak could not draft a policy.'
+    );
+  });
+
+  test('is not offered to a role without the drafting job', async () => {
+    withAssistant(['WRITE_SQL']);
+    renderNew();
+    await waitFor(() => expect(fetchOfferedFeatures).toHaveBeenCalled());
+    await screen.findByRole('button', { name: 'Create draft' });
+    expect(screen.queryByRole('button', { name: /NokRak/ })).not.toBeInTheDocument();
+  });
 });

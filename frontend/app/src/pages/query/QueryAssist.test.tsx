@@ -1,15 +1,17 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import type { ReactNode } from 'react';
-import { ExplanationCard, FixWithAi, useAssistReady } from './QueryAssist';
+import { ExplanationCard, FixWithAi, useAssistReady, WriteWithNokRak } from './QueryAssist';
 import type { Refusal } from '../../api/accessRequests';
 
 const assistFix = jest.fn();
+const assistSql = jest.fn();
 const fetchMyLlmSetting = jest.fn();
 
 jest.mock('../../api/llm', () => ({
   assistFix: (...args: unknown[]) => assistFix(...args),
   assistExplain: jest.fn(),
+  assistSql: (...args: unknown[]) => assistSql(...args),
   fetchMyLlmSetting: () => fetchMyLlmSetting(),
 }));
 
@@ -43,6 +45,7 @@ function renderFix(over: Partial<Refusal> = {}, onUse = jest.fn()) {
 
 beforeEach(() => {
   assistFix.mockReset();
+  assistSql.mockReset();
   fetchMyLlmSetting.mockReset();
 });
 
@@ -176,5 +179,86 @@ describe('useAssistReady', () => {
     render(wrap(<Probe />));
     await waitFor(() => expect(fetchMyLlmSetting).toHaveBeenCalled());
     expect(screen.getByText('not ready')).toBeInTheDocument();
+  });
+});
+
+describe('NokRak, write it', () => {
+  function renderWrite(sourceId = 'src-1') {
+    const onUse = jest.fn();
+    const onClose = jest.fn();
+    render(
+      wrap(<WriteWithNokRak engine="POSTGRES" onClose={onClose} onUse={onUse} sourceId={sourceId} />)
+    );
+    return { onUse, onClose, box: screen.getByRole('textbox') };
+  }
+
+  it('asks with the question, the source and its dialect, and fills the editor only on Use this', async () => {
+    assistSql.mockResolvedValue({
+      sql: 'SELECT count(*) FROM sales.customer',
+      model: 'test-model',
+      tables: ['demo-pg.salesdb.sales.customer'],
+      problem: null,
+      personal: false,
+    });
+    const { onUse, box } = renderWrite();
+
+    fireEvent.change(box, { target: { value: 'How many customers?' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Write it' }));
+
+    const card = await screen.findByRole('region', { name: 'Statement NokRak wrote' });
+    expect(assistSql).toHaveBeenCalledWith({
+      question: 'How many customers?',
+      sourceId: 'src-1',
+      engine: 'POSTGRES',
+    });
+    expect(within(card).getByText('SELECT count(*) FROM sales.customer')).toBeInTheDocument();
+    expect(within(card).getByText('demo-pg.salesdb.sales.customer')).toBeInTheDocument();
+    // Shown is not used: nothing reaches the editor until the reader says so.
+    expect(onUse).not.toHaveBeenCalled();
+
+    fireEvent.click(within(card).getByRole('button', { name: 'Use this' }));
+    expect(onUse).toHaveBeenCalledWith('SELECT count(*) FROM sales.customer');
+  });
+
+  it('says why when it could not write one, and offers nothing to use', async () => {
+    assistSql.mockResolvedValue({
+      sql: '',
+      model: 'm',
+      tables: [],
+      problem: 'No table here has anything about invoices.',
+      personal: false,
+    });
+    const { box } = renderWrite();
+
+    fireEvent.change(box, { target: { value: 'invoices?' } });
+    fireEvent.keyDown(box, { key: 'Enter' });
+
+    expect(await screen.findByText('No table here has anything about invoices.')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Use this' })).not.toBeInTheDocument();
+  });
+
+  it('asks for a source before it asks the assistant, without an alarm', () => {
+    const { box } = renderWrite('');
+
+    fireEvent.change(box, { target: { value: 'How many customers?' } });
+    expect(screen.getByRole('button', { name: 'Write it' })).toBeDisabled();
+    fireEvent.keyDown(box, { key: 'Enter' });
+
+    expect(screen.getByText(/Choose a source first/)).toBeInTheDocument();
+    // Said as guidance, not as an error: nothing has gone wrong yet.
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(assistSql).not.toHaveBeenCalled();
+  });
+
+  it('closes on Escape', () => {
+    const { onClose, box } = renderWrite();
+    fireEvent.keyDown(box, { key: 'Escape' });
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it('closes from its own button', () => {
+    const { onClose } = renderWrite();
+    fireEvent.click(screen.getByRole('button', { name: 'Close NokRak' }));
+    expect(onClose).toHaveBeenCalled();
   });
 });

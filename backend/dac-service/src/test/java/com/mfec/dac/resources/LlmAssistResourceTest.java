@@ -405,4 +405,28 @@ class LlmAssistResourceTest {
       assertThat(draft.problem()).contains("could not answer that");
     }
   }
+
+  @Nested
+  @DisplayName("a policy draft")
+  class PolicyDraft {
+
+    @Test
+    @DisplayName("is asked for against every schema the document refers to, the selector's included")
+    void sendsTheSelectorSchema() throws Exception {
+      answers("{\"name\":\"p\",\"lifecycleState\":\"DRAFT\"}");
+
+      LlmAssistResource.PolicyDraft draft =
+          resource.policy(
+              new LlmAssistResource.PolicyAsk("mask PII below L2", null, null), as(analyst));
+
+      assertThat(draft.document()).contains("\"lifecycleState\":\"DRAFT\"");
+      // The selector and the operators live in type/facet.json. Left out, the
+      // model saw only a $ref and invented a selector the builder cannot show.
+      assertThat(system.getValue())
+          .contains("// entity/policy/policy.json")
+          .contains("// type/facet.json")
+          .contains("assetSelector")
+          .contains("facetOperator");
+    }
+  }
 }
