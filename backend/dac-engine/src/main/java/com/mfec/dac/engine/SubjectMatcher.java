@@ -48,6 +48,26 @@ public final class SubjectMatcher {
     }
   }
 
+  /**
+   * Said when every identity condition held and only the clock did not. A rule
+   * is checked in the order identity, attributes, expression, time, context, so
+   * reaching this means the policy was written for this principal.
+   */
+  public static final String OUTSIDE_TIME_WINDOW = "outside the policy's permitted time window";
+
+  /** As {@link #OUTSIDE_TIME_WINDOW}, for the network address or the declared purpose. */
+  public static final String OUTSIDE_CONTEXT =
+      "request network address or declared purpose is outside the policy's context rule";
+
+  /**
+   * True when a policy is for this principal, only not now or not from here.
+   * That is the refusal worth naming first: the answer is to wait or to say
+   * why, not to go and ask for different attributes.
+   */
+  public static boolean nearMiss(String explanation) {
+    return OUTSIDE_TIME_WINDOW.equals(explanation) || OUTSIDE_CONTEXT.equals(explanation);
+  }
+
   private SubjectMatcher() {}
 
   public static Result matches(
@@ -115,11 +135,11 @@ public final class SubjectMatcher {
 
     if (rule.getTime() != null
         && !TimeMatcher.matches(rule.getTime(), context.at(), config.defaultZone())) {
-      return Result.no("outside the policy's permitted time window");
+      return Result.no(OUTSIDE_TIME_WINDOW);
     }
 
     if (rule.getContext() != null && !ContextMatcher.matches(rule.getContext(), context)) {
-      return Result.no("request network address or declared purpose is outside the policy's context rule");
+      return Result.no(OUTSIDE_CONTEXT);
     }
 
     return Result.yes("subject rule satisfied");

@@ -660,6 +660,14 @@ M25 ทำแยกได้ (profile ผ่าน proxy ที่มีแล�
 - `PolicyEngine.java` เคยมี NUL byte ดิบ 6 ตัวใน char literal ของ `predicateKey` ทำให้ git/grep มองว่าเป็นไฟล์ binary (git เลยไม่ normalize line ending) เปลี่ยนเป็น `'\0'` แล้ว ค่าเท่าเดิมทุก byte · **diff รอบนี้ยาวทั้งไฟล์เพราะ git normalize CRLF → LF ครั้งเดียว** ไม่ใช่การแก้ logic
 - ผ่าน: engine 285 · unit ทั้ง backend 1,112 · `GrantCompositionIT` 19/19
 
+### BT.8 Query console — ข้อความตอนถูกปฏิเสธชี้ policy ที่เป็นเหตุจริง (UAT C39b)
+- เจอใน UAT: คน Finance query ตอน 20:00 ได้ข้อความ *"S1 (procurement/audit) did not apply: attribute condition not satisfied"* ซึ่งจริงแต่ไม่ช่วยอะไร ตัวที่ปิดประตูจริงคือ S4 ที่เขียนให้ Finance แต่ติด office hours
+- `QueryRewriter.reasonFor` เลือกตัวที่จะโทษตามลำดับนี้: DENY ที่ match → ALLOW ที่ **ยืนอยู่ใน gate ที่ปฏิเสธ** (reason ที่ขึ้นต้นด้วย `PolicyEngine.HOLDS_THE_GATE`) → ในกลุ่มนั้นเลือกตัวที่ **เกือบผ่าน** ก่อน (`SubjectMatcher.nearMiss` คือผ่าน identity/attribute/expression แล้ว ติดแค่ time window หรือ context) → ถ้าไม่มีข้อมูล gate ใช้กติกาเดียวกันกับ ALLOW ที่ไม่ match ทั้งหมด → composition
+- ไม่โทษอีกต่อไป: DENY ที่ **ไม่** match (มันไม่ได้กันใคร) · policy ที่อยู่ใน layer ที่ผู้ใช้ผ่านมาแล้ว · data policy (เหมือนเดิม)
+- `SubjectMatcher.OUTSIDE_TIME_WINDOW` / `OUTSIDE_CONTEXT` และ `PolicyEngine.HOLDS_THE_GATE` เป็นค่าคงที่ public แล้ว ข้อความเดิมทุก byte
+- `QueryRewriterTest` เพิ่ม 3 ข้อ (2 ข้อใช้ `PolicyEngine` จริง) · ลอง mutation ถอดทั้ง 3 กติกาแล้ว fail ครบ 3 ข้อ
+- ผ่าน: unit ทั้ง backend 1,115 (engine 285 · proxy 37 · service 594)
+
 ### BT.6 ค้าง
 - credential ของ source บน prod ที่ auth ไม่ผ่าน ผู้ใช้เป็นคนตัดสิน · แก้แล้วให้รัน Q1–Q7 ใน `prod-demo-policies.mjs` อีกรอบ
 - กรณี group บน prod รอ push แล้ว deploy V35 ก่อน

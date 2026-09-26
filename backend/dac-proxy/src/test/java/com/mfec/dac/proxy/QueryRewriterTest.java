@@ -4,12 +4,31 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.mfec.dac.compiler.sql.PostgresDialect;
+import com.mfec.dac.engine.AssetContext;
+import com.mfec.dac.engine.EngineConfig;
+import com.mfec.dac.engine.PolicyEngine;
+import com.mfec.dac.engine.Principal;
+import com.mfec.dac.engine.RequestContext;
 import com.mfec.dac.schema.api.DecisionReason;
 import com.mfec.dac.schema.api.MaskingSpec;
 import com.mfec.dac.schema.api.PolicyDecision;
 import com.mfec.dac.schema.api.ResolvedColumnMask;
+import com.mfec.dac.schema.api.ResolvedColumnMask.ScopeLevel;
 import com.mfec.dac.schema.api.ResolvedRowPredicate;
+import com.mfec.dac.schema.api.ResolvedRowPredicate.FacetOperator;
+import com.mfec.dac.schema.entity.policy.AssetSelector;
+import com.mfec.dac.schema.entity.policy.AttributeCondition;
+import com.mfec.dac.schema.entity.policy.FacetCondition;
+import com.mfec.dac.schema.entity.policy.FacetCondition.FacetType;
+import com.mfec.dac.schema.entity.policy.Policy;
+import com.mfec.dac.schema.entity.policy.SubjectRule;
+import com.mfec.dac.schema.entity.policy.TimeRule;
+import com.mfec.dac.schema.entity.policy.TimeWindow;
+import java.nio.charset.StandardCharsets;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.List;
+import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -213,6 +232,134 @@ class QueryRewriterTest {
         .isInstanceOf(QueryRewriter.RefusedException.class)
         .hasMessageContaining("no policy at layer 0")
         .hasMessageNotContaining("no subject rule");
+  }
+
+  @Test
+  void doesNotBlameADenyThatDidNotMatch() {
+    // A DENY that did not match kept nobody out, however early it is listed.
+    PolicyDecision denied =
+        allowed()
+            .withAllowed(false)
+            .withReasons(
+                List.of(
+                    new DecisionReason()
+                        .withPolicyName("contractors-deny")
+                        .withPolicyType(DecisionReason.PolicyType.SUBSCRIPTION)
+                        .withEffect(DecisionReason.Effect.DENY)
+                        .withMatched(false)
+                        .withExplanation("attribute condition not satisfied: employeeType eq CONTRACTOR"),
+                    new DecisionReason()
+                        .withPolicyName("finance-subscription")
+                        .withPolicyType(DecisionReason.PolicyType.SUBSCRIPTION)
+                        .withEffect(DecisionReason.Effect.ALLOW)
+                        .withMatched(false)
+                        .withExplanation("attribute condition not satisfied: department eq FINANCE")));
+
+    assertThatThrownBy(() -> rewriter.rewrite("SELECT * FROM sales.customer", governing(denied)))
+        .isInstanceOf(QueryRewriter.DeniedException.class)
+        .hasMessageContaining("finance-subscription did not apply")
+        .hasMessageNotContaining("contractors-deny");
+  }
+
+  // ------------------------------------------- refusals the engine wrote
+
+  private static final ZoneId BANGKOK = ZoneId.of("Asia/Bangkok");
+
+  /** 2026-09-15 is a Tuesday; 20:00 is after the office closes. */
+  private static final RequestContext TUESDAY_EVENING =
+      RequestContext.at(LocalDateTime.parse("2026-09-15T20:00").atZone(BANGKOK).toInstant());
+
+  private static Policy subscription(String name, ScopeLevel level) {
+    return new Policy()
+        .withId(UUID.nameUUIDFromBytes(name.getBytes(StandardCharsets.UTF_8)))
+        .withName(name)
+        .withVersion(1)
+        .withPolicyType(Policy.PolicyType.SUBSCRIPTION)
+        .withScopeLevel(level)
+        .withScopeFqn(level == ScopeLevel.ORG ? null : "demo-pg.salesdb.sales.customer")
+        .withEffect(Policy.Effect.ALLOW)
+        .withSelector(
+            new AssetSelector()
+                .withCondition(
+                    new FacetCondition()
+                        .withFacet(FacetType.TABLE)
+                        .withOperator(FacetOperator.EQ)
+                        .withValue("customer")));
+  }
+
+  private static SubjectRule department(String value) {
+    return new SubjectRule()
+        .withAttributes(
+            List.of(
+                new AttributeCondition()
+                    .withKey("department")
+                    .withOperator(FacetOperator.EQ)
+                    .withValue(value)));
+  }
+
+  private static TimeRule officeHours() {
+    return new TimeRule()
+        .withWindows(
+            List.of(
+                new TimeWindow()
+                    .withDays(List.of("MON-FRI"))
+                    .withFrom("08:00")
+                    .withTo("18:00")
+                    .withTimezone("Asia/Bangkok")));
+  }
+
+  private static PolicyDecision decide(Principal principal, List<Policy> policies) {
+    return new PolicyEngine(EngineConfig.defaults().withZone(BANGKOK))
+        .evaluate(
+            principal,
+            AssetContext.of("demo-pg.salesdb.sales.customer").physicalFromFqn().build(),
+            TUESDAY_EVENING,
+            policies);
+  }
+
+  private static Principal financeAnalyst() {
+    return Principal.withId("analyst_f").roles("analyst").attribute("department", "FINANCE").build();
+  }
+
+  @Test
+  void namesThePolicyWrittenForThePrincipalThatOnlyTheClockKeptShut() {
+    // Found in UAT: a finance analyst after hours was told the procurement
+    // subscription did not apply to them, which was true and no help. The one
+    // written for finance, shut only by its office-hours window, is the answer.
+    Policy procurement = subscription("procurement-readers", ScopeLevel.ORG);
+    procurement.withSubject(department("PROCUREMENT"));
+    Policy finance = subscription("finance-office-hours", ScopeLevel.ORG);
+    finance.withSubject(department("FINANCE").withTime(officeHours()));
+
+    PolicyDecision denied = decide(financeAnalyst(), List.of(procurement, finance));
+
+    assertThat(denied.getAllowed()).isFalse();
+    assertThatThrownBy(() -> rewriter.rewrite("SELECT * FROM sales.customer", governing(denied)))
+        .isInstanceOf(QueryRewriter.DeniedException.class)
+        .hasMessageContaining("finance-office-hours did not apply")
+        .hasMessageContaining("time window")
+        .hasMessageNotContaining("procurement-readers");
+  }
+
+  @Test
+  void doesNotBlameAPolicyAtALayerThePrincipalGotThrough() {
+    // The org layer lets finance in; the table layer is what refuses. The org
+    // policy for procurement did not apply either, but it is not why the door
+    // is shut.
+    Policy procurement = subscription("procurement-readers", ScopeLevel.ORG);
+    procurement.withSubject(department("PROCUREMENT"));
+    Policy finance = subscription("finance-readers", ScopeLevel.ORG);
+    finance.withSubject(department("FINANCE"));
+    Policy tableOwners = subscription("customer-owners-only", ScopeLevel.TABLE);
+    tableOwners.withSubject(department("SALES"));
+
+    PolicyDecision denied = decide(financeAnalyst(), List.of(procurement, finance, tableOwners));
+
+    assertThat(denied.getAllowed()).isFalse();
+    assertThatThrownBy(() -> rewriter.rewrite("SELECT * FROM sales.customer", governing(denied)))
+        .isInstanceOf(QueryRewriter.DeniedException.class)
+        .hasMessageContaining("customer-owners-only did not apply")
+        .hasMessageNotContaining("procurement-readers");
   }
 
   @Test

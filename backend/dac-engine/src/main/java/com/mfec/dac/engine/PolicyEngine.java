@@ -423,20 +423,20 @@ public final class PolicyEngine {
         String explanation;
         if (relaxable) {
           explanation =
-              "holds the gate at this layer and does not grant this principal access; it "
-                  + "allows a lower layer to relax it, but nothing below has granted access "
+              HOLDS_THE_GATE
+                  + "; it allows a lower layer to relax it, but nothing below has granted access "
                   + "either";
         } else if (Boolean.TRUE.equals(c.policy().getAllowLocalOverride())) {
           explanation =
-              "holds the gate at this layer and does not grant this principal access; it "
-                  + "allows a lower layer to relax it, but "
+              HOLDS_THE_GATE
+                  + "; it allows a lower layer to relax it, but "
                   + String.join(", ", withholding)
                   + (withholding.size() == 1 ? " at the same layer does" : " at the same layer do")
                   + " not, so no direct grant can pass this layer";
         } else {
           explanation =
-              "holds the gate at this layer and does not grant this principal access; it "
-                  + "does not allow a lower layer to relax it, so no direct grant can pass "
+              HOLDS_THE_GATE
+                  + "; it does not allow a lower layer to relax it, so no direct grant can pass "
                   + "it either";
         }
         reasons.add(reason(c.policy(), false, explanation));
@@ -858,6 +858,17 @@ public final class PolicyEngine {
    * against a copy of this string in another module is how the two drift.
    */
   public static final String COMPOSITION = "(composition)";
+
+  /**
+   * How a policy standing in the gate that refused begins its second reason.
+   *
+   * <p>Every policy gets a first reason when it binds, and on a refusal those
+   * are not all equal: a policy at a layer that let the principal through is not
+   * why the door is shut, however unmatched it was. This marks the ones that
+   * are, so a caller can name one of them.
+   */
+  public static final String HOLDS_THE_GATE =
+      "holds the gate at this layer and does not grant this principal access";
 
   /**
    * A reason that belongs to the composition itself rather than to one policy.
