@@ -165,6 +165,10 @@ public class LocalIdentityDao {
    * the attack this defends against is an offline-quality guessing rate against
    * one known username, and an address-based limit is trivially spread across
    * hosts.
+   *
+   * <p>A lock that has run out starts the count again. Without that the count
+   * stays at the threshold until someone signs in, and the first typo after
+   * the wait locks the account for the whole period again.
    */
   public void recordFailure(UUID principalId, int maxAttempts, java.time.Duration lockFor) {
     jdbi.useHandle(
@@ -173,10 +177,15 @@ public class LocalIdentityDao {
                 .createUpdate(
                     """
                     UPDATE local_credential
-                    SET failed_attempts = failed_attempts + 1,
+                    SET failed_attempts = CASE
+                            WHEN locked_until <= now() THEN 1
+                            ELSE failed_attempts + 1
+                        END,
                         locked_until = CASE
-                            WHEN failed_attempts + 1 >= :maxAttempts
+                            WHEN (CASE WHEN locked_until <= now() THEN 1
+                                       ELSE failed_attempts + 1 END) >= :maxAttempts
                             THEN now() + make_interval(secs => :lockSeconds)
+                            WHEN locked_until <= now() THEN NULL
                             ELSE locked_until
                         END
                     WHERE principal_id = :id

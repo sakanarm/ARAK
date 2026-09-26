@@ -284,6 +284,53 @@ class IdentityAdminStoreIT {
   }
 
   @Nested
+  @DisplayName("failed sign-ins")
+  class FailedSignIns {
+
+    private final LocalIdentityDao dao = new LocalIdentityDao(jdbi);
+    private final java.time.Duration lockFor = java.time.Duration.ofMinutes(15);
+
+    private LocalIdentityDao.LocalAccount account() {
+      return dao.findLocalAccount("analyst_a").orElseThrow();
+    }
+
+    @Test
+    @DisplayName("lock the account on the fifth, not before")
+    void locksAtTheThreshold() {
+      UUID id = create("analyst_a");
+      for (int i = 0; i < 4; i++) dao.recordFailure(id, 5, lockFor);
+      assertThat(account().isLocked(java.time.Instant.now())).isFalse();
+
+      dao.recordFailure(id, 5, lockFor);
+      assertThat(account().isLocked(java.time.Instant.now())).isTrue();
+    }
+
+    @Test
+    @DisplayName("count again from one once the lock has run out, so one typo does not re-lock")
+    void anExpiredLockStartsAFreshCount() {
+      UUID id = create("analyst_a");
+      for (int i = 0; i < 5; i++) dao.recordFailure(id, 5, lockFor);
+      // The wait, without waiting.
+      jdbi.useHandle(
+          handle ->
+              handle.execute(
+                  "UPDATE local_credential SET locked_until = now() - interval '1 second'"
+                      + " WHERE principal_id = ?",
+                  id));
+
+      dao.recordFailure(id, 5, lockFor);
+
+      assertThat(account().failedAttempts()).isOne();
+      assertThat(account().isLocked(java.time.Instant.now())).isFalse();
+      assertThat(account().lockedUntil()).isNull();
+
+      // And the threshold still holds on the fresh count.
+      for (int i = 0; i < 4; i++) dao.recordFailure(id, 5, lockFor);
+      assertThat(account().isLocked(java.time.Instant.now())).isTrue();
+    }
+  }
+
+  @Nested
   @DisplayName("principals from a directory we sync")
   class SyncedPrincipals {
 
