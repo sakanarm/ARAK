@@ -114,6 +114,7 @@ import java.time.Duration;
 import java.time.LocalTime;
 import java.time.ZoneId;
 import java.util.EnumSet;
+import java.util.List;
 import java.util.Optional;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -222,8 +223,31 @@ public class DacApplication extends Application<DacConfiguration> {
     CatalogSyncService sync =
         new CatalogSyncService(jdbi, environment.getObjectMapper(), omClient);
     SyncStateDao syncState = new SyncStateDao(jdbi);
+    // Policy bindings. Built ahead of the change applier because a tag that
+    // arrives by webhook or poll has to move the bindings as well as the cache
+    // (FR-3.1.6), and the materialiser takes the loader rather than building
+    // one so that the change path and the authoring path resolve bindings
+    // through the same read model, and cannot drift apart in how they read a
+    // facet.
+    AssetContextLoader contexts = new AssetContextLoader(environment.getObjectMapper());
+    PolicyBindingMaterializer materializer =
+        new PolicyBindingMaterializer(jdbi, environment.getObjectMapper(), contexts);
     CatalogChangeApplier applier =
-        new CatalogChangeApplier(jdbi, environment.getObjectMapper(), omClient);
+        new CatalogChangeApplier(
+            jdbi,
+            environment.getObjectMapper(),
+            omClient,
+            new CatalogChangeApplier.Bindings() {
+              @Override
+              public int refresh(List<String> tableFqns) {
+                return moved(materializer.refresh(tableFqns));
+              }
+
+              @Override
+              public int refreshAll() {
+                return moved(materializer.materializeAll());
+              }
+            });
 
     // The decision cache (FR-5.5). Built here, ahead of the stores, because
     // every one of them has to be able to tell it that something moved, and a
@@ -271,14 +295,8 @@ public class DacApplication extends Application<DacConfiguration> {
             OpenMetadataLink.reading(omClient::baseUrl));
     environment.jersey().register(new CatalogResource(catalog));
 
-    // Policy authoring. The materialiser takes the loader rather than building
-    // one so that the webhook path and the authoring path resolve bindings
-    // through the same read model, and cannot drift apart in how they read a
-    // facet (FR-3.1.6).
-    AssetContextLoader contexts = new AssetContextLoader(environment.getObjectMapper());
+    // Policy authoring, over the materialiser built above.
     PolicyStore policyStore = new PolicyStore(jdbi, environment.getObjectMapper());
-    PolicyBindingMaterializer materializer =
-        new PolicyBindingMaterializer(jdbi, environment.getObjectMapper(), contexts);
     // The expression evaluator is wired here and nowhere else. An engine built
     // without one treats every `expr` as undecidable and fails closed, which
     // looks exactly like a policy that simply does not grant — so the moment a
@@ -642,6 +660,11 @@ public class DacApplication extends Application<DacConfiguration> {
               + "It will load a blank page. Rebuild with VITE_BASE={} and copy it across.",
           builtFor, configured, configured);
     }
+  }
+
+  /** Bindings added or removed across one re-resolve. */
+  private static int moved(List<PolicyBindingMaterializer.Result> results) {
+    return results.stream().mapToInt(r -> r.added() + r.removed()).sum();
   }
 
   private static String normalizeBase(String value) {

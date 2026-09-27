@@ -1,6 +1,6 @@
 # HANDOFF — ARAK (Data Access Control Platform)
 
-> อัปเดต: 2026-09-27 · ข้อ BV (tab Access เฉพาะผู้ดูแล + Diagram แบบ canvas) · ข้อ BU (FR-1.7 local tag + demo group บน prod) · push ขึ้น origin/main แล้ว · repo https://github.com/sakanarm/ARAK (**public**)
+> อัปเดต: 2026-09-27 · ข้อ BW (tag จาก OM ผ่าน webhook/poller ย้าย policy binding ทันที) · ข้อ BV (tab Access เฉพาะผู้ดูแล + Diagram แบบ canvas) · ข้อ BU (FR-1.7 local tag + demo group บน prod) · push ขึ้น origin/main แล้ว · repo https://github.com/sakanarm/ARAK (**public**)
 >
 > อ่านคู่กับ **[docs/DESIGN.md](docs/DESIGN.md)** — ไฟล์นั้นคือ requirement + feature catalogue + สถานะครบทุกข้อ
 > ไฟล์นี้บอกเฉพาะ "ทำถึงไหน จะไปต่อยังไง อะไรที่ลองแล้วไม่เวิร์ค"
@@ -27,7 +27,7 @@ Phase 1 รองรับ SQL Server + PostgreSQL · identity หลักค�
 | Milestone | สถานะ |
 |---|---|
 | **M0 Foundation** | ✅ เสร็จ — Maven multi-module, Dropwizard 5, Vite+React+Tailwind shell, vendor `ui-core-components`, JSON Schema → Java/TS codegen, OM client จาก swagger ที่ pin ไว้, Flyway V1–V10, docker-compose, CI 4 jobs |
-| **M1 OM Connector** | 🚧 ~95% — full crawl + governance + effective facet + FR-1.5 webhook/poller/reconcile + catalog read API + Catalog UI + governance read API + Governance UI · **sync กับ OM จริงสำเร็จแล้ว** · เหลือ FR-1.6 (reconcile กับ JDBC จริง), FR-1.7 (local tag + push-back — **ผู้ใช้สั่ง read-only ตอนนี้**) |
+| **M1 OM Connector** | 🚧 ~97% — full crawl + governance + effective facet + FR-1.5 webhook/poller/reconcile (**webhook/poller re-resolve `policy_binding` แล้ว ข้อ BW**) · FR-1.7 local tag ใน ARAK เสร็จ (ข้อ BU) + catalog read API + Catalog UI + governance read API + Governance UI · **sync กับ OM จริงสำเร็จแล้ว** · เหลือ FR-1.6 (reconcile กับ JDBC จริง), FR-1.7 (local tag + push-back — **ผู้ใช้สั่ง read-only ตอนนี้**) |
 | **M2 Identity** | 🚧 ~50% — local sign-in ใช้ได้ · schema `principal`/`principal_attribute`/`group_member`/`app_role_assignment` มีตั้งแต่ V2 · read API + หน้า People & attributes (**filter ตาม attribute + กดเข้าไปดูสมาชิกใน group ได้ที่ `/principals/:id`**) + **หน้า Application roles (`/settings/roles`) อ่านอย่างเดียว** เสร็จ · **เพิ่ม local account + assign/withdraw app role ได้จาก UI แล้ว (V10 + `IdentityAdminStore` + audit)** · attribute ของ local account เขียนผ่าน API ได้แล้ว (`POST`/`DELETE /v1/principals/{id}/attributes`) · **local group สร้างและจัดสมาชิกได้จาก UI แล้ว (V35, ข้อ BT)** · ยังไม่มีหน้าจอเปลี่ยน password (ทุก account ที่สร้างเป็น `must_change`) · ยังไม่มี Entra OIDC / Graph sync |
 | **M3 Policy Engine** | 🚧 ~97% — engine **277 tests** (+10 รอบนี้ — `DataPolicyCompositionTest.MaskConflicts` ที่ทำให้เจอบั๊กการให้เครดิต policy ดูข้อ AH.3) (+101 รอบนี้ — `PolicyAlgebraTest` 34 ที่ assert **เซตของคนที่ผ่าน** ไม่ใช่ทีละคน + `ExpressionReferenceTest` ที่รันทุก example ในหน้า doc ผ่าน evaluator จริง) · เดิม **166 tests** (+10 รอบนี้ · **เจอบั๊กจริงสองตัวที่ grant โดนเต็มๆ ดูข้อ AE.1/AE.2**) (data policy 26 + subscription 45 เพิ่มรอบนี้ · เจอบั๊กจริง 2 ตัว ดูข้อ P) · persistence (`PolicyStore`) + `policy_binding` materializer + REST · `PolicyBindingMaterializerIT` 10 tests บน Postgres จริง · **decision cache (FR-5.5) ปิดแล้วรอบนี้ — 25 tests ดูข้อ AB** · เหลือ ANTLR grammar ของ `expr` (FR-3.2) ข้อเดียว |
 | **M4 Policy Authoring UI** | ✅ **เสร็จ** — Policy list + Policy builder + readback + capability matrix + `/policies/:id` หน้าสรุปอ่านอย่างเดียว + panel Policies ในหน้า asset (FR-3.1.5) + View-as-user (FR-5.2, ข้อ Z) · **รอบนี้ปิดข้อสุดท้าย: impact analysis (FR-5.3) — `GET /v1/policies/{id}/impact` + panel “Who it changes things for” ดูข้อ AA** · **รอบนี้เพิ่มหน้า `/docs/expressions` — syntax reference ที่ backend ส่งมาจาก jar ของ engine กดจากช่อง expression ได้ พร้อม 11 policy ตัวอย่างจริงใน DB (ข้อ AF.3/AF.4)** |
@@ -619,7 +619,20 @@ M25 ทำแยกได้ (profile ผ่าน proxy ที่มีแล�
 
 ---
 
-## รอบนี้ — **ข้อ BV: tab Access ของ table เห็นเฉพาะผู้ดูแล · "How access is decided" วาดแบบ canvas**
+## รอบนี้ — **ข้อ BW: change จาก OpenMetadata (webhook / poller) re-resolve `policy_binding` ทันที (FR-3.1.6)**
+
+ก่อนหน้านี้ webhook กับ poller เขียน cache (asset / facet) แต่ไม่แตะ `policy_binding` → table ที่เพิ่งติด `PII.Sensitive` ใน OM ยังไม่ถูก policy "mask PII" ครอบ จนกว่า nightly reconcile หรือจะมีคนกด re-resolve
+
+### BW.1 ทำอะไร
+- `CatalogChangeApplier` (จุดเดียวที่ทั้ง webhook และ poller มาจบ) รับ `Bindings` hook → หลัง apply:
+  - asset เปลี่ยน / ถูกลบ → หา table/view **ที่ FQN นั้นหรือใต้มัน** (เทียบทีละ segment · รวมตัวที่เพิ่งถูก retire เพื่อถอด binding) → `materializer.refresh(tables)` ทีละ 500
+  - governance re-read สำเร็จ → `materializer.materializeAll()` (classification ถูกปิด / term ย้าย parent กระทบได้ทุกที่)
+  - re-resolve พัง → นับเป็น `failed` → poller ถือ cursor ไว้ · webhook ตอบ 500 ให้ OM ส่งซ้ำ (apply ซ้ำฟรี)
+- `Outcome` มี `rebound` (binding ที่เพิ่ม+ถอด) · webhook response มี `"rebound"`
+- `DacApplication` สร้าง materializer ก่อน applier แล้วส่ง hook เข้าไป · decision cache ล้างเองผ่าน `materializer.changes()` เหมือนเดิม
+- test: `CatalogChangeBindingsIT` (4) — tag ใหม่ → bind ทันที · ลบ schema → ถอด table ใต้มันแต่ไม่แตะ `SalesDBArchive` · segment match · re-resolve พัง → failed
+
+ tab Access ของ table เห็นเฉพาะผู้ดูแล · "How access is decided" วาดแบบ canvas**
 
 ผู้ใช้สั่ง 2026-09-27: *"Tab Access ใน Catalog ของ Table ไม่ให้ user ทั่วไปเห็น ให้เฉพาะคนทำ policy กับ Admin นะ"* · และ Diagram แบบ layer *"ดูอ่านยาก"* อยากได้แบบเดียวกับ Diagram ของหน้า policy
 

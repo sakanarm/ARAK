@@ -227,7 +227,7 @@ conf/dac.yml                 config เดียวที่ commit — ใช�
 | FR-3.1.3 | Precedence + compose ทุกชั้น (sub-domain ลึกกว่า = ชั้นล่างกว่า) | ✅ `PolicyEngine` |
 | FR-3.1.4 | Local เพิ่มความเข้มได้อย่างเดียว เว้นแต่ `allowLocalOverride` + audit | ✅ engine · ⬜ audit trail |
 | FR-3.1.5 | หน้า "policy ทั้งหมดที่มีผลกับ asset นี้" | ⬜ (M4) |
-| FR-3.1.6 | Materialize selector → `policy_binding` + re-resolve เมื่อ asset/facet/policy เปลี่ยน | ⬜ |
+| FR-3.1.6 | Materialize selector → `policy_binding` + re-resolve เมื่อ asset/facet/policy เปลี่ยน | ✅ policy แก้ → materialize · local tag → refresh · webhook/poller → refresh table ที่เปลี่ยน (ลบ schema ถอด table ใต้มัน) · governance → ทุก policy · nightly → ทั้งหมด |
 | FR-3.2 | SubjectRule = predicate เดียว (principals + attributes + expr + time + context) | ✅ `SubjectMatcher`, `TimeMatcher`, `ContextMatcher` |
 | FR-3.2a | `assetOwner: true` — dynamic subject จาก owners ของ asset | ✅ |
 | FR-3.3 | `ALLOW` / `DENY` — **DENY ชนะเสมอ, default deny** | ✅ |

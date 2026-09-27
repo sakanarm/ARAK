@@ -43,8 +43,17 @@ public class CatalogChangeApplier {
 
   private static final Logger LOG = LoggerFactory.getLogger(CatalogChangeApplier.class);
 
-  /** What one batch did. */
-  public record Outcome(int refreshed, int retired, int governanceRuns, int failed) {
+  /**
+   * What one batch did.
+   *
+   * @param rebound policy bindings added or removed because of it (FR-3.1.6)
+   */
+  public record Outcome(
+      int refreshed, int retired, int governanceRuns, int failed, int rebound) {
+
+    public Outcome(int refreshed, int retired, int governanceRuns, int failed) {
+      this(refreshed, retired, governanceRuns, failed, 0);
+    }
 
     public boolean quiet() {
       return refreshed == 0 && retired == 0 && governanceRuns == 0 && failed == 0;
@@ -53,13 +62,50 @@ public class CatalogChangeApplier {
     @Override
     public String toString() {
       return refreshed + " refreshed, " + retired + " retired, " + governanceRuns
-          + " governance re-reads, " + failed + " failed";
+          + " governance re-reads, " + failed + " failed, " + rebound + " bindings moved";
     }
   }
+
+  /**
+   * Re-resolves policy bindings once the cache has moved (FR-3.1.6).
+   *
+   * <p>An interface rather than the materialiser itself so the catalog does not
+   * reach into the policy package, and so a test can see what was asked for.
+   * Both return how many bindings were added or removed.
+   */
+  public interface Bindings {
+    /** Re-resolves every policy for just these tables. */
+    int refresh(List<String> tableFqns);
+
+    /** Re-resolves every policy over everything it could reach. */
+    int refreshAll();
+
+    Bindings NONE =
+        new Bindings() {
+          @Override
+          public int refresh(List<String> tableFqns) {
+            return 0;
+          }
+
+          @Override
+          public int refreshAll() {
+            return 0;
+          }
+        };
+  }
+
+  /**
+   * How many tables go to one re-resolve. A service-level change names every
+   * table in the service, and one {@code IN} list the size of an estate is not
+   * a query.
+   */
+  private static final int REBIND_BATCH = 500;
 
   private final Jdbi jdbi;
   private final ObjectMapper json;
   private final OpenMetadataClient client;
+  private final Bindings bindings;
+  private final java.util.function.Supplier<AssetRefresher> refreshers;
   // Named apart from the field elsewhere because apply() takes a parameter
   // called changes.
   private final ChangeNotifier notifier = new ChangeNotifier();
@@ -70,9 +116,26 @@ public class CatalogChangeApplier {
   }
 
   public CatalogChangeApplier(Jdbi jdbi, ObjectMapper json, OpenMetadataClient client) {
+    this(jdbi, json, client, Bindings.NONE);
+  }
+
+  public CatalogChangeApplier(
+      Jdbi jdbi, ObjectMapper json, OpenMetadataClient client, Bindings bindings) {
+    this(jdbi, json, client, bindings, () -> new AssetRefresher(client));
+  }
+
+  /** For tests, which stand in for the read from OpenMetadata. */
+  CatalogChangeApplier(
+      Jdbi jdbi,
+      ObjectMapper json,
+      OpenMetadataClient client,
+      Bindings bindings,
+      java.util.function.Supplier<AssetRefresher> refreshers) {
     this.jdbi = jdbi;
     this.json = json;
     this.client = client;
+    this.bindings = bindings;
+    this.refreshers = refreshers;
   }
 
   /**
@@ -114,10 +177,11 @@ public class CatalogChangeApplier {
       exclusive = cachedMutuallyExclusive();
     }
 
-    AssetRefresher refresher = new AssetRefresher(client);
+    AssetRefresher refresher = refreshers.get();
     AssetStore store = new AssetStore(jdbi, json, Instant.now());
     int refreshed = 0;
     int retired = 0;
+    List<String> touched = new ArrayList<>();
 
     for (CatalogChange change : distinct) {
       if (change.governance()) {
@@ -126,12 +190,14 @@ public class CatalogChangeApplier {
       try {
         if (change.kind() == CatalogChange.Kind.REMOVED) {
           retired += retire(change.fqn());
+          touched.add(change.fqn());
         } else {
           // Never store.finished(): that is the retirement sweep, and a refresh
           // mentions one branch of the tree. Calling it here would retire the
           // rest of the catalog.
           refresher.refresh(change.subject(), change.fqn(), exclusive, store);
           refreshed++;
+          touched.add(change.fqn());
         }
       } catch (AssetRefresher.MissingAncestorException e) {
         // Ordinary: a delete and an update of its container raced, and this one
@@ -144,7 +210,18 @@ public class CatalogChangeApplier {
       }
     }
 
-    Outcome outcome = new Outcome(refreshed, retired, governanceRuns, failed);
+    int rebound = 0;
+    try {
+      rebound = rebind(governanceRuns > 0, touched);
+    } catch (RuntimeException e) {
+      // Counted as a failure so the poller holds its cursor and the webhook asks
+      // for a redelivery: the cache now says the column is PII, and a policy
+      // that has not heard is a column that stays unmasked until tonight.
+      LOG.warn("Applied the change(s) but could not re-resolve the policies they touch", e);
+      failed++;
+    }
+
+    Outcome outcome = new Outcome(refreshed, retired, governanceRuns, failed, rebound);
     if (!outcome.quiet()) {
       LOG.info("Applied {} change(s) from {} event(s): {}", distinct.size(), changes.size(),
           outcome);
@@ -154,6 +231,63 @@ public class CatalogChangeApplier {
       notifier.fire("catalog changed: " + outcome);
     }
     return outcome;
+  }
+
+  /**
+   * Re-resolves the bindings this batch could have moved (FR-3.1.6).
+   *
+   * <p>A tag landing on a table is a policy change nobody in this product
+   * authored. Without this, a global "mask PII" policy would not cover the
+   * newly tagged table until the nightly reconcile, and the cache would say it
+   * was PII the whole time.
+   *
+   * <p>A governance re-read re-resolves everything, because what moved could be
+   * anywhere: a classification disabled, a term's parent changed. Otherwise
+   * only the tables at or under what changed: a schema moving into a domain
+   * moves every table in it. Retired tables are included on purpose, so a
+   * binding to a table that is gone is taken away rather than left standing.
+   */
+  private int rebind(boolean everything, List<String> touched) {
+    if (everything) {
+      return bindings.refreshAll();
+    }
+    if (touched.isEmpty()) {
+      return 0;
+    }
+    List<String> tables = tablesAtOrUnder(touched);
+    int moved = 0;
+    for (int from = 0; from < tables.size(); from += REBIND_BATCH) {
+      moved += bindings.refresh(tables.subList(from, Math.min(tables.size(), from + REBIND_BATCH)));
+    }
+    return moved;
+  }
+
+  /**
+   * Every table or view at or under these FQNs, current or not.
+   *
+   * <p>Not only current: a table retired by this batch still has bindings, and
+   * a re-resolve that never names it never takes them away.
+   */
+  List<String> tablesAtOrUnder(List<String> fqns) {
+    Set<String> out = new java.util.TreeSet<>();
+    jdbi.useHandle(
+        handle -> {
+          for (String fqn : fqns) {
+            out.addAll(
+                handle
+                    .createQuery(
+                        """
+                        SELECT DISTINCT fqn FROM asset
+                        WHERE asset_type IN ('TABLE', 'VIEW')
+                          AND (fqn = :fqn OR fqn LIKE :prefix ESCAPE '\\')
+                        """)
+                    .bind("fqn", fqn)
+                    .bind("prefix", escapeLike(fqn) + ".%")
+                    .mapTo(String.class)
+                    .list());
+          }
+        });
+    return new ArrayList<>(out);
   }
 
   /**

@@ -121,6 +121,7 @@ public class WebhookResource {
               "refreshed", outcome.refreshed(),
               "retired", outcome.retired(),
               "governanceRuns", outcome.governanceRuns(),
+              "rebound", outcome.rebound(),
               "failed", outcome.failed());
       if (outcome.failed() > 0) {
         // A partial failure is still 5xx, for the same reason as below: the
