@@ -34,12 +34,13 @@ class AgentPromptsTest {
             "draft_policy",
             "query_log",
             "dashboard",
+            "search_docs",
             "navigate");
   }
 
   @Test
-  void withNoFeaturesOnlyNavigationIsOffered() {
-    assertThat(toolNames(EnumSet.of(Feature.CHAT))).containsExactly("navigate");
+  void withNoFeaturesOnlyTheGuideAndNavigationAreOffered() {
+    assertThat(toolNames(EnumSet.of(Feature.CHAT))).containsExactly("search_docs", "navigate");
   }
 
   @Test
@@ -112,6 +113,8 @@ class AgentPromptsTest {
         .contains("write_sql");
     assertThat(without).contains("the query page (/query)").doesNotContain("write_sql");
     assertThat(without).contains("never say you did");
+    // How the app works comes from its guide, not from what a model guesses.
+    assertThat(without).contains("call search_docs").contains("Do not describe the app from general");
     // The answer is drawn as text, and the cards already list what was found.
     assertThat(without).contains("no Markdown").contains("leave out tables a search touched");
   }

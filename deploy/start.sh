@@ -74,7 +74,8 @@ tree_stamp() { git -C "$APP_HOME" rev-parse "${@/#/HEAD:}" | sha256sum | cut -d'
 stamp_of() { if [[ -f "$RUN/$1.stamp" ]]; then cat "$RUN/$1.stamp"; fi; }
 
 # ---- backend ----
-want="$(tree_stamp pom.xml .mvn mvnw backend)"
+# The docs the assistant answers from are packed into the jar (HelpDocs).
+want="$(tree_stamp pom.xml .mvn mvnw backend docs/user-guide.md docs/policy-conflict-resolution.md docs/policy-spec.md)"
 if [[ "$want" != "$(stamp_of backend)" || ! -f "$RUN/dac-service.jar" ]]; then
   echo "-- backend sources changed · building the jar"
   # bash, not ./mvnw: the file was committed from Windows and may lack +x.

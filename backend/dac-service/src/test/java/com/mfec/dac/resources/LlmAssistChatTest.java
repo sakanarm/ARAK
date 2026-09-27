@@ -137,7 +137,8 @@ class LlmAssistChatTest {
 
     resource.chat(ask("find salary"), security, request);
 
-    assertThat(toolsSent.get(0)).containsExactly("search_catalog", "describe_asset", "navigate");
+    assertThat(toolsSent.get(0))
+        .containsExactly("search_catalog", "describe_asset", "search_docs", "navigate");
     assertThat(messagesSent.get(0).get(0).path("content").asText()).doesNotContain("write_sql");
   }
 

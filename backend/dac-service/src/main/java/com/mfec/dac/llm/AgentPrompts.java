@@ -31,6 +31,9 @@ import java.util.regex.Pattern;
  *   <li>Nothing a tool returns is a row. Statements from the query log have
  *       their literals taken out first ({@link #redactLiterals}), because a
  *       literal in a WHERE clause is a value somebody typed from the data.
+ *   <li>Questions about the app itself are answered from its user guide
+ *       ({@link HelpDocs}), so the assistant does not describe pages or rules
+ *       from what a model guesses an access control product does.
  * </ul>
  */
 public final class AgentPrompts {
@@ -165,7 +168,8 @@ public final class AgentPrompts {
     out.append(
         "You are ARAK, the assistant inside ARAK, a data access control platform. You help the"
             + " person using it find data, understand it, write SQL, draft policies, read the"
-            + " query log and dashboard, and find their way around the app.\n\n");
+            + " query log and dashboard, find their way around the app, and understand how the"
+            + " app works.\n\n");
     out.append("Rules:\n");
     out.append(
         "- Answer in the language the person writes in. If they write Thai, answer in Thai."
@@ -212,6 +216,13 @@ public final class AgentPrompts {
           "- To draft a policy, call draft_policy with a clear one-sentence intent. The draft"
               + " is shown to the person to load into the builder; it is never saved by you.\n");
     }
+    out.append(
+        "- For a question about how ARAK itself works (a page or button, a platform role, asking"
+            + " for or deciding access, a request's state, grants, how policies combine, masking,"
+            + " the query page, governance, what you yourself can do), call search_docs with"
+            + " English keywords and answer from the sections it returns, in the person's"
+            + " language. Do not describe the app from general knowledge. If the guide does not"
+            + " cover it, say so.\n");
     out.append(
         "- When the person wants to go somewhere, or a page would help, call navigate. Offer a"
             + " page rather than describing clicks.\n");
@@ -325,6 +336,22 @@ public final class AgentPrompts {
                   "label", prop("string", "Sensitive classification or tag. Default PII.")),
               List.of()));
     }
+    // The user guide is not about anybody's data, so every person may ask it.
+    out.add(
+        tool(
+            json,
+            "search_docs",
+            "Look something up in ARAK's user guide: what a page is for, how to do a job in the"
+                + " app, what a role may do, what a request state means, how policies combine."
+                + " Returns the best matching sections.",
+            Map.of(
+                "query",
+                prop(
+                    "string",
+                    "English keywords as the guide would word them (e.g. request access,"
+                        + " approve, mask, grant expiry, row filter); translate the person's"
+                        + " words first.")),
+            List.of("query")));
     out.add(
         tool(
             json,

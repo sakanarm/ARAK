@@ -13,6 +13,7 @@ import com.mfec.dac.llm.ArakAgent.Card;
 import com.mfec.dac.llm.ArakAgent.Result;
 import com.mfec.dac.llm.ArakAgent.Toolbox;
 import com.mfec.dac.llm.AssistPrompts;
+import com.mfec.dac.llm.HelpDocs;
 import com.mfec.dac.policy.DecisionService;
 import com.mfec.dac.source.DataSourceStore;
 import jakarta.ws.rs.BadRequestException;
@@ -52,6 +53,8 @@ import org.slf4j.LoggerFactory;
  *   <li>{@code write_sql}, {@code draft_policy} and {@code navigate} only make
  *       cards. A card is something the person clicks; nothing here runs,
  *       saves, approves or opens anything.
+ *   <li>{@code search_docs} reads the user guide packed into the jar. It is
+ *       the same for everybody and says nothing about anybody's data.
  * </ul>
  */
 public final class AssistToolbox implements Toolbox {
@@ -144,6 +147,7 @@ public final class AssistToolbox implements Toolbox {
               integer(arguments, "limit", 20, 1, 50));
       case "dashboard" ->
           dashboard(integer(arguments, "days", 30, 1, 90), text(arguments, "label", 100));
+      case "search_docs" -> Result.text(HelpDocs.bundled().search(text(arguments, "query", 200)));
       default -> Result.text("error: there is no tool called " + name);
     };
   }

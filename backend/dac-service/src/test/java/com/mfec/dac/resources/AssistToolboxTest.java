@@ -313,6 +313,16 @@ class AssistToolboxTest {
     assertThat(outside.content()).startsWith("error: no such page");
   }
 
+  @Test
+  void aQuestionAboutTheAppIsAnsweredFromTheGuidePackedInTheJar() throws Exception {
+    Result result = run("search_docs", "{\"query\":\"request access\"}");
+
+    assertThat(result.content()).contains("ARAK user guide (user-guide.md)");
+    assertThat(result.content()).contains("section \"Asking for access\"");
+    assertThat(result.cards()).isEmpty();
+    assertThat(run("search_docs", "{}").content()).startsWith("error:");
+  }
+
   // -------------------------------------------------------------- insights
 
   @Test

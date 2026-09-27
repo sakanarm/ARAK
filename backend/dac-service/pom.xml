@@ -58,6 +58,22 @@
 
   <build>
     <finalName>dac-service</finalName>
+    <resources>
+      <resource><directory>src/main/resources</directory></resource>
+      <!-- The user documentation the assistant answers from (HelpDocs). It is
+           read from docs/ rather than copied, so the page a person reads and
+           what the assistant quotes are one file. deploy/start.sh stamps these
+           same files, so a change to them rebuilds the jar. -->
+      <resource>
+        <directory>${project.basedir}/../../docs</directory>
+        <targetPath>help</targetPath>
+        <includes>
+          <include>user-guide.md</include>
+          <include>policy-conflict-resolution.md</include>
+          <include>policy-spec.md</include>
+        </includes>
+      </resource>
+    </resources>
     <plugins>
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>

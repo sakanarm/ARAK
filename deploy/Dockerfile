@@ -9,6 +9,7 @@ WORKDIR /src
 COPY .mvn/ .mvn/
 COPY mvnw pom.xml ./
 COPY backend/ backend/
+COPY docs/ docs/
 COPY spec/ spec/
 RUN ./mvnw -B -q -DskipTests package
 

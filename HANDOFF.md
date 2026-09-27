@@ -1,6 +1,6 @@
 # HANDOFF — ARAK (Data Access Control Platform)
 
-> อัปเดต: 2026-09-27 · ข้อ CE (สร้าง classification / tag ของ ARAK เองในหน้า Governance — provenance local · sync ไม่ทับ · ไม่เขียนกลับ OM) · ข้อ CD (Column description เขียนใน ARAK · NokRak ร่าง · แสดงใน ticket) · ข้อ CC (tab Access รับ list ยาว — แถบสรุป · chip · ค้น · แบ่งหน้า · กดดูรายละเอียดเต็ม) · ข้อ CB (NokRak ช่วยแก้ policy ที่มีอยู่ — คน review แล้วกด Save เอง) · ข้อ CA (ประวัติ policy · diff · rollback) · ข้อ BW (tag จาก OM ผ่าน webhook/poller ย้าย policy binding ทันที) · ข้อ BV (tab Access เฉพาะผู้ดูแล + Diagram แบบ canvas) · ข้อ BU (FR-1.7 local tag + demo group บน prod) · push ขึ้น origin/main แล้ว · repo https://github.com/sakanarm/ARAK (**public**)
+> อัปเดต: 2026-09-27 · ข้อ CF (NokRak ตอบคำถามวิธีใช้ ARAK จากคู่มือที่แพ็กเข้า jar — `search_docs`) · ข้อ CE (สร้าง classification / tag ของ ARAK เองในหน้า Governance — provenance local · sync ไม่ทับ · ไม่เขียนกลับ OM) · ข้อ CD (Column description เขียนใน ARAK · NokRak ร่าง · แสดงใน ticket) · ข้อ CC (tab Access รับ list ยาว — แถบสรุป · chip · ค้น · แบ่งหน้า · กดดูรายละเอียดเต็ม) · ข้อ CB (NokRak ช่วยแก้ policy ที่มีอยู่ — คน review แล้วกด Save เอง) · ข้อ CA (ประวัติ policy · diff · rollback) · ข้อ BW (tag จาก OM ผ่าน webhook/poller ย้าย policy binding ทันที) · ข้อ BV (tab Access เฉพาะผู้ดูแล + Diagram แบบ canvas) · ข้อ BU (FR-1.7 local tag + demo group บน prod) · push ขึ้น origin/main แล้ว · repo https://github.com/sakanarm/ARAK (**public**)
 >
 > อ่านคู่กับ **[docs/DESIGN.md](docs/DESIGN.md)** — ไฟล์นั้นคือ requirement + feature catalogue + สถานะครบทุกข้อ
 > ไฟล์นี้บอกเฉพาะ "ทำถึงไหน จะไปต่อยังไง อะไรที่ลองแล้วไม่เวิร์ค"
@@ -620,7 +620,28 @@ M25 ทำแยกได้ (profile ผ่าน proxy ที่มีแล�
 
 ---
 
-## รอบนี้ — **ข้อ CE: สร้าง classification และ tag ของ ARAK เองได้ในหน้า Governance (FR-1.7 · provenance `local`)**
+## รอบนี้ — **ข้อ CF: NokRak ตอบคำถามวิธีใช้ ARAK จากคู่มือของระบบ (`search_docs` · M28)**
+
+ผู้ใช้ขอ: *"ให้ NokRak มีข้อมูล Document ของระบบด้วย เผื่อ user ถาม"*
+
+### CF.1 คู่มือ
+- `docs/user-guide.md` (ใหม่ · ภาษาอังกฤษ) — แต่ละหัวข้อ `##` อ่านจบในตัว: sign in · เมนู · Catalog · หน้า table (Columns · Column descriptions · Edit tags · Access) · ขอสิทธิ์ · สถานะคำขอ · อนุมัติ · grant · policy (builder · lifecycle · history · การชนกัน · masking) · Query page · Query log · Dashboard · Governance (รวมการสร้าง classification / tag ใน ARAK) · Settings · NokRak · คำถามที่พบบ่อย
+- บอกตรงๆ ว่า **ยังไม่มีหน้าเปลี่ยนรหัสผ่านเอง** (M2) — ทำหน้านั้นแล้วต้องแก้คู่มือด้วย
+
+### CF.2 Backend
+- `pom.xml` `<resources>` แพ็ก `docs/user-guide.md` · `policy-conflict-resolution.md` · `policy-spec.md` เข้า jar ใต้ `help/` → ข้อความที่คนอ่านกับที่ NokRak quote เป็นไฟล์เดียวกัน · `deploy/start.sh` ใส่ 3 ไฟล์นี้ใน stamp (แก้คู่มือแล้ว prod build ใหม่เอง) · `deploy/Dockerfile` `COPY docs/`
+- `llm/HelpDocs.java` — ตัดแต่ละไฟล์ตามหัวข้อ `##` (หัวข้อใน code fence ไม่นับ · `###` อยู่ในหัวข้อแม่) · ค้นแบบ keyword ไม่ใช้ model: ตัด stop word · คำ ASCII ≥ 3 ตัว (ไทย ≥ 2) · ตัดท้ายคำอังกฤษ (`change`/`changes` → `chang` เจอ "changing" · `policy`/`policies` → `polic`) · match แบบ substring (คำไทยเจอในข้อความไทยที่ไม่มีช่องว่าง) · คะแนน = ความหายากของคำ × (อยู่ในหัวข้อ ×6 + จำนวนครั้ง ≤ 5) × จำนวนคำที่เจอ · คืน ≤ 3 หัวข้อ หัวข้อละ ≤ 4000 ตัวอักษร · ไม่เจอ = รายชื่อหัวข้อของคู่มือให้ลองคำอื่น แล้วให้บอกว่าคู่มือไม่ครอบคลุม · jar ไม่มีไฟล์ = error ให้บอกว่าค้นไม่ได้
+- `AgentPrompts` — tool `search_docs` **ให้ทุกคนเสมอ ไม่ผูก feature** (คู่มือไม่ใช่ข้อมูลของใคร) · กติกาใน system prompt: ถามเรื่องการใช้ ARAK → เรียก `search_docs` ด้วย keyword อังกฤษ ตอบจากหัวข้อที่ได้ในภาษาของคนถาม · **ห้ามอธิบายแอปจากความรู้ทั่วไป** · คู่มือไม่มี = บอกว่าไม่มี
+- `AssistToolbox` — `search_docs` คืน text ไม่มี card
+
+### CF.3 Test
+- `HelpDocsTest` 10 · `AgentPromptsTest` (tool list · prompt) · `AssistToolboxTest` (อ่านคู่มือจาก jar จริง) · backend unit **596 ผ่าน**
+- probe กับคู่มือจริง 20 คำถาม ขึ้นหัวข้อที่ถูกเป็นอันดับแรกทุกข้อ เช่น request access → *Asking for access* · why column masked → *Masking functions* · change password → *Signing in and your account* · policy conflict deny → *How policies combine* · column description → *A table's page* · new classification → *Governance vocabulary and local tags* · policy history restore → *Policy history, compare and restore*
+
+### CF.4 ที่ยังไม่ทำ (ตั้งใจ)
+- ค้นแบบ keyword ไม่ใช่ embedding — คำถามภาษาไทยพึ่ง model แปลเป็น keyword อังกฤษก่อน (สั่งไว้ใน tool description) · เอกสาร policy 2 ไฟล์เป็นภาษาไทย ค้นด้วยคำไทยได้
+
+## รอบก่อนหน้า — **ข้อ CE: สร้าง classification และ tag ของ ARAK เองได้ในหน้า Governance (FR-1.7 · provenance `local`)**
 
 ผู้ใช้ขอ: *"Governance ให้สามารถเพิ่มฝั่ง Arak ได้ด้วย"* แล้วตอบว่า *"เป็นแบบ local"* — **ทำเฉพาะ classification + tag** เพราะเป็นของที่ *Edit tags* ติดลง table/column และที่ policy selector อ่าน · **glossary / domain / data product ยังสร้างได้ที่ OpenMetadata อย่างเดียว** (ไม่มีทางติดใน ARAK จึงยังไม่มีประโยชน์) · **ไม่เขียนกลับเข้า OM**
 
