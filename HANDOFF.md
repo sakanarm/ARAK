@@ -701,6 +701,17 @@ M25 ทำแยกได้ (profile ผ่าน proxy ที่มีแล�
 - NokRak (`AssistToolbox`) ไม่เสนอตารางที่ policy กันหรือที่ไม่ได้ต่อ
 - ผ่าน: unit `AccessRequestResourceTest` 14 · `AssistToolboxTest` 15 · `AccessEligibilityTest` 4 · IT `AccessRequestIT` 91/91 + `CatalogQueryIT` 22/22 · jest ทั้งหมด 63 suites / 628 · tsc · eslint ไฟล์ที่แก้
 
+### BT.13 Query proxy: function ที่รัน SQL เอง และตารางที่อ่านซ้ำจากตำแหน่งที่ไม่ถูก rewrite
+- ช่องโหว่ 1: statement ไปรันที่ source ในนาม credential ของ source · function บางตัวของ PostgreSQL รับข้อความ SQL แล้วรันเอง (เช่นตระกูล `query_to_xml`) proxy มองไม่เห็นตารางในข้อความนั้น → อ่านได้ทุกอย่างที่ account ของ source อ่านได้ ไม่ผ่าน policy · ยืนยันบน local ด้วย `select 1` ข้างใน
+- แก้: `ProxyFunctions` = allow-list ต่อ engine (aggregate, window, text, number, date, JSON, cast ของ MSSQL) · ชื่อที่ไม่อยู่ในรายการ, ชื่อที่มี schema นำหน้า, `{fn ...}`, sequence, session variable → 403 พร้อมบอกชื่อ function · `SELECT ... INTO` กับ `FOR UPDATE/SHARE` → 403 · engine ที่ยังไม่มีรายการได้แค่ชุดกลาง
+- parser (JSqlParser 4.9) ไม่สร้าง node ให้ function ที่เป็น argument เดียวของอีก function (`sum(lower(x))`) จึงไล่ argument ของทุก call ซ้ำด้วย `ExpressionVisitorAdapter` (`CallScreen`)
+- ช่องโหว่ 2: gate ที่สองเทียบตารางด้วยชื่อ และมองแค่ clause ที่ `TablesNamesFinder` เดินถึง (ไม่มี GROUP BY / ORDER BY) → อ่านตารางที่คุมอยู่ซ้ำจาก subquery ข้างๆ ได้โดยไม่ถูก rewrite · แก้: เดิน JJTree ทั้งต้น ทุก `TableName` ต้องเป็น reference ที่ walk แทนที่แล้ว (เทียบ identity) หรือเป็น qualifier ของ `t.*`
+- SQL Server: parse ด้วย `withSquareBracketQuotation` แล้ว เดิมรูป enforced (`[schema].[table]`) parse กลับไม่ได้ ทุก query ไป MSSQL ผ่าน proxy จึงไม่รัน
+- ผู้ใช้ถามว่า "user ก็ query ได้ไม่หมดสิ": function ที่คนใช้จริงอยู่ในรายการแล้ว · ถ้าต้องการเพิ่มตัวไหน ใส่ใน `ProxyFunctions` (เฉพาะตัวที่คำนวณจากค่าที่ส่งเข้าไปเท่านั้น) · ยังไม่ได้ทำให้ admin ตั้งเพิ่มต่อ source ได้
+- ยังแนะนำ: ให้ source ใช้ role ที่อ่านได้แค่ schema ที่ governed (role เป็น cluster-wide บน server ที่แชร์ ต้องถามก่อนสร้าง)
+- ผ่าน: unit proxy 47/47 (`QueryRewriterTest` 33 · `ProxyCapabilitiesTest` 14) · IT `QueryLogIT` 10/10 · local probe · prod `prod-queries.mjs` 31/31 (Q16 built-in ปกติรันได้ · Q32–Q35 ถูกปฏิเสธ · count 164 ก่อน/หลังเท่ากัน)
+- หมายเหตุ demo: `S12-schema-allow-demo-tenant` เป็น DENY (displayName ถูก แต่ชื่อภายในยังมีคำว่า allow จากเวอร์ชันแรก) คนที่ไม่มี `tenant=ARAK-DEMO` รวมถึง admin จึงโดนกัน · ถูกต้องตามที่ตั้งใจ
+
 ### BT.6 ค้าง
 - credential ของ source บน prod ที่ auth ไม่ผ่าน ผู้ใช้เป็นคนตัดสิน · แก้แล้วให้รัน Q1–Q7 ใน `prod-demo-policies.mjs` อีกรอบ
 - กรณี group บน prod รอ push แล้ว deploy V35 ก่อน

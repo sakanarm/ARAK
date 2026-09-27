@@ -298,6 +298,7 @@ conf/dac.yml                 config เดียวที่ commit — ใช�
 - SQL Server ต้อง **2022+** ถึงจะ `GRANT UNMASK` ระดับ column ได้ (รุ่นเก่าเป็น db-wide = ใช้จริงไม่ได้) — **ยังไม่ยืนยันเวอร์ชัน production**
 - PostgreSQL ไม่มี column masking ใน core → ต้องลง extension `anon` (managed service หลายเจ้าไม่ให้) — **ยังไม่ยืนยันว่าลงได้ไหม**
 - โหมด 5.2 ถูก bypass ได้ถ้าต่อ DB ตรง → ต้อง firewall + ระบบต้องตรวจและเตือน (FR-6.3.1)
+- โหมด 5.2 เรียก function ได้เฉพาะ built-in ที่คำนวณจากค่าที่ส่งเข้าไป (allow-list ต่อ engine ใน `ProxyFunctions`) · function นอกรายการ ชื่อที่มี schema นำหน้า `{fn ...}` sequence และ session variable ถูกปฏิเสธ เพราะ statement รันในนาม account ของ source และ function ที่รัน SQL จากข้อความ proxy มองไม่เห็นว่าอ่านตารางอะไร · ทุก reference ของตารางใน statement ต้องเป็นตัวที่ถูก rewrite แล้ว (เทียบ identity ทั้งต้นไม้ ไม่ใช่ชื่อ)
 
 ### FR-7 Manual Grant (Phase 1) — M8 ✅ เสร็จ (grant ตรง + auto-revoke + audit trail + หน้าจอ)
 FR-7.1 owner สร้าง grant ตรงๆ พร้อม `validFrom`/`validUntil` + เหตุผล · FR-7.2 job auto-revoke · FR-7.3 หน้า "สิทธิ์ของฉัน" / "ใครมีสิทธิ์ใน asset นี้"
