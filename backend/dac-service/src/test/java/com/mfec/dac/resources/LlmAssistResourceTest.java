@@ -21,6 +21,7 @@ import com.mfec.dac.llm.LlmSettings.EffectiveSetting;
 import com.mfec.dac.llm.LlmSettings.Gateway;
 import jakarta.ws.rs.BadRequestException;
 import jakarta.ws.rs.ForbiddenException;
+import jakarta.ws.rs.NotFoundException;
 import jakarta.ws.rs.ServiceUnavailableException;
 import jakarta.ws.rs.core.SecurityContext;
 import java.security.Principal;
@@ -620,6 +621,186 @@ class LlmAssistResourceTest {
           .isInstanceOf(BadRequestException.class)
           .hasMessageContaining("None of those");
       verifyNoInteractions(client);
+    }
+  }
+
+  @Nested
+  @DisplayName("explain a policy")
+  class ExplainPolicy {
+
+    private static final UUID POLICY = UUID.fromString("5a0c0000-0000-4000-8000-000000000001");
+    private static final UUID OTHER = UUID.fromString("5a0c0000-0000-4000-8000-000000000002");
+
+    private final com.mfec.dac.policy.PolicyStore policies =
+        mock(com.mfec.dac.policy.PolicyStore.class);
+    private final com.mfec.dac.policy.PolicyOverview overview =
+        mock(com.mfec.dac.policy.PolicyOverview.class);
+    private final com.fasterxml.jackson.databind.ObjectMapper json =
+        io.dropwizard.jackson.Jackson.newObjectMapper();
+    private final LlmAssistResource explaining =
+        new LlmAssistResource(
+            store,
+            client,
+            catalog,
+            null,
+            null,
+            new LlmAssistResource.PolicyReading(policies, overview, json));
+
+    private com.mfec.dac.schema.entity.policy.Policy document() throws Exception {
+      return json.readValue(
+          "{\"id\":\"" + POLICY + "\",\"version\":4,\"updatedBy\":\"author_a\","
+              + "\"name\":\"mask-pii\",\"displayName\":\"Mask PII\","
+              + "\"policyType\":\"DATA\",\"scopeLevel\":\"ORG\",\"effect\":\"ALLOW\","
+              + "\"selector\":{\"condition\":{\"facet\":\"classifications\","
+              + "\"operator\":\"contains\",\"value\":\"PII\"}},"
+              + "\"exemptions\":[{\"principal\":\"analyst_b\",\"reason\":\"on the fraud case\","
+              + "\"expiresAt\":\"2026-12-31T00:00:00Z\"}],"
+              + "\"approvers\":[{\"type\":\"user\",\"name\":\"owner_o\"}]}",
+          com.mfec.dac.schema.entity.policy.Policy.class);
+    }
+
+    private void stored() throws Exception {
+      com.mfec.dac.schema.entity.policy.Policy document = document();
+      when(policies.find(POLICY))
+          .thenReturn(
+              Optional.of(
+                  new com.mfec.dac.policy.PolicyStore.StoredPolicy(
+                      POLICY, document, "ACTIVE", "prod", 4, "author_a", "author_a", null)));
+      when(overview.coverage(POLICY))
+          .thenReturn(
+              new com.mfec.dac.policy.PolicyOverview.Coverage(
+                  1,
+                  1,
+                  List.of(
+                      new com.mfec.dac.policy.PolicyOverview.Target(
+                          CUSTOMER, "TABLE", "customer", "demo-pg.salesdb.sales", null, null, null),
+                      new com.mfec.dac.policy.PolicyOverview.Target(
+                          CUSTOMER + ".email", "COLUMN", "email", CUSTOMER, "varchar", null, null)),
+                  false,
+                  null));
+      when(overview.overlaps(eq(POLICY), any(), eq("prod")))
+          .thenReturn(
+              List.of(
+                  new com.mfec.dac.policy.PolicyOverview.Overlap(
+                      OTHER,
+                      "finance-readers",
+                      "Finance readers",
+                      "SUBSCRIPTION",
+                      "ALLOW",
+                      "DOMAIN",
+                      "Finance",
+                      "ACTIVE",
+                      "prod",
+                      false,
+                      1,
+                      List.of(CUSTOMER),
+                      "COMPOSES",
+                      "Both apply; the reader needs this one to get in and then sees the mask.",
+                      null)));
+    }
+
+    private LlmAssistResource.PolicyExplainAsk asking(UUID id, String language) {
+      return new LlmAssistResource.PolicyExplainAsk(id, language, null);
+    }
+
+    @Test
+    @DisplayName("sends the policy, where it lands and what it meets -- and no one it names")
+    void whatLeaves() throws Exception {
+      stored();
+      answers("It hashes every PII column for everybody.");
+
+      LlmAssistResource.PolicyExplanation out =
+          explaining.explainPolicy(asking(POLICY, "Thai"), as(analyst));
+
+      assertThat(out.text()).isEqualTo("It hashes every PII column for everybody.");
+      assertThat(out.model()).isEqualTo("gpt-test");
+      assertThat(system.getValue()).contains("Write in Thai", "DENY wins");
+      assertThat(user.getValue())
+          .contains("State: ACTIVE in the prod environment")
+          .contains("\"name\":\"mask-pii\"", "PII")
+          .contains("\"exemptionsCount\":1", "\"approversCount\":1")
+          .contains("- table " + CUSTOMER, "- column " + CUSTOMER + ".email")
+          .contains("- Finance readers (DOMAIN, SUBSCRIPTION, ALLOW, ACTIVE) on 1 shared target")
+          .doesNotContain("more not listed")
+          .doesNotContain(
+              "analyst_b", "on the fraud case", "owner_o", "author_a",
+              POLICY.toString(), OTHER.toString(), "\"version\"");
+    }
+
+    @Test
+    @DisplayName("says there is more when the counts outrun the sample")
+    void moreThanListed() throws Exception {
+      stored();
+      when(overview.coverage(POLICY))
+          .thenReturn(
+              new com.mfec.dac.policy.PolicyOverview.Coverage(
+                  40,
+                  900,
+                  List.of(
+                      new com.mfec.dac.policy.PolicyOverview.Target(
+                          CUSTOMER, "TABLE", "customer", null, null, null, null)),
+                  true,
+                  null));
+      answers("Broad.");
+
+      explaining.explainPolicy(asking(POLICY, null), as(analyst));
+
+      assertThat(user.getValue())
+          .contains("It lands on 40 tables and 900 columns now, among them:")
+          .contains("- and more not listed here");
+      assertThat(system.getValue()).contains("Write in English");
+    }
+
+    @Test
+    @DisplayName("says which policy, and refuses one that does not exist")
+    void validates() throws Exception {
+      assertThatThrownBy(() -> explaining.explainPolicy(null, as(analyst)))
+          .isInstanceOf(BadRequestException.class);
+      assertThatThrownBy(() -> explaining.explainPolicy(asking(null, null), as(analyst)))
+          .isInstanceOf(BadRequestException.class);
+      when(policies.find(POLICY)).thenReturn(Optional.empty());
+      assertThatThrownBy(() -> explaining.explainPolicy(asking(POLICY, null), as(analyst)))
+          .isInstanceOf(NotFoundException.class);
+      verifyNoInteractions(client);
+    }
+
+    @Test
+    @DisplayName("is refused when the job is not offered to the caller, before the policy is read")
+    void featureGate() throws Exception {
+      com.mfec.dac.llm.LlmFeatureStore features = mock(com.mfec.dac.llm.LlmFeatureStore.class);
+      when(features.allowedFor(analyst))
+          .thenReturn(java.util.EnumSet.of(com.mfec.dac.llm.LlmFeatureStore.Feature.CHAT));
+      LlmAssistResource gated =
+          new LlmAssistResource(
+              store,
+              client,
+              catalog,
+              features,
+              null,
+              new LlmAssistResource.PolicyReading(policies, overview, json));
+
+      assertThatThrownBy(() -> gated.explainPolicy(asking(POLICY, null), as(analyst)))
+          .isInstanceOf(ForbiddenException.class)
+          .hasMessageContaining("Explain a policy");
+      verifyNoInteractions(client, policies, overview);
+    }
+
+    @Test
+    @DisplayName("is not there on a deployment that does not wire it")
+    void notWired() {
+      assertThatThrownBy(() -> resource.explainPolicy(asking(POLICY, null), as(analyst)))
+          .isInstanceOf(NotFoundException.class);
+      verifyNoInteractions(client);
+    }
+
+    @Test
+    @DisplayName("says so when the model answers with nothing")
+    void emptyAnswer() throws Exception {
+      stored();
+      answers("   ");
+
+      assertThatThrownBy(() -> explaining.explainPolicy(asking(POLICY, null), as(analyst)))
+          .isInstanceOf(ServiceUnavailableException.class);
     }
   }
 }

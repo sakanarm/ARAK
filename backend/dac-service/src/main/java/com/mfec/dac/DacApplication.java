@@ -345,13 +345,14 @@ public class DacApplication extends Application<DacConfiguration> {
                 .withZone(ZoneId.of("Asia/Bangkok"))
                 .withExpressions(new PolicyExpressionEvaluator()));
     PrincipalLoader principalLoader = new PrincipalLoader();
+    PolicyOverview policyOverview = new PolicyOverview(jdbi, environment.getObjectMapper());
     environment
         .jersey()
         .register(
             new PolicyResource(
                 policyStore,
                 materializer,
-                new PolicyOverview(jdbi, environment.getObjectMapper()),
+                policyOverview,
                 new ImpactAnalysis(jdbi, contexts, principalLoader, policyStore, engine)));
 
     // Tags attached in ARAK (FR-1.7). The resource re-resolves the table's
@@ -576,7 +577,10 @@ public class DacApplication extends Application<DacConfiguration> {
                 decisionService,
                 sources,
                 audit,
-                dashboard)));
+                dashboard),
+            // Explaining a policy (M15) reads what the policy page reads.
+            new LlmAssistResource.PolicyReading(
+                policyStore, policyOverview, environment.getObjectMapper())));
 
     environment.jersey().register(
         new WebhookResource(

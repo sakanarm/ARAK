@@ -1,6 +1,6 @@
 # HANDOFF — ARAK (Data Access Control Platform)
 
-> อัปเดต: 2026-09-28 · ข้อ CH (ปุ่ม **Query** ที่หัวหน้าตาราง สำหรับคนที่อ่านได้แล้ว — เปิดหน้า Query บน source ของตารางพร้อม SQL · FR-1.6d) · ข้อ CG (เปลี่ยนรหัสผ่านเอง — Profile → Password · หน้าบังคับเปลี่ยนเมื่อรหัสถูก admin ตั้ง · M2 / FR-2.2) · ข้อ CF (NokRak ตอบคำถามวิธีใช้ ARAK จากคู่มือที่แพ็กเข้า jar — `search_docs`) · ข้อ CE (สร้าง classification / tag ของ ARAK เองในหน้า Governance — provenance local · sync ไม่ทับ · ไม่เขียนกลับ OM) · ข้อ CD (Column description เขียนใน ARAK · NokRak ร่าง · แสดงใน ticket) · ข้อ CC (tab Access รับ list ยาว — แถบสรุป · chip · ค้น · แบ่งหน้า · กดดูรายละเอียดเต็ม) · ข้อ CB (NokRak ช่วยแก้ policy ที่มีอยู่ — คน review แล้วกด Save เอง) · ข้อ CA (ประวัติ policy · diff · rollback) · ข้อ BW (tag จาก OM ผ่าน webhook/poller ย้าย policy binding ทันที) · ข้อ BV (tab Access เฉพาะผู้ดูแล + Diagram แบบ canvas) · ข้อ BU (FR-1.7 local tag + demo group บน prod) · push ขึ้น origin/main แล้ว · repo https://github.com/sakanarm/ARAK (**public**)
+> อัปเดต: 2026-09-28 · ข้อ CI (NokRak อธิบาย policy — ปุ่ม **Explain with NokRak** ในหน้า policy · M15 (ก)) · ข้อ CH (ปุ่ม **Query** ที่หัวหน้าตาราง สำหรับคนที่อ่านได้แล้ว — เปิดหน้า Query บน source ของตารางพร้อม SQL · FR-1.6d) · ข้อ CG (เปลี่ยนรหัสผ่านเอง — Profile → Password · หน้าบังคับเปลี่ยนเมื่อรหัสถูก admin ตั้ง · M2 / FR-2.2) · ข้อ CF (NokRak ตอบคำถามวิธีใช้ ARAK จากคู่มือที่แพ็กเข้า jar — `search_docs`) · ข้อ CE (สร้าง classification / tag ของ ARAK เองในหน้า Governance — provenance local · sync ไม่ทับ · ไม่เขียนกลับ OM) · ข้อ CD (Column description เขียนใน ARAK · NokRak ร่าง · แสดงใน ticket) · ข้อ CC (tab Access รับ list ยาว — แถบสรุป · chip · ค้น · แบ่งหน้า · กดดูรายละเอียดเต็ม) · ข้อ CB (NokRak ช่วยแก้ policy ที่มีอยู่ — คน review แล้วกด Save เอง) · ข้อ CA (ประวัติ policy · diff · rollback) · ข้อ BW (tag จาก OM ผ่าน webhook/poller ย้าย policy binding ทันที) · ข้อ BV (tab Access เฉพาะผู้ดูแล + Diagram แบบ canvas) · ข้อ BU (FR-1.7 local tag + demo group บน prod) · push ขึ้น origin/main แล้ว · repo https://github.com/sakanarm/ARAK (**public**)
 >
 > อ่านคู่กับ **[docs/DESIGN.md](docs/DESIGN.md)** — ไฟล์นั้นคือ requirement + feature catalogue + สถานะครบทุกข้อ
 > ไฟล์นี้บอกเฉพาะ "ทำถึงไหน จะไปต่อยังไง อะไรที่ลองแล้วไม่เวิร์ค"
@@ -42,7 +42,7 @@ Phase 1 รองรับ SQL Server + PostgreSQL · identity หลักค�
 | **M12 Home ที่จัดเอง** | ✅ **เสร็จ — milestone ใหม่ ไม่อยู่ในแผนเดิม** · หน้าแรกจัดวางเองได้ต่อ account · 5 preset · 14 widget type (กราฟวาดเป็น SVG มือ ไม่มี chart library) · วาง **HTML / Note / Link / Video** ได้ · `V13__home_layout.sql` — ไม่มีแถว = default (ลบแถว = reset) · **default คนละใบตาม role**: governance ได้หน้าเดิม · Requestor ได้หน้า Search · ⚠️ **HTML ที่คนพิมพ์เอง = stored XSS** → `HomeLayoutValidator` ล้างทั้ง**ตอนเขียนและตอนอ่าน** **ห้ามมีทางเขียน `home_layout` ที่ไม่ผ่านตัวนี้** · **M12b persona เสร็จแล้ว** (`V19__home_role_layout.sql`) — admin จัดหน้าแรกให้แต่ละ Platform Role ได้ที่ `/settings/home` · resolve แบบ **personal → role (แรงสุดที่ถือ) → built-in** · **persona ไม่เคยทับหน้าที่คนจัดเอง** · ⚠️ เป็น**ที่แรกที่ markup ของคนหนึ่งถูก render ใน session ของอีกคนโดยตั้งใจ** → `@Secured("PLATFORM_ADMIN")` + ล้างผ่าน `HomeLayoutValidator` ทั้งเขียนและอ่าน — ดูข้อ AN และ AS |
 | **M13 Request access จากจุดที่โดนปฏิเสธ** | ✅ **เสร็จรอบนี้ (ข้อ AX)** · refusal (403) ของ `POST /v1/query` พก `assetFqn` · `requestable` · `blockedBy` · `approvers[]` · `openRequestId` · หน้า Query ขึ้นกล่อง **"The owner can let you in"** → ฟอร์มขอสิทธิ์ (เหตุผล + จำนวนวัน + purpose + SQL ที่ติด) · ถ้า grant ช่วยไม่ได้ (DENY / ชั้นบนปฏิเสธ) บอกชื่อ policy ที่ขวางแทน ไม่ส่งไปให้ owner · **SQL Suggest** ในหน้า Query พร้อมป้าย *Readable* / *Request needed* ต่อ table · **ปุ่มเดียวกันบนหน้า asset ใน Catalog ✅ (ข้อ AY)** — มุมขวาบนของหัวหน้า asset · เปิด dialog ฟอร์มเดียวกัน · บอก *You can read this* / *Access requested* / กุญแจ + ชื่อ policy ที่ขวาง · ยังไม่ทำ: flag "ปฏิเสธแบบไม่บอกอะไรเลย" ต่อ policy |
 | **M14 Public API + Swagger + Org Key** | ⬜ **Roadmap ใหม่ — ผู้ใช้ขอ 2026-09-24** · เปิด ARAK ให้ระบบอื่นเรียกได้: **Swagger UI + OpenAPI spec** ที่ generate จาก resource จริง · **สร้าง policy** และ **query ตามสิทธิ์ที่ตัวเองมี** ผ่าน API ได้ · auth ด้วย **Org Key ที่มีวันหมดอายุบังคับ** — scope ต่อ key, ผูกกับ principal ที่ระบุ, สิทธิ์ของ key ไม่เกินสิทธิ์ของเจ้าของ — ดูข้อ AP.2 |
-| **M15 LLM อธิบาย policy และอธิบาย dashboard** | ⬜ **Roadmap ใหม่ — ผู้ใช้ขอ 2026-09-24** · ต่อยอดจาก M11 ที่ per-user gateway ใช้ได้จริงแล้ว · **(ก)** admin เปิด policy ตัวหนึ่งแล้วกด "อธิบายให้ฟัง" — LLM แปล selector + subject rule + row filter + mask ออกมาเป็นภาษาคน พร้อมบอกว่า **จะถูก policy ชั้นบนทับตรงไหน** · **(ข)** หน้า Dashboard (M10) กดที่กราฟแล้วให้ LLM อ่านตัวเลขให้ฟังว่ามันแปลว่าอะไรและควรไปดูอะไรต่อ — ⚠️ **ส่ง metadata + ตัวเลขสรุปเท่านั้น ห้ามส่งแถวข้อมูลจริง และ LLM ยังไม่มีสิทธิ์ activate อะไรทั้งสิ้น** (FR-2.6) — ดูข้อ AP.3 |
+| **M15 LLM อธิบาย policy และอธิบาย dashboard** | 🟡 **(ก) ✅ 2026-09-28 (ข้อ CI)** · (ข) ⬜ · **Roadmap ใหม่ — ผู้ใช้ขอ 2026-09-24** · ต่อยอดจาก M11 ที่ per-user gateway ใช้ได้จริงแล้ว · **(ก)** admin เปิด policy ตัวหนึ่งแล้วกด "อธิบายให้ฟัง" — LLM แปล selector + subject rule + row filter + mask ออกมาเป็นภาษาคน พร้อมบอกว่า **จะถูก policy ชั้นบนทับตรงไหน** · **(ข)** หน้า Dashboard (M10) กดที่กราฟแล้วให้ LLM อ่านตัวเลขให้ฟังว่ามันแปลว่าอะไรและควรไปดูอะไรต่อ — ⚠️ **ส่ง metadata + ตัวเลขสรุปเท่านั้น ห้ามส่งแถวข้อมูลจริง และ LLM ยังไม่มีสิทธิ์ activate อะไรทั้งสิ้น** (FR-2.6) — ดูข้อ AP.3 |
 | **M16 LLM ช่วยหา asset จากสิ่งที่อยากได้** | ⬜ **Roadmap ใหม่ — ผู้ใช้ขอ 2026-09-24** · ในหน้า Query เพิ่ม option ให้พิมพ์เป็นภาษาคนว่า *“อยากได้ข้อมูลผลิตภัณฑ์และราคา”* แล้ว LLM ไปค้นใน metadata (asset + column + description + tag + glossary term + domain) แล้วตอบกลับเป็น **ตาราง/คอลัมน์ที่น่าจะใช่ พร้อมเหตุผลว่าทำไม** · แต่ละตัวต้องบอกด้วยว่า **คุณ query ได้เลย** หรือ **ต้องไปขอสิทธิ์ก่อน** (ต่อปุ่มของ M13 ตรงนั้น) · ตัวที่ query ได้กดแล้วเติม SQL ร่างลงช่อง editor ให้เลย — ⚠️ **ค้นบน metadata เท่านั้น ห้ามส่งแถวข้อมูลจริงให้ LLM** และผลลัพธ์ต้อง **กรองด้วยสิทธิ์ของคนที่ถาม** ก่อนแสดง (ห้ามใช้ LLM เป็นช่องทางส่องว่ามีตารางอะไรอยู่บ้าง) — ดูข้อ AP.4 · **จุดเข้าที่สอง — หน้า Catalog** (ผู้ใช้ขอ 2026-09-26 *"Catalog ต้องสามารถให้ LLM มาช่วยในการค้นหาได้ด้วย"*): ช่องค้นหาของ Catalog มีโหมด "Ask" ที่พิมพ์เป็นภาษาคนได้ ใช้ backend ตัวเดียวกับหน้า Query · ผลลัพธ์เป็น asset ที่คนถามมองเห็นอยู่แล้วเท่านั้น พร้อมเหตุผล และปุ่มเปิดหน้า asset / ขอสิทธิ์ · ตัวแชทเต็มรูปแบบอยู่ใน **M28** |
 | **M17 ประวัติย้อนหลังของ policy** | ✅ **เสร็จ (ข้อ CA)** — tab History · diff ตามความหมาย · rollback เป็นเวอร์ชันใหม่ + impact ก่อน + เหตุผลบังคับ · `audit_policy_change` เขียนทุกเวอร์ชัน (V39) · *ที่มาเดิม:* ผู้ใช้ขอ 2026-09-24 · ชิป *`v13 · active`* ที่เห็นบนหน้า policy มาจาก `policy.version` + `policy.lifecycle_state` · **ประวัติเก็บครบอยู่แล้วใน `policy_version`** (append-only ตั้งแต่ V3 — `PolicyStore` เขียนทุกครั้งก่อนแก้แถวจริง เก็บ `document` ทั้งใบ + `lifecycle_state` + `changed_by` + `change_reason` + `changed_at`) และ `GET /v1/policies/{id}/versions` ก็เปิดอยู่ **แต่ไม่มีหน้าจอไหนเรียกมันเลย** (`fetchPolicyVersions` ใน `api/policies.ts` เขียนไว้แล้วแต่ไม่มีใครใช้) · งานคือ: **แท็บ History** บนหน้า policy · **diff ระหว่างสองเวอร์ชัน** · **rollback** (เขียนเวอร์ชันใหม่ทับ ไม่ใช่ลบของเก่า ตาม FR-9.2) · และ **`audit_policy_change` ที่ยังไม่มีใครเขียนลงไปเลยสักแถว** — ดูข้อ AP.5 |
 | **M18 รองรับ database type ใหม่ได้โดยไม่ต้องไล่แก้ 14 จุด** | 🚧 **~75% — slice 1 จบรอบนี้และ*ผ่านการรันจริง*แล้ว (ดูข้อ AR)** · `SourceEngine` registry + `SqlDialects` + `ProxyCapabilities` + `V18__source_engine.sql` + `GET /v1/sources/engines` · **switch ทั้ง 3 ตัวและ hardcode ฝั่ง frontend ทั้ง 6 ไฟล์หายไปแล้ว** · **proxy fail-closed แล้ว** — engine ที่ mask ไม่ได้ถูกปฏิเสธพร้อมบอกทางออก แทนที่จะคืน column แบบ plaintext · เหลือ: introspection quirk ต่อ engine (`supportsSchemas` ยังไม่มีใครอ่าน) · `engine_capability` ฝั่ง native ยังไม่มีคนอ่าน (รอ M6) · และ **เพิ่ม engine ตัวที่ 3 จริงเพื่อพิสูจน์ว่า class เดียวพอ** · เดิมคือ ⬜ **Roadmap ใหม่ — ผู้ใช้ขอ 2026-09-24** · ของที่แพงออกแบบถูกแล้ว (`PolicyDecision` ไม่มี SQL · `SqlDialect` เป็น interface · `engine_capability` เป็น data) **แต่ชื่อ engine ถูก hardcode อยู่ 14 ที่** — `CHECK (engine IN (...))` 2 migration · switch ใน `JdbcTargets` + `SourceProbe` + `QueryService.dialectFor()` · frontend อีก 6 ไฟล์ · ลืมจุดเดียว**ไม่ error ตอน compile** แต่พังตอน runtime · งานคือ **`SourceEngine` registry ตัวเดียว** ที่ถือ url template + driver + dialect + probe + introspection quirk แล้วให้ทุกจุดอ่านจากมัน → เพิ่ม engine = **class 1 ตัว + capability rows** — ดูข้อ AP.7 |
@@ -597,7 +597,7 @@ agent ขยายสิทธิ์ตัวเองไม่ได้ · ค�
 M9 + M13  ทำพร้อมกัน  (ปุ่มขอสิทธิ์ต้องมีปลายทางรับ)
 M14       ทำแยกได้เลย  (ไม่ขึ้นกับใคร แต่ต้องรอ M3 นิ่ง ซึ่งนิ่งแล้ว)
 M10 → M15 (ข)          (อธิบายกราฟที่ยังไม่มี ทำไม่ได้)
-M15 (ก)   ทำแยกได้เลย  (policy มีครบแล้ว LLM ต่อแล้ว)
+M15 (ก)   ✅ เสร็จ (ข้อ CI)
 M13 → M16              (M16 ใช้ปุ่ม "ขอสิทธิ์" ของ M13 เป็นปลายทางของกองที่สอง
                         และใช้ flag "ปฏิเสธโดยไม่บอกอะไร" ตัวเดียวกัน)
 M17       ✅ เสร็จ (ข้อ CA) — รวมข้อ 5 audit_policy_change แล้ว
@@ -620,7 +620,33 @@ M25 ทำแยกได้ (profile ผ่าน proxy ที่มีแล�
 
 ---
 
-## รอบนี้ — **ข้อ CH: ปุ่ม Query ที่หัวหน้าตาราง (FR-1.6d)**
+## รอบนี้ — **ข้อ CI: NokRak อธิบาย policy (M15 (ก))**
+
+ผู้ใช้สั่ง "ทำต่อครับ M อื่น" → ทำ M15 (ก) ตาม AP.3 · (ข) อธิบาย dashboard ยังไม่ทำ
+
+**backend**
+- `LlmFeatureStore.Feature.EXPLAIN_POLICY` ("Explain a policy") · admin คุมต่อ role ได้ในตาราง *Who gets which job* เหมือน job อื่น
+- `POST /v1/llm/assist/explain-policy` body `{policyId, language, model}` → `{text, model, personal}` · ลำดับตรวจ: ไม่มี policyId 400 → ไม่ได้ wire 404 → `ready()` (ปิด / ไม่ได้ให้ role 403 · gateway ใช้ไม่ได้ 503) → ไม่มี policy 404 → ถาม → คำตอบว่าง 503
+- server **โหลด policy เอง** (ไม่รับ document จาก request) · `LlmAssistResource.PolicyReading(PolicyStore, PolicyOverview, ObjectMapper)` · `DacApplication` สร้าง `PolicyOverview` ตัวเดียวแล้วส่งให้ทั้ง PolicyResource และ LlmAssistResource
+- ของที่ส่งให้โมเดล (`AssistPrompts.explainPolicyUser`):
+  - `policyForExplaining` — ตัด store fields + `id` · exemptions / approvers ที่ไม่ว่าง → `exemptionsCount` / `approversCount` (ไม่ส่งชื่อคนหรือเหตุผล) · ว่าง → ตัดทิ้ง · ไม่ใช่ JSON object หรือเกิน 50,000 ตัว → 400
+  - state + environment · coverage (จำนวน table / column + FQN ≤ 20 ตัว + "and more")
+  - overlap ≤ 10 ตัว: ชื่อ · scope · type · effect · state · จำนวน target ที่ทับ · relation + explanation + overrideNote จาก `PolicyOverview.overlaps` (verdict ตัวเดียวกับ tab Conflicts)
+- `explainPolicySystem(language)` สอนกติกา compose: default deny · DENY ชนะ · allowLocalOverride · row filter AND · ลำดับ mask · ACTIVE เท่านั้นที่มีผล · ห้ามแต่ง · บอกว่าไม่เคยเห็นข้อมูล · เป็น reading aid
+- **ไม่ส่ง impact analysis** (ชื่อคน) · ไม่มีแถวข้อมูล · ไม่มีทางเขียน
+- สิทธิ์: GET `/v1/policies/{id}` เปิดให้ทุกคนที่ login แล้ว (FR-3.1.5) → endpoint นี้ไม่เพิ่มการเปิดเผยข้อมูล และส่งให้โมเดลน้อยกว่าที่ GET คืนเสียอีก
+
+**frontend**
+- `api/llm.ts` `assistExplainPolicy` (timeout 180s) · `AssistFeature` + `'EXPLAIN_POLICY'`
+- `pages/policies/PolicyExplain.tsx` — panel **Ask NokRak** ใต้ *In plain words* ใน tab Overview · ไม่วาดเลยถ้า `useAssistReady('EXPLAIN_POLICY')` เป็น false · เลือกภาษา English / ไทย · ป้าย "NokRak wrote this … has not seen any data. What the engine decides is what the Simulator shows" + ลิงก์ `/simulator` + ชื่อ model · key ด้วย `id:version` เพื่อให้คำอธิบายของ version เก่าหายไปเมื่อ policy ถูกแก้
+- คู่มือ: section ใหม่ *Explain a policy with NokRak* + บรรทัดในรายการของ NokRak
+
+**test**
+- `AssistPromptsTest$ExplainPolicy` 7 · `LlmAssistResourceTest$ExplainPolicy` 6 (ข้อมูลที่ออกไปไม่มีชื่อ exemption / approver / author / policy id · มี target + neighbour · ภาษา · feature gate ไม่แตะ store / client · 400 / 404 / 503) → backend unit **616 ผ่าน**
+  - baseline 639 ที่เคยบันทึกไว้นับรวม IT แบบ nested จากรอบที่รันเมื่อคืนอีก 36 ตัว · unit ล้วนก่อนรอบนี้คือ 603
+- jest: `PolicyExplain.test` 4 → **727 ผ่าน / 74 suites**
+
+## รอบก่อนหน้า — **ข้อ CH: ปุ่ม Query ที่หัวหน้าตาราง (FR-1.6d)**
 
 ผู้ใช้ถาม "ทำไมหาปุ่ม Query ไม่เจอ" — หน้าตารางที่อ่านได้แล้วมีแค่ป้าย "You can query" (AccessBadge) กับป้าย "You can read this" (AssetAccessAction) ซึ่งพูดเรื่องเดียวกันสองครั้ง และไม่มีทางไปหน้า Query จากตาราง
 
@@ -630,9 +656,6 @@ M25 ทำแยกได้ (profile ผ่าน proxy ที่มีแล�
 - ชื่อตาราง = 2 segment ท้ายของ FQN แบบเดียวกับ SchemaExplorer (proxy ไม่รับชื่อตารางเปล่า)
 - คู่มือ *A table's page* แก้ตามแล้ว (NokRak ตอบจากคู่มือ)
 - jest: `AssetRequestAccess.test` +2 (ปุ่ม Query แทนป้าย · กดแล้วส่ง SQL + source ถูกตัว · ไม่มี source ก็ยังเปิด) → **723 ผ่าน** · ไม่มีการแก้ backend
-
-### งานที่พักไว้ (ยังไม่ commit ใน working tree)
-- **M15 (ก) Explain a policy** — backend แก้แล้ว compile ผ่าน แต่ยังไม่มี test / frontend: `Feature.EXPLAIN_POLICY` · `AssistPrompts.policyForExplaining / explainPolicySystem / explainPolicyUser` · `POST /v1/llm/assist/explain-policy` · `LlmAssistResource.PolicyReading` · DacApplication ส่ง `PolicyOverview` ตัวเดียวกับ PolicyResource
 
 ## รอบก่อนหน้า — **ข้อ CG: เปลี่ยนรหัสผ่านเองได้ + บังคับเปลี่ยนเมื่อรหัสผ่านถูก admin ตั้ง (M2 · FR-2.2)**
 
@@ -6571,7 +6594,7 @@ estate ที่ใช้: `prod-mssql.SalesDB.dbo.{customer, order}` + **`prod-
 5. **M2** — write API ของ principal/attribute แล้วต่อ (ก) การ assign application role จริงในหน้า `/settings/roles` (ข) หน้า local group ที่ `/settings/groups` ซึ่ง card ในหน้า Settings ลิงก์ไปรออยู่แล้ว · *(filter ตาม attribute ในหน้า People เสร็จแล้ว — ดูข้อ U)*
 6. **M5 (secure view)** — ~~ViewCompiler + maintainer + dry-run/apply/rollback + หน้าจอ~~ **เสร็จแล้ว (ข้อ AK · AT · AU · AW)** · เหลือ **slice 4 MSSQL Testcontainers** · credential แยกสำหรับ DDL · cutover helper (FR-6.1.1) · `DbPrincipalProvisioner` — ดูข้อ AW.12
 7. **FR-1.6** — reconcile cache กับ JDBC introspection จริง (**รอ connection database จริงจากผู้ใช้**)
-8. **หน้าเปลี่ยนรหัสผ่าน** — `mustChangePassword` ไหลถึง `auth/authStore.ts` แล้วแต่ไม่มีใครอ่าน
+8. ~~**หน้าเปลี่ยนรหัสผ่าน**~~ — ✅ เสร็จแล้ว (ข้อ CG) · *บันทึกเดิม:* `mustChangePassword` ไหลถึง `auth/authStore.ts` แล้วแต่ไม่มีใครอ่าน
 9. **ก่อน M6** ต้องได้คำตอบ: SQL Server production เป็น **2022+** ไหม (ต้องการสำหรับ `GRANT UNMASK` ระดับ column) และลง extension `anon` บน PostgreSQL ได้ไหม
 10. **rebuild + restart backend ทุกครั้งที่แตะ backend** — รอบนี้ทำแล้ว (`requiredPrincipals` ข้อ R และ `attr` ข้อ U อยู่ใน jar ที่รันอยู่) · jar เก่าจะ**ไม่ error แต่เมินพารามิเตอร์ใหม่เงียบๆ** ซึ่งอ่านจากหน้าจอไม่ออก
 11. งานเล็กที่ค้าง: refactor `jdbcUrl` ที่ยังเป็น private ใน `SourceProbe` ให้ไปอยู่บน `JdbcTargets` · golden-file test ของ dialect ทั้งสองตัว

@@ -46,7 +46,11 @@ public class LlmFeatureStore {
     DESCRIBE_COLUMNS(
         "Describe columns",
         "Draft descriptions of a table's columns from their names and types, for whoever governs"
-            + " the table to read, correct and save.");
+            + " the table to read, correct and save."),
+    EXPLAIN_POLICY(
+        "Explain a policy",
+        "Say in words what a policy does, what it lands on and how it meets the other policies"
+            + " there. A reading aid; the Simulator is what the engine decides.");
 
     private final String label;
     private final String description;

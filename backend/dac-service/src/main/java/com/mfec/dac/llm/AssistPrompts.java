@@ -762,6 +762,219 @@ public final class AssistPrompts {
     return out;
   }
 
+  // ------------------------------------------------------- explain a policy (M15)
+
+  /**
+   * Another policy that meets this one on the same targets, as the overlap
+   * screen already words it. No id: the model has no use for one.
+   */
+  public record Neighbour(
+      String name,
+      String scopeLevel,
+      String policyType,
+      String effect,
+      String lifecycleState,
+      int sharedTargets,
+      String relation,
+      String explanation,
+      String overrideNote) {}
+
+  /**
+   * Everything the model is told about one policy.
+   *
+   * <p>The document, where it sits, what it lands on and what it meets there.
+   * All of it is read from the policy store and the bindings -- none of it from
+   * a source database, so there is nothing here a row could have come from.
+   *
+   * @param document the policy as {@link #policyForExplaining} leaves it
+   * @param targets the kind and FQN of some of the tables and columns it lands on
+   * @param moreTargets whether it lands on more than {@code targets} lists
+   * @param neighbourCount how many other policies meet it, of which {@code neighbours} are the first
+   */
+  public record PolicyFacts(
+      String document,
+      String lifecycleState,
+      String environment,
+      int tableCount,
+      int columnCount,
+      List<String> targets,
+      boolean moreTargets,
+      List<Neighbour> neighbours,
+      int neighbourCount) {}
+
+  /** How many of the tables and columns a policy lands on are named to the model. */
+  public static final int MAX_EXPLAIN_TARGETS = 20;
+
+  /** How many of the policies it meets are described to the model. */
+  public static final int MAX_NEIGHBOURS = 10;
+
+  /**
+   * The stored document ready for a model to read: without the fields the store
+   * owns, and without the people it names.
+   *
+   * <p>Exemptions and approvers are lists of people, with reasons written about
+   * them. What an explanation needs is that they exist, so each list becomes a
+   * count. The rest -- selector, subject rule, row filter, masks -- is what the
+   * policy is, and is sent as it is; it is the same text anybody signed in reads
+   * on the policy's own page.
+   *
+   * @throws IllegalArgumentException when it is not one JSON object, or is
+   *     longer than {@link #MAX_POLICY}
+   */
+  public static String policyForExplaining(String document) {
+    if (document == null || document.isBlank()) {
+      throw new IllegalArgumentException("There is no policy to explain");
+    }
+    JsonNode node;
+    try {
+      node = JSON.readTree(document);
+    } catch (JsonProcessingException e) {
+      throw new IllegalArgumentException("The policy is not a JSON document");
+    }
+    if (node == null || !node.isObject()) {
+      throw new IllegalArgumentException("The policy is not a JSON object");
+    }
+    ObjectNode out = (ObjectNode) node;
+    out.remove(STORE_FIELDS);
+    out.remove("id");
+    for (String people : List.of("exemptions", "approvers")) {
+      JsonNode list = out.remove(people);
+      if (list != null && list.isArray() && !list.isEmpty()) {
+        out.put(people + "Count", list.size());
+      }
+    }
+    String text = out.toString();
+    if (text.length() > MAX_POLICY) {
+      throw new IllegalArgumentException(
+          "The policy is longer than " + MAX_POLICY + " characters, which is more than is sent");
+    }
+    return text;
+  }
+
+  /**
+   * The standing instruction for explaining a policy.
+   *
+   * <p>The composition rules are FR-5.1 as the engine applies them, so the model
+   * explains this policy in the platform's terms rather than in whatever it
+   * believes access control usually does. It is told that its answer is a
+   * reading aid: the page labels it as the model's, and the Simulator, which
+   * runs the engine, is what decides.
+   */
+  public static String explainPolicySystem(String language) {
+    String written =
+        "Thai".equalsIgnoreCase(language == null ? "" : language.trim()) ? "Thai" : "English";
+    return "You explain one access policy of a data access control platform to the person reading"
+        + " it: a data owner, a reviewer or an auditor.\n"
+        + "How the platform applies policies -- mention a rule only where it matters to this"
+        + " policy:\n"
+        + "- Default deny: nobody reads a table unless an ACTIVE subscription policy allows them.\n"
+        + "- DENY wins over ALLOW wherever both reach the same table.\n"
+        + "- Policies sit in layers ORG, DOMAIN, SERVICE, DATABASE, SCHEMA, TABLE, COLUMN and all"
+        + " of them apply together. A lower layer can only make access stricter, unless the higher"
+        + " policy sets allowLocalOverride.\n"
+        + "- Row filters from different policies are combined with AND: a person sees only the rows"
+        + " every filter lets through.\n"
+        + "- When several masks reach one column the strictest wins, in the order NULLIFY,"
+        + " CONSTANT, HASH, REGEX_REPLACE, PARTIAL, ROUNDING.\n"
+        + "- Only an ACTIVE policy takes effect. A DRAFT, PENDING_APPROVAL, DISABLED or ARCHIVED"
+        + " one changes nothing for anybody yet.\n"
+        + "Rules:\n"
+        + "- Write in "
+        + written
+        + ". Plain prose, no headings, no tables, no code blocks. Start with two or three"
+        + " sentences on what the policy does and for whom, then at most eight short bullet"
+        + " points: what it selects, who it applies to and when (roles, attributes, time windows,"
+        + " network), what it does to rows and columns, what it lands on now, and how it meets"
+        + " the other policies listed.\n"
+        + "- Keep it under 300 words. Do not repeat the JSON back, and keep field names out"
+        + " unless there is no plainer word.\n"
+        + "- Use only what you are given. Where something is missing or unclear, say so instead"
+        + " of guessing, and never invent policies, tables, people or values.\n"
+        + "- You have not seen any data in the tables and must not guess what is in them.\n"
+        + "- If something looks like a mistake -- a condition that can never be true, a time"
+        + " window that ends before it starts, another policy that means this one grants nothing"
+        + " -- say so in one line at the end. Do not otherwise suggest changes.\n"
+        + "- This is a reading aid. Do not claim to have checked what any particular person will"
+        + " see.";
+  }
+
+  /** The policy, where it sits, what it lands on and what it meets there. */
+  public static String explainPolicyUser(PolicyFacts facts) {
+    StringBuilder out = new StringBuilder();
+    out.append("State: ")
+        .append(notBlank(facts.lifecycleState()) ? facts.lifecycleState() : "unknown")
+        .append(" in the ")
+        .append(notBlank(facts.environment()) ? facts.environment() : "default")
+        .append(" environment\n\nPolicy:\n")
+        .append(facts.document())
+        .append("\n\n");
+
+    if (facts.tableCount() == 0 && facts.columnCount() == 0) {
+      out.append("It lands on nothing now: its selector matched no table or column when it was")
+          .append(" last resolved.\n");
+    } else {
+      out.append("It lands on ")
+          .append(count(facts.tableCount(), "table"))
+          .append(" and ")
+          .append(count(facts.columnCount(), "column"))
+          .append(" now")
+          .append(facts.targets().isEmpty() ? ".\n" : ", among them:\n");
+      for (String target : facts.targets()) {
+        out.append("- ").append(target).append('\n');
+      }
+      if (facts.moreTargets()) {
+        out.append("- and more not listed here\n");
+      }
+    }
+
+    out.append('\n');
+    if (facts.neighbours().isEmpty()) {
+      out.append("No other policy is bound to any of the same tables or columns.");
+    } else {
+      out.append("Other policies bound to some of the same tables or columns, and what the")
+          .append(" platform says happens where they meet:\n");
+      for (Neighbour other : facts.neighbours()) {
+        out.append("- ")
+            .append(other.name())
+            .append(" (")
+            .append(
+                String.join(
+                    ", ",
+                    List.of(
+                        orDash(other.scopeLevel()),
+                        orDash(other.policyType()),
+                        orDash(other.effect()),
+                        orDash(other.lifecycleState()))))
+            .append(") on ")
+            .append(count(other.sharedTargets(), "shared target"))
+            .append(": ")
+            .append(orDash(other.relation()));
+        if (notBlank(other.explanation())) {
+          out.append(" -- ").append(oneLine(other.explanation(), 400));
+        }
+        if (notBlank(other.overrideNote())) {
+          out.append(" ").append(oneLine(other.overrideNote(), 300));
+        }
+        out.append('\n');
+      }
+      int unlisted = facts.neighbourCount() - facts.neighbours().size();
+      if (unlisted > 0) {
+        out.append("- and ")
+            .append(unlisted == 1 ? "1 more policy" : unlisted + " more policies")
+            .append(" not listed here\n");
+      }
+    }
+    return out.toString().trim();
+  }
+
+  private static String count(int n, String noun) {
+    return n + " " + noun + (n == 1 ? "" : "s");
+  }
+
+  private static String orDash(String text) {
+    return notBlank(text) ? text : "-";
+  }
+
   private static boolean containsWord(String haystack, String word) {
     int from = 0;
     while (true) {

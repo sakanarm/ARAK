@@ -1,5 +1,7 @@
 package com.mfec.dac.resources;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mfec.dac.auth.AuthenticatedUser;
 import com.mfec.dac.auth.Secured;
 import com.mfec.dac.auth.Stewardship;
@@ -13,6 +15,8 @@ import com.mfec.dac.llm.LlmFeatureStore.Feature;
 import com.mfec.dac.llm.LlmSettingStore;
 import com.mfec.dac.llm.LlmSettings.EffectiveSetting;
 import com.mfec.dac.llm.LlmSettings.Gateway;
+import com.mfec.dac.policy.PolicyOverview;
+import com.mfec.dac.policy.PolicyStore;
 import jakarta.ws.rs.BadRequestException;
 import jakarta.ws.rs.Consumes;
 import jakarta.servlet.http.HttpServletRequest;
@@ -119,6 +123,14 @@ public class LlmAssistResource {
   private final LlmFeatureStore features;
   /** What the chat's tools read (M28); null when this deployment has no chat. */
   private final AssistToolbox.Deps tools;
+  /** What explaining a policy reads (M15); null when this deployment does not offer it. */
+  private final PolicyReading policyReading;
+
+  /**
+   * The policy store and what the policy page shows beside a policy, read the
+   * way that page reads them.
+   */
+  public record PolicyReading(PolicyStore policies, PolicyOverview overview, ObjectMapper json) {}
 
   public LlmAssistResource(LlmSettingStore store, LlmClient client, CatalogQuery catalog) {
     this(store, client, catalog, null, null);
@@ -130,11 +142,22 @@ public class LlmAssistResource {
       CatalogQuery catalog,
       LlmFeatureStore features,
       AssistToolbox.Deps tools) {
+    this(store, client, catalog, features, tools, null);
+  }
+
+  public LlmAssistResource(
+      LlmSettingStore store,
+      LlmClient client,
+      CatalogQuery catalog,
+      LlmFeatureStore features,
+      AssistToolbox.Deps tools,
+      PolicyReading policyReading) {
     this.store = store;
     this.client = client;
     this.catalog = catalog;
     this.features = features;
     this.tools = tools;
+    this.policyReading = policyReading;
   }
 
   // ---------------------------------------------------------------- requests
@@ -176,6 +199,16 @@ public class LlmAssistResource {
 
   /** A policy document, as text, for the builder to load and a human to save. */
   public record PolicyDraft(String document, String model, boolean personal) {}
+
+  /**
+   * A policy somebody wants explained (M15).
+   *
+   * @param language {@code Thai}, or anything else for English
+   */
+  public record PolicyExplainAsk(UUID policyId, String language, String model) {}
+
+  /** What the policy does, in the model's words. Plain text, and not the engine's verdict. */
+  public record PolicyExplanation(String text, String model, boolean personal) {}
 
   /**
    * One message to the chat (M28).
@@ -333,6 +366,109 @@ public class LlmAssistResource {
         chosenModel(ask.model(), mine),
         tables.stream().map(AssistPrompts.Table::fqn).toList(),
         mine.usingOwnGateway());
+  }
+
+  /**
+   * Says what a policy does, in words (M15).
+   *
+   * <p>Open to whoever may read the policy, which is anybody signed in: the
+   * policy page is. The model is told the document, where the policy is bound
+   * and the verdicts the overlap screen already works out -- nothing from a
+   * source database, and nobody's name from its exemptions or approvers. It
+   * answers with text the page labels as its own; the Simulator, which runs the
+   * engine, is what decides. Nothing here writes.
+   */
+  @POST
+  @Path("/explain-policy")
+  public PolicyExplanation explainPolicy(
+      PolicyExplainAsk ask, @Context SecurityContext security) {
+    if (ask == null || ask.policyId() == null) {
+      throw new BadRequestException("Say which policy to explain");
+    }
+    AuthenticatedUser actor = caller(security);
+    if (policyReading == null) {
+      throw new NotFoundException("Explaining a policy is not available on this deployment");
+    }
+    EffectiveSetting mine = ready(actor, Feature.EXPLAIN_POLICY);
+
+    PolicyStore.StoredPolicy policy =
+        policyReading
+            .policies()
+            .find(ask.policyId())
+            .orElseThrow(() -> new NotFoundException("No policy " + ask.policyId()));
+    PolicyOverview.Coverage coverage = policyReading.overview().coverage(policy.id());
+    List<PolicyOverview.Overlap> overlaps =
+        policyReading.overview().overlaps(policy.id(), policy.document(), policy.environment());
+
+    String answer =
+        ask(
+            actor,
+            mine,
+            ask.model(),
+            AssistPrompts.explainPolicySystem(ask.language()),
+            AssistPrompts.explainPolicyUser(factsOf(policy, coverage, overlaps)));
+    String text = AssistPrompts.extractExplanation(answer);
+    if (text.isEmpty()) {
+      throw new ServiceUnavailableException(
+          "The assistant did not answer with an explanation. Try again in a moment.");
+    }
+    return new PolicyExplanation(text, chosenModel(ask.model(), mine), mine.usingOwnGateway());
+  }
+
+  /** The policy as the model is told it: see {@link AssistPrompts#policyForExplaining}. */
+  private AssistPrompts.PolicyFacts factsOf(
+      PolicyStore.StoredPolicy policy,
+      PolicyOverview.Coverage coverage,
+      List<PolicyOverview.Overlap> overlaps) {
+    String document;
+    try {
+      document =
+          AssistPrompts.policyForExplaining(
+              policyReading.json().writeValueAsString(policy.document()));
+    } catch (JsonProcessingException | IllegalArgumentException e) {
+      throw new BadRequestException(
+          "This policy cannot be sent to the assistant: " + e.getMessage());
+    }
+    List<PolicyOverview.Target> sample =
+        coverage.sample() == null ? List.of() : coverage.sample();
+    List<String> targets =
+        sample.stream()
+            .limit(AssistPrompts.MAX_EXPLAIN_TARGETS)
+            .map(
+                t ->
+                    (t.kind() == null ? "" : t.kind().toLowerCase(Locale.ROOT) + " ") + t.fqn())
+            .toList();
+    boolean more =
+        coverage.truncated()
+            || coverage.tableCount() + coverage.columnCount() > targets.size();
+    List<AssistPrompts.Neighbour> neighbours =
+        overlaps.stream()
+            .limit(AssistPrompts.MAX_NEIGHBOURS)
+            .map(
+                o ->
+                    new AssistPrompts.Neighbour(
+                        o.displayName() != null && !o.displayName().isBlank()
+                            ? o.displayName()
+                            : o.name(),
+                        o.scopeLevel(),
+                        o.policyType(),
+                        o.effect(),
+                        o.lifecycleState(),
+                        o.sharedTargets(),
+                        o.relation(),
+                        o.explanation(),
+                        o.overrideNote()))
+            .toList();
+    return new AssistPrompts.PolicyFacts(
+        document,
+        policy.lifecycleState(),
+        policy.environment(),
+        coverage.tableCount(),
+        coverage.columnCount(),
+        targets,
+        more,
+        neighbours,
+        overlaps.size());
   }
 
   /** The statement to fix or explain, or the reason it cannot be sent. */

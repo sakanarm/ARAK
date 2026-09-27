@@ -507,6 +507,26 @@ passes and what they see), its configuration, and a **History** tab:
 - **Restore** an old version: it is written as a new version (nothing is
   deleted), you see its impact first, and a reason is required.
 
+## Explain a policy with NokRak
+
+On a policy's page (`/policies/<id>`), the **Ask NokRak** panel under *In plain
+words* has **Explain with NokRak**. Choose *English* or *ไทย (Thai)* first.
+NokRak then says in words what the policy does: who it lets in or keeps out,
+what it masks or filters, what it lands on now, and how it meets the other
+policies bound to the same tables and columns. For example, a DENY elsewhere
+still wins, and a policy that does not allow local override cannot be relaxed
+beneath it.
+
+NokRak is sent the policy, the tables and columns it is bound to (up to 20
+named), and what the **Conflicts** tab works out about the others (up to 10).
+It is sent no data from any table. It is not sent the names in the policy's
+exemptions or approvers either, only how many there are. Its answer is a
+reading aid. What the engine actually decides is what the **Simulator** shows.
+
+The panel appears only when the assistant is on for you and your role is
+offered *Explain a policy* (**Settings → Assistant → Who gets which job**).
+Anybody who can open a policy's page can ask. The answer is not saved.
+
 ## Simulator: see a table as someone else
 
 **Simulator** shows what a person would see before a policy reaches production.
@@ -582,6 +602,7 @@ in the catalogue. It can:
 - find tables you can read or may request, and describe their columns;
 - write a query as a card you put in the editor yourself;
 - draft a policy, or suggest a change to one, for you to review;
+- explain a policy in words on its page, including how it meets the others;
 - draft column descriptions for a table's owner to correct and save;
 - read the query log and the dashboard as your role allows;
 - open the right page for you;

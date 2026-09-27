@@ -40,6 +40,7 @@ import { diffPolicies } from './policyDiff';
 import { useViewMode, ViewToggle } from './controls';
 import PolicyFlowChart from './PolicyFlowChart';
 import PolicyDiagram from './PolicyDiagram';
+import PolicyExplain from './PolicyExplain';
 import TabStrip, { panelId, tabId, type TabItem } from '../../components/TabStrip';
 
 /**
@@ -355,7 +356,8 @@ export default function PolicyDetailPage() {
         role="tabpanel">
         {tab === 'overview' && (
           <div className="tw:grid tw:gap-6 tw:lg:grid-cols-3">
-            <div className={diagram ? 'tw:lg:col-span-3' : 'tw:lg:col-span-2'}>
+            <div
+              className={`tw:flex tw:flex-col tw:gap-6 ${diagram ? 'tw:lg:col-span-3' : 'tw:lg:col-span-2'}`}>
               <Panel
                 action={
                   <ViewToggle
@@ -390,6 +392,8 @@ export default function PolicyDetailPage() {
                   </div>
                 )}
               </Panel>
+              {/* Keyed on the version, so an edit does not leave last version's reading up. */}
+              <PolicyExplain key={`${policy.id}:${policy.version}`} policyId={policy.id} />
             </div>
 
             <aside

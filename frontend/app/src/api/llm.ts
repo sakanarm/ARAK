@@ -347,6 +347,34 @@ export async function assistDescribeColumns(ask: DescribeAsk): Promise<ColumnDra
   return data;
 }
 
+// ------------------------------------------------------------ explain a policy
+
+export interface PolicyExplainAsk {
+  policyId: string;
+  /** 'English' or 'Thai'. */
+  language?: string;
+  model?: string;
+}
+
+/** Plain text, labelled on the page as NokRak's; the Simulator is what decides. */
+export interface PolicyExplanation {
+  text: string;
+  model: string;
+  personal: boolean;
+}
+
+/**
+ * What a stored policy does, in words. The server loads the policy, where it is
+ * bound and the policies it meets there; the model sees no rows, and nobody
+ * named in its exemptions or approvers. Nothing is saved.
+ */
+export async function assistExplainPolicy(ask: PolicyExplainAsk): Promise<PolicyExplanation> {
+  const { data } = await apiClient.post<PolicyExplanation>('/v1/llm/assist/explain-policy', ask, {
+    timeout: 180_000,
+  });
+  return data;
+}
+
 // ------------------------------------------------------------- the agent (M28)
 
 /** The assistant's jobs, each of which an administrator can narrow by role. */
@@ -358,7 +386,8 @@ export type AssistFeature =
   | 'DRAFT_POLICY'
   | 'CATALOG_SEARCH'
   | 'INSIGHTS'
-  | 'DESCRIBE_COLUMNS';
+  | 'DESCRIBE_COLUMNS'
+  | 'EXPLAIN_POLICY';
 
 /** One earlier line of the conversation, sent back so the model has context. */
 export interface ChatMessage {

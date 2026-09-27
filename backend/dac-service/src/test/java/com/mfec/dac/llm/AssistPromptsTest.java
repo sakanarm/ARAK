@@ -4,6 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.mfec.dac.llm.AssistPrompts.Column;
+import com.mfec.dac.llm.AssistPrompts.Neighbour;
+import com.mfec.dac.llm.AssistPrompts.PolicyFacts;
 import com.mfec.dac.llm.AssistPrompts.Table;
 import java.util.List;
 import org.junit.jupiter.api.DisplayName;
@@ -509,6 +511,146 @@ class AssistPromptsTest {
     void sameStatement() {
       assertThat(AssistPrompts.sameStatement("SELECT  id\nFROM t;", "select id from t")).isTrue();
       assertThat(AssistPrompts.sameStatement("SELECT id FROM t", "SELECT id FROM u")).isFalse();
+    }
+  }
+
+  @Nested
+  @DisplayName("explaining a policy")
+  class ExplainPolicy {
+
+    private static final String STORED =
+        "{\"id\":\"5a0c0000-0000-4000-8000-000000000001\",\"version\":4,"
+            + "\"lifecycleState\":\"ACTIVE\",\"updatedBy\":\"author_a\","
+            + "\"updatedAt\":\"2026-09-01T00:00:00Z\",\"name\":\"mask-pii\","
+            + "\"policyType\":\"DATA\",\"scopeLevel\":\"ORG\","
+            + "\"selector\":{\"classifications\":{\"contains\":\"PII\"}},"
+            + "\"exemptions\":[{\"principal\":\"analyst_b\",\"reason\":\"on the fraud case\","
+            + "\"expiresAt\":\"2026-12-31\"}],"
+            + "\"approvers\":[\"owner_o\",\"steward_s\"],"
+            + "\"masks\":[{\"function\":\"HASH\"}]}";
+
+    @Test
+    @DisplayName("sends what the policy is, not who it names or what the store owns")
+    void stripsPeopleAndStoreFields() {
+      String sent = AssistPrompts.policyForExplaining(STORED);
+
+      assertThat(sent)
+          .contains("\"name\":\"mask-pii\"", "\"selector\"", "\"masks\"", "\"HASH\"")
+          .contains("\"exemptionsCount\":1", "\"approversCount\":2")
+          .doesNotContain(
+              "5a0c0000", "\"version\"", "lifecycleState", "author_a", "updatedAt",
+              "analyst_b", "on the fraud case", "owner_o", "steward_s");
+    }
+
+    @Test
+    @DisplayName("says nothing about people lists that are empty")
+    void emptyListsLeaveNoCount() {
+      String sent =
+          AssistPrompts.policyForExplaining(
+              "{\"name\":\"p\",\"exemptions\":[],\"approvers\":[]}");
+
+      assertThat(sent).isEqualTo("{\"name\":\"p\"}");
+    }
+
+    @Test
+    @DisplayName("refuses what is not one JSON object, or is too long to send")
+    void refusesNonsense() {
+      for (String bad : new String[] {"", "   ", "[1,2]", "not json", "\"text\""}) {
+        assertThatThrownBy(() -> AssistPrompts.policyForExplaining(bad))
+            .isInstanceOf(IllegalArgumentException.class);
+      }
+      String huge = "{\"name\":\"" + "x".repeat(AssistPrompts.MAX_POLICY) + "\"}";
+      assertThatThrownBy(() -> AssistPrompts.policyForExplaining(huge))
+          .isInstanceOf(IllegalArgumentException.class)
+          .hasMessageContaining(String.valueOf(AssistPrompts.MAX_POLICY));
+    }
+
+    @Test
+    @DisplayName("tells the model how policies compose, in the language asked for")
+    void systemCarriesTheRules() {
+      String thai = AssistPrompts.explainPolicySystem("Thai");
+      String english = AssistPrompts.explainPolicySystem(null);
+
+      assertThat(thai).contains("Write in Thai");
+      assertThat(english).contains("Write in English");
+      assertThat(AssistPrompts.explainPolicySystem("Klingon")).contains("Write in English");
+      assertThat(english)
+          .contains("Default deny", "DENY wins", "allowLocalOverride", "combined with AND")
+          .contains("NULLIFY, CONSTANT, HASH, REGEX_REPLACE, PARTIAL, ROUNDING")
+          .contains("Only an ACTIVE policy takes effect")
+          .contains("You have not seen any data")
+          .contains("never invent")
+          .contains("reading aid");
+    }
+
+    @Test
+    @DisplayName("lists where the policy lands and what it meets there")
+    void userCarriesTargetsAndNeighbours() {
+      PolicyFacts facts =
+          new PolicyFacts(
+              "{\"name\":\"mask-pii\"}",
+              "ACTIVE",
+              "prod",
+              2,
+              5,
+              List.of("table demo-pg.salesdb.sales.customer", "column demo-pg.salesdb.sales.customer.email"),
+              true,
+              List.of(
+                  new Neighbour(
+                      "Finance readers",
+                      "DOMAIN",
+                      "SUBSCRIPTION",
+                      "ALLOW",
+                      "ACTIVE",
+                      1,
+                      "COMPOSES",
+                      "Both apply;\n the stricter\n wins.",
+                      null),
+                  new Neighbour(
+                      "Contractor deny", "ORG", "SUBSCRIPTION", "DENY", "DRAFT", 3, "OVERRIDES",
+                      null, "Relaxing it is not allowed.")),
+              4);
+
+      String user = AssistPrompts.explainPolicyUser(facts);
+
+      assertThat(user)
+          .startsWith("State: ACTIVE in the prod environment")
+          .contains("Policy:\n{\"name\":\"mask-pii\"}")
+          .contains("It lands on 2 tables and 5 columns now, among them:")
+          .contains("- table demo-pg.salesdb.sales.customer")
+          .contains("- column demo-pg.salesdb.sales.customer.email")
+          .contains("- and more not listed here")
+          .contains(
+              "- Finance readers (DOMAIN, SUBSCRIPTION, ALLOW, ACTIVE) on 1 shared target:"
+                  + " COMPOSES -- Both apply; the stricter wins.")
+          .contains(
+              "- Contractor deny (ORG, SUBSCRIPTION, DENY, DRAFT) on 3 shared targets:"
+                  + " OVERRIDES Relaxing it is not allowed.")
+          .contains("- and 2 more policies not listed here");
+    }
+
+    @Test
+    @DisplayName("says so when the policy lands on nothing and meets nobody")
+    void userSaysNothingIsThere() {
+      String user =
+          AssistPrompts.explainPolicyUser(
+              new PolicyFacts("{}", null, null, 0, 0, List.of(), false, List.of(), 0));
+
+      assertThat(user)
+          .startsWith("State: unknown in the default environment")
+          .contains("It lands on nothing now")
+          .contains("No other policy is bound to any of the same tables or columns.")
+          .doesNotContain("more not listed");
+    }
+
+    @Test
+    @DisplayName("counts one table and one column in the singular")
+    void singular() {
+      String user =
+          AssistPrompts.explainPolicyUser(
+              new PolicyFacts("{}", "DRAFT", "dev", 1, 1, List.of(), false, List.of(), 0));
+
+      assertThat(user).contains("It lands on 1 table and 1 column now.");
     }
   }
 }

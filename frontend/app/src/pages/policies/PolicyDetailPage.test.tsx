@@ -38,6 +38,12 @@ jest.mock('../../api/client', () => ({
   apiErrorMessage: (_error: unknown, fallback: string) => fallback,
 }));
 
+// NokRak's reading has its own tests; the page is whole without it.
+jest.mock('./PolicyExplain', () => ({
+  __esModule: true,
+  default: () => null,
+}));
+
 const ID = '33333333-3333-3333-3333-333333333333';
 const TABLE = 'prod-pg.SalesDB.dbo.customer';
 

@@ -474,7 +474,7 @@ login ด้วย **PAT / service account** (M14) ไม่ใช่รหั�
 | **M12** | Home ที่จัดเองได้ต่อ account | – | ✅ **เสร็จ** |
 | **M13** | Request access จากจุดที่โดนปฏิเสธ | – | ✅ **เสร็จ** |
 | **M14** | Public API + Swagger + Org Key | – | ⬜ |
-| **M15** | LLM อธิบาย policy และ dashboard | – | ⬜ ต้องมี M10 (ส่วน dashboard) |
+| **M15** | LLM อธิบาย policy และ dashboard | – | 🟡 **(ก) อธิบาย policy ✅ 2026-09-28 (ข้อ CI)**<br>• endpoint `POST /v1/llm/assist/explain-policy` (body `{policyId, language, model}`) · feature `EXPLAIN_POLICY`<br>• server โหลด policy เอง แล้วส่ง document ที่ตัดออกแล้ว (ไม่มี id / version / lifecycleState / updatedAt / updatedBy · exemptions กับ approvers เหลือแค่จำนวน) + coverage (นับ + FQN ≤ 20) + verdict ของ overlap (≤ 10)<br>• **ไม่มีแถวข้อมูล · ไม่มีทางเขียน**<br>• ปุ่ม *Explain with NokRak* ในหน้า policy ติดป้ายว่า NokRak เขียน และให้ Simulator เป็นตัวตัดสิน<br>• อ่านได้ทุกคนที่เปิด policy ได้ (GET เปิดอยู่แล้วตาม FR-3.1.5)<br>**(ข) dashboard ⬜** |
 | **M16** | LLM ช่วยหา asset จากสิ่งที่อยากได้ — จุดเข้าในหน้า Query **และหน้า Catalog** | – | ⬜ ต้องมี M11 |
 | **M17** | ประวัติย้อนหลังของ policy (diff + rollback) | – | ✅ V39 · tab History · rollback + impact · `audit_policy_change` เขียนจริง |
 | **M18** | รองรับ database type ใหม่โดยไม่ต้องไล่แก้ 14 จุด | – | 🚧 **~75%** |
