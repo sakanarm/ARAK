@@ -1,6 +1,6 @@
 # HANDOFF — ARAK (Data Access Control Platform)
 
-> อัปเดต: 2026-09-26 · commit ล่าสุดที่ push สำเร็จ `dfa90f5` (ข้อ BP) · ข้อ BQ · BR commit บน main แล้ว ยังไม่ push · repo https://github.com/sakanarm/ARAK (**public**)
+> อัปเดต: 2026-09-27 · ข้อ BU (FR-1.7 local tag + demo group บน prod) · push ขึ้น origin/main แล้ว · repo https://github.com/sakanarm/ARAK (**public**)
 >
 > อ่านคู่กับ **[docs/DESIGN.md](docs/DESIGN.md)** — ไฟล์นั้นคือ requirement + feature catalogue + สถานะครบทุกข้อ
 > ไฟล์นี้บอกเฉพาะ "ทำถึงไหน จะไปต่อยังไง อะไรที่ลองแล้วไม่เวิร์ค"
@@ -619,7 +619,31 @@ M25 ทำแยกได้ (profile ผ่าน proxy ที่มีแล�
 
 ---
 
-## รอบนี้ — **ข้อ BT: Local group สร้างและจัดสมาชิกได้ใน ARAK · Column description จาก OpenMetadata ขึ้นใน Query console · ชุด demo policy บน prod**
+## รอบนี้ — **ข้อ BU: ติด tag เองใน ARAK (FR-1.7) · ตัวอย่าง group บน prod**
+
+ผู้ใช้อนุญาต *"ติด tag Arak เองก่อนได้"* (ไม่เขียนกลับเข้า OM ของทีม) · แล้วถาม *"ยังไม่เห็นมีตัวอย่าง group ใน Production เลย"*
+
+### BU.1 Local tag — backend
+- `V36__local_tags.sql`: `local_tag` (target_fqn = table หรือ column · asset_fqn · tag_fqn · reason บังคับ · UNIQUE(target, tag)) + `audit_local_tag` append-only
+- vocabulary ยังเป็นของ OM: ติดได้เฉพาะ tag ที่ governance crawl ดึงมาแล้ว · tag/classification ที่ disabled ไม่ได้ · classification แบบ mutuallyExclusive ติดได้ตัวเดียว
+- `LocalTagStore` เขียน `asset_facet` แถว provenance `local` ใหม่ทุกครั้งที่ facet ของ asset ถูกเขียน (`AssetStore` เรียก rederive) -> crawl / webhook / reconcile **ไม่ลบ local tag**
+- `LocalTagResource` `/v1/local-tags`: GET `?asset=` (คืน `canEdit`) · POST ติด · POST `/remove` ถอด (ต้องมีเหตุผล จึงไม่ใช้ DELETE) · สิทธิ์ = `Stewardship.governs` (เท่ากับสิทธิ์ grant เพราะ tag ทำให้ column ถูก mask ได้) · 409 ถ้าติดซ้ำ · หลังเปลี่ยน `materializer.refresh` table นั้นทันที + invalidate decision cache
+- IT `LocalTagStoreIT`
+
+### BU.2 Local tag — frontend
+- `LocalTags.tsx` `LocalTagControl`: ปุ่ม "Edit tags" ที่แผง Governance ของ table/view และทุกแถว column · เห็นเฉพาะคนที่ govern table · เลือก tag ตาม classification (`choices` ตัดตัวที่ติดแล้ว / disabled / mutuallyExclusive) · reason บังคับทั้งติดและถอด · error ขึ้น `role=alert`
+- chip ที่มาจาก ARAK มีป้าย `ARAK` + tooltip "set in ARAK, not in OpenMetadata"
+- ผ่าน: tsc · jest 64 suites / 630 tests · local HTTP smoke (`lt-smoke.mjs` ใน scratchpad) · screenshot ติด -> chip -> ถอด
+
+### BU.3 ตัวอย่าง group บน prod (`prod-demo-groups.mjs` ใน scratchpad, รันซ้ำได้ ไม่ลบอะไร)
+- group: `demo-grp-po-analysts` (analyst1, analyst2, contractor + group ซ้อน `demo-grp-po-leads`) · `demo-grp-po-leads` (lead) · `demo-grp-po-viewers` (viewer1, viewer2) · user `demo_grp_*` tenant ARAK-DEMO · password สุ่ม ไม่ได้เก็บ
+- policy `demo-po-S14-org-allow-group` (ORG ALLOW subject = group analysts) · `demo-po-D14-table-mask-for-group` (DATA, mask email เป็น CONSTANT ให้ group viewers) · grant ตาราง PO ให้ group viewers ทั้งกลุ่ม
+- ผล 7/7: สมาชิกตรงเข้าได้ · สมาชิกผ่าน group ซ้อนเข้าได้ · contractor ใน group ยังโดน S2 DENY · viewer เข้าผ่าน grant ของ group · คนนอก group โดน default deny · mask D14 ถึงเฉพาะ viewers
+
+### BU.4 ค้าง
+- ปุ่ม push tag กลับเข้า OM (FR-1.7 ส่วนหลัง) — เขียนเข้า OM ของทีม ต้องให้ผู้ใช้อนุญาตก่อน
+
+## รอบก่อนหน้า — **ข้อ BT: Local group สร้างและจัดสมาชิกได้ใน ARAK · Column description จาก OpenMetadata ขึ้นใน Query console · ชุด demo policy บน prod**
 
 ผู้ใช้สั่ง *"เน้น Data Access เพิ่มนะ ทั้งแบบ grant ตรง กับ policy เอาให้ครบทุก Case อาจจะจากหลายๆ User, Group"* · *"ต้องเอา Column Description จาก Openmetadata มาด้วยสิ แก้ใน local ก่อนด้วย"* · *"ใน prd ยังไม่เห็นมี policy เลย บอกให้ทดสอบ policy ทุกแบบไงครบ"*
 

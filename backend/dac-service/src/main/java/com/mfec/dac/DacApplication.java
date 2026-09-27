@@ -48,6 +48,8 @@ import com.mfec.dac.om.OpenMetadataClient;
 import com.mfec.dac.resources.AccessRequestResource;
 import com.mfec.dac.resources.AccessWorkflowResource;
 import com.mfec.dac.resources.RequestTemplateResource;
+import com.mfec.dac.resources.LocalTagResource;
+import com.mfec.dac.catalog.LocalTagStore;
 import com.mfec.dac.resources.SavedQueryResource;
 import com.mfec.dac.query.SavedQueryStore;
 import com.mfec.dac.resources.AccessResource;
@@ -303,6 +305,13 @@ public class DacApplication extends Application<DacConfiguration> {
                 new PolicyOverview(jdbi, environment.getObjectMapper()),
                 new ImpactAnalysis(jdbi, contexts, principalLoader, policyStore, engine)));
 
+    // Tags attached in ARAK (FR-1.7). The resource re-resolves the table's
+    // bindings itself; the store's notifier is on the invalidation list below,
+    // because a tag on a column already bound moves a mask without moving a
+    // binding.
+    LocalTagStore localTags = new LocalTagStore(jdbi);
+    environment.jersey().register(new LocalTagResource(localTags, materializer));
+
     // The vocabulary a selector is written against, and the people a subject
     // rule is written about. Both are read-only: OpenMetadata and Entra own
     // this content, and an edit here would be reverted by the next sync.
@@ -361,6 +370,7 @@ public class DacApplication extends Application<DacConfiguration> {
     applier.changes().listen(decisionCache::invalidateAll);
     sync.changes().listen(decisionCache::invalidateAll);
     grants.changes().listen(decisionCache::invalidateAll);
+    localTags.changes().listen(decisionCache::invalidateAll);
 
     DecisionService decisionService =
         new DecisionService(

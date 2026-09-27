@@ -180,6 +180,9 @@ export function FacetChip({
   // complaint, and it was a fair one.
   const inherited = !facet.direct && Boolean(facet.inheritedFrom);
   const broader = !facet.direct && !facet.inheritedFrom;
+  // Attached in ARAK rather than in OpenMetadata (FR-1.7): the catalog team
+  // will not find it there, so the chip says where it was set.
+  const local = facet.provenance === 'local';
 
   const why = [
     facetLabel(facet.facetType),
@@ -199,7 +202,11 @@ export function FacetChip({
       : facet.omState
         ? 'state ' + facet.omState
         : null,
-    facet.provenance !== 'openmetadata' ? `provenance ${facet.provenance}` : null,
+    local
+      ? 'set in ARAK, not in OpenMetadata'
+      : facet.provenance !== 'openmetadata'
+        ? `provenance ${facet.provenance}`
+        : null,
   ]
     .filter(Boolean)
     .join(' · ');
@@ -245,6 +252,11 @@ export function FacetChip({
         {suggested && (
           <span className="tw:ml-1 tw:shrink-0 tw:text-[10px] tw:opacity-70">
             unconfirmed
+          </span>
+        )}
+        {local && (
+          <span className="tw:ml-1 tw:shrink-0 tw:text-[10px] tw:opacity-70">
+            ARAK
           </span>
         )}
       </Badge>

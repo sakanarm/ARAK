@@ -91,6 +91,9 @@ public class AssetStore implements AssetSink {
           UUID assetId = upsertAsset(handle, row, dataSourceId);
           Map<String, UUID> columnIds = upsertColumns(handle, assetId, asset.columns());
           replaceFacets(handle, row.fqn(), assetId, columnIds, asset.facets());
+          // What was tagged in ARAK goes back in beside what OpenMetadata
+          // says, in the same transaction: a sync never takes it away (FR-1.7).
+          LocalTagStore.rederive(handle, row.fqn(), assetId, columnIds, seenAt);
           replaceOwners(handle, row.fqn(), asset.owners());
           mapPhysical(handle, row, dataSourceId);
         });

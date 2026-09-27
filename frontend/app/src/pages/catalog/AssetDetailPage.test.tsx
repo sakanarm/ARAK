@@ -28,6 +28,11 @@ jest.mock('./AssetRequestAccess', () => ({
   AssetStanding: () => 'standing of the reader',
 }));
 
+// Tagging in ARAK has its own tests, and asks the backend who governs.
+jest.mock('./LocalTags', () => ({
+  LocalTagControl: () => null,
+}));
+
 jest.mock('../../api/policies', () => ({
   fetchPoliciesForAsset: (...args: unknown[]) => fetchPoliciesForAsset(...args),
 }));

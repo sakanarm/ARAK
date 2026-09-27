@@ -34,6 +34,7 @@ import {
 import { AccessTab } from './AccessTab';
 import { AssetAccessAction, AssetStanding } from './AssetRequestAccess';
 import { AuditTab } from './AuditTab';
+import { LocalTagControl } from './LocalTags';
 import { Field, Panel } from './panels';
 import { ChildrenPanel, childLabel, childrenTitle, isContainer } from './hierarchy';
 import { plainText } from '../../lib/text';
@@ -133,6 +134,7 @@ export default function AssetDetailPage() {
       : tab;
   const look = lookFor(asset.assetType);
   const grouped = groupFacets(data.facets);
+  const taggable = asset.assetType === 'TABLE' || asset.assetType === 'VIEW';
   const properties = Object.entries(customProperties ?? {});
 
   return (
@@ -285,6 +287,15 @@ export default function AssetDetailPage() {
                     ))}
                   </div>
                 )}
+                {taggable && (
+                  <div className="tw:mt-3">
+                    <LocalTagControl
+                      assetFqn={asset.fqn}
+                      carried={directTags(data.facets)}
+                      targetFqn={asset.fqn}
+                    />
+                  </div>
+                )}
               </Panel>
             </section>
 
@@ -351,7 +362,7 @@ export default function AssetDetailPage() {
                   </thead>
                   <tbody>
                     {columns.map((column) => (
-                      <ColumnRow column={column} key={column.id} />
+                      <ColumnRow assetFqn={asset.fqn} column={column} key={column.id} />
                     ))}
                   </tbody>
                 </table>
@@ -611,7 +622,7 @@ function AppliedRow({ row }: { row: AppliedPolicy }) {
   );
 }
 
-function ColumnRow({ column }: { column: ColumnDetail }) {
+function ColumnRow({ assetFqn, column }: { assetFqn: string; column: ColumnDetail }) {
   const own = columnFacets(column.facets);
 
   return (
@@ -641,6 +652,11 @@ function ColumnRow({ column }: { column: ColumnDetail }) {
             ))}
           </div>
         )}
+        <LocalTagControl
+          assetFqn={assetFqn}
+          carried={directTags(column.facets)}
+          targetFqn={column.fqn}
+        />
       </td>
     </tr>
   );
@@ -826,6 +842,13 @@ function BackLink() {
       Catalog
     </Link>
   );
+}
+
+/** The tags applied right on a table or column, whichever source put them there. */
+function directTags(facets: FacetRow[]): string[] {
+  return facets
+    .filter((facet) => facet.facetType === 'tags' && facet.direct && !facet.inheritedFrom)
+    .map((facet) => facet.facetFqn);
 }
 
 function facetKey(facet: FacetRow): string {
