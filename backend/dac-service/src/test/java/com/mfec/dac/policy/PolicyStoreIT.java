@@ -56,7 +56,10 @@ class PolicyStoreIT {
 
   @BeforeEach
   void clean() {
-    jdbi.useHandle(handle -> handle.execute("TRUNCATE policy_version, policy_binding, policy CASCADE"));
+    jdbi.useHandle(
+        handle ->
+            handle.execute(
+                "TRUNCATE audit_policy_change, policy_version, policy_binding, policy CASCADE"));
     store = new PolicyStore(jdbi, json);
   }
 
@@ -110,13 +113,13 @@ class PolicyStoreIT {
     store.update(id, edited, 1, "bob", "added phone");
     store.transition(id, "ACTIVE", "carol", "approved");
 
-    List<PolicyStore.StoredPolicy> history = store.history(id);
+    List<PolicyStore.Revision> history = store.history(id);
 
     // A decision made last quarter has to be explainable against the policy as
     // it read last quarter (FR-8.1), so nothing here is ever overwritten.
     assertThat(history).hasSize(3);
     assertThat(history.get(0).lifecycleState()).isEqualTo("ACTIVE");
-    assertThat(history).extracting(PolicyStore.StoredPolicy::updatedBy)
+    assertThat(history).extracting(PolicyStore.Revision::changedBy)
         .containsExactly("carol", "bob", "alice");
   }
 

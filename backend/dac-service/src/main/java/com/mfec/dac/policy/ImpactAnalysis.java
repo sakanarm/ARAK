@@ -4,6 +4,7 @@ import com.mfec.dac.engine.AssetContext;
 import com.mfec.dac.engine.PolicyEngine;
 import com.mfec.dac.engine.Principal;
 import com.mfec.dac.engine.RequestContext;
+import com.mfec.dac.engine.SelectorMatcher;
 import com.mfec.dac.schema.api.PolicyDecision;
 import com.mfec.dac.schema.api.ResolvedColumnMask;
 import com.mfec.dac.schema.api.ResolvedRowPredicate;
@@ -166,87 +167,209 @@ public class ImpactAnalysis {
     String environment = candidate.environment();
 
     return jdbi.withHandle(
+        handle ->
+            run(
+                handle,
+                candidate,
+                countBoundTables(handle, id),
+                boundTables(handle, id, TABLE_LIMIT),
+                fqn -> {
+                  List<PolicyStore.StoredPolicy> with =
+                      policies.activeForIncluding(fqn, environment, id);
+                  return new Sides(documents(with, id), documents(with, null));
+                }));
+  }
+
+  /**
+   * What putting an earlier version back would change (FR-9.2, FR-5.3).
+   *
+   * <p>The same counterfactual as {@link #measure}, between two versions of one
+   * policy rather than between having it and not: "before" is the stack with
+   * the policy as it reads now, "after" the same stack with the old version in
+   * its place. Everything else in the stack is held still, so what differs is
+   * the rollback and nothing but.
+   *
+   * <p>Both versions are evaluated as if in force, whatever the policy's state.
+   * For an active policy that is exactly what the rollback does to people
+   * today; for any other it is what it would do the day the policy is switched
+   * on, and {@link Impact#candidateActive} says which.
+   *
+   * <p>The tables are the ones either version lands on. The old version's are
+   * worked out here, by running its selector over its scope, because its
+   * bindings were replaced the moment it stopped being current -- and a
+   * rollback that widens the selector reaches tables the current bindings have
+   * never heard of, which are the ones a reviewer most needs to see. Tables
+   * only one version reaches are measured first, since that is where the
+   * change is.
+   *
+   * @param restored the old version's document; it is changed in place
+   */
+  public Impact measureRollback(PolicyStore.StoredPolicy current, Policy restored) {
+    UUID id = current.id();
+    String environment = current.environment();
+    Policy now = inForce(current.document(), id);
+    Policy then = inForce(restored, id);
+    then.setEnvironment(now.getEnvironment());
+
+    return jdbi.withHandle(
         handle -> {
-          int tablesBound = countBoundTables(handle, id);
-          List<String> fqns = boundTables(handle, id, TABLE_LIMIT);
-          int principalsKnown = principals.countEveryone(handle);
-          List<Principal> people = principals.everyone(handle, PRINCIPAL_LIMIT);
+          Set<String> nowTables = new TreeSet<>(boundTables(handle, id, Integer.MAX_VALUE));
+          Set<String> thenTables = matching(handle, then);
+          Set<String> either = new TreeSet<>(nowTables);
+          either.addAll(thenTables);
 
-          boolean sampled = tablesBound > fqns.size() || principalsKnown > people.size();
-          Instant now = Instant.now();
-
-          Map<String, List<TableChange>> byPrincipal = new LinkedHashMap<>();
-          Map<String, Integer> counts = new TreeMap<>();
-          Set<String> affectedTables = new TreeSet<>();
-          int measured = 0;
-
-          for (String fqn : fqns) {
-            AssetContext asset = contexts.load(handle, fqn).orElse(null);
-            if (asset == null) {
-              // Bound to a table the cache no longer holds. Not an error worth
-              // failing the whole report for, and counting it as "unchanged"
-              // would be a claim we cannot support, so it is simply not
-              // measured -- which `tablesMeasured` below already reflects.
-              continue;
-            }
-            measured++;
-
-            List<PolicyStore.StoredPolicy> with =
-                policies.activeForIncluding(fqn, environment, id);
-            List<Policy> withDocs = documents(with, null);
-            List<Policy> withoutDocs = documents(with, id);
-            RequestContext context = RequestContext.at(now);
-
-            for (Principal person : people) {
-              PolicyDecision before = engine.evaluate(person, asset, context, withoutDocs);
-              PolicyDecision after = engine.evaluate(person, asset, context, withDocs);
-              TableChange change = compare(fqn, before, after);
-              counts.merge(change.change().name(), 1, Integer::sum);
-              if (change.change() != Change.UNCHANGED) {
-                byPrincipal
-                    .computeIfAbsent(person.id(), key -> new ArrayList<>())
-                    .add(change);
-                affectedTables.add(fqn);
-              }
+          List<String> order = new ArrayList<>(either.size());
+          List<String> shared = new ArrayList<>();
+          for (String fqn : either) {
+            if (nowTables.contains(fqn) == thenTables.contains(fqn)) {
+              shared.add(fqn);
+            } else {
+              order.add(fqn);
             }
           }
+          order.addAll(shared);
+          List<String> fqns = order.subList(0, Math.min(TABLE_LIMIT, order.size()));
 
-          List<PrincipalChange> rolled = new ArrayList<>(byPrincipal.size());
-          for (Map.Entry<String, List<TableChange>> entry : byPrincipal.entrySet()) {
-            List<TableChange> tables = new ArrayList<>(entry.getValue());
-            tables.sort(
-                Comparator.comparingInt((TableChange one) -> one.change().ordinal())
-                    .thenComparing(TableChange::assetFqn));
-            Change worst = tables.get(0).change();
-            rolled.add(new PrincipalChange(entry.getKey(), worst, tables.size(), tables));
-          }
-          rolled.sort(
-              Comparator.comparingInt((PrincipalChange one) -> one.change().ordinal())
-                  .thenComparing(
-                      Comparator.comparingInt(PrincipalChange::tablesAffected).reversed())
-                  .thenComparing(PrincipalChange::principal));
-
-          boolean truncated = rolled.size() > DETAIL_LIMIT;
-          List<PrincipalChange> shown =
-              truncated ? List.copyOf(rolled.subList(0, DETAIL_LIMIT)) : List.copyOf(rolled);
-
-          return new Impact(
-              id,
-              candidate.document() == null ? null : candidate.document().getName(),
-              "ACTIVE".equals(candidate.lifecycleState()),
-              environment,
-              tablesBound,
-              measured,
-              principalsKnown,
-              people.size(),
-              sampled,
-              rolled.size(),
-              affectedTables.size(),
-              Map.copyOf(counts),
-              shown,
-              truncated,
-              now);
+          return run(
+              handle,
+              current,
+              either.size(),
+              fqns,
+              fqn -> {
+                List<Policy> others = documents(policies.activeFor(fqn, environment), id);
+                List<Policy> before = new ArrayList<>(others);
+                if (nowTables.contains(fqn)) {
+                  before.add(now);
+                }
+                List<Policy> after = new ArrayList<>(others);
+                if (thenTables.contains(fqn)) {
+                  after.add(then);
+                }
+                return new Sides(before, after);
+              });
         });
+  }
+
+  /**
+   * A document the engine will treat as in force, pointing at its policy.
+   *
+   * <p>The engine skips a document that says it is a draft, and an old
+   * version's copy may say anything about its state; the question here is what
+   * the rule does, so the rule is what is evaluated.
+   */
+  private static Policy inForce(Policy document, UUID id) {
+    document.setId(id);
+    document.setLifecycleState(Policy.LifecycleState.ACTIVE);
+    return document;
+  }
+
+  /** The tables a document's selector lands on, as the materializer would find them. */
+  private Set<String> matching(org.jdbi.v3.core.Handle handle, Policy document) {
+    Set<String> out = new TreeSet<>();
+    if (document.getSelector() == null) {
+      return out;
+    }
+    contexts.forEachInScope(
+        handle,
+        document.getScopeFqn(),
+        batch -> {
+          for (AssetContext asset : batch) {
+            if (SelectorMatcher.matches(document.getSelector(), asset)) {
+              out.add(asset.fqn());
+            }
+          }
+        });
+    return out;
+  }
+
+  /** The stacks one table is evaluated under: as things are, and as they would be. */
+  private record Sides(List<Policy> before, List<Policy> after) {}
+
+  /**
+   * Evaluates everybody against each table both ways and rolls up the
+   * difference. Shared by {@link #measure} and {@link #measureRollback}, which
+   * differ only in which tables they ask about and what the two stacks are.
+   */
+  private Impact run(
+      org.jdbi.v3.core.Handle handle,
+      PolicyStore.StoredPolicy candidate,
+      int tablesBound,
+      List<String> fqns,
+      java.util.function.Function<String, Sides> stacks) {
+    int principalsKnown = principals.countEveryone(handle);
+    List<Principal> people = principals.everyone(handle, PRINCIPAL_LIMIT);
+
+    boolean sampled = tablesBound > fqns.size() || principalsKnown > people.size();
+    Instant now = Instant.now();
+
+    Map<String, List<TableChange>> byPrincipal = new LinkedHashMap<>();
+    Map<String, Integer> counts = new TreeMap<>();
+    Set<String> affectedTables = new TreeSet<>();
+    int measured = 0;
+
+    for (String fqn : fqns) {
+      AssetContext asset = contexts.load(handle, fqn).orElse(null);
+      if (asset == null) {
+        // Bound to a table the cache no longer holds. Not an error worth
+        // failing the whole report for, and counting it as "unchanged"
+        // would be a claim we cannot support, so it is simply not
+        // measured -- which `tablesMeasured` below already reflects.
+        continue;
+      }
+      measured++;
+
+      Sides sides = stacks.apply(fqn);
+      RequestContext context = RequestContext.at(now);
+
+      for (Principal person : people) {
+        PolicyDecision before = engine.evaluate(person, asset, context, sides.before());
+        PolicyDecision after = engine.evaluate(person, asset, context, sides.after());
+        TableChange change = compare(fqn, before, after);
+        counts.merge(change.change().name(), 1, Integer::sum);
+        if (change.change() != Change.UNCHANGED) {
+          byPrincipal
+              .computeIfAbsent(person.id(), key -> new ArrayList<>())
+              .add(change);
+          affectedTables.add(fqn);
+        }
+      }
+    }
+
+    List<PrincipalChange> rolled = new ArrayList<>(byPrincipal.size());
+    for (Map.Entry<String, List<TableChange>> entry : byPrincipal.entrySet()) {
+      List<TableChange> tables = new ArrayList<>(entry.getValue());
+      tables.sort(
+          Comparator.comparingInt((TableChange one) -> one.change().ordinal())
+              .thenComparing(TableChange::assetFqn));
+      Change worst = tables.get(0).change();
+      rolled.add(new PrincipalChange(entry.getKey(), worst, tables.size(), tables));
+    }
+    rolled.sort(
+        Comparator.comparingInt((PrincipalChange one) -> one.change().ordinal())
+            .thenComparing(
+                Comparator.comparingInt(PrincipalChange::tablesAffected).reversed())
+            .thenComparing(PrincipalChange::principal));
+
+    boolean truncated = rolled.size() > DETAIL_LIMIT;
+    List<PrincipalChange> shown =
+        truncated ? List.copyOf(rolled.subList(0, DETAIL_LIMIT)) : List.copyOf(rolled);
+
+    return new Impact(
+        candidate.id(),
+        candidate.document() == null ? null : candidate.document().getName(),
+        "ACTIVE".equals(candidate.lifecycleState()),
+        candidate.environment(),
+        tablesBound,
+        measured,
+        principalsKnown,
+        people.size(),
+        sampled,
+        rolled.size(),
+        affectedTables.size(),
+        Map.copyOf(counts),
+        shown,
+        truncated,
+        now);
   }
 
   /**

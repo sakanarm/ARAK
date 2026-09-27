@@ -1,13 +1,18 @@
 package com.mfec.dac.policy;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.mfec.dac.audit.ClientAddress;
 import com.mfec.dac.common.ChangeNotifier;
 import com.mfec.dac.common.Fqns;
 import com.mfec.dac.engine.PolicyExpressionEvaluator;
 import com.mfec.dac.schema.api.ResolvedColumnMask;
 import com.mfec.dac.schema.entity.policy.Policy;
 import java.sql.SQLException;
+import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -32,6 +37,12 @@ import org.slf4j.LoggerFactory;
  * <p>Every write appends to {@code policy_version} before it changes {@code
  * policy}. An access decision made last quarter has to be explainable against
  * the policy as it read last quarter, not as it reads now (FR-8.1).
+ *
+ * <p>Every write also appends one row to {@code audit_policy_change}, in the
+ * same transaction: the version table says what each version read, and the
+ * change log says what was done to get there -- an edit, a publish, a version
+ * put back. A write that could land without its log row would be a change
+ * nobody can account for, so neither lands without the other.
  */
 public class PolicyStore {
 
@@ -70,6 +81,32 @@ public class PolicyStore {
       String updatedBy,
       java.time.Instant updatedAt) {}
 
+  /**
+   * One version of a policy as its history shows it (FR-9.2).
+   *
+   * <p>A record of its own rather than a {@link StoredPolicy} with blanks,
+   * because what a version is differs from what a policy is: it has a reason
+   * somebody gave and an act that produced it, and it has no environment or
+   * creator of its own.
+   *
+   * @param action what produced this version: {@code CREATE}, {@code UPDATE},
+   *     {@code SUBMIT}, {@code RETURN}, {@code PUBLISH}, {@code DISABLE},
+   *     {@code ARCHIVE} or {@code ROLLBACK}. Read from the change log, and
+   *     worked out from the states either side for versions written before
+   *     the log was
+   * @param restoredFrom for a rollback, the version whose document it copied
+   */
+  public record Revision(
+      UUID policyId,
+      int version,
+      Policy document,
+      String lifecycleState,
+      String changedBy,
+      String changeReason,
+      Instant changedAt,
+      String action,
+      Integer restoredFrom) {}
+
   /** Thrown when a write is based on a version somebody else has already moved past. */
   public static class StaleVersionException extends RuntimeException {
     public StaleVersionException(String message) {
@@ -103,29 +140,23 @@ public class PolicyStore {
    * that FR-5.2 exists to make unskippable.
    */
   public StoredPolicy create(Policy document, String author) {
+    return create(document, author, null);
+  }
+
+  /**
+   * @param clientIp where the request came from, for the change log; never
+   *     read back out of it
+   */
+  public StoredPolicy create(Policy document, String author, String clientIp) {
     validate(document);
     StoredPolicy created;
     try {
-      created = insert(document, author);
+      created = insert(document, author, clientIp);
     } catch (UnableToExecuteStatementException e) {
       if (!isNameClash(e)) {
         throw e;
       }
-      String environment = environmentOf(document);
-      String state =
-          jdbi.withHandle(
-              handle ->
-                  handle
-                      .createQuery(
-                          "SELECT lifecycle_state FROM policy WHERE name = :name AND environment = :env")
-                      .bind("name", document.getName())
-                      .bind("env", environment)
-                      .mapTo(String.class)
-                      .findOne()
-                      .orElse("another"));
-      throw new NameTakenException(
-          "A policy named " + document.getName() + " already exists in " + environment
-              + " (" + state + "); names are not reused, even after archiving — choose another");
+      throw nameTaken(document.getName(), environmentOf(document));
     }
     // A DRAFT decides nothing, but it is created and activated from the same
     // screen seconds apart, and announcing both is cheaper than reasoning about
@@ -136,6 +167,23 @@ public class PolicyStore {
 
   private static String environmentOf(Policy document) {
     return document.getEnvironment() == null ? "dev" : value(document.getEnvironment());
+  }
+
+  private NameTakenException nameTaken(String name, String environment) {
+    String state =
+        jdbi.withHandle(
+            handle ->
+                handle
+                    .createQuery(
+                        "SELECT lifecycle_state FROM policy WHERE name = :name AND environment = :env")
+                    .bind("name", name)
+                    .bind("env", environment)
+                    .mapTo(String.class)
+                    .findOne()
+                    .orElse("another"));
+    return new NameTakenException(
+        "A policy named " + name + " already exists in " + environment
+            + " (" + state + "); names are not reused, even after archiving — choose another");
   }
 
   // Postgres reports a unique violation as SQLSTATE 23505, naming the constraint.
@@ -150,7 +198,7 @@ public class PolicyStore {
     return false;
   }
 
-  private StoredPolicy insert(Policy document, String author) {
+  private StoredPolicy insert(Policy document, String author, String clientIp) {
     return jdbi.inTransaction(
         handle -> {
           UUID id =
@@ -188,7 +236,13 @@ public class PolicyStore {
                   .mapTo(UUID.class)
                   .one();
 
-          recordVersion(handle, id, 1, serialise(document), "DRAFT", author, "created");
+          String body = serialise(document);
+          recordVersion(handle, id, 1, body, "DRAFT", author, "created");
+          audit(
+              handle,
+              new Change(
+                  author, id, document.getName(), "CREATE", null, 1, null, body, null, "DRAFT",
+                  "created", null, clientIp));
           LOG.info("Policy {} created as DRAFT by {}", document.getName(), author);
           return read(handle, id).orElseThrow();
         });
@@ -203,60 +257,229 @@ public class PolicyStore {
    *     an access restriction somebody meant to add
    */
   public StoredPolicy update(UUID id, Policy document, int expectedVersion, String author, String reason) {
-    validate(document);
-    StoredPolicy updated = jdbi.inTransaction(
-        handle -> {
-          StoredPolicy current =
-              read(handle, id).orElseThrow(() -> new IllegalArgumentException("No policy " + id));
-          // Checked before the version, because an archived policy is refused
-          // whatever version the editor was holding, and "reload and try again"
-          // would be the wrong thing to tell them.
-          if ("ARCHIVED".equals(current.lifecycleState())) {
-            throw new IllegalTransitionException("An archived policy cannot be edited");
-          }
-          if (current.version() != expectedVersion) {
-            throw new StaleVersionException(
-                "Policy " + id + " is at version " + current.version() + ", not " + expectedVersion);
-          }
-          int next = current.version() + 1;
-          String body = serialise(document);
-          handle
-              .createUpdate(
-                  """
-                  UPDATE policy SET
-                      name = :name, display_name = :displayName, description = :description,
-                      policy_type = :policyType, scope_level = :scopeLevel, scope_fqn = :scopeFqn,
-                      scope_depth = :scopeDepth, effect = :effect,
-                      allow_local_override = :allowLocalOverride,
-                      document = CAST(:document AS jsonb), version = :version,
-                      valid_from = :validFrom, valid_until = :validUntil,
-                      updated_by = :author, updated_at = now()
-                  WHERE id = :id
-                  """)
-              .bind("id", id)
-              .bind("name", document.getName())
-              .bind("displayName", document.getDisplayName())
-              .bind("description", document.getDescription())
-              .bind("policyType", value(document.getPolicyType()))
-              .bind("scopeLevel", value(document.getScopeLevel()))
-              .bind("scopeFqn", document.getScopeFqn())
-              .bind("scopeDepth", depthOf(document.getScopeFqn()))
-              .bind("effect", document.getEffect() == null ? "ALLOW" : value(document.getEffect()))
-              .bind(
-                  "allowLocalOverride",
-                  document.getAllowLocalOverride() != null && document.getAllowLocalOverride())
-              .bind("document", body)
-              .bind("version", next)
-              .bind("validFrom", instant(document.getValidFrom()))
-              .bind("validUntil", instant(document.getValidUntil()))
-              .bind("author", author)
-              .execute();
+    return update(id, document, expectedVersion, author, reason, null);
+  }
 
-          recordVersion(handle, id, next, body, current.lifecycleState(), author, reason);
-          return read(handle, id).orElseThrow();
-        });
+  public StoredPolicy update(
+      UUID id, Policy document, int expectedVersion, String author, String reason, String clientIp) {
+    validate(document);
+    StoredPolicy updated;
+    try {
+      updated =
+          jdbi.inTransaction(
+              handle -> {
+                StoredPolicy current = editable(handle, id, expectedVersion, "edited");
+                int next = current.version() + 1;
+                String body = serialise(document);
+                writeDocument(handle, id, document, body, next, author);
+                recordVersion(handle, id, next, body, current.lifecycleState(), author, reason);
+                audit(
+                    handle,
+                    new Change(
+                        author, id, document.getName(), "UPDATE", current.version(), next,
+                        serialise(current.document()), body, current.lifecycleState(),
+                        current.lifecycleState(), reason, null, clientIp));
+                return read(handle, id).orElseThrow();
+              });
+    } catch (UnableToExecuteStatementException e) {
+      // A rename onto a name already in use. Refused like the same clash at
+      // creation, rather than surfacing as a server error with the constraint
+      // name in it.
+      if (!isNameClash(e)) {
+        throw e;
+      }
+      throw nameTaken(document.getName(), environmentOf(policyOrThrow(id).document()));
+    }
     changes.fire("policy " + id + " edited");
     return updated;
+  }
+
+  /**
+   * Puts an earlier version's document back, as a new version (FR-9.2).
+   *
+   * <p>Never by rewriting history. The old version stays where it was, and
+   * what is written is version {@code current + 1} whose document is a copy of
+   * it, with {@code restored_from} in the change log saying which. That is what
+   * keeps "what did this policy say on the 3rd" answerable after a rollback:
+   * the versions in between were in force, and a rollback that erased them
+   * would erase the explanation for every decision they made.
+   *
+   * <p>The lifecycle state is left as it is. Rolling back an active policy
+   * changes what is being enforced now -- which is the point, and why the
+   * screen shows the impact first -- but it does not also switch the policy
+   * on or off; that is a separate, separately recorded act.
+   *
+   * <p>The document is checked as if it were being saved today, because it is.
+   * An old version can have become unsaveable since -- an exemption whose
+   * expiry the rules now require, an expression the parser no longer accepts
+   * -- and restoring it anyway would put a policy in force that nobody could
+   * then save again.
+   *
+   * @param toVersion the version to copy
+   * @param expectedVersion the version the person restoring was looking at
+   * @throws IllegalArgumentException if the version does not exist, is the
+   *     current one, reads the same as the current one, or could not be saved
+   */
+  public StoredPolicy rollback(
+      UUID id, int toVersion, int expectedVersion, String author, String reason, String clientIp) {
+    if (reason == null || reason.isBlank()) {
+      throw new IllegalArgumentException("Say why this version is being put back");
+    }
+    StoredPolicy restored;
+    try {
+      restored =
+          jdbi.inTransaction(
+              handle -> {
+                StoredPolicy current = editable(handle, id, expectedVersion, "rolled back");
+                if (toVersion == current.version()) {
+                  throw new IllegalArgumentException(
+                      "Version " + toVersion + " is the current version; there is nothing to put back");
+                }
+                String stored =
+                    handle
+                        .createQuery(
+                            "SELECT document FROM policy_version WHERE policy_id = :id AND version = :version")
+                        .bind("id", id)
+                        .bind("version", toVersion)
+                        .mapTo(String.class)
+                        .findOne()
+                        .orElseThrow(
+                            () ->
+                                new IllegalArgumentException(
+                                    "Policy " + id + " has no version " + toVersion));
+                Policy document = restorable(id, stored, current);
+                if (sameRule(document, current.document())) {
+                  throw new IllegalArgumentException(
+                      "Version " + toVersion + " reads the same as the current version; "
+                          + "there is nothing to put back");
+                }
+                try {
+                  validate(document);
+                } catch (IllegalArgumentException e) {
+                  throw new IllegalArgumentException(
+                      "Version " + toVersion + " can no longer be saved as it is: " + e.getMessage());
+                }
+                int next = current.version() + 1;
+                String body = serialise(document);
+                writeDocument(handle, id, document, body, next, author);
+                recordVersion(handle, id, next, body, current.lifecycleState(), author, reason);
+                audit(
+                    handle,
+                    new Change(
+                        author, id, document.getName(), "ROLLBACK", current.version(), next,
+                        serialise(current.document()), body, current.lifecycleState(),
+                        current.lifecycleState(), reason, toVersion, clientIp));
+                LOG.info(
+                    "Policy {} rolled back to the document of version {} as version {} by {}",
+                    id, toVersion, next, author);
+                return read(handle, id).orElseThrow();
+              });
+    } catch (UnableToExecuteStatementException e) {
+      // The old version's name has since been given to another policy.
+      if (!isNameClash(e)) {
+        throw e;
+      }
+      String name = revision(id, toVersion).map(r -> r.document().getName()).orElse("that name");
+      throw nameTaken(name, environmentOf(policyOrThrow(id).document()));
+    }
+    changes.fire("policy " + id + " rolled back to version " + toVersion);
+    return restored;
+  }
+
+  /**
+   * The policy as it stands, if it may be written: not archived, and still at
+   * the version the writer was looking at.
+   *
+   * <p>Archived is checked first, because an archived policy is refused
+   * whatever version the writer was holding, and "reload and try again" would
+   * be the wrong thing to tell them.
+   */
+  private StoredPolicy editable(Handle handle, UUID id, int expectedVersion, String verb) {
+    StoredPolicy current =
+        read(handle, id).orElseThrow(() -> new IllegalArgumentException("No policy " + id));
+    if ("ARCHIVED".equals(current.lifecycleState())) {
+      throw new IllegalTransitionException("An archived policy cannot be " + verb);
+    }
+    if (current.version() != expectedVersion) {
+      throw new StaleVersionException(
+          "Policy " + id + " is at version " + current.version() + ", not " + expectedVersion);
+    }
+    return current;
+  }
+
+  private StoredPolicy policyOrThrow(UUID id) {
+    return find(id).orElseThrow(() -> new IllegalArgumentException("No policy " + id));
+  }
+
+  /**
+   * An old version's document, made fit to be the current one.
+   *
+   * <p>The fields the store keeps for itself -- id, state, version, who and
+   * when -- are dropped, since the row says those and the copy would only say
+   * them wrongly. The environment is the policy's present one: an edit never
+   * moves a policy between environments, so a rollback must not either.
+   */
+  private Policy restorable(UUID id, String stored, StoredPolicy current) {
+    Policy document = deserialise(id.toString(), stored);
+    document.setId(null);
+    document.setLifecycleState(null);
+    document.setVersion(null);
+    document.setUpdatedAt(null);
+    document.setUpdatedBy(null);
+    document.setEnvironment(current.document().getEnvironment());
+    return document;
+  }
+
+  /**
+   * Whether two documents say the same rule, ignoring the store's own fields
+   * and the order keys happen to be in.
+   */
+  private boolean sameRule(Policy a, Policy b) {
+    return rule(a).equals(rule(b));
+  }
+
+  private JsonNode rule(Policy document) {
+    JsonNode tree = json.valueToTree(document);
+    if (tree instanceof ObjectNode object) {
+      object.remove(List.of("id", "lifecycleState", "version", "updatedAt", "updatedBy", "environment"));
+    }
+    return tree;
+  }
+
+  /** The columns an edit changes, shared so an edit and a rollback cannot disagree about them. */
+  private static void writeDocument(
+      Handle handle, UUID id, Policy document, String body, int version, String author) {
+    handle
+        .createUpdate(
+            """
+            UPDATE policy SET
+                name = :name, display_name = :displayName, description = :description,
+                policy_type = :policyType, scope_level = :scopeLevel, scope_fqn = :scopeFqn,
+                scope_depth = :scopeDepth, effect = :effect,
+                allow_local_override = :allowLocalOverride,
+                document = CAST(:document AS jsonb), version = :version,
+                valid_from = :validFrom, valid_until = :validUntil,
+                updated_by = :author, updated_at = now()
+            WHERE id = :id
+            """)
+        .bind("id", id)
+        .bind("name", document.getName())
+        .bind("displayName", document.getDisplayName())
+        .bind("description", document.getDescription())
+        .bind("policyType", value(document.getPolicyType()))
+        .bind("scopeLevel", value(document.getScopeLevel()))
+        .bind("scopeFqn", document.getScopeFqn())
+        .bind("scopeDepth", depthOf(document.getScopeFqn()))
+        .bind("effect", document.getEffect() == null ? "ALLOW" : value(document.getEffect()))
+        .bind(
+            "allowLocalOverride",
+            document.getAllowLocalOverride() != null && document.getAllowLocalOverride())
+        .bind("document", body)
+        .bind("version", version)
+        .bind("validFrom", instant(document.getValidFrom()))
+        .bind("validUntil", instant(document.getValidUntil()))
+        .bind("author", author)
+        .execute();
   }
 
   /**
@@ -268,6 +491,10 @@ public class PolicyStore {
    * versions so the audit can say when enforcement began.
    */
   public StoredPolicy transition(UUID id, String to, String author, String reason) {
+    return transition(id, to, author, reason, null);
+  }
+
+  public StoredPolicy transition(UUID id, String to, String author, String reason, String clientIp) {
     StoredPolicy moved = jdbi.inTransaction(
         handle -> {
           StoredPolicy current =
@@ -295,14 +522,18 @@ public class PolicyStore {
               .bind("version", next)
               .bind("author", author)
               .execute();
-          recordVersion(
+          String body = serialise(current.document());
+          String why = reason == null ? current.lifecycleState() + " -> " + to : reason;
+          recordVersion(handle, id, next, body, to, author, why);
+          // The document did not move, so only the "after" side is written:
+          // it is the rule that went live, or stopped being live, and a
+          // "before" identical to it would say nothing.
+          audit(
               handle,
-              id,
-              next,
-              serialise(current.document()),
-              to,
-              author,
-              reason == null ? current.lifecycleState() + " -> " + to : reason);
+              new Change(
+                  author, id, current.document().getName(), actionFor(current.lifecycleState(), to),
+                  current.version(), next, null, body, current.lifecycleState(), to, why, null,
+                  clientIp));
           LOG.info("Policy {} moved {} -> {} by {}", id, current.lifecycleState(), to, author);
           return read(handle, id).orElseThrow();
         });
@@ -311,6 +542,18 @@ public class PolicyStore {
     // enforcing a policy somebody has just switched off.
     changes.fire("policy " + id + " moved to " + to);
     return moved;
+  }
+
+  /** What the change log calls a move from one state to another. */
+  static String actionFor(String from, String to) {
+    return switch (to) {
+      case "ACTIVE" -> "PUBLISH";
+      case "DISABLED" -> "DISABLE";
+      case "ARCHIVED" -> "ARCHIVE";
+      case "PENDING_APPROVAL" -> "SUBMIT";
+      case "DRAFT" -> "RETURN";
+      default -> throw new IllegalStateException("No log action for " + from + " -> " + to);
+    };
   }
 
   public Optional<StoredPolicy> find(UUID id) {
@@ -487,31 +730,100 @@ public class PolicyStore {
                 .list());
   }
 
-  /** The history of one policy, newest first (FR-9.2). */
-  public List<StoredPolicy> history(UUID id) {
-    return jdbi.withHandle(
-        handle ->
-            handle
-                .createQuery(
-                    """
-                    SELECT id, policy_id, version, document, lifecycle_state, changed_by,
-                           change_reason, changed_at
-                    FROM policy_version WHERE policy_id = :id
-                    ORDER BY changed_at DESC, version DESC
-                    """)
-                .bind("id", id)
-                .map(
-                    (rs, ctx) ->
-                        new StoredPolicy(
-                            UUID.fromString(rs.getString("policy_id")),
-                            deserialise(rs.getString("policy_id"), rs.getString("document")),
-                            rs.getString("lifecycle_state"),
-                            null,
-                            rs.getInt("version"),
-                            null,
-                            rs.getString("changed_by"),
-                            rs.getTimestamp("changed_at").toInstant()))
-                .list());
+  /**
+   * The history of one policy, newest first (FR-9.2).
+   *
+   * <p>Each version with the act that produced it, read from the change log.
+   * Versions written before the log was kept have no row there, and for those
+   * the act is worked out from the states either side of it -- which is exact
+   * for everything but a rollback, and there were no rollbacks before the log.
+   *
+   * <p>The log's {@code client_ip} is not read. Where somebody was sitting is
+   * for an investigation, not for everybody who can open the policy.
+   */
+  public List<Revision> history(UUID id) {
+    record Row(
+        int version,
+        String document,
+        String state,
+        String changedBy,
+        String reason,
+        Instant changedAt,
+        String action,
+        Integer restoredFrom) {}
+
+    List<Row> rows =
+        jdbi.withHandle(
+            handle ->
+                handle
+                    .createQuery(
+                        """
+                        SELECT v.version, v.document, v.lifecycle_state, v.changed_by,
+                               v.change_reason, v.changed_at, c.action, c.restored_from
+                        FROM policy_version v
+                        LEFT JOIN LATERAL (
+                            SELECT a.action, a.restored_from
+                            FROM audit_policy_change a
+                            WHERE a.policy_id = v.policy_id AND a.to_version = v.version
+                            ORDER BY a.id DESC
+                            LIMIT 1
+                        ) c ON true
+                        WHERE v.policy_id = :id
+                        ORDER BY v.version
+                        """)
+                    .bind("id", id)
+                    .map(
+                        (rs, ctx) ->
+                            new Row(
+                                rs.getInt("version"),
+                                rs.getString("document"),
+                                rs.getString("lifecycle_state"),
+                                rs.getString("changed_by"),
+                                rs.getString("change_reason"),
+                                rs.getTimestamp("changed_at").toInstant(),
+                                rs.getString("action"),
+                                (Integer) rs.getObject("restored_from")))
+                    .list());
+
+    List<Revision> out = new ArrayList<>(rows.size());
+    String previous = null;
+    for (Row row : rows) {
+      String action = row.action();
+      if (action == null) {
+        if (previous == null) {
+          action = "CREATE";
+        } else if (!previous.equals(row.state())) {
+          try {
+            action = actionFor(previous, row.state());
+          } catch (IllegalStateException e) {
+            // A state the log has no word for. The history still reads; one
+            // row of it is less specific than it could be.
+            action = "UPDATE";
+          }
+        } else {
+          action = "UPDATE";
+        }
+      }
+      out.add(
+          new Revision(
+              id,
+              row.version(),
+              deserialise(id.toString(), row.document()),
+              row.state(),
+              row.changedBy(),
+              row.reason(),
+              row.changedAt(),
+              action,
+              row.restoredFrom()));
+      previous = row.state();
+    }
+    Collections.reverse(out);
+    return out;
+  }
+
+  /** One version of a policy, as {@link #history} reads it. */
+  public Optional<Revision> revision(UUID id, int version) {
+    return history(id).stream().filter(r -> r.version() == version).findFirst();
   }
 
   /** Archives rather than deletes: a policy that once decided an access is evidence. */
@@ -540,6 +852,62 @@ public class PolicyStore {
         rs.getString("created_by"),
         rs.getString("updated_by"),
         rs.getTimestamp("updated_at").toInstant());
+  }
+
+  /**
+   * One row of the policy change log (FR-8.1).
+   *
+   * @param before the document before the change, where it changed
+   * @param after the document after it; for a lifecycle move, the document
+   *     that went live or stopped being live
+   */
+  private record Change(
+      String actor,
+      UUID policyId,
+      String policyName,
+      String action,
+      Integer fromVersion,
+      int toVersion,
+      String before,
+      String after,
+      String fromState,
+      String toState,
+      String reason,
+      Integer restoredFrom,
+      String clientIp) {}
+
+  /**
+   * Written on the same handle as the version it describes, so the two commit
+   * or roll back together. Unlike the query log, a failure here is not caught
+   * and logged: the change log is the record that the change was made, and a
+   * policy change that cannot be recorded is not made.
+   */
+  private static void audit(Handle handle, Change change) {
+    handle
+        .createUpdate(
+            """
+            INSERT INTO audit_policy_change (actor, policy_id, policy_name, action,
+                                             from_version, to_version, before_document,
+                                             after_document, from_state, to_state, reason,
+                                             restored_from, client_ip)
+            VALUES (:actor, :policyId, :policyName, :action, :fromVersion, :toVersion,
+                    CAST(:before AS jsonb), CAST(:after AS jsonb), :fromState, :toState,
+                    :reason, :restoredFrom, CAST(:clientIp AS inet))
+            """)
+        .bind("actor", change.actor())
+        .bind("policyId", change.policyId())
+        .bind("policyName", change.policyName())
+        .bind("action", change.action())
+        .bind("fromVersion", change.fromVersion())
+        .bind("toVersion", change.toVersion())
+        .bind("before", change.before())
+        .bind("after", change.after())
+        .bind("fromState", change.fromState())
+        .bind("toState", change.toState())
+        .bind("reason", change.reason())
+        .bind("restoredFrom", change.restoredFrom())
+        .bind("clientIp", ClientAddress.normalise(change.clientIp()))
+        .execute();
   }
 
   private void recordVersion(

@@ -136,9 +136,75 @@ export async function fetchPolicy(id: string): Promise<StoredPolicy> {
   return data;
 }
 
-export async function fetchPolicyVersions(id: string): Promise<StoredPolicy[]> {
-  const { data } = await apiClient.get<StoredPolicy[]>(
+/**
+ * What produced a version (FR-9.2, FR-8.1).
+ *
+ * `ROLLBACK` is a new version that copies an older one, never the older one
+ * brought back: history only grows, so the version a restore replaced is still
+ * there to restore in turn.
+ */
+export type PolicyAction =
+  | 'CREATE'
+  | 'UPDATE'
+  | 'SUBMIT'
+  | 'RETURN'
+  | 'PUBLISH'
+  | 'DISABLE'
+  | 'ARCHIVE'
+  | 'ROLLBACK';
+
+/** One saved version of a policy, and who made it and why. */
+export interface PolicyRevision {
+  policyId: string;
+  version: number;
+  document: Policy;
+  lifecycleState: StoredPolicy['lifecycleState'];
+  changedBy: string;
+  changeReason: string | null;
+  changedAt: string;
+  action: PolicyAction;
+  /** Set on a `ROLLBACK`: the version whose rules it copied. */
+  restoredFrom: number | null;
+}
+
+/** Every version, newest first. */
+export async function fetchPolicyVersions(id: string): Promise<PolicyRevision[]> {
+  const { data } = await apiClient.get<PolicyRevision[]>(
     `/v1/policies/${id}/versions`
+  );
+  return data;
+}
+
+/**
+ * What putting an older version's rules back would change, measured the same
+ * way as {@link fetchPolicyImpact} but between the current version and that one.
+ */
+export async function fetchRollbackImpact(
+  id: string,
+  version: number
+): Promise<PolicyImpact> {
+  const { data } = await apiClient.get<PolicyImpact>(
+    `/v1/policies/${id}/versions/${version}/impact`
+  );
+  return data;
+}
+
+/**
+ * Saves an older version's rules as the next version.
+ *
+ * Like {@link updatePolicy} it names the version the screen is looking at, so a
+ * restore made against a page somebody else has since changed is refused
+ * rather than undoing their change unseen. The reason is required.
+ */
+export async function rollbackPolicy(
+  id: string,
+  version: number,
+  expectedVersion: number,
+  reason: string
+): Promise<StoredPolicy> {
+  const { data } = await apiClient.post<StoredPolicy>(
+    `/v1/policies/${id}/rollback/${version}`,
+    { expectedVersion, reason }
   );
   return data;
 }

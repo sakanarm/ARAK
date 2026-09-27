@@ -595,6 +595,21 @@ export default function PolicyBuilderPage() {
                   v{loaded.version} · {loaded.lifecycleState.toLowerCase()}
                 </Badge>
               )}
+              {loaded && (
+                // Who saved the version being edited, and when: an editor who
+                // is about to overwrite a colleague's change from a minute ago
+                // should see that before pressing Save, not in the 409.
+                <span className="tw:text-xs tw:text-tertiary">
+                  edited {editedAt(loaded.updatedAt)} by{' '}
+                  <span className="tw:text-secondary">{loaded.updatedBy}</span>
+                  {' · '}
+                  <Link
+                    className="tw:underline tw:decoration-transparent tw:underline-offset-2 tw:hover:decoration-current"
+                    to={`/policies/${loaded.id}?tab=history`}>
+                    History
+                  </Link>
+                </span>
+              )}
             </div>
             <p className="tw:mt-0.5 tw:text-sm tw:text-tertiary">
               Written once; enforced the same wherever it runs.
@@ -983,4 +998,15 @@ function hasCondition(policy: Policy): boolean {
       selector.or?.length ||
       selector.not
   );
+}
+
+/** When a version was saved, to the minute, in the reader's own zone. */
+function editedAt(iso: string | null | undefined): string {
+  if (!iso) {
+    return 'at an unknown time';
+  }
+  const at = new Date(iso);
+  return Number.isNaN(at.getTime())
+    ? iso
+    : at.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
 }

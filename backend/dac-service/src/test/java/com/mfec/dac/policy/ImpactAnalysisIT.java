@@ -84,7 +84,8 @@ class ImpactAnalysisIT {
         handle -> {
           handle.execute(
               """
-              TRUNCATE policy_version, policy_binding, access_grant, row_entitlement,
+              TRUNCATE audit_policy_change, policy_version, policy_binding, access_grant,
+                       row_entitlement,
                        enforcement_state, asset_facet, asset_owner, asset_fqn_map,
                        asset_column, asset, policy, principal_attribute, app_role_assignment,
                        group_member, principal CASCADE
@@ -254,6 +255,80 @@ class ImpactAnalysisIT {
     }
   }
 
+  // ------------------------------------------------------------------ rollback
+
+  @Nested
+  @DisplayName("what putting an old version back changes")
+  class Rollback {
+
+    /**
+     * Both versions land on the same table; only the rule differs. Going back to the version that
+     * denied only L1 gives access back to everybody else.
+     */
+    @Test
+    @DisplayName("going back to a narrower rule gives access back to the people it spares")
+    void narrowerRuleGivesAccessBack() {
+      UUID id = draftDeny("deny-some", "L1").id();
+      store.transition(id, "ACTIVE", "alice", "test");
+      store.update(id, denyDocument("deny-some", null), 2, "bob", "deny everyone");
+      materializer.materialize(id);
+
+      ImpactAnalysis.Impact measured =
+          impact.measureRollback(
+              store.find(id).orElseThrow(), store.revision(id, 1).orElseThrow().document());
+
+      assertThat(measured.candidateActive()).isTrue();
+      assertThat(measured.tablesBound()).isEqualTo(1);
+      assertThat(measured.byChange())
+          .containsEntry("GAINS_ACCESS", 2)
+          .containsEntry("UNCHANGED", 1);
+      assertThat(measured.principals())
+          .extracting(ImpactAnalysis.PrincipalChange::principal)
+          .containsExactlyInAnyOrder("analyst_b", "bot_sync");
+    }
+
+    /**
+     * The case the current bindings cannot answer: the old version's selector reaches a table the
+     * current one does not, so its bindings are gone and have to be worked out again.
+     */
+    @Test
+    @DisplayName("an old selector that reaches a table the current one does not is measured there")
+    void anOldSelectorIsResolvedAgain() {
+      UUID id = draftDeny("deny-all", null).id();
+      store.transition(id, "ACTIVE", "alice", "test");
+      Policy nowhere = denyDocument("deny-all", null);
+      nowhere.setSelector(selector("PII.NotAppliedAnywhere"));
+      store.update(id, nowhere, 2, "bob", "narrowed to nothing");
+      materializer.materialize(id);
+
+      ImpactAnalysis.Impact measured =
+          impact.measureRollback(
+              store.find(id).orElseThrow(), store.revision(id, 1).orElseThrow().document());
+
+      assertThat(measured.tablesBound()).isEqualTo(1);
+      assertThat(measured.tablesMeasured()).isEqualTo(1);
+      assertThat(measured.byChange()).containsEntry("LOSES_ACCESS", 3);
+      assertThat(measured.principals().get(0).tables())
+          .singleElement()
+          .satisfies(table -> assertThat(table.assetFqn()).isEqualTo(CUSTOMER));
+    }
+
+    @Test
+    @DisplayName("a draft is measured as if both versions were in force, and says it is a draft")
+    void aDraftIsReadAsTheFuture() {
+      UUID id = draftDeny("deny-some", "L1").id();
+      store.update(id, denyDocument("deny-some", null), 1, "bob", "deny everyone");
+      materializer.materialize(id);
+
+      ImpactAnalysis.Impact measured =
+          impact.measureRollback(
+              store.find(id).orElseThrow(), store.revision(id, 1).orElseThrow().document());
+
+      assertThat(measured.candidateActive()).isFalse();
+      assertThat(measured.byChange()).containsEntry("GAINS_ACCESS", 2);
+    }
+  }
+
   // ----------------------------------------------------------------- fixtures
 
   /**
@@ -281,6 +356,10 @@ class ImpactAnalysisIT {
    * @param clearance when set, the policy denies only principals carrying it
    */
   private PolicyStore.StoredPolicy draftDeny(String name, String clearance) {
+    return materialized(denyDocument(name, clearance));
+  }
+
+  private static Policy denyDocument(String name, String clearance) {
     Policy document = new Policy();
     document.setName(name);
     document.setPolicyType(Policy.PolicyType.SUBSCRIPTION);
@@ -296,7 +375,7 @@ class ImpactAnalysisIT {
       subject.setAttributes(List.of(condition));
       document.setSubject(subject);
     }
-    return materialized(document);
+    return document;
   }
 
   /** A draft that grants exactly what the baseline already grants. */

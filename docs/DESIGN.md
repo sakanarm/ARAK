@@ -314,14 +314,15 @@ policy change log (append-only, ค่าเดิม→ค่าใหม่) �
 
 | ข้อ | สถานะ | อยู่ที่ไหน |
 |---|---|---|
-| FR-8.1 policy change log | ✅ | `audit_policy_change` append-only |
+| FR-8.1 policy change log | ✅ **M17** | `audit_policy_change` append-only — หนึ่งแถวต่อทุกเวอร์ชัน ใน transaction เดียวกับ `policy_version` (create / update / submit / return / publish / disable / archive / rollback) · V39 `from_state` · `to_state` · `restored_from` · `client_ip` เก็บจาก remote address เท่านั้น และไม่ออกไปกับคำตอบใด |
 | FR-8.2 access decision log | ✅ | `audit_decision` (+ `evaluation_ms`) |
 | FR-8.3 query log | ✅ **M10** | `audit_query` + V25 (`asset_fqns` · `run_by`) · `GET /v1/audit/queries` + หน้า `/audit` · อ่านได้ตามหน้าที่: admin / author / auditor ทุกแถว · owner แถวบน table ของตัวเอง (SQL ซ่อนถ้าแตะ table อื่น) · คนอื่นของตัวเอง |
 | FR-8.4 SIEM export + retention | ⬜ | — |
 | FR-8.5 compliance report | ✅ **M10** (บนหน้าจอ · export CSV/PDF ⬜) | `GET /v1/dashboard` + หน้า `/dashboard` — ใครเข้าถึง label ที่เลือกได้ (default PII) · table sensitive ที่ไม่มี data policy (แยก ถูกอ่าน / เข้าได้ / ปิดอยู่) · สิทธิ์ที่ไม่ได้ใช้เกิน 90 วัน · grant ใกล้หมด / ไม่มีวันหมด · ไม่มี IP / SQL ในคำตอบ |
 
-### FR-9 Policy Lifecycle — ⬜
-state `DRAFT → PENDING_APPROVAL → ACTIVE → DISABLED → ARCHIVED` ✅ (มีใน schema) · version + diff + rollback (ตาราง `policy_version` มีแล้ว) · **Policy-as-Code** export/import YAML · แยก environment dev/uat/prod + promote → ทำรวมใน **FR-20 / M30**
+### FR-9 Policy Lifecycle — 🚧 (FR-9.1 ✅ · FR-9.2 ✅ M17 · FR-9.3 / 9.4 ⬜ → M30)
+state `DRAFT → PENDING_APPROVAL → ACTIVE → DISABLED → ARCHIVED` ✅ ·
+**FR-9.2 version + diff + rollback** ✅ — `GET /v1/policies/{id}/versions` (ทุกเวอร์ชัน + action + เหตุผล + restoredFrom) · `GET …/versions/{v}/impact` (resolve selector เก่ากับ estate ปัจจุบัน) · `POST …/rollback/{v}` `{expectedVersion, reason}` เขียนเวอร์ชันใหม่ที่ document เท่ากับ v · state ไม่เปลี่ยน · เหตุผลบังคับ · สิทธิ์ตรวจทั้งสอง document · ARCHIVED ห้าม · tab History บนหน้า policy: diff ตามความหมาย (`policyDiff.ts`) + impact ก่อน restore · หัวหน้า policy และหน้า Edit บอก `vN` · แก้ล่าสุดเมื่อไหร่ · โดยใคร (+ ลิงก์ History) · **Policy-as-Code** export/import YAML · แยก environment dev/uat/prod + promote → ทำรวมใน **FR-20 / M30**
 
 ### FR-11 Access Request Management — M9 🚧 ~75% · M13 ✅
 ขอสิทธิ์เอง · workflow หลาย step ต่อ scope (ALL / ANY / AT_LEAST n · Reject เลือกได้ต่อ stage) · inbox + กระดิ่ง · review ก่อนตอบ · กัน grant ที่ policy ยังปฏิเสธ ·
@@ -473,7 +474,7 @@ login ด้วย **PAT / service account** (M14) ไม่ใช่รหั�
 | **M14** | Public API + Swagger + Org Key | – | ⬜ |
 | **M15** | LLM อธิบาย policy และ dashboard | – | ⬜ ต้องมี M10 (ส่วน dashboard) |
 | **M16** | LLM ช่วยหา asset จากสิ่งที่อยากได้ — จุดเข้าในหน้า Query **และหน้า Catalog** | – | ⬜ ต้องมี M11 |
-| **M17** | ประวัติย้อนหลังของ policy (diff + rollback) | – | ⬜ |
+| **M17** | ประวัติย้อนหลังของ policy (diff + rollback) | – | ✅ V39 · tab History · rollback + impact · `audit_policy_change` เขียนจริง |
 | **M18** | รองรับ database type ใหม่โดยไม่ต้องไล่แก้ 14 จุด | – | 🚧 **~75%** |
 | **M19** | AI-Driven Anomalous Access Detection (FR-13) | – | ⬜ ต้องมี M10 (query log + `asset_fqns`) |
 | **M20** | MAC เต็มรูปแบบ — sensitivity level ที่เรียงลำดับได้ (FR-12) | – | ⬜ |

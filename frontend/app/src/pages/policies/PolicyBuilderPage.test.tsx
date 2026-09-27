@@ -19,9 +19,17 @@ jest.mock('../../api/policies', () => ({
 }));
 
 jest.mock('../../api/governance', () => ({
+  // The pure helpers (flatten and the like) are the real ones; only the calls are stubbed.
+  ...jest.requireActual('../../api/governance'),
   fetchPrincipals: () => Promise.resolve([]),
   fetchVocabulary: () =>
-    Promise.resolve({ tags: [], terms: [], domains: [], dataProducts: [] }),
+    Promise.resolve({
+      classifications: [],
+      glossaries: [],
+      domains: [],
+      dataProducts: [],
+      customProperties: [],
+    }),
 }));
 
 const assistPolicy = jest.fn();
@@ -150,6 +158,44 @@ test('a policy suggested by an access request fills the form and is saved as a n
   expect(saved).not.toHaveProperty('id');
   expect(saved).not.toHaveProperty('lifecycleState');
   expect(transitionPolicy).not.toHaveBeenCalled();
+});
+
+test('editing a policy says which version it is, when it was last edited and by whom', async () => {
+  const id = '33333333-3333-3333-3333-333333333333';
+  fetchPolicy.mockResolvedValue({
+    id,
+    document: {
+      name: 'mask-pii',
+      policyType: 'DATA',
+      scopeLevel: 'ORG',
+      selector: { condition: { facet: 'tags', operator: 'contains', value: 'PII' } },
+    },
+    lifecycleState: 'ACTIVE',
+    environment: 'prod',
+    version: 3,
+    createdBy: 'author@example.com',
+    updatedBy: 'editor@example.com',
+    updatedAt: '2026-09-20T09:00:00Z',
+  });
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(
+    <QueryClientProvider client={client}>
+      <MemoryRouter initialEntries={[`/policies/${id}/edit`]}>
+        <Routes>
+          <Route element={<PolicyBuilderPage />} path="/policies/:id/edit" />
+        </Routes>
+      </MemoryRouter>
+    </QueryClientProvider>
+  );
+
+  expect(await screen.findByText(/^edited .+ by/)).toBeInTheDocument();
+  expect(screen.getByText('editor@example.com')).toBeInTheDocument();
+  // The versions before this one are a click away.
+  expect(screen.getByRole('link', { name: 'History' })).toHaveAttribute(
+    'href',
+    `/policies/${id}?tab=history`
+  );
+  expect(fetchPolicy).toHaveBeenCalledWith(id);
 });
 
 test('a plain new policy carries no note about a request', async () => {

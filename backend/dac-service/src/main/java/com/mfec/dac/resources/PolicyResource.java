@@ -9,6 +9,7 @@ import com.mfec.dac.policy.PolicyBindingMaterializer;
 import com.mfec.dac.policy.PolicyOverview;
 import com.mfec.dac.policy.PolicyStore;
 import com.mfec.dac.schema.entity.policy.Policy;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.ws.rs.BadRequestException;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.DefaultValue;
@@ -104,12 +105,43 @@ public class PolicyResource {
     return policies.find(id).orElseThrow(() -> new NotFoundException("No policy " + id));
   }
 
-  /** The history of one policy, for the diff and rollback screens (FR-9.2). */
+  /**
+   * The history of one policy, newest first, for the diff and rollback screens
+   * (FR-9.2).
+   *
+   * <p>Open to any caller who can read the policy, like the policy itself: who
+   * changed a rule and why is part of what the rule is. The address a change
+   * came from is kept in the change log for the auditor and is not in this.
+   */
   @GET
   @Path("/{id}/versions")
-  public List<PolicyStore.StoredPolicy> versions(@PathParam("id") UUID id) {
+  public List<PolicyStore.Revision> versions(@PathParam("id") UUID id) {
     policies.find(id).orElseThrow(() -> new NotFoundException("No policy " + id));
     return policies.history(id);
+  }
+
+  /**
+   * What putting this version back would change, measured before anybody does
+   * it (FR-9.2, FR-5.3).
+   *
+   * <p>The same kind of answer as {@link #impact}, between the policy as it
+   * reads now and as it read then.
+   */
+  @GET
+  @Path("/{id}/versions/{version}/impact")
+  public ImpactAnalysis.Impact rollbackImpact(
+      @PathParam("id") UUID id, @PathParam("version") int version) {
+    PolicyStore.StoredPolicy current =
+        policies.find(id).orElseThrow(() -> new NotFoundException("No policy " + id));
+    if (version == current.version()) {
+      throw new BadRequestException(
+          "Version " + version + " is the current version; there is nothing to put back");
+    }
+    PolicyStore.Revision revision =
+        policies
+            .revision(id, version)
+            .orElseThrow(() -> new NotFoundException("Policy " + id + " has no version " + version));
+    return impact.measureRollback(current, revision.document());
   }
 
   /**
@@ -197,10 +229,14 @@ public class PolicyResource {
   }
 
   @POST
-  public Response create(Policy document, @Context SecurityContext security) {
+  public Response create(
+      Policy document,
+      @Context SecurityContext security,
+      @Context HttpServletRequest request) {
     AuthenticatedUser caller = caller(security);
     authorise(caller, document);
-    PolicyStore.StoredPolicy created = guard(() -> policies.create(document, caller.username()));
+    PolicyStore.StoredPolicy created =
+        guard(() -> policies.create(document, caller.username(), clientIp(request)));
     // Bound at creation, while still DRAFT. Nothing is enforced from a draft,
     // but the author needs the impact analysis (FR-5.3) before deciding to
     // activate, and that is a count of these rows.
@@ -215,7 +251,8 @@ public class PolicyResource {
       Policy document,
       @QueryParam("version") int expectedVersion,
       @QueryParam("reason") String reason,
-      @Context SecurityContext security) {
+      @Context SecurityContext security,
+      @Context HttpServletRequest request) {
 
     AuthenticatedUser caller = caller(security);
     PolicyStore.StoredPolicy existing =
@@ -226,9 +263,62 @@ public class PolicyResource {
     authorise(caller, document);
 
     PolicyStore.StoredPolicy updated =
-        guard(() -> policies.update(id, document, expectedVersion, caller.username(), reason));
+        guard(
+            () ->
+                policies.update(
+                    id, document, expectedVersion, caller.username(), reason, clientIp(request)));
     materializer.materialize(id);
     return policies.find(updated.id()).orElseThrow();
+  }
+
+  /** What a rollback asks for: the version being looked at, and why. */
+  public record RollbackRequest(Integer expectedVersion, String reason) {}
+
+  /**
+   * Puts an earlier version's document back, as a new version (FR-9.2).
+   *
+   * <p>Authority is checked against both documents, as for an edit: a data
+   * owner may not roll back a policy outside their scope, nor roll one back to
+   * a version whose scope was somebody else's. The reason is required, because
+   * a rollback is the one edit whose "why" is never obvious from the diff.
+   */
+  @POST
+  @Path("/{id}/rollback/{version}")
+  public PolicyStore.StoredPolicy rollback(
+      @PathParam("id") UUID id,
+      @PathParam("version") int version,
+      RollbackRequest body,
+      @Context SecurityContext security,
+      @Context HttpServletRequest request) {
+
+    AuthenticatedUser caller = caller(security);
+    if (body == null || body.expectedVersion() == null) {
+      throw new BadRequestException("Give the version you are looking at as expectedVersion");
+    }
+    if (body.reason() == null || body.reason().isBlank()) {
+      throw new BadRequestException("Say why this version is being put back");
+    }
+    PolicyStore.StoredPolicy existing =
+        policies.find(id).orElseThrow(() -> new NotFoundException("No policy " + id));
+    authorise(caller, existing.document());
+    PolicyStore.Revision target =
+        policies
+            .revision(id, version)
+            .orElseThrow(() -> new NotFoundException("Policy " + id + " has no version " + version));
+    authorise(caller, target.document());
+
+    PolicyStore.StoredPolicy restored =
+        guard(
+            () ->
+                policies.rollback(
+                    id,
+                    version,
+                    body.expectedVersion(),
+                    caller.username(),
+                    body.reason().trim(),
+                    clientIp(request)));
+    materializer.materialize(id);
+    return policies.find(restored.id()).orElseThrow();
   }
 
   /**
@@ -241,7 +331,10 @@ public class PolicyResource {
   @POST
   @Path("/{id}/lifecycle")
   public PolicyStore.StoredPolicy transition(
-      @PathParam("id") UUID id, Map<String, String> body, @Context SecurityContext security) {
+      @PathParam("id") UUID id,
+      Map<String, String> body,
+      @Context SecurityContext security,
+      @Context HttpServletRequest request) {
 
     AuthenticatedUser caller = caller(security);
     PolicyStore.StoredPolicy existing =
@@ -255,7 +348,10 @@ public class PolicyResource {
     separationOfDuty(caller, existing, to);
 
     PolicyStore.StoredPolicy moved =
-        guard(() -> policies.transition(id, to, caller.username(), body.get("reason")));
+        guard(
+            () ->
+                policies.transition(
+                    id, to, caller.username(), body.get("reason"), clientIp(request)));
     if ("ACTIVE".equals(to)) {
       // Re-resolved at the moment it starts being enforced, so the bindings a
       // draft was simulated against cannot be older than the estate.
@@ -283,6 +379,14 @@ public class PolicyResource {
       throw new ForbiddenException("No caller on this request");
     }
     return user;
+  }
+
+  /**
+   * The address the change came from, for the change log. The socket's, not a
+   * forwarded header's: a header is whatever the caller chose to send.
+   */
+  private static String clientIp(HttpServletRequest request) {
+    return request == null ? null : request.getRemoteAddr();
   }
 
   /**
