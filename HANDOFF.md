@@ -1,6 +1,6 @@
 # HANDOFF — ARAK (Data Access Control Platform)
 
-> อัปเดต: 2026-09-27 · ข้อ CB (NokRak ช่วยแก้ policy ที่มีอยู่ — คน review แล้วกด Save เอง) · ข้อ CA (ประวัติ policy · diff · rollback) · ข้อ BW (tag จาก OM ผ่าน webhook/poller ย้าย policy binding ทันที) · ข้อ BV (tab Access เฉพาะผู้ดูแล + Diagram แบบ canvas) · ข้อ BU (FR-1.7 local tag + demo group บน prod) · push ขึ้น origin/main แล้ว · repo https://github.com/sakanarm/ARAK (**public**)
+> อัปเดต: 2026-09-27 · ข้อ CC (tab Access รับ list ยาว — แถบสรุป · chip · ค้น · แบ่งหน้า · กดดูรายละเอียดเต็ม) · ข้อ CB (NokRak ช่วยแก้ policy ที่มีอยู่ — คน review แล้วกด Save เอง) · ข้อ CA (ประวัติ policy · diff · rollback) · ข้อ BW (tag จาก OM ผ่าน webhook/poller ย้าย policy binding ทันที) · ข้อ BV (tab Access เฉพาะผู้ดูแล + Diagram แบบ canvas) · ข้อ BU (FR-1.7 local tag + demo group บน prod) · push ขึ้น origin/main แล้ว · repo https://github.com/sakanarm/ARAK (**public**)
 >
 > อ่านคู่กับ **[docs/DESIGN.md](docs/DESIGN.md)** — ไฟล์นั้นคือ requirement + feature catalogue + สถานะครบทุกข้อ
 > ไฟล์นี้บอกเฉพาะ "ทำถึงไหน จะไปต่อยังไง อะไรที่ลองแล้วไม่เวิร์ค"
@@ -620,7 +620,37 @@ M25 ทำแยกได้ (profile ผ่าน proxy ที่มีแล�
 
 ---
 
-## รอบนี้ — **ข้อ CB: NokRak ช่วยแก้ policy ที่มีอยู่ (M28b) — แนะนำได้ แต่คนต้อง review แล้วกด Save เอง**
+## รอบนี้ — **ข้อ CC: tab Access ของ table รับ list ยาวๆ ได้ (FR-7.3)**
+
+ผู้ใช้ขอ: *"หน้า Access ของ Table ให้คิดเผื่อกรณีมี list เยอะมากๆ ด้วย ตอนนี้มันต้อง Scroll bar ลงมาเยอะมาก ดูไม่ดี และไม่ยืดหยุ่น"* และต่อมา *"มันแสดงชื่อไม่เต็ม ชื่อ group ก็ไม่เต็ม … ควรจะกดเข้าไปดูรายละเอียดได้ไหม"* — **ไม่มี API ใหม่** ข้อมูลยังมาจาก `GET /v1/access/assets/{fqn}` ครั้งเดียวเหมือนเดิม การกรอง ค้น และแบ่งหน้าทำในเบราว์เซอร์ทั้งหมด (`accessLists.ts` เป็น pure helper แยกจาก component เพื่ออ่านกติกาการนับและ test ได้โดยไม่ render)
+
+### CC.1 แถบสรุปบนสุด (`Access at a glance`)
+- ตัวเลขที่กดได้: *N grants in force* · *N overruled* (สีเตือน) · *N not started* · *N expired* · *N can read now* (+ *(of N checked)* เมื่อคนถูก sample) · *N see less than all* — กดแล้ว list ข้างล่างถูกกรองให้ตรงตัวเลขนั้นและเลื่อนลงไปที่ section
+- ลิงก์กระโดด: Grants · How it is decided · Who can read · Outside ARAK
+
+### CC.2 Direct grants — บรรทัดละ grant แทน card สูง
+- หนึ่งบรรทัด: ชื่อ (principal เป็นบรรทัดที่สองถ้ามี display name) · ป้ายสถานะ · ช่วงเวลา · เหตุผล · *lets N in* · เมนู **⋯** (Edit / Revoke)
+- **สถานะเดียวต่อ grant** จึงรวม chip แล้วได้เท่ากับทั้ง list: *In force* · *Overruled* (window เปิดอยู่แต่ policy ชั้นนอกปฏิเสธทุกคน — ไม่เรียก overruled ถ้า asset ไม่อยู่ใน catalog cache เพราะไม่มีใครถูก evaluate) · *Not started* · *Expired* · chip กรองพร้อมจำนวน · **default ซ่อน Expired** (table ที่ดูแลมาเป็นปีส่วนใหญ่คือประวัติ) · เรียง Overruled ก่อน แล้ว In force → Not started → Expired · grant ที่ revoke แล้วไม่ถูกส่งมาอยู่แล้ว (ดูใน tab Audit)
+- ค้นหา: ชื่อ · display name · เหตุผล · คนให้ (ไม่สนตัวพิมพ์เล็กใหญ่) · ไม่เจอ → *No grant here matches.* + ปุ่ม *Show all N*
+- แบ่งหน้า 10 / 25 / 50 / 100 · บอก *1–10 of 34* · ไม่ถึงหน้าเดียวไม่มี pager · กรองจน offset เกินท้าย → ดึงกลับหน้าสุดท้าย ไม่มีหน้าว่าง
+- **กดชื่อหรือเหตุผล → รายละเอียดเต็ม** (ผู้ใช้ขอ): ชื่อเต็ม · principal · source · ช่วงเวลาถึงนาที · เหตุผลทั้งข้อความ (ขึ้นบรรทัดใหม่ได้) · ใครให้ เมื่อไหร่ · **Lets in** = รายชื่อคนที่ grant นี้พาเข้ามาได้จริง (อ่านจาก `viaGrants` ของ people list ที่มีอยู่แล้ว ไม่ยิง API เพิ่ม) แสดงสูงสุด 30 ชื่อ ที่เหลือบอกให้ค้นใน *Who can read this now* — grant ให้ group จึงตอบได้ว่า "ใครในนั้นได้เข้า" · not started / expired / overruled / asset ไม่อยู่ใน cache บอกเหตุผลแทนรายชื่อ · ชื่อยาวมี tooltip `ชื่อ (principal)`
+- grant ที่ **ยังไม่เริ่ม** แก้ / revoke ได้แล้ว (server รับอยู่แล้ว) · grant ที่หมดแล้วไม่มีเมนู · คำอธิบายของ Overruled ยังอยู่ใต้บรรทัดเสมอ เพราะเป็นแถวที่ดูเหมือนมีสิทธิ์ที่สุดแต่ไม่มี
+
+### CC.3 Who can read this now
+- ค้นหา: principal · ชื่อ policy · principal ของ grant ที่พาเข้ามา (ค้นด้วย id ของ grant ไม่เจอ — ไม่มีใครพิมพ์ id)
+- chip ที่มา: *Everyone* · *Direct grant* · *Via policy* · *Grant and policy* — คนที่ได้ทั้งสองทางนับอยู่ในทั้ง Direct grant และ Via policy (*Grant and policy* คือคำถาม "revoke grant แล้วใครยังเข้าได้")
+- checkbox *Only those who see less than all* · แบ่งหน้า 25 / 50 / 100
+
+### CC.4 Code + test
+- ใหม่ `frontend/app/src/pages/catalog/accessLists.ts` + `accessLists.test.ts` · `AccessTab.tsx` เขียนใหม่ (`SummaryStrip` · `GrantList` · `GrantRow` · `GrantDetails` · `PeopleList` · `ListFooter`) · `Pager` รับ `sizes` (default เดิม)
+- `AccessTab.test.tsx`: เมนู ⋯ (Edit / Revoke ต้องมีเหตุผล) · รายละเอียดจากชื่อและจากเหตุผล · group แสดงเต็ม + Lets in เฉพาะสมาชิกที่เข้าได้ · not started มีเมนู / expired ไม่มี · 14 grant: overruled ก่อน · หน้า 2 · chip Expired · ค้น · Show all · แถบสรุปกรอง · 33 คน: หน้า · chip ที่มา · ค้นด้วยชื่อ grant · restricted only
+- jest รวม **699 ผ่าน** · tsc ผ่าน
+
+### CC.5 ที่ยังไม่ทำ (ตั้งใจ)
+- ไม่แบ่งหน้าที่ server — คำตอบเดียวมีทุก grant และทุกคนที่ถูก evaluate (people ถูก sample อยู่แล้วเมื่อเยอะ) · ถ้า grant ต่อ table ถึงหลักพัน ค่อยย้าย paging ไป server
+- ไม่แสดงสมาชิกทั้งหมดของ group (รวมคนที่ policy ปฏิเสธ) — Lets in แสดงเฉพาะคนที่เข้าได้จริง
+
+## รอบก่อนหน้า — **ข้อ CB: NokRak ช่วยแก้ policy ที่มีอยู่ (M28b) — แนะนำได้ แต่คนต้อง review แล้วกด Save เอง**
 
 ผู้ใช้ขอ: *"NokRak Help me ตอนนี้มีตอนสร้าง Policy ใหม่ ให้เพิ่มตอนแก้ไขด้วย สามารถช่วยแก้ไขได้ แต่ต้องรอคน Review save เหมือนเดิม"* — ปุ่มเดิมบนหน้า New policy ตอนนี้อยู่บนหน้า **Edit** ด้วย และเส้นทางยังเหมือนเดิมทุกอย่าง: NokRak เปลี่ยนแค่ form บนจอ ไม่มีอะไรถูกบันทึก ไม่มีอะไร activate จนกว่าคนจะกด Save
 
@@ -638,12 +668,13 @@ M25 ทำแยกได้ (profile ผ่าน proxy ที่มีแล�
 - **Save เป็นทางเดียวที่ถึง store** — `updatePolicy(id, doc, expectedVersion)` ตัวเดิม (409 ถ้ามีคนแก้ก่อน · lifecycleState / version จากคำตอบถูกตัดทิ้งก่อน) · ไม่เรียก transition · ลงชื่อคนกด Save ใน History ตามปกติ
 - test: backend +8 (`AssistPromptsTest$PolicyEdit` 4 · `LlmAssistResourceTest$PolicyEdit` 4) → unit 565 ผ่าน · jest +4 (`NokRak, help me, on a policy that exists`) → 677 ผ่าน
 - E2E local: ไม่ login 401 · `current` ไม่ใช่ JSON / array / ยาวเกิน → 400 ×3 · แก้ ALLOW → DENY ได้ 200 (ชื่อคงเดิม · ไม่มี id / lifecycleState) · จำนวน policy ใน store เท่าเดิม
+- **prod** (commit 8888afa): bundle มีปุ่มบนหน้า Edit · E2E ชุดเดียวกันผ่านบน prod (401 · 400 ×3 · 200 ได้ DENY) · ไม่มีอะไรถูกเก็บ (จำนวน policy เท่าเดิม)
 
 ### CB.3 ที่ยังไม่ทำ (ตั้งใจ)
 - NokRak ไม่ส่ง diff/patch — ตอบทั้งใบ เพื่อให้ validate ด้วย schema เดียวกับตอนร่าง และหน้าเว็บเทียบเองด้วย `policyDiff`
 - ไม่มีปุ่ม "ใช้แล้ว save เลย" — ตั้งใจ ตาม FR-2.6 / กติกา LLM ไม่ apply เอง
 
-## รอบนี้ — **ข้อ CA: ประวัติ policy — History · diff · rollback (M17 · FR-9.2 · FR-8.1)**
+## รอบก่อนหน้า — **ข้อ CA: ประวัติ policy — History · diff · rollback (M17 · FR-9.2 · FR-8.1)**
 
 ปิดทั้ง 5 ข้อของ AP.5 — ประวัติที่เก็บอยู่ใน `policy_version` ตั้งแต่ V3 ถูกอ่านกลับขึ้นจอได้แล้ว และ `audit_policy_change` มีคนเขียนจริงเป็นครั้งแรก
 

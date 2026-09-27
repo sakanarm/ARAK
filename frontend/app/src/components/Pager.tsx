@@ -22,6 +22,8 @@ export function Pager({
   label = 'Pages',
   /** What is being counted, for the page-size control: "Assets per page". */
   noun = 'Rows',
+  /** The page sizes on offer, when a list reads better in other steps. */
+  sizes = PAGE_SIZES,
   onOffset,
   onPageSize,
 }: {
@@ -30,6 +32,7 @@ export function Pager({
   total: number;
   label?: string;
   noun?: string;
+  sizes?: number[];
   onOffset: (offset: number) => void;
   onPageSize: (size: number) => void;
 }) {
@@ -90,7 +93,7 @@ export function Pager({
           ariaLabel={`${noun} per page`}
           className="tw:w-24"
           onChange={(next) => onPageSize(Number(next))}
-          options={PAGE_SIZES.map((size) => ({
+          options={sizes.map((size) => ({
             value: String(size),
             label: String(size),
           }))}
