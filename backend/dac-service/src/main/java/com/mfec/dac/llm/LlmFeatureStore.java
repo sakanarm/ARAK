@@ -42,7 +42,11 @@ public class LlmFeatureStore {
     INSIGHTS(
         "Query log and dashboard answers",
         "Answer questions about the query log and the dashboard, as each page shows them to the"
-            + " person asking.");
+            + " person asking."),
+    DESCRIBE_COLUMNS(
+        "Describe columns",
+        "Draft descriptions of a table's columns from their names and types, for whoever governs"
+            + " the table to read, correct and save.");
 
     private final String label;
     private final String description;

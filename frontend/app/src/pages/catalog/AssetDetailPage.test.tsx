@@ -37,6 +37,13 @@ jest.mock('./LocalTags', () => ({
 
 // The two steward tabs have their own tests; here only whether they are offered.
 jest.mock('./AccessTab', () => ({ AccessTab: () => 'who can reach it' }));
+
+// Writing descriptions has its own tests; here the reader governs nothing.
+jest.mock('../../api/columnDescriptions', () => ({
+  fetchColumnDescriptions: () => Promise.resolve({ canEdit: false, descriptions: [] }),
+  saveColumnDescriptions: jest.fn(),
+}));
+jest.mock('../../assist/useAssist', () => ({ useAssistReady: () => false }));
 jest.mock('./AuditTab', () => ({ AuditTab: () => 'grant history' }));
 
 function signIn(roles: string[], scopes: string[] = []) {
@@ -312,7 +319,7 @@ test('shows each column with the governance it carries itself', async () => {
   expect(screen.getByText('id')).toBeInTheDocument();
   // Chips print the leaf with its parent, not the whole dotted path.
   expect(screen.getByText('PII / Sensitive')).toBeInTheDocument();
-  expect(screen.getByText('2 columns · 1 carrying governance of their own')).toBeInTheDocument();
+  expect(screen.getByText('2 columns · 1 carrying governance of their own · 0 described')).toBeInTheDocument();
 });
 
 test('a column does not repeat what it inherited from its table', async () => {
@@ -408,7 +415,7 @@ test('moving between tabs changes what the page answers', async () => {
   ).toBeInTheDocument();
 
   fireEvent.click(screen.getByRole('tab', { name: /Columns/ }));
-  expect(await screen.findByText('2 columns \u00b7 1 carrying governance of their own')).toBeInTheDocument();
+  expect(await screen.findByText('2 columns \u00b7 1 carrying governance of their own \u00b7 0 described')).toBeInTheDocument();
   expect(
     screen.queryByRole('heading', { name: 'Governance' })
   ).not.toBeInTheDocument();

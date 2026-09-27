@@ -1,5 +1,6 @@
 package com.mfec.dac.access;
 
+import com.mfec.dac.catalog.ColumnDescriptionStore;
 import com.mfec.dac.engine.AssetContext;
 import com.mfec.dac.engine.ColumnContext;
 import com.mfec.dac.engine.FacetValue;
@@ -245,6 +246,8 @@ public class AccessReview {
    * @param policy the policy that masks or hides it
    * @param conditional masked only on some rows (a cell mask)
    * @param sensitiveTags the tags that make it sensitive; empty when it is not
+   * @param description what the column holds, as the catalog describes it (ARAK's
+   *     own if written, else OpenMetadata's); null when nobody has described it
    */
   public record ColumnFate(
       String name,
@@ -254,7 +257,8 @@ public class AccessReview {
       String policy,
       boolean conditional,
       boolean sensitive,
-      List<String> sensitiveTags) {}
+      List<String> sensitiveTags,
+      String description) {}
 
   /** One restriction on which rows come back. */
   public record RowFilter(String kind, String description, String policy) {}
@@ -351,9 +355,15 @@ public class AccessReview {
 
     AssetContext asset = jdbi.withHandle(handle -> contexts.load(handle, fqn)).orElse(null);
     List<ColumnContext> columns = asset == null ? List.of() : asset.columns();
+    // What each column holds, so the people deciding know what they would be
+    // letting someone read, and not only its name.
+    Map<String, String> described =
+        asset == null
+            ? Map.of()
+            : jdbi.withHandle(handle -> ColumnDescriptionStore.effectiveByName(handle, fqn));
 
-    Access now = access(decisions.decide(ask), columns);
-    Access ifGranted = access(decisions.decideAsIfGranted(ask), columns);
+    Access now = access(decisions.decide(ask), columns, described);
+    Access ifGranted = access(decisions.decideAsIfGranted(ask), columns, described);
 
     PolicyCheck policy = null;
     Access ifPolicy = null;
@@ -371,7 +381,7 @@ public class AccessReview {
                 one.environment(),
                 one.version(),
                 candidate.bound());
-        ifPolicy = access(candidate.decision(), columns);
+        ifPolicy = access(candidate.decision(), columns, described);
       } else {
         policy = new PolicyCheck(policyId, null, null, null, null, 0, false);
       }
@@ -757,6 +767,12 @@ public class AccessReview {
 
   /** One decision, read column by column. */
   static Access access(PolicyDecision decision, List<ColumnContext> columns) {
+    return access(decision, columns, Map.of());
+  }
+
+  /** One decision, read column by column, each with what it holds (keyed by lower-case name). */
+  static Access access(
+      PolicyDecision decision, List<ColumnContext> columns, Map<String, String> described) {
     Map<UUID, String> names = new HashMap<>();
     List<Reason> reasons = new ArrayList<>();
     for (DecisionReason reason : safe(decision.getReasons())) {
@@ -785,11 +801,12 @@ public class AccessReview {
     for (ColumnContext column : columns) {
       String key = lower(column.name());
       List<String> tags = sensitiveTags(column);
+      String description = described.get(key);
       if (hidden.contains(key)) {
         fates.add(
             new ColumnFate(
                 column.name(), column.dataType(), Fate.HIDDEN.name(), null, null, false,
-                !tags.isEmpty(), tags));
+                !tags.isEmpty(), tags, description));
         continue;
       }
       ResolvedColumnMask mask = masks.get(key);
@@ -805,13 +822,14 @@ public class AccessReview {
                 name(names, mask.getSourcePolicyId()),
                 mask.getCondition() != null && !mask.getCondition().isBlank(),
                 !tags.isEmpty(),
-                tags));
+                tags,
+                description));
         continue;
       }
       fates.add(
           new ColumnFate(
               column.name(), column.dataType(), Fate.VISIBLE.name(), null, null, false,
-              !tags.isEmpty(), tags));
+              !tags.isEmpty(), tags, description));
     }
 
     List<RowFilter> rows = new ArrayList<>();

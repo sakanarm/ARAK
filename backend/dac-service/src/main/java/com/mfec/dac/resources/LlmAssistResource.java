@@ -2,6 +2,7 @@ package com.mfec.dac.resources;
 
 import com.mfec.dac.auth.AuthenticatedUser;
 import com.mfec.dac.auth.Secured;
+import com.mfec.dac.auth.Stewardship;
 import com.mfec.dac.catalog.CatalogQuery;
 import com.mfec.dac.llm.AgentPrompts;
 import com.mfec.dac.llm.ArakAgent;
@@ -17,6 +18,7 @@ import jakarta.ws.rs.Consumes;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.ws.rs.ForbiddenException;
 import jakarta.ws.rs.GET;
+import jakarta.ws.rs.NotFoundException;
 import jakarta.ws.rs.POST;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.Produces;
@@ -29,8 +31,11 @@ import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.EnumSet;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -556,6 +561,93 @@ public class LlmAssistResource {
     } catch (LlmClient.LlmException e) {
       throw new ServiceUnavailableException(e.getMessage());
     }
+  }
+
+  // ---------------------------------------------------- column descriptions
+
+  /** The columns of one table to draft descriptions for, and the language to write them in. */
+  public record DescribeAsk(String assetFqn, List<String> columns, String language, String model) {}
+
+  /** Drafts for the columns the assistant could describe; the rest it left alone. */
+  public record ColumnDrafts(
+      List<AssistPrompts.ColumnDraft> drafts, String model, boolean personal) {}
+
+  /** Columns per call. A wide table is drafted in several, so each answer stays short and quick. */
+  static final int MAX_DESCRIBE = 40;
+
+  /**
+   * Drafts descriptions of a table's columns, for whoever governs it.
+   *
+   * <p>Returned, never stored: the table's page puts them in the form as
+   * drafts, and a description exists only once that person has read it and
+   * saved it under their own name. The model is given the table's metadata and
+   * nothing else -- the same as every other job here.
+   */
+  @POST
+  @Path("/describe-columns")
+  public ColumnDrafts describeColumns(DescribeAsk ask, @Context SecurityContext security) {
+    if (ask == null || ask.assetFqn() == null || ask.assetFqn().isBlank()) {
+      throw new BadRequestException("Say which table the columns belong to");
+    }
+    if (ask.columns() == null || ask.columns().isEmpty()) {
+      throw new BadRequestException("Say which columns to describe");
+    }
+    if (ask.columns().size() > MAX_DESCRIBE) {
+      throw new BadRequestException("Ask for at most " + MAX_DESCRIBE + " columns at a time");
+    }
+    AuthenticatedUser actor = caller(security);
+    String fqn = ask.assetFqn().trim();
+    if (!Stewardship.governs(actor, fqn)) {
+      throw new ForbiddenException(
+          "You do not govern " + fqn + ", so you cannot describe its columns");
+    }
+    EffectiveSetting mine = ready(actor, Feature.DESCRIBE_COLUMNS);
+
+    CatalogQuery.AssetDetail detail =
+        catalog
+            .asset(fqn)
+            .filter(d -> Set.of("TABLE", "VIEW").contains(d.asset().assetType()))
+            .orElseThrow(() -> new NotFoundException("No current table or view " + fqn));
+
+    Map<String, CatalogQuery.ColumnDetail> byName = new LinkedHashMap<>();
+    for (CatalogQuery.ColumnDetail column : detail.columns()) {
+      byName.putIfAbsent(column.name().toLowerCase(Locale.ROOT), column);
+    }
+    Set<String> wanted = new LinkedHashSet<>();
+    List<AssistPrompts.Column> toDescribe = new ArrayList<>();
+    for (String name : ask.columns()) {
+      CatalogQuery.ColumnDetail column =
+          name == null ? null : byName.get(name.trim().toLowerCase(Locale.ROOT));
+      if (column != null && wanted.add(column.name())) {
+        toDescribe.add(
+            new AssistPrompts.Column(
+                column.name(), column.dataType(), column.description(), tagNames(column)));
+      }
+    }
+    if (toDescribe.isEmpty()) {
+      throw new BadRequestException("None of those are columns of " + fqn);
+    }
+    List<String> others = new ArrayList<>();
+    for (CatalogQuery.ColumnDetail column : detail.columns()) {
+      if (!wanted.contains(column.name())) {
+        others.add(column.name());
+      }
+    }
+
+    String answer =
+        ask(
+            actor,
+            mine,
+            ask.model(),
+            AssistPrompts.describeColumnsSystem(ask.language()),
+            AssistPrompts.describeColumnsUser(
+                new AssistPrompts.Table(fqn, detail.asset().description(), List.of()),
+                toDescribe,
+                others));
+    return new ColumnDrafts(
+        AssistPrompts.extractColumnDrafts(answer, List.copyOf(wanted)),
+        chosenModel(ask.model(), mine),
+        mine.usingOwnGateway());
   }
 
   /** The jobs this caller is offered; every one when nobody has narrowed them. */

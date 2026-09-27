@@ -1,16 +1,26 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router-dom';
-import { ChevronDown, ChevronRight, Minimize01, Maximize01 } from '@untitledui/icons';
+import { Button } from '@openmetadata/ui-core-components/components/base/buttons/button';
+import { ChevronDown, ChevronRight, Minimize01, Maximize01, Plus } from '@untitledui/icons';
 import { Chip as Badge } from '../../components/chips';
 import { apiErrorMessage } from '../../api/client';
 import {
   fetchVocabulary,
+  fetchVocabularyPermission,
   type CustomPropertyDef,
   type GovernanceValue,
 } from '../../api/governance';
 import { TextField } from '../policies/controls';
 import { plainText } from '../../lib/text';
+import {
+  EditingContext,
+  VocabularyFormPanel,
+  formUnder,
+  useEditing,
+  type Editing,
+  type VocabularyForm,
+} from './VocabularyEditor';
 
 /**
  * The governance vocabulary: every tag, term, domain and data product a policy
@@ -22,6 +32,9 @@ import { plainText } from '../../lib/text';
  * many policies name it. Those two together are what tells a steward whether a
  * tag is load-bearing or decorative, and whether deleting one would quietly
  * unprotect something.
+ *
+ * A platform admin or a policy author can also make classifications and tags
+ * here, for vocabulary OpenMetadata does not have yet (see VocabularyEditor).
  */
 
 type TabKey = 'classifications' | 'glossaries' | 'domains' | 'properties';
@@ -68,6 +81,33 @@ export default function GovernancePage() {
     queryFn: fetchVocabulary,
     staleTime: 5 * 60 * 1000,
   });
+  const permission = useQuery({
+    queryKey: ['local-vocabulary'],
+    queryFn: fetchVocabularyPermission,
+    staleTime: 5 * 60 * 1000,
+  });
+  const [form, setForm] = useState<VocabularyForm | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const editing: Editing = {
+    // Classifications and tags only: they are what "Edit tags" attaches.
+    canEdit: permission.data?.canEdit === true && tab === 'classifications',
+    form,
+    open: (next) => {
+      setNotice(null);
+      setForm(next);
+    },
+    close: () => setForm(null),
+    done: (value, verb) => {
+      setForm(null);
+      setNotice(
+        verb === 'changed'
+          ? `Saved ${value.fqn}.`
+          : value.kind === 'TAG'
+            ? `Made ${value.fqn}. Attach it to a column from the table's Columns tab, with Edit tags.`
+            : `Made ${value.fqn}. Add its first tag with Add tag on its row.`
+      );
+    },
+  };
 
   const active = TABS.find((entry) => entry.key === tab) ?? TABS[0];
   const roots = treeFor(data, tab)
@@ -75,7 +115,7 @@ export default function GovernancePage() {
     .filter((value): value is GovernanceValue => value !== null);
 
   return (
-    <>
+    <EditingContext.Provider value={editing}>
       <header>
         <h1 className="tw:text-display-sm tw:font-semibold tw:text-primary">
           Governance
@@ -95,7 +135,11 @@ export default function GovernancePage() {
                 : 'tw:border tw:border-secondary tw:text-secondary'
             }`}
             key={entry.key}
-            onClick={() => setParams({ tab: entry.key }, { replace: true })}
+            onClick={() => {
+              setForm(null);
+              setNotice(null);
+              setParams({ tab: entry.key }, { replace: true });
+            }}
             type="button">
             {entry.label}
           </button>
@@ -115,6 +159,16 @@ export default function GovernancePage() {
         </div>
         {tab !== 'properties' && (
           <div className="tw:ml-auto tw:flex tw:gap-2">
+            {editing.canEdit && (
+              <Button
+                color="primary"
+                iconLeading={Plus}
+                isDisabled={form?.mode === 'classification'}
+                onPress={() => editing.open({ mode: 'classification' })}
+                size="sm">
+                New classification
+              </Button>
+            )}
             <BulkButton
               icon={<Maximize01 className="tw:size-4" />}
               label="Expand all"
@@ -135,6 +189,19 @@ export default function GovernancePage() {
         </p>
       )}
       {isLoading && <p className="tw:mt-6 tw:text-sm tw:text-tertiary">Loading…</p>}
+
+      {notice && (
+        <p
+          className="tw:mt-4 tw:rounded-lg tw:border tw:border-success tw:bg-success-primary tw:p-3 tw:text-sm tw:text-success-primary"
+          role="status">
+          {notice}
+        </p>
+      )}
+      {editing.canEdit && form?.mode === 'classification' && (
+        <div className="tw:mt-4">
+          <VocabularyFormPanel form={form} />
+        </div>
+      )}
 
       {data && tab === 'properties' && (
         <section className="tw:mt-5 tw:overflow-hidden tw:rounded-xl tw:border tw:border-secondary tw:bg-primary">
@@ -168,7 +235,9 @@ export default function GovernancePage() {
             <Empty>
               {search.trim()
                 ? `Nothing here matches “${search.trim()}”.`
-                : 'Nothing synced from OpenMetadata under this heading yet.'}
+                : editing.canEdit
+                  ? 'Nothing synced from OpenMetadata under this heading yet. Make the first one here with New classification.'
+                  : 'Nothing synced from OpenMetadata under this heading yet.'}
             </Empty>
           )}
           {roots.map((value) => (
@@ -202,7 +271,7 @@ export default function GovernancePage() {
           </VocabularyTable>
         </>
       )}
-    </>
+    </EditingContext.Provider>
   );
 }
 
@@ -327,6 +396,7 @@ function ValueRow({
   bulk?: Bulk | null;
 }) {
   const facet = facetOf(tab, value);
+  const editing = useEditing();
   const [open, setOpen] = useState(depth === 0);
   // Only on a new instruction, hence the nonce in the dependency list rather
   // than the flag: clicking "expand all" twice should still reopen a row the
@@ -343,6 +413,12 @@ function ValueRow({
     description && description.trim().toLowerCase() !== label.trim().toLowerCase()
       ? description
       : '';
+  // Tags go directly under a classification, OpenMetadata's or one made here;
+  // only what was made here can be changed here.
+  const isClassification = tab === 'classifications' && !value.parentFqn;
+  const mayAddTag = editing.canEdit && isClassification && !value.disabled;
+  const mayChange = editing.canEdit && value.provenance === 'local';
+  const formHere = editing.canEdit && formUnder(editing.form, value) ? editing.form : null;
 
   return (
     <>
@@ -398,7 +474,7 @@ function ValueRow({
             )}
             {value.provenance !== 'openmetadata' && (
               <Badge color="blue" size="sm" type="pill-color">
-                {value.provenance}
+                {value.provenance === 'local' ? 'made in ARAK' : value.provenance}
               </Badge>
             )}
           </div>
@@ -406,6 +482,38 @@ function ValueRow({
             <p className="tw:mt-0.5 tw:truncate tw:text-xs tw:text-tertiary">{describes}</p>
           )}
         </div>
+
+        {(mayAddTag || mayChange) && (
+          <span className="tw:flex tw:shrink-0 tw:gap-3">
+            {mayAddTag && (
+              <button
+                aria-label={`Add a tag under ${label}`}
+                className="tw:cursor-pointer tw:text-xs tw:font-medium tw:text-brand-secondary tw:hover:underline"
+                onClick={() => {
+                  setOpen(true);
+                  editing.open({ mode: 'tag', classification: value });
+                }}
+                type="button">
+                Add tag
+              </button>
+            )}
+            {mayChange && (
+              <button
+                aria-label={`Edit ${label}`}
+                className="tw:cursor-pointer tw:text-xs tw:font-medium tw:text-secondary tw:hover:underline"
+                onClick={() =>
+                  editing.open({
+                    mode: 'edit',
+                    kind: isClassification ? 'CLASSIFICATION' : 'TAG',
+                    value,
+                  })
+                }
+                type="button">
+                Edit
+              </button>
+            )}
+          </span>
+        )}
 
         <Link
           className={`tw:w-36 tw:shrink-0 tw:text-right tw:text-sm tw:tabular-nums tw:hover:underline ${
@@ -425,6 +533,12 @@ function ValueRow({
           {value.policies} polic{value.policies === 1 ? 'y' : 'ies'}
         </span>
       </div>
+
+      {formHere && (
+        <div className="tw:py-3 tw:pr-4" style={{ paddingLeft: 40 + depth * 24 }}>
+          <VocabularyFormPanel form={formHere} key={`${formHere.mode}:${value.fqn}`} />
+        </div>
+      )}
 
       {expanded &&
         value.children.map((child) => (

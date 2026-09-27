@@ -1,6 +1,6 @@
 # HANDOFF — ARAK (Data Access Control Platform)
 
-> อัปเดต: 2026-09-27 · ข้อ CC (tab Access รับ list ยาว — แถบสรุป · chip · ค้น · แบ่งหน้า · กดดูรายละเอียดเต็ม) · ข้อ CB (NokRak ช่วยแก้ policy ที่มีอยู่ — คน review แล้วกด Save เอง) · ข้อ CA (ประวัติ policy · diff · rollback) · ข้อ BW (tag จาก OM ผ่าน webhook/poller ย้าย policy binding ทันที) · ข้อ BV (tab Access เฉพาะผู้ดูแล + Diagram แบบ canvas) · ข้อ BU (FR-1.7 local tag + demo group บน prod) · push ขึ้น origin/main แล้ว · repo https://github.com/sakanarm/ARAK (**public**)
+> อัปเดต: 2026-09-27 · ข้อ CE (สร้าง classification / tag ของ ARAK เองในหน้า Governance — provenance local · sync ไม่ทับ · ไม่เขียนกลับ OM) · ข้อ CD (Column description เขียนใน ARAK · NokRak ร่าง · แสดงใน ticket) · ข้อ CC (tab Access รับ list ยาว — แถบสรุป · chip · ค้น · แบ่งหน้า · กดดูรายละเอียดเต็ม) · ข้อ CB (NokRak ช่วยแก้ policy ที่มีอยู่ — คน review แล้วกด Save เอง) · ข้อ CA (ประวัติ policy · diff · rollback) · ข้อ BW (tag จาก OM ผ่าน webhook/poller ย้าย policy binding ทันที) · ข้อ BV (tab Access เฉพาะผู้ดูแล + Diagram แบบ canvas) · ข้อ BU (FR-1.7 local tag + demo group บน prod) · push ขึ้น origin/main แล้ว · repo https://github.com/sakanarm/ARAK (**public**)
 >
 > อ่านคู่กับ **[docs/DESIGN.md](docs/DESIGN.md)** — ไฟล์นั้นคือ requirement + feature catalogue + สถานะครบทุกข้อ
 > ไฟล์นี้บอกเฉพาะ "ทำถึงไหน จะไปต่อยังไง อะไรที่ลองแล้วไม่เวิร์ค"
@@ -620,7 +620,52 @@ M25 ทำแยกได้ (profile ผ่าน proxy ที่มีแล�
 
 ---
 
-## รอบนี้ — **ข้อ CC: tab Access ของ table รับ list ยาวๆ ได้ (FR-7.3)**
+## รอบนี้ — **ข้อ CE: สร้าง classification และ tag ของ ARAK เองได้ในหน้า Governance (FR-1.7 · provenance `local`)**
+
+ผู้ใช้ขอ: *"Governance ให้สามารถเพิ่มฝั่ง Arak ได้ด้วย"* แล้วตอบว่า *"เป็นแบบ local"* — **ทำเฉพาะ classification + tag** เพราะเป็นของที่ *Edit tags* ติดลง table/column และที่ policy selector อ่าน · **glossary / domain / data product ยังสร้างได้ที่ OpenMetadata อย่างเดียว** (ไม่มีทางติดใน ARAK จึงยังไม่มีประโยชน์) · **ไม่เขียนกลับเข้า OM**
+
+### CE.1 Backend
+- `V41__local_vocabulary.sql` — `classification.created_by` · `tag.created_by` · ตาราง append-only `audit_vocabulary` (CREATE / UPDATE · CLASSIFICATION / TAG · before / after jsonb)
+- `catalog/LocalVocabularyStore.java` — แถวที่สร้างเป็น `provider 'user'` `provenance 'local'` · ชื่อซ้ำเช็คแบบไม่สนตัวพิมพ์ (`Retention` กับ `retention` ชนกัน → 409) · tag ต้องอยู่ใต้ classification ที่มีจริงและไม่ disabled (**ใต้ classification ของ OM ได้** เช่น `PII.Payroll`) · แก้ได้เฉพาะแถว `local` (ของ OM → 400 *"comes from OpenMetadata; change it there"*) · แก้ได้ display name · description · disabled — **ชื่อแก้ไม่ได้** เพราะ policy กับ column ที่ติด tag อ้างด้วยชื่อ · แก้แล้วไม่มีอะไรเปลี่ยน = ไม่เขียน audit
+- `resources/LocalVocabularyResource.java` — `GET /v1/local-vocabulary` → `{canEdit}` · `POST /classifications` · `POST /tags` (201) · `PUT` (field ที่เป็น null = คงเดิม · display name ว่าง = ลบ) · **ต้องเป็น Platform Admin หรือ Policy Author** (vocabulary ใช้ทั้งองค์กร policy ไหนก็อ้างได้ — ไม่ใช่สิทธิ์ของเจ้าของ table ตัวเดียว · การติด tag ยังเป็นของคนที่ govern table ผ่าน `LocalTagResource` เหมือนเดิม) · ชื่อ = FQN segment เดียว: ห้ามจุด · ห้าม `"` · ห้าม control char · ต้องมีตัวอักษรหรือตัวเลข · ≤ 64 ตัว (ภาษาไทยได้) · description บังคับ ≤ 2000 · `23505` (สองคนสร้างพร้อมกัน) → 409
+- **sync ไม่ทับ**: `GovernanceStore` upsert/ลบเฉพาะแถว `provenance='openmetadata'` อยู่แล้ว — ถ้าวันหนึ่ง OM สร้างชื่อเดียวกัน แถว local ยังอยู่
+- tag ที่ disabled ติดใหม่ไม่ได้ (`LocalTagStore.checkTag` เดิม) แต่ที่ติดไว้แล้ว **ยังบังคับใช้ต่อ** จนกว่าคนดูแล table จะถอด · ข้อความ *"No tag X in the catalog"* บอกให้ไปสร้างใน OM **หรือใน Governance ที่นี่**
+
+### CE.2 Frontend
+- `pages/governance/VocabularyEditor.tsx` (ใหม่) — ฟอร์มเดียวสามโหมด *New classification* · *New tag under X* · *Edit X* · บอกล่วงหน้าว่าจะได้ FQN อะไร (*It becomes Retention.Long*) · เช็คชื่อที่มีจุด / `"` / ยาวเกินก่อนส่ง · checkbox *One tag per column or table (mutually exclusive)* · *Disabled* อธิบายว่าที่ติดไว้แล้วยังอยู่และ mask ยังมีผล · สำเร็จแล้ว invalidate ทั้ง `['governance-vocabulary']` (หน้านี้) และ `['vocabulary']` (ตัวเลือกของ Edit tags) → ไม่ต้อง reload
+- `GovernancePage.tsx` — ปุ่ม **New classification** · ปุ่ม **Add tag** บนแถว classification (ของ OM ก็มี) · ปุ่ม **Edit** เฉพาะแถวที่สร้างใน ARAK · badge **made in ARAK** · ข้อความสำเร็จบอกขั้นต่อไป (*Attach it to a column from the table's Columns tab, with Edit tags*) · ปุ่มแก้ไขขึ้นเฉพาะ tab Classifications & tags และเฉพาะคนที่ `canEdit`
+
+### CE.3 Test
+- `LocalVocabularyResourceTest` 7 · `GovernancePage.test.tsx` 6 (คนอ่านไม่เห็นปุ่ม · สร้าง classification + ชื่อมีจุดถูกกันก่อนส่ง · tag ใต้ PII ของ OM · Edit เฉพาะของ local + disable · server ปฏิเสธแล้วคงค่าที่พิมพ์ · tab อื่นไม่มีปุ่ม)
+- jest รวม **714 ผ่าน** (72 suites) · tsc ผ่าน · backend unit **585 ผ่าน**
+- **E2E local** (`scratchpad/vocab_e2e.py` · **ALL PASSED 24 ข้อ**): ไม่ login 401 · admin canEdit · สร้าง `Retention` (exclusive) · `Retention.Short` · `PII.Payroll` · `retention` ซ้ำ 409 · classification ไม่มีจริง 404 · ชื่อมีจุด 400 · แก้ `PII` ของ OM 400 · หน้า Governance เห็นเป็น local ใต้ parent ถูกต้อง · ติด `Retention.Short` ที่ `full_name` ผ่าน local-tags · disable → ติดใหม่ 400 แต่ที่ติดแล้วยังอยู่ · enable คืน · **sync OM จริงแล้ว** `Retention` / `PII.Payroll` ยังอยู่ และ `PII` ยังเป็นของ OM · `audit_vocabulary` 5 แถว (CREATE ×3 · UPDATE ×2 · no-op ไม่บันทึก)
+- ภาพจาก browser จริง (bundle ที่ :8080/Arak): ปุ่มครบ · ไม่มี page error · Columns tab เห็น chip *Retention / Short* ARAK
+
+### CE.4 ที่ยังไม่ทำ (ตั้งใจ)
+- ลบ classification / tag ไม่ได้ — ใช้ *Disabled* แทน (policy เก่าอาจอ้างชื่ออยู่ · ลบแล้ว column ที่ติดไว้กลายเป็นไม่มีการคุ้มครองเงียบๆ)
+- glossary / term / domain / data product แบบ local · ปุ่ม push กลับเข้า OM (ต้องได้ OK จากผู้ใช้ก่อนเขียน OM ของทีม)
+
+## รอบก่อนหน้า — **ข้อ CD: Column description เขียนใน ARAK ได้ · NokRak ช่วยร่าง · แสดงใน Access Request ticket**
+
+ผู้ใช้ขอ: *"Description ของ Colume ยังไม่เห็นมีมาเลย รวมถึงต้องแสดง ให้ดูใน Access Request Ticket ด้วย"* · *"ทำ Column description ให้เสร็จ แล้วเอาขึ้น prod เลย จะไปนำเสนอผู้บริหารพรุ่งนี้"* · *"สามารถเพิ่ม DEscription เองที่ Arak ได้ ด้วย"* · และ *"Edit tag มีอะไรข้างหน้าเกินมา"*
+
+### CD.1 Backend
+- `V40__column_description.sql` — `column_description` (key = FQN ของ column เหมือน `local_tag` · `assisted` บอกว่าเริ่มจากร่างของ NokRak · `written_by` / `written_at`) + `audit_column_description` append-only (SET / CLEAR · before / after)
+- **ของ ARAK ชนะของ OM เมื่อมีทั้งคู่** (เขียนทีหลังและตั้งใจ) · crawl เขียนทับ `asset_column.description` ของ OM เท่านั้น ไม่แตะตารางนี้
+- `ColumnDescriptionResource` — `GET /v1/column-descriptions?asset=` → `{canEdit, descriptions}` · `PUT` หลาย column ในครั้งเดียว (≤ 2000) ว่าง = ลบ · คืน `set / cleared / unchanged` · **คนที่ govern table** (`Stewardship.governs` — สิทธิ์เดียวกับติด tag) · ไม่ต้องใส่เหตุผล (description ไม่ได้ตัดสินสิทธิ์) แต่เก็บค่าเดิมใน audit
+- `CatalogQuery` ใช้ description ที่มีผล (ARAK ก่อน แล้ว OM) · `AccessReview` ใส่ `description` ให้ทุก column ใน ticket review
+- NokRak `POST /v1/llm/assist/describe-columns` (feature ใหม่ **Describe columns** ใน `LlmFeatureStore` ปิด/เปิดได้) — ร่างจากชื่อ + type ของ column เท่านั้น (**metadata only ไม่ส่งข้อมูลจริง**) ≤ 40 column ต่อครั้ง · ภาษาเลือกได้ · **ไม่บันทึกเอง** คนต้องอ่าน แก้ แล้วกด Save
+
+### CD.2 Frontend
+- Columns tab: ปุ่ม **Describe columns** (คนที่ govern) → แก้ทุก column ในที่เดียว + *Draft with NokRak* · description ขึ้นใต้ชื่อ column พร้อมป้าย ARAK · ช่องค้น column ค้นใน description ด้วย · บรรทัดสรุป *N described*
+- Access Request ticket (`RequestReview`) — ใต้ชื่อ column มี description (2 บรรทัด + tooltip เต็ม) คนอนุมัติไม่ต้องตัดสินจากชื่ออย่างเดียว
+- แก้ *"—Edit tags"* ที่มีขีดเกินข้างหน้า
+
+### CD.3 Test
+- `ColumnDescriptionResourceTest` 6 · `LlmAssistResourceTest$DescribeColumns` 6 · `AccessReviewTest` (description ใน review) · `AssistToolboxTest` · `ColumnsTab.test.tsx` 9 · `AssetDetailPage.test.tsx` · `AccessRequestsPage.test.tsx`
+- E2E local: เขียน description ของ `full_name` → set 1 · อ่านกลับได้ · เห็นใต้ชื่อ column ใน browser
+
+## รอบก่อนหน้า — **ข้อ CC: tab Access ของ table รับ list ยาวๆ ได้ (FR-7.3)**
 
 ผู้ใช้ขอ: *"หน้า Access ของ Table ให้คิดเผื่อกรณีมี list เยอะมากๆ ด้วย ตอนนี้มันต้อง Scroll bar ลงมาเยอะมาก ดูไม่ดี และไม่ยืดหยุ่น"* และต่อมา *"มันแสดงชื่อไม่เต็ม ชื่อ group ก็ไม่เต็ม … ควรจะกดเข้าไปดูรายละเอียดได้ไหม"* — **ไม่มี API ใหม่** ข้อมูลยังมาจาก `GET /v1/access/assets/{fqn}` ครั้งเดียวเหมือนเดิม การกรอง ค้น และแบ่งหน้าทำในเบราว์เซอร์ทั้งหมด (`accessLists.ts` เป็น pure helper แยกจาก component เพื่ออ่านกติกาการนับและ test ได้โดยไม่ render)
 

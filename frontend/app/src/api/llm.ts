@@ -310,6 +310,43 @@ export async function assistExplain(ask: ExplainAsk): Promise<SqlExplanation> {
   return data;
 }
 
+// ---------------------------------------------------------- column descriptions
+
+/** The columns of one table to draft descriptions for; at most 40 at a time. */
+export interface DescribeAsk {
+  assetFqn: string;
+  columns: string[];
+  /** 'English' or 'Thai'. */
+  language?: string;
+  model?: string;
+}
+
+export interface ColumnDraft {
+  name: string;
+  description: string;
+}
+
+/** Drafts for the columns it could describe; a column it could not is left out. */
+export interface ColumnDrafts {
+  drafts: ColumnDraft[];
+  model: string;
+  personal: boolean;
+}
+
+/** The most columns one call drafts; a wider table is asked for in turns. */
+export const DESCRIBE_BATCH = 40;
+
+/**
+ * Drafts descriptions from the columns' names, types and tags -- never their
+ * data. Nothing is saved: the drafts go into the form, and a person saves them.
+ */
+export async function assistDescribeColumns(ask: DescribeAsk): Promise<ColumnDrafts> {
+  const { data } = await apiClient.post<ColumnDrafts>('/v1/llm/assist/describe-columns', ask, {
+    timeout: 180_000,
+  });
+  return data;
+}
+
 // ------------------------------------------------------------- the agent (M28)
 
 /** The assistant's jobs, each of which an administrator can narrow by role. */
@@ -320,7 +357,8 @@ export type AssistFeature =
   | 'EXPLAIN_SQL'
   | 'DRAFT_POLICY'
   | 'CATALOG_SEARCH'
-  | 'INSIGHTS';
+  | 'INSIGHTS'
+  | 'DESCRIBE_COLUMNS';
 
 /** One earlier line of the conversation, sent back so the model has context. */
 export interface ChatMessage {

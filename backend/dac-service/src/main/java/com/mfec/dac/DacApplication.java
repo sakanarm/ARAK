@@ -50,6 +50,10 @@ import com.mfec.dac.resources.AccessWorkflowResource;
 import com.mfec.dac.resources.RequestTemplateResource;
 import com.mfec.dac.resources.LocalTagResource;
 import com.mfec.dac.catalog.LocalTagStore;
+import com.mfec.dac.catalog.LocalVocabularyStore;
+import com.mfec.dac.resources.LocalVocabularyResource;
+import com.mfec.dac.catalog.ColumnDescriptionStore;
+import com.mfec.dac.resources.ColumnDescriptionResource;
 import com.mfec.dac.resources.SavedQueryResource;
 import com.mfec.dac.query.SavedQueryStore;
 import com.mfec.dac.resources.AccessResource;
@@ -356,11 +360,15 @@ public class DacApplication extends Application<DacConfiguration> {
     // binding.
     LocalTagStore localTags = new LocalTagStore(jdbi);
     environment.jersey().register(new LocalTagResource(localTags, materializer));
+    ColumnDescriptionStore columnDescriptions = new ColumnDescriptionStore(jdbi);
+    environment.jersey().register(new ColumnDescriptionResource(columnDescriptions));
 
     // The vocabulary a selector is written against, and the people a subject
-    // rule is written about. Both are read-only: OpenMetadata and Entra own
-    // this content, and an edit here would be reverted by the next sync.
+    // rule is written about. What OpenMetadata and Entra own is read-only here,
+    // since an edit would be reverted by the next sync; classifications and
+    // tags made in ARAK are provenance 'local', which no sync touches.
     environment.jersey().register(new GovernanceResource(new GovernanceQuery(jdbi)));
+    environment.jersey().register(new LocalVocabularyResource(new LocalVocabularyStore(jdbi)));
     SearchQuery search = new SearchQuery(jdbi);
     environment.jersey().register(new SearchResource(search));
     IdentityAdminStore identityAdmin = new IdentityAdminStore(jdbi, identities);

@@ -564,6 +564,8 @@ export interface ColumnFate {
   conditional: boolean;
   sensitive: boolean;
   sensitiveTags: string[];
+  /** What the column holds, as the table's page describes it; null when nobody has. */
+  description?: string | null;
 }
 
 export interface RowFilter {

@@ -154,7 +154,10 @@ public class CatalogQuery {
       String dataType,
       Integer dataLength,
       Boolean nullable,
+      /** The one written in ARAK if there is one, else OpenMetadata's. */
       String description,
+      /** Where {@code description} came from: {@code arak}, {@code openmetadata}, or null for none. */
+      String descriptionSource,
       List<FacetRow> facets) {}
 
   /** Everything one asset page needs in a single response. */
@@ -486,10 +489,18 @@ public class CatalogQuery {
               handle
                   .createQuery(
                       """
-                      SELECT id, fqn, name, ordinal, data_type, data_length, nullable, description
-                      FROM asset_column
-                      WHERE asset_id = :assetId AND is_current
-                      ORDER BY ordinal NULLS LAST, name
+                      SELECT c.id, c.fqn, c.name, c.ordinal, c.data_type, c.data_length,
+                             c.nullable,
+                             COALESCE(d.description, NULLIF(btrim(c.description), ''))
+                                 AS description,
+                             CASE WHEN d.description IS NOT NULL THEN 'arak'
+                                  WHEN NULLIF(btrim(c.description), '') IS NOT NULL
+                                      THEN 'openmetadata'
+                             END AS description_source
+                      FROM asset_column c
+                      LEFT JOIN column_description d ON d.target_fqn = c.fqn
+                      WHERE c.asset_id = :assetId AND c.is_current
+                      ORDER BY c.ordinal NULLS LAST, c.name
                       """)
                   .bind("assetId", asset.id())
                   .map(
@@ -506,6 +517,7 @@ public class CatalogQuery {
                             length,
                             nullable,
                             rs.getString("description"),
+                            rs.getString("description_source"),
                             new ArrayList<>());
                       })
                   .list();

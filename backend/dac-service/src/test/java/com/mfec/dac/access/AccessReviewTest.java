@@ -153,6 +153,26 @@ class AccessReviewTest {
     }
 
     @Test
+    void everyColumnCarriesItsDescriptionWhateverItsFate() {
+      // Keyed by lower-case name, as ColumnDescriptionStore.effectiveByName gives it.
+      AccessReview.Access access =
+          AccessReview.access(
+              maskingEmail(),
+              COLUMNS,
+              java.util.Map.of(
+                  "email", "The customer's work email",
+                  "citizen_id", "National identity number"));
+
+      assertThat(access.columns())
+          .extracting(AccessReview.ColumnFate::name, AccessReview.ColumnFate::description)
+          .containsExactly(
+              org.assertj.core.groups.Tuple.tuple("id", null),
+              org.assertj.core.groups.Tuple.tuple("email", "The customer's work email"),
+              org.assertj.core.groups.Tuple.tuple("citizen_id", "National identity number"),
+              org.assertj.core.groups.Tuple.tuple("country", null));
+    }
+
+    @Test
     void aRefusalNamesThePolicyAndItsId() {
       AccessReview.Access access = none();
       assertThat(access.allowed()).isFalse();

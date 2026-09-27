@@ -4,9 +4,11 @@ import { apiClient } from './client';
  * The governance vocabulary and the identity cache — the two lists a policy is
  * written against.
  *
- * Both are read-only. OpenMetadata owns the first and Entra the second; the
- * counts beside each value are ours, and they are the reason these screens
- * exist rather than a link back to OpenMetadata.
+ * OpenMetadata owns most of the first and Entra the second, and what they own
+ * is read-only here; the counts beside each value are ours, and they are the
+ * reason these screens exist rather than a link back to OpenMetadata. The one
+ * exception is a classification or tag made in ARAK (provenance 'local'), for
+ * vocabulary OpenMetadata does not have yet: no sync touches it.
  */
 
 export interface GovernanceValue {
@@ -48,6 +50,73 @@ export interface Vocabulary {
 
 export async function fetchVocabulary(): Promise<Vocabulary> {
   const { data } = await apiClient.get<Vocabulary>('/v1/governance/vocabulary');
+  return data;
+}
+
+// ------------------------------------------------------- made in ARAK (local)
+
+export type VocabularyKind = 'CLASSIFICATION' | 'TAG';
+
+/** A classification or tag as the server has it after a change. */
+export interface LocalVocabularyValue {
+  kind: VocabularyKind;
+  fqn: string;
+  name: string;
+  /** Null for a classification. */
+  classificationFqn: string | null;
+  displayName: string | null;
+  description: string | null;
+  mutuallyExclusive: boolean;
+  disabled: boolean;
+  provenance: string;
+  createdBy: string | null;
+}
+
+export interface NewClassification {
+  name: string;
+  displayName?: string;
+  description: string;
+  mutuallyExclusive: boolean;
+}
+
+export interface NewTag {
+  classificationFqn: string;
+  name: string;
+  displayName?: string;
+  description: string;
+}
+
+/** A change to a value made in ARAK. A field left out is left as it is. */
+export interface VocabularyChange {
+  kind: VocabularyKind;
+  fqn: string;
+  /** An empty string takes the display name away. */
+  displayName?: string;
+  description?: string;
+  disabled?: boolean;
+}
+
+/** Whether the caller may make classifications and tags here: a platform admin or a policy author. */
+export async function fetchVocabularyPermission(): Promise<{ canEdit: boolean }> {
+  const { data } = await apiClient.get<{ canEdit: boolean }>('/v1/local-vocabulary');
+  return data;
+}
+
+export async function createClassification(ask: NewClassification): Promise<LocalVocabularyValue> {
+  const { data } = await apiClient.post<LocalVocabularyValue>(
+    '/v1/local-vocabulary/classifications',
+    ask
+  );
+  return data;
+}
+
+export async function createTag(ask: NewTag): Promise<LocalVocabularyValue> {
+  const { data } = await apiClient.post<LocalVocabularyValue>('/v1/local-vocabulary/tags', ask);
+  return data;
+}
+
+export async function updateVocabulary(change: VocabularyChange): Promise<LocalVocabularyValue> {
+  const { data } = await apiClient.put<LocalVocabularyValue>('/v1/local-vocabulary', change);
   return data;
 }
 

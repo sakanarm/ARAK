@@ -1080,6 +1080,7 @@ describe('AccessRequestsPage review', () => {
               conditional: false,
               sensitive: true,
               sensitiveTags: ['PII.Sensitive'],
+              description: "The customer's work email",
             },
           ],
           rowFilters: [{ kind: 'ATTRIBUTE', description: 'branch_code = L1', policy: 'by-branch' }],
@@ -1125,6 +1126,9 @@ describe('AccessRequestsPage review', () => {
     expect(rows[2]).toHaveTextContent('Masked · nullify');
     expect(rows[2]).toHaveTextContent('PII.Sensitive');
     expect(rows[2]).toHaveTextContent('mask-pii');
+    // What the column holds, so the approver is not deciding on a name alone.
+    expect(within(rows[2]).getByText("The customer's work email")).toBeInTheDocument();
+    expect(rows[1]).not.toHaveTextContent("work email");
     expect(within(reviewed).getByRole('list', { name: 'Row filters' })).toHaveTextContent(
       'branch_code = L1'
     );

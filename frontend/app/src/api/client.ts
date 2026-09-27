@@ -193,7 +193,10 @@ export interface ColumnDetail {
   dataType: string | null;
   dataLength: number | null;
   nullable: boolean | null;
+  /** Written in ARAK if anybody has, else OpenMetadata's. */
   description: string | null;
+  /** Where the description came from: 'arak' or 'openmetadata'; null when there is none. */
+  descriptionSource?: 'arak' | 'openmetadata' | null;
   facets: FacetRow[];
 }
 

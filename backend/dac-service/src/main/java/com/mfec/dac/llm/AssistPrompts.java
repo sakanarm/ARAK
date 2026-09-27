@@ -5,9 +5,11 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -628,6 +630,136 @@ public final class AssistPrompts {
       i++;
     }
     return out.toString();
+  }
+
+  // ---------------------------------------------------- column descriptions
+
+  /** The longest draft kept for one column: a sentence, not a paragraph. */
+  public static final int MAX_COLUMN_DRAFT = 500;
+
+  /** How many of a table's other column names are listed for context. */
+  static final int MAX_CONTEXT_COLUMNS = 300;
+
+  /** A drafted description of one column, under the column's name as the catalogue has it. */
+  public record ColumnDraft(String name, String description) {}
+
+  /**
+   * The rules for drafting column descriptions.
+   *
+   * <p>From names, types and tags only: the model has seen no rows, so it is
+   * told to say what a column is and never what is in it. An empty answer is
+   * asked for when it cannot tell, because a steward reading forty drafts is
+   * better served by a gap than by a confident guess that looks like the rest.
+   */
+  public static String describeColumnsSystem(String language) {
+    String written =
+        "Thai".equalsIgnoreCase(language == null ? "" : language.trim()) ? "Thai" : "English";
+    return "You write short descriptions of database columns for a data catalogue. They are read"
+        + " by people asking for access to the table and by the people who approve it.\n"
+        + "Rules:\n"
+        + "- For each column you are asked about, write one plain sentence of at most 25 words, in "
+        + written
+        + ", saying what the column holds.\n"
+        + "- Work only from the names, types, tags and descriptions given. You have not seen any"
+        + " data: never state or guess values, counts or examples of what is in a column.\n"
+        + "- Well-known naming conventions are fair to use (SAP field names, or suffixes such as"
+        + " _id, _dt, _amt, _cd), but say what the column is, not how you worked it out.\n"
+        + "- If you cannot tell what a column holds, leave its description empty. An empty"
+        + " description is a better answer than a wrong one.\n"
+        + "- Do not repeat the column name as the description, and do not begin with \"This"
+        + " column\".\n"
+        + "- Answer with JSON only, no prose and no code fence:"
+        + " {\"columns\":[{\"name\":\"<the column name exactly as given>\",\"description\":\"<the"
+        + " sentence, or empty>\"}]}";
+  }
+
+  /** The table, the columns to describe, and the names of the rest for context. */
+  public static String describeColumnsUser(
+      Table table, List<Column> toDescribe, List<String> others) {
+    StringBuilder out = new StringBuilder();
+    out.append("Table: ").append(table.fqn()).append('\n');
+    if (notBlank(table.description())) {
+      out.append("About the table: ").append(oneLine(table.description(), 600)).append('\n');
+    }
+    if (others != null && !others.isEmpty()) {
+      List<String> listed =
+          others.size() > MAX_CONTEXT_COLUMNS ? others.subList(0, MAX_CONTEXT_COLUMNS) : others;
+      out.append("Its other columns, for context: ").append(String.join(", ", listed)).append('\n');
+    }
+    out.append("\nDescribe these columns:\n");
+    for (Column column : toDescribe) {
+      out.append("- ").append(column.name());
+      if (notBlank(column.dataType())) {
+        out.append(" (").append(column.dataType()).append(')');
+      }
+      if (column.tags() != null && !column.tags().isEmpty()) {
+        out.append(", tagged ").append(String.join(", ", column.tags()));
+      }
+      if (notBlank(column.description())) {
+        out.append(", described now as: ").append(oneLine(column.description(), 300));
+      }
+      out.append('\n');
+    }
+    return out.toString().trim();
+  }
+
+  /**
+   * The drafts in an answer, for the columns that were asked about.
+   *
+   * <p>Names are matched without regard to case and returned as asked, so a
+   * draft always lands on a real column; a name nobody asked about is dropped,
+   * as is an empty description. Drafts come back in the order they were asked
+   * for. An answer that is not the JSON asked for gives no drafts at all rather
+   * than a guess at what it meant.
+   */
+  public static List<ColumnDraft> extractColumnDrafts(String answer, List<String> asked) {
+    if (answer == null || asked == null || asked.isEmpty()) {
+      return List.of();
+    }
+    int start = answer.indexOf('{');
+    int end = answer.lastIndexOf('}');
+    if (start < 0 || end <= start) {
+      return List.of();
+    }
+    JsonNode root;
+    try {
+      root = JSON.readTree(answer.substring(start, end + 1));
+    } catch (JsonProcessingException e) {
+      return List.of();
+    }
+    JsonNode columns = root == null ? null : root.path("columns");
+    if (columns == null || !columns.isArray()) {
+      return List.of();
+    }
+    Map<String, String> names = new LinkedHashMap<>();
+    for (String name : asked) {
+      if (name != null) {
+        names.putIfAbsent(name.toLowerCase(Locale.ROOT), name);
+      }
+    }
+    Map<String, String> drafts = new LinkedHashMap<>();
+    for (JsonNode column : columns) {
+      String name = names.get(column.path("name").asText("").trim().toLowerCase(Locale.ROOT));
+      if (name == null) {
+        continue;
+      }
+      String text = column.path("description").asText("").replaceAll("\\s+", " ").trim();
+      if (text.isEmpty()) {
+        continue;
+      }
+      if (text.length() > MAX_COLUMN_DRAFT) {
+        text = text.substring(0, MAX_COLUMN_DRAFT - 1).trim() + "…";
+      }
+      drafts.putIfAbsent(name, text);
+    }
+    List<ColumnDraft> out = new ArrayList<>();
+    for (String name : names.values()) {
+      String text = drafts.get(name);
+      if (text != null) {
+        out.add(new ColumnDraft(name, text));
+      }
+    }
+    return out;
   }
 
   private static boolean containsWord(String haystack, String word) {

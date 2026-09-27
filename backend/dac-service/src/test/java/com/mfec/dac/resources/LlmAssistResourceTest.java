@@ -106,6 +106,7 @@ class LlmAssistResourceTest {
         null,
         true,
         null,
+        null,
         tags.stream()
             .map(
                 tag ->
@@ -508,6 +509,117 @@ class LlmAssistResourceTest {
                       as(analyst)))
           .isInstanceOf(ServiceUnavailableException.class)
           .hasMessageContaining("changed policy");
+    }
+  }
+
+  @Nested
+  @DisplayName("describe columns")
+  class DescribeColumns {
+
+    private final AuthenticatedUser steward =
+        new AuthenticatedUser(
+            UUID.randomUUID(),
+            "steward_a",
+            "steward_a@example.test",
+            "steward_a",
+            "local",
+            Set.of("POLICY_AUTHOR"),
+            List.of());
+
+    @BeforeEach
+    void wireSteward() throws Exception {
+      when(store.effectiveFor(steward.id())).thenReturn(switchedOn());
+      when(store.gatewayFor(steward.id()))
+          .thenReturn(new Gateway("https://llm.example.test", "not-a-real-token", false));
+    }
+
+    private LlmAssistResource.DescribeAsk asking(String... columns) {
+      return new LlmAssistResource.DescribeAsk(CUSTOMER, List.of(columns), "English", null);
+    }
+
+    @Test
+    @DisplayName("sends the table's metadata and the columns asked about -- no rows")
+    void whatLeaves() throws Exception {
+      answers("{\"columns\":[{\"name\":\"email\",\"description\":\"The customer's email\"}]}");
+
+      resource.describeColumns(asking("email"), as(steward));
+
+      assertThat(user.getValue())
+          .contains("Table: " + CUSTOMER)
+          .contains("About the table: One row per customer")
+          .contains("- email (varchar), tagged PII.Sensitive")
+          .contains("Its other columns, for context: id, branch_code")
+          .doesNotContain("- id");
+      assertThat(system.getValue())
+          .contains("in English")
+          .contains("You have not seen any data")
+          .contains("leave its description empty");
+    }
+
+    @Test
+    @DisplayName("keeps drafts for the columns asked about, under the catalogue's names")
+    void drafts() throws Exception {
+      answers(
+          "Here you go:\n```json\n{\"columns\":["
+              + "{\"name\":\"EMAIL\",\"description\":\"  The customer's   email address \"},"
+              + "{\"name\":\"id\",\"description\":\"\"},"
+              + "{\"name\":\"password\",\"description\":\"Made up\"},"
+              + "{\"name\":\"branch_code\",\"description\":\"The branch the customer banks with\"}"
+              + "]}\n```");
+
+      LlmAssistResource.ColumnDrafts drafts =
+          resource.describeColumns(asking("branch_code", "email", "id"), as(steward));
+
+      assertThat(drafts.drafts())
+          .containsExactly(
+              new AssistPrompts.ColumnDraft("branch_code", "The branch the customer banks with"),
+              new AssistPrompts.ColumnDraft("email", "The customer's email address"));
+      assertThat(drafts.model()).isEqualTo("gpt-test");
+    }
+
+    @Test
+    @DisplayName("an answer that is not the JSON asked for gives no drafts, not a guess")
+    void notJson() throws Exception {
+      answers("I think email holds an email.");
+
+      assertThat(resource.describeColumns(asking("email"), as(steward)).drafts()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("only whoever governs the table may ask, and nothing is sent otherwise")
+    void onlyAStewardMayAsk() throws Exception {
+      assertThatThrownBy(() -> resource.describeColumns(asking("email"), as(analyst)))
+          .isInstanceOf(ForbiddenException.class);
+      verifyNoInteractions(client);
+    }
+
+    @Test
+    @DisplayName("is refused when the job is not offered to the caller")
+    void featureGate() throws Exception {
+      com.mfec.dac.llm.LlmFeatureStore features = mock(com.mfec.dac.llm.LlmFeatureStore.class);
+      when(features.allowedFor(steward))
+          .thenReturn(java.util.EnumSet.of(com.mfec.dac.llm.LlmFeatureStore.Feature.CHAT));
+      LlmAssistResource gated = new LlmAssistResource(store, client, catalog, features, null);
+
+      assertThatThrownBy(() -> gated.describeColumns(asking("email"), as(steward)))
+          .isInstanceOf(ForbiddenException.class)
+          .hasMessageContaining("Describe columns");
+      verifyNoInteractions(client);
+    }
+
+    @Test
+    @DisplayName("refuses an empty ask, too many columns, and names that are not columns")
+    void validates() {
+      assertThatThrownBy(() -> resource.describeColumns(asking(), as(steward)))
+          .isInstanceOf(BadRequestException.class);
+      String[] many = new String[LlmAssistResource.MAX_DESCRIBE + 1];
+      java.util.Arrays.fill(many, "email");
+      assertThatThrownBy(() -> resource.describeColumns(asking(many), as(steward)))
+          .isInstanceOf(BadRequestException.class);
+      assertThatThrownBy(() -> resource.describeColumns(asking("nope"), as(steward)))
+          .isInstanceOf(BadRequestException.class)
+          .hasMessageContaining("None of those");
+      verifyNoInteractions(client);
     }
   }
 }

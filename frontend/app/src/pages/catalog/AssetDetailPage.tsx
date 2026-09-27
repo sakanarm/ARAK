@@ -17,25 +17,19 @@ import {
   apiErrorMessage,
   fetchAsset,
   type AssetOwner,
-  type ColumnDetail,
   type FacetRow,
 } from '../../api/client';
 import {
   fetchPoliciesForAsset,
   type AppliedPolicy,
 } from '../../api/policies';
-import {
-  FacetChip,
-  FacetGroup,
-  columnFacets,
-  facetName,
-  groupFacets,
-} from './facets';
+import { FacetGroup, facetName, groupFacets } from './facets';
 import { AccessTab } from './AccessTab';
 import { useAuthStore } from '../../auth/authStore';
 import { oversees } from '../../auth/stewardship';
 import { AssetAccessAction, AssetStanding } from './AssetRequestAccess';
 import { AuditTab } from './AuditTab';
+import { ColumnsTab } from './ColumnsTab';
 import { LocalTagControl } from './LocalTags';
 import { Field, Panel } from './panels';
 import { ChildrenPanel, childLabel, childrenTitle, isContainer } from './hierarchy';
@@ -349,37 +343,7 @@ export default function AssetDetailPage() {
 
         {shown === 'policies' && <Policies fqn={asset.fqn} />}
 
-        {shown === 'columns' && (
-          <Panel
-            subtitle={`${columns.length} columns · ${
-              columns.filter((column) => columnFacets(column.facets).length > 0)
-                .length
-            } carrying governance of their own`}
-            title="Columns">
-            {columns.length === 0 ? (
-              <p className="tw:text-sm tw:text-tertiary">
-                The crawl found no columns on this asset.
-              </p>
-            ) : (
-              <div className="tw:overflow-x-auto">
-                <table className="tw:w-full tw:text-sm">
-                  <thead>
-                    <tr className="tw:border-b tw:border-secondary tw:text-left tw:text-xs tw:text-tertiary">
-                      <th className="tw:py-2 tw:pr-3 tw:font-medium">Column</th>
-                      <th className="tw:py-2 tw:pr-3 tw:font-medium">Type</th>
-                      <th className="tw:py-2 tw:font-medium">Governance</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {columns.map((column) => (
-                      <ColumnRow assetFqn={asset.fqn} column={column} key={column.id} />
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </Panel>
-        )}
+        {shown === 'columns' && <ColumnsTab assetFqn={asset.fqn} columns={columns} />}
 
         {shown === 'audit' && <AuditTab fqn={asset.fqn} />}
       </div>
@@ -643,46 +607,6 @@ function AppliedRow({ row }: { row: AppliedPolicy }) {
   );
 }
 
-function ColumnRow({ assetFqn, column }: { assetFqn: string; column: ColumnDetail }) {
-  const own = columnFacets(column.facets);
-
-  return (
-    <tr className="tw:border-b tw:border-secondary tw:last:border-0">
-      <td className="tw:py-2 tw:pr-3 tw:align-top">
-        <span className="tw:font-medium tw:text-primary">{column.name}</span>
-        {plainText(column.description) && (
-          <p className="tw:mt-0.5 tw:max-w-md tw:text-xs tw:text-tertiary">
-            {plainText(column.description)}
-          </p>
-        )}
-      </td>
-      <td className="tw:py-2 tw:pr-3 tw:align-top tw:font-mono tw:text-xs tw:text-tertiary">
-        {column.dataType ?? '—'}
-        {column.dataLength ? `(${column.dataLength})` : ''}
-        {column.nullable === false && (
-          <span className="tw:ml-1 tw:text-quaternary">NOT NULL</span>
-        )}
-      </td>
-      <td className="tw:py-2 tw:align-top">
-        {own.length === 0 ? (
-          <span className="tw:text-xs tw:text-quaternary">—</span>
-        ) : (
-          <div className="tw:flex tw:flex-wrap tw:gap-1.5">
-            {own.map((facet) => (
-              <FacetChip facet={facet} key={facetKey(facet)} />
-            ))}
-          </div>
-        )}
-        <LocalTagControl
-          assetFqn={assetFqn}
-          carried={directTags(column.facets)}
-          targetFqn={column.fqn}
-        />
-      </td>
-    </tr>
-  );
-}
-
 /**
  * Where the asset sits: Catalog, then each level of its FQN.
  *
@@ -872,6 +796,3 @@ function directTags(facets: FacetRow[]): string[] {
     .map((facet) => facet.facetFqn);
 }
 
-function facetKey(facet: FacetRow): string {
-  return `${facet.facetType}:${facet.facetFqn}:${facet.property ?? ''}:${facet.depth}`;
-}

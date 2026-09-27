@@ -25,8 +25,8 @@ import org.jdbi.v3.core.statement.PreparedBatch;
  * writes the asset's facets, so a sync that wipes the asset's facets to write
  * OpenMetadata's puts the local ones straight back in the same transaction.
  *
- * <p>The vocabulary is OpenMetadata's: only a tag the governance crawl brought
- * in, and not disabled, may be attached. A local tag is expanded exactly the
+ * <p>Only a tag in the vocabulary, and not disabled, may be attached: one the
+ * governance crawl brought in, or one made here ({@link LocalVocabularyStore}). A local tag is expanded exactly the
  * way a crawled one is ({@link FacetExtractor#fromTagLabels}), so a policy on
  * {@code classifications contains 'PII'} cannot tell the two apart -- which is
  * the point.
@@ -305,7 +305,7 @@ public class LocalTagStore {
     if (tag.isEmpty()) {
       throw new Refused(
           Refused.Kind.INVALID,
-          "No tag " + tagFqn + " in the catalog; a tag must exist in OpenMetadata first");
+          "No tag " + tagFqn + " in the catalog; make it in OpenMetadata, or under Governance here");
     }
     if (Boolean.TRUE.equals(tag.get().get("disabled"))) {
       throw new Refused(Refused.Kind.INVALID, tagFqn + " is disabled and cannot be attached");

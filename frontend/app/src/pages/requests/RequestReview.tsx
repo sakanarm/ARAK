@@ -497,6 +497,14 @@ export function AccessColumns({ access }: { access: ReviewAccess }) {
                   <td className="tw:px-3 tw:py-2">
                     <span className="tw:font-mono tw:text-xs tw:text-primary">{c.name}</span>
                     {c.dataType && <span className="tw:ml-2 tw:text-xs tw:text-quaternary">{c.dataType}</span>}
+                    {/* What the column holds, so an approver is not deciding on a name alone. */}
+                    {c.description && (
+                      <span
+                        className="tw:mt-0.5 tw:block tw:max-w-md tw:line-clamp-2 tw:text-xs tw:text-tertiary"
+                        title={c.description}>
+                        {c.description}
+                      </span>
+                    )}
                     {c.sensitiveTags.length > 0 && (
                       <span className="tw:mt-1 tw:flex tw:flex-wrap tw:gap-1">
                         {c.sensitiveTags.map((t) => (

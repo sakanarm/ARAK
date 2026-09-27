@@ -222,6 +222,7 @@ class AssistToolboxTest {
         null,
         true,
         null,
+        null,
         tags.stream()
             .map(
                 tag ->
