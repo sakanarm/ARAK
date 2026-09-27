@@ -538,23 +538,11 @@ function StandingNote({ standing, template }: { standing: Standing; template?: R
         </p>
       );
     case 'blocked':
-      // Sent all the same. The policy is named only to somebody who could
-      // change it; the server names it to nobody else.
-      return standing.by ? (
-        <p className={`${line} tw:text-warning-primary`}>
-          <AlertTriangle aria-hidden className="tw:size-3.5 tw:shrink-0" />
-          {`Will be requested, but approving would not let you in: ${standing.by} still refuses. Change that policy to give access.`}
-          {template?.id && (
-            <Badge color="gray" size="sm" type="pill-color">
-              {template.name}
-            </Badge>
-          )}
-        </p>
-      ) : (
+      // Sent like any other. What else stands in the way is for whoever
+      // decides it, who sees it when they review the request.
+      return (
         <p className={`${line} tw:text-tertiary`}>
-          <InfoCircle aria-hidden className="tw:size-3.5 tw:shrink-0" />
-          Will be requested. A policy may also need to change before this can be granted, so it may
-          take longer.
+          Will be requested
           {template?.id && (
             <Badge color="gray" size="sm" type="pill-color">
               {template.name}

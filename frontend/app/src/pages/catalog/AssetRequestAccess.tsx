@@ -12,7 +12,7 @@ import {
 } from '../../api/accessRequests';
 import type { AssetSummary } from '../../api/client';
 import { canAsk, RequestAccessForm, RequestedNote } from '../query/RequestAccess';
-import { AccessBadge, standingOf } from './reach';
+import { AccessBadge } from './reach';
 
 /** Only these hold rows a grant can open; a schema or a service has none. */
 const REQUESTABLE_TYPES = new Set(['TABLE', 'VIEW']);
@@ -130,9 +130,10 @@ export function AssetAccessAction({ asset }: { asset: Asset }) {
 }
 
 /**
- * The "Your access" row on a table's page: the same "You …" badge the catalog
- * rows carry, and a sentence saying what it means here. Blank until the
- * answer comes; nothing for a schema or a service.
+ * Where the reader stands, on a table's page: the same "You …" badge the
+ * catalog rows carry, its tooltip saying what it means. Nothing until the
+ * answer comes, for a table that is not connected ("Connection" says so), or
+ * for a schema or a service.
  */
 export function AssetStanding({ asset }: { asset: Asset }) {
   const { applies, data, isError } = useEligibility(asset);
@@ -140,23 +141,9 @@ export function AssetStanding({ asset }: { asset: Asset }) {
     return null;
   }
   if (!data) {
-    return <span className="tw:text-quaternary">{isError ? 'Could not be checked' : '--'}</span>;
+    return isError ? <span className="tw:text-sm tw:text-quaternary">Access could not be checked</span> : null;
   }
-  const brief = briefOf(data);
-  const standing = standingOf(brief);
-  if (!standing) {
-    return (
-      <span className="tw:max-w-72 tw:text-xs tw:font-normal tw:text-tertiary">
-        Nothing to query yet: the table is not connected.
-      </span>
-    );
-  }
-  return (
-    <span className="tw:flex tw:flex-col tw:items-start tw:gap-1">
-      <AccessBadge asset={asset} brief={brief} />
-      <span className="tw:max-w-72 tw:text-xs tw:font-normal tw:text-tertiary">{standing.sentence}</span>
-    </span>
-  );
+  return <AccessBadge asset={asset} brief={briefOf(data)} size="md" />;
 }
 
 /** The single answer, cut down to what a catalog row is told. */

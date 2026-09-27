@@ -165,19 +165,24 @@ describe('AssetAccessAction', () => {
     expect(screen.queryByRole('button', { name: 'Request access' })).toBeNull();
   });
 
-  it('still lets a requester a policy would refuse fill in and send the request, naming no policy', async () => {
-    // What a plain requester is told: the kind of rule, never which one.
+  it('lets a requester a policy would refuse fill in and send the request, telling them nothing about it', async () => {
+    // What else stands in the way is for whoever decides; the form is the
+    // same as anybody's, even for somebody who could change the policy.
     fetchEligibility.mockResolvedValue(
-      eligibility({ requestable: false, blockedKind: 'DENIED', blockedBy: null })
+      eligibility({
+        requestable: false,
+        blockedKind: 'DENIED',
+        blockedBy: 'PII deny for contractors',
+        blockedByPolicy: 'PII deny for contractors',
+        blockedByPolicyId: 'pol-1',
+      })
     );
     requestAccess.mockResolvedValue({ id: 'req-2', assetFqn: FQN, status: 'PENDING', approvers: [] });
     renderBox();
 
     fireEvent.click(await screen.findByRole('button', { name: 'Request access' }));
     const dialog = await screen.findByRole('dialog');
-    expect(
-      within(dialog).getByText(/A policy may also need to change before this can be granted. Your request still goes to the owner, who will see what else is needed, so it may take longer./)
-    ).toBeInTheDocument();
+    expect(within(dialog).queryByText(/PII deny for contractors|would not let you in|policy may also need/)).toBeNull();
     expect(within(dialog).queryByRole('link', { name: /polic/i })).toBeNull();
     fireEvent.change(within(dialog).getByLabelText('Why you need it'), { target: { value: 'Audit' } });
     const send = within(dialog).getByRole('button', { name: 'Send request' });
@@ -186,30 +191,6 @@ describe('AssetAccessAction', () => {
 
     await waitFor(() => expect(requestAccess).toHaveBeenCalledTimes(1));
     expect(await within(dialog).findByText('Request sent')).toBeInTheDocument();
-  });
-
-  it('names the policy in the way, with a link, to somebody who could change it -- and still sends', async () => {
-    fetchEligibility.mockResolvedValue(
-      eligibility({
-        requestable: false,
-        blockedKind: 'DENIED',
-        blockedBy: 'PII deny for contractors',
-        blockedByPolicy: 'PII deny for contractors',
-        blockedByPolicyId: 'pol-1',
-        blockedByReason: null,
-      })
-    );
-    renderBox();
-
-    fireEvent.click(await screen.findByRole('button', { name: 'Request access' }));
-    const dialog = await screen.findByRole('dialog');
-    expect(within(dialog).getByRole('link', { name: 'PII deny for contractors' })).toHaveAttribute(
-      'href',
-      '/policies/pol-1'
-    );
-    expect(within(dialog).getByText(/you are among the people it shuts out/)).toBeInTheDocument();
-    expect(within(dialog).getByText(/Change that policy to give access./)).toBeInTheDocument();
-    expect(within(dialog).getByLabelText('Why you need it')).toBeInTheDocument();
   });
 
   it('says a table no source maps is not connected, and offers no request', async () => {
@@ -252,29 +233,21 @@ describe('AssetStanding', () => {
     [{ readable: true }, 'You can query', /allowed now/],
     [{ openRequestId: 'req-9' }, 'You requested access', /waiting for an answer/],
     [{}, 'You can request', /an approved request lets you in/],
-    [
-      { requestable: false, blockedKind: 'NOT_ADMITTED' as const },
-      'You have no access',
-      /only open to people an organisation rule lets in.*You can still ask/,
-    ],
-    [
-      { requestable: false, blockedKind: 'DENIED' as const },
-      'You have no access',
-      /An organisation rule keeps you out of it.*You can still ask/,
-    ],
-  ])('says where the reader stands: %o', async (overrides, badge, sentence) => {
+    [{ requestable: false, blockedKind: 'NOT_ADMITTED' as const }, 'You have no access', /you can still request access/],
+    [{ requestable: false, blockedKind: 'DENIED' as const }, 'You have no access', /you can still request access/],
+  ])('says where the reader stands, in a badge whose tooltip says what it means: %o', async (overrides, badge, tip) => {
     fetchEligibility.mockResolvedValue(eligibility(overrides));
     renderBox('TABLE', AssetStanding);
 
-    expect(await screen.findByText(badge)).toBeInTheDocument();
-    expect(screen.getByText(sentence)).toBeInTheDocument();
+    const shown = await screen.findByText(badge);
+    expect(shown.parentElement).toHaveAttribute('title', expect.stringMatching(tip));
   });
 
   it('has no badge for a table that is not connected', async () => {
     fetchEligibility.mockResolvedValue(eligibility({ queryable: false, requestable: false }));
     renderBox('TABLE', AssetStanding);
 
-    expect(await screen.findByText(/Nothing to query yet/)).toBeInTheDocument();
+    await waitFor(() => expect(fetchEligibility).toHaveBeenCalled());
     expect(screen.queryByText(/^You /)).toBeNull();
   });
 });

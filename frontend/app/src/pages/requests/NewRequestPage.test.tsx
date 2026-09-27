@@ -145,10 +145,9 @@ describe('NewRequestPage', () => {
       'href',
       '/requests?tab=mine&status=&id=req-7'
     );
-    expect(
-      within(tray).getByText(/Will be requested, but approving would not let you in: No finance outside HQ still refuses/)
-    ).toBeInTheDocument();
-    expect(await within(tray).findAllByText('Will be requested')).toHaveLength(2);
+    // invoices is asked for like the others; the policy is for whoever decides.
+    expect(within(tray).queryByText(/No finance outside HQ|would not let you in/)).toBeNull();
+    expect(await within(tray).findAllByText('Will be requested')).toHaveLength(3);
 
     fireEvent.change(screen.getByLabelText('Why you need them'), { target: { value: 'Quarterly review' } });
     const send = screen.getByRole('button', { name: 'Send 3 requests' });
@@ -176,7 +175,7 @@ describe('NewRequestPage', () => {
     expect(screen.getAllByText('The workflow is switched off')).toHaveLength(2);
   });
 
-  it('sends a blocked table with a plain note, and leaves out one that is not connected', async () => {
+  it('sends a blocked table like any other, and leaves out one that is not connected', async () => {
     // What a plain requester is told: no policy name, only that one may need to change.
     fetchEligibility.mockImplementation((f: string) =>
       Promise.resolve(
@@ -190,10 +189,8 @@ describe('NewRequestPage', () => {
     await choose('orders', 'stock');
 
     const tray = screen.getByRole('list', { name: 'Chosen tables' });
-    expect(
-      await within(tray).findByText(/Will be requested\. A policy may also need to change before this can be granted/)
-    ).toBeInTheDocument();
-    expect(within(tray).queryByText(/still refuses/)).toBeNull();
+    expect(await within(tray).findByText('Will be requested')).toBeInTheDocument();
+    expect(within(tray).queryByText(/policy may also need to change|still refuses/)).toBeNull();
     expect(within(tray).getByText(/Not connected: no data source in ARAK maps it/)).toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText('Why you need them'), { target: { value: 'Quarterly review' } });

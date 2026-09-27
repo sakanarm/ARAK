@@ -701,6 +701,12 @@ M25 ทำแยกได้ (profile ผ่าน proxy ที่มีแล�
 - NokRak (`AssistToolbox`) ไม่เสนอตารางที่ policy กันหรือที่ไม่ได้ต่อ
 - ผ่าน: unit `AccessRequestResourceTest` 14 · `AssistToolboxTest` 15 · `AccessEligibilityTest` 4 · IT `AccessRequestIT` 91/91 + `CatalogQueryIT` 22/22 · jest ทั้งหมด 63 suites / 628 · tsc · eslint ไฟล์ที่แก้
 
+### BT.14 ผู้ขอสิทธิ์ไม่เห็นว่า policy ไหนขวางอยู่ · แถวข้อมูลของตารางเหลือบรรทัดเดียว
+- ผู้ใช้บอกว่าข้อความ "Approving would not let you in: <policy> still refuses…" ในฟอร์มขอสิทธิ์ทำให้ผู้ขอสับสน → เอาออกจากฝั่งผู้ขอทั้ง 3 ที่: ฟอร์ม Request access (`BlockedNote` ถูกลบ), หน้าขอหลายตาราง (แถวที่ติด policy ขึ้นแค่ "Will be requested" เหมือนตัวอื่น), badge "You have no access" ใน Catalog (tooltip บอกแค่ว่ายังขอได้)
+- คนตัดสินยังเห็นเหมือนเดิมตอน review คำขอ (`RequestReview`: "Refused — <policy>") · server ยังส่ง `blockedBy…` มาเหมือนเดิม แค่ฟอร์มไม่แสดง
+- หน้า table: แถว facts เดิม flex-wrap แล้ว Connection / Your access มีประโยคอธิบายยาว → ตกเป็นสองบรรทัดและบรรทัดที่สองขึ้นต้นด้วยเส้นคั่น · แก้: facts เหลือแต่ badge (คำอธิบายอยู่ใน tooltip), "Your access" ย้ายไปอยู่ข้างปุ่ม Request access, เส้นคั่นอยู่หน้าทุกช่องแล้ว strip ถูกเลื่อนซ้าย 33px + `overflow-x-clip` → แถวที่ wrap ไม่ขึ้นต้นด้วยเส้น · `reachSentence` และ `Standing.sentence` ถูกลบ
+- ผ่าน: jest 626/626 · ดูบน local ที่กว้าง 1540 (บรรทัดเดียว) และ 900 (wrap ไม่มีเส้นนำหน้า)
+
 ### BT.13 Query proxy: function ที่รัน SQL เอง และตารางที่อ่านซ้ำจากตำแหน่งที่ไม่ถูก rewrite
 - ช่องโหว่ 1: statement ไปรันที่ source ในนาม credential ของ source · function บางตัวของ PostgreSQL รับข้อความ SQL แล้วรันเอง (เช่นตระกูล `query_to_xml`) proxy มองไม่เห็นตารางในข้อความนั้น → อ่านได้ทุกอย่างที่ account ของ source อ่านได้ ไม่ผ่าน policy · ยืนยันบน local ด้วย `select 1` ข้างใน
 - แก้: `ProxyFunctions` = allow-list ต่อ engine (aggregate, window, text, number, date, JSON, cast ของ MSSQL) · ชื่อที่ไม่อยู่ในรายการ, ชื่อที่มี schema นำหน้า, `{fn ...}`, sequence, session variable → 403 พร้อมบอกชื่อ function · `SELECT ... INTO` กับ `FOR UPDATE/SHARE` → 403 · engine ที่ยังไม่มีรายการได้แค่ชุดกลาง

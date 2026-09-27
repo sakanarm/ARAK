@@ -404,7 +404,7 @@ describe('RequestAccess', () => {
     expect(screen.getByRole('link', { name: 'Access requests' })).toBeInTheDocument();
   });
 
-  it('still lets a requester a policy would refuse send the request, telling them only that a policy may need to change', async () => {
+  it('still lets a requester a policy would refuse send the request, without a word about the policy', async () => {
     // A DENY, or a stricter layer, outranks any grant -- but the owner may get
     // that policy changed, so the request still goes. The requester is told
     // what kind of rule it is and nothing about which one.
@@ -413,10 +413,9 @@ describe('RequestAccess', () => {
 
     expect(screen.getByText('You can still ask the owner')).toBeInTheDocument();
     const { reason, send } = openForm();
-    expect(
-      screen.getByText(/A policy may also need to change before this can be granted. Your request still goes to the owner/)
-    ).toBeInTheDocument();
-    expect(screen.queryByText(/still refuses/)).toBeNull();
+    // The form is the same as anybody's: what else is in the way is for
+    // whoever decides the request.
+    expect(screen.queryByText(/policy may also need to change|still refuses/)).toBeNull();
     fireEvent.change(reason, { target: { value: 'Month-end reconciliation' } });
     expect(send).toBeEnabled();
     fireEvent.click(send);
@@ -425,7 +424,7 @@ describe('RequestAccess', () => {
     expect(await screen.findByText(/Request sent/)).toBeInTheDocument();
   });
 
-  it('names the policy in the way, with a link and its reason, to somebody who could change it', () => {
+  it('does not name the policy in the way in the form, even to somebody who could change it', () => {
     renderBox(
       refusal({
         requestable: false,
@@ -438,12 +437,9 @@ describe('RequestAccess', () => {
     );
 
     openForm();
-    expect(screen.getByRole('link', { name: 'No PII outside Thailand' })).toHaveAttribute(
-      'href',
-      '/policies/pol-7'
-    );
-    expect(screen.getByText(/Approving would not let you in:/)).toBeInTheDocument();
-    expect(screen.getByText(/still refuses \(only staff in Thailand are let in\)\. Change that policy to give access\./)).toBeInTheDocument();
+    // They see it when they review the request, where it is theirs to act on.
+    expect(screen.queryByRole('link', { name: 'No PII outside Thailand' })).toBeNull();
+    expect(screen.queryByText(/would not let you in|still refuses/)).toBeNull();
     expect(screen.getByRole('button', { name: 'Send request' })).toBeInTheDocument();
   });
 

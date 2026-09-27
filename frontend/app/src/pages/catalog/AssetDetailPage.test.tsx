@@ -402,13 +402,14 @@ test('the header strip names the deepest domain and the owner', async () => {
   expect(screen.getByText('Tier1')).toBeInTheDocument();
 });
 
-test('a table says where the reader stands next to whether it is connected', async () => {
+test('a table says where the reader stands beside Request access, and whether it is connected among the facts', async () => {
   renderPage();
 
   // About the table: whether anybody can query it through ARAK.
   expect(await screen.findByText('Connection')).toBeInTheDocument();
-  // About the person looking, in a row of its own.
-  expect(screen.getByText('Your access').parentElement).toHaveTextContent('standing of the reader');
+  // About the person looking: with the actions, not among the facts.
+  expect(screen.getByText(/standing of the reader/)).toBeInTheDocument();
+  expect(screen.queryByText('Your access')).toBeNull();
 });
 
 test('an asset nobody owns says so in the header', async () => {
@@ -461,7 +462,7 @@ describe('a schema', () => {
     renderPage('prod-pg.SalesDB.dbo');
     // Access is asked for and given on tables, so a schema has no row for it.
     expect(await screen.findByText('Connection')).toBeInTheDocument();
-    expect(screen.queryByText('Your access')).toBeNull();
+    expect(screen.queryByText(/standing of the reader/)).toBeNull();
 
     const tab = await screen.findByRole('tab', { name: /Tables/ });
     expect(tab).toHaveTextContent('2');

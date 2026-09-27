@@ -38,7 +38,7 @@ import { Field, Panel } from './panels';
 import { ChildrenPanel, childLabel, childrenTitle, isContainer } from './hierarchy';
 import { plainText } from '../../lib/text';
 import { isAncestor, leaf, segments } from '../../lib/fqn';
-import { ReachBadges, reachSentence } from './reach';
+import { ReachBadges } from './reach';
 
 /**
  * One asset, with everything a policy can select it by.
@@ -172,6 +172,11 @@ export default function AssetDetailPage() {
             * is the one a reader who cannot get in came for; the other two
             * are for somebody who already can. */}
           <div className="tw:flex tw:flex-wrap tw:items-center tw:gap-2">
+            {/* Where the reader stands, beside the one thing they can do
+              * about it. The badge's tooltip says what it means. */}
+            {(asset.assetType === 'TABLE' || asset.assetType === 'VIEW') && (
+              <AssetStanding asset={asset} />
+            )}
             <AssetAccessAction asset={asset} />
             {/* ARAK caches what OpenMetadata knows; it does not replace it.
               * Everything this page cannot answer -- lineage, profiles, the
@@ -204,8 +209,9 @@ export default function AssetDetailPage() {
           </div>
         </div>
 
-        <dl className="tw:mt-5 tw:flex tw:flex-wrap tw:items-start tw:gap-y-4">
-          <Stat first label="Type">
+        <div className="tw:mt-5 tw:overflow-x-clip">
+        <dl className="tw:-ml-[33px] tw:flex tw:flex-wrap tw:items-start tw:gap-y-4">
+          <Stat label="Type">
             {asset.assetType}
           </Stat>
           <Stat label="Domains">
@@ -233,20 +239,8 @@ export default function AssetDetailPage() {
             )}
           </Stat>
           <Stat label="Connection">
-            <span className="tw:flex tw:flex-col tw:items-start tw:gap-1">
-              <ReachBadges asset={asset} />
-              <span className="tw:max-w-72 tw:text-xs tw:font-normal tw:text-tertiary">
-                {reachSentence(asset)}
-              </span>
-            </span>
+            <ReachBadges asset={asset} />
           </Stat>
-          {/* About the person, next to the one about the table: "Connection"
-            * says whether anybody can query it, this whether you can. */}
-          {(asset.assetType === 'TABLE' || asset.assetType === 'VIEW') && (
-            <Stat label="Your access">
-              <AssetStanding asset={asset} />
-            </Stat>
-          )}
           {container ? (
             <Stat label="Contains">{childLabel(asset.assetType, asset.childCount ?? 0)}</Stat>
           ) : (
@@ -255,6 +249,7 @@ export default function AssetDetailPage() {
             </Stat>
           )}
         </dl>
+        </div>
       </header>
 
       <AssetTabs
@@ -725,20 +720,12 @@ function CopyFqn({ fqn }: { fqn: string }) {
  * a thin rule between it and the one before, the height of both lines. A dot
  * was tried first and read as a speck on the page rather than a separator.
  */
-function Stat({
-  label,
-  first = false,
-  children,
-}: {
-  label: string;
-  first?: boolean;
-  children: React.ReactNode;
-}) {
+function Stat({ label, children }: { label: string; children: React.ReactNode }) {
+  // Every fact carries the divider before it; the strip hides the one that
+  // starts each row (33px: the margins and the line).
   return (
     <div className="tw:flex tw:min-w-0 tw:items-stretch">
-      {!first && (
-        <span aria-hidden="true" className="tw:mx-6 tw:w-px tw:shrink-0 tw:self-stretch tw:bg-border-secondary" />
-      )}
+      <span aria-hidden="true" className="tw:mx-4 tw:w-px tw:shrink-0 tw:self-stretch tw:bg-border-secondary" />
       <div className="tw:min-w-0">
         <dt className="tw:text-sm tw:text-tertiary">{label}</dt>
         <dd className="tw:mt-1.5 tw:flex tw:min-h-6 tw:items-center tw:text-sm tw:font-medium tw:text-primary">

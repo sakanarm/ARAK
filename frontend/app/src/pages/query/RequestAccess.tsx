@@ -259,7 +259,6 @@ export function RequestAccessForm({
             <p className="tw:min-w-0 tw:whitespace-pre-line tw:break-words">{form.guidance}</p>
           </div>
         )}
-        {refusal.requestable === false && <BlockedNote className="" refusal={refusal} />}
         {refusal.route && !refusal.stranded && !ownersOnly(refusal.route) && (
           <RouteSteps route={refusal.route} />
         )}
@@ -591,49 +590,6 @@ export function RequestedNote({
         Access requests
       </Link>
       .
-    </Note>
-  );
-}
-
-/**
- * A grant alone would not open the table, said in the request form.
- *
- * <p>The request still goes: the owner may get the policy in the way changed.
- * Somebody who could change it -- an administrator, a policy author, the
- * table's owner, whoever decides the request -- is told which policy it is,
- * with a link to it; the server sends the name to nobody else. Everyone else
- * is told only that a policy may have to change, which is true and names
- * nobody's rules. Nothing when a grant would be enough.
- */
-export function BlockedNote({ refusal, className }: { refusal: Refusal; className?: string }) {
-  if (refusal.requestable !== false) {
-    return null;
-  }
-  const title = refusal.blockedByPolicy ?? refusal.blockedBy;
-  if (!title) {
-    return (
-      <Note className={className} icon={InfoCircle} tone="info">
-        A policy may also need to change before this can be granted. Your request still goes to the
-        owner, who will see what else is needed, so it may take longer.
-      </Note>
-    );
-  }
-  const reason =
-    refusal.blockedKind === 'DENIED' ? 'you are among the people it shuts out' : refusal.blockedByReason;
-  return (
-    <Note className={className} icon={AlertTriangle} tone="warning">
-      Approving would not let you in:{' '}
-      {refusal.blockedByPolicyId ? (
-        <Link
-          className="tw:font-semibold tw:text-brand-secondary tw:hover:underline"
-          to={`/policies/${encodeURIComponent(refusal.blockedByPolicyId)}`}>
-          {title}
-        </Link>
-      ) : (
-        <strong>{title}</strong>
-      )}{' '}
-      still refuses{reason ? ` (${reason})` : ''}. Change that policy to give access. The request can
-      still be sent.
     </Note>
   );
 }

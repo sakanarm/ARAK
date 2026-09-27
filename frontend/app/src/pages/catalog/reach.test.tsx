@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import type { EligibilityBrief } from '../../api/accessRequests';
 import type { AssetSummary } from '../../api/client';
-import { AccessBadge, ReachBadge, reachSentence, standingOf } from './reach';
+import { AccessBadge, ReachBadge, standingOf } from './reach';
 
 const FQN = 'demo-pg.salesdb.sales.customer';
 
@@ -56,14 +56,11 @@ describe('standingOf', () => {
     expect(standingOf(null)).toBeNull();
   });
 
-  it('says what kind of rule is in the way, never which policy', () => {
-    const denied = standingOf(brief({ requestable: false, blockedKind: 'DENIED' }))!;
-    const gated = standingOf(brief({ requestable: false, blockedKind: 'NOT_ADMITTED' }))!;
-    expect(denied.sentence).toMatch(/An organisation rule keeps you out of it/);
-    expect(gated.sentence).toMatch(/only open to people an organisation rule lets in/);
-    for (const s of [denied, gated]) {
-      expect(s.sentence).toMatch(/You can still ask/);
-      expect(s.title).toMatch(/You can still ask/);
+  it('tells a reader a policy keeps out only that they can still ask', () => {
+    // What is in the way is for whoever decides the request.
+    for (const kind of ['DENIED', 'NOT_ADMITTED'] as const) {
+      const s = standingOf(brief({ requestable: false, blockedKind: kind }))!;
+      expect(s.title).toBe('You cannot query this table yet, but you can still request access.');
     }
   });
 
@@ -103,12 +100,4 @@ describe('ReachBadge', () => {
     expect(off.parentElement).toHaveAttribute('title', expect.stringMatching(/not about your access/));
   });
 
-  it('ends the detail sentence by saying what connected means', () => {
-    expect(reachSentence(table({ querySource: 'demo-pg' }))).toBe(
-      'Catalogued in OpenMetadata, and connected: queries run on it through demo-pg.'
-    );
-    expect(reachSentence(table({ querySource: null }))).toMatch(
-      /but it is not connected: no data source in ARAK maps it, so nobody can query it through ARAK yet — this is not a limit on your access\.$/
-    );
-  });
 });
