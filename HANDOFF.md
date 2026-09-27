@@ -1,6 +1,6 @@
 # HANDOFF — ARAK (Data Access Control Platform)
 
-> อัปเดต: 2026-09-27 · ข้อ CG (เปลี่ยนรหัสผ่านเอง — Profile → Password · หน้าบังคับเปลี่ยนเมื่อรหัสถูก admin ตั้ง · M2 / FR-2.2) · ข้อ CF (NokRak ตอบคำถามวิธีใช้ ARAK จากคู่มือที่แพ็กเข้า jar — `search_docs`) · ข้อ CE (สร้าง classification / tag ของ ARAK เองในหน้า Governance — provenance local · sync ไม่ทับ · ไม่เขียนกลับ OM) · ข้อ CD (Column description เขียนใน ARAK · NokRak ร่าง · แสดงใน ticket) · ข้อ CC (tab Access รับ list ยาว — แถบสรุป · chip · ค้น · แบ่งหน้า · กดดูรายละเอียดเต็ม) · ข้อ CB (NokRak ช่วยแก้ policy ที่มีอยู่ — คน review แล้วกด Save เอง) · ข้อ CA (ประวัติ policy · diff · rollback) · ข้อ BW (tag จาก OM ผ่าน webhook/poller ย้าย policy binding ทันที) · ข้อ BV (tab Access เฉพาะผู้ดูแล + Diagram แบบ canvas) · ข้อ BU (FR-1.7 local tag + demo group บน prod) · push ขึ้น origin/main แล้ว · repo https://github.com/sakanarm/ARAK (**public**)
+> อัปเดต: 2026-09-28 · ข้อ CH (ปุ่ม **Query** ที่หัวหน้าตาราง สำหรับคนที่อ่านได้แล้ว — เปิดหน้า Query บน source ของตารางพร้อม SQL · FR-1.6d) · ข้อ CG (เปลี่ยนรหัสผ่านเอง — Profile → Password · หน้าบังคับเปลี่ยนเมื่อรหัสถูก admin ตั้ง · M2 / FR-2.2) · ข้อ CF (NokRak ตอบคำถามวิธีใช้ ARAK จากคู่มือที่แพ็กเข้า jar — `search_docs`) · ข้อ CE (สร้าง classification / tag ของ ARAK เองในหน้า Governance — provenance local · sync ไม่ทับ · ไม่เขียนกลับ OM) · ข้อ CD (Column description เขียนใน ARAK · NokRak ร่าง · แสดงใน ticket) · ข้อ CC (tab Access รับ list ยาว — แถบสรุป · chip · ค้น · แบ่งหน้า · กดดูรายละเอียดเต็ม) · ข้อ CB (NokRak ช่วยแก้ policy ที่มีอยู่ — คน review แล้วกด Save เอง) · ข้อ CA (ประวัติ policy · diff · rollback) · ข้อ BW (tag จาก OM ผ่าน webhook/poller ย้าย policy binding ทันที) · ข้อ BV (tab Access เฉพาะผู้ดูแล + Diagram แบบ canvas) · ข้อ BU (FR-1.7 local tag + demo group บน prod) · push ขึ้น origin/main แล้ว · repo https://github.com/sakanarm/ARAK (**public**)
 >
 > อ่านคู่กับ **[docs/DESIGN.md](docs/DESIGN.md)** — ไฟล์นั้นคือ requirement + feature catalogue + สถานะครบทุกข้อ
 > ไฟล์นี้บอกเฉพาะ "ทำถึงไหน จะไปต่อยังไง อะไรที่ลองแล้วไม่เวิร์ค"
@@ -620,7 +620,21 @@ M25 ทำแยกได้ (profile ผ่าน proxy ที่มีแล�
 
 ---
 
-## รอบนี้ — **ข้อ CG: เปลี่ยนรหัสผ่านเองได้ + บังคับเปลี่ยนเมื่อรหัสผ่านถูก admin ตั้ง (M2 · FR-2.2)**
+## รอบนี้ — **ข้อ CH: ปุ่ม Query ที่หัวหน้าตาราง (FR-1.6d)**
+
+ผู้ใช้ถาม "ทำไมหาปุ่ม Query ไม่เจอ" — หน้าตารางที่อ่านได้แล้วมีแค่ป้าย "You can query" (AccessBadge) กับป้าย "You can read this" (AssetAccessAction) ซึ่งพูดเรื่องเดียวกันสองครั้ง และไม่มีทางไปหน้า Query จากตาราง
+
+- `AssetAccessAction` เมื่อ `readable` → ปุ่ม primary **Query** (ไอคอนเดียวกับเมนู Query) แทนป้ายซ้ำ · สถานะอื่น (Not connected / Access requested / Request access) เหมือนเดิม
+- กด → `assistStore.deliverSql("SELECT *\nFROM schema.table", sourceId)` แล้ว `navigate('/query')` — ทางเดียวกับปุ่ม "Put it in the editor" ของ NokRak · หน้า Query รอ list source โหลดก่อนแล้วเลือก source ให้ · **ไม่รันเอง**
+- source id หาจากชื่อ `asset.querySource` ใน `GET /v1/sources` (key `['sources']` เดียวกับหน้า Query → fetch ครั้งเดียว) · ไม่มี `querySource` ไม่ fetch · หาไม่เจอ → ส่ง SQL ไปโดยไม่ระบุ source (หน้า Query เลือกเองถ้ามี source เดียว)
+- ชื่อตาราง = 2 segment ท้ายของ FQN แบบเดียวกับ SchemaExplorer (proxy ไม่รับชื่อตารางเปล่า)
+- คู่มือ *A table's page* แก้ตามแล้ว (NokRak ตอบจากคู่มือ)
+- jest: `AssetRequestAccess.test` +2 (ปุ่ม Query แทนป้าย · กดแล้วส่ง SQL + source ถูกตัว · ไม่มี source ก็ยังเปิด) → **723 ผ่าน** · ไม่มีการแก้ backend
+
+### งานที่พักไว้ (ยังไม่ commit ใน working tree)
+- **M15 (ก) Explain a policy** — backend แก้แล้ว compile ผ่าน แต่ยังไม่มี test / frontend: `Feature.EXPLAIN_POLICY` · `AssistPrompts.policyForExplaining / explainPolicySystem / explainPolicyUser` · `POST /v1/llm/assist/explain-policy` · `LlmAssistResource.PolicyReading` · DacApplication ส่ง `PolicyOverview` ตัวเดียวกับ PolicyResource
+
+## รอบก่อนหน้า — **ข้อ CG: เปลี่ยนรหัสผ่านเองได้ + บังคับเปลี่ยนเมื่อรหัสผ่านถูก admin ตั้ง (M2 · FR-2.2)**
 
 ทำต่อจาก milestone ที่ค้าง: `local_credential.must_change` มีมาตั้งแต่แรก (bootstrap · สร้างบัญชี · admin reset ตั้งเป็น true ทุกทาง) แต่ไม่มีหน้าไหนใช้ และคู่มือบอกว่า "ยังไม่มีหน้าเปลี่ยนรหัสผ่านเอง"
 

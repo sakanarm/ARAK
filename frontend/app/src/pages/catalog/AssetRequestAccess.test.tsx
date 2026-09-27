@@ -3,9 +3,21 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { MemoryRouter } from 'react-router-dom';
 import { AssetAccessAction, AssetStanding } from './AssetRequestAccess';
 import type { Eligibility } from '../../api/accessRequests';
+import { useAssistStore } from '../../assist/assistStore';
 
 const fetchEligibility = jest.fn();
 const requestAccess = jest.fn();
+const fetchSources = jest.fn();
+const mockNavigate = jest.fn();
+
+jest.mock('react-router-dom', () => ({
+  ...jest.requireActual('react-router-dom'),
+  useNavigate: () => mockNavigate,
+}));
+
+jest.mock('../../api/sources', () => ({
+  fetchSources: (...args: unknown[]) => fetchSources(...args),
+}));
 
 jest.mock('../../api/accessRequests', () => {
   const actual = jest.requireActual('../../api/accessRequests');
@@ -34,14 +46,14 @@ function eligibility(overrides: Partial<Eligibility> = {}): Eligibility {
   };
 }
 
-function renderBox(assetType = 'TABLE', Component = AssetAccessAction) {
+function renderBox(assetType = 'TABLE', Component = AssetAccessAction, querySource?: string) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
   return render(
     <QueryClientProvider client={client}>
       <MemoryRouter>
-        <Component asset={{ fqn: FQN, assetType }} />
+        <Component asset={{ fqn: FQN, assetType, querySource }} />
       </MemoryRouter>
     </QueryClientProvider>
   );
@@ -50,6 +62,9 @@ function renderBox(assetType = 'TABLE', Component = AssetAccessAction) {
 beforeEach(() => {
   fetchEligibility.mockReset();
   requestAccess.mockReset();
+  fetchSources.mockReset();
+  mockNavigate.mockReset();
+  useAssistStore.setState({ sql: null });
 });
 
 describe('AssetAccessAction', () => {
@@ -146,12 +161,50 @@ describe('AssetAccessAction', () => {
     expect(requestAccess).not.toHaveBeenCalled();
   });
 
-  it('says so quietly for somebody who can already read it', async () => {
+  it('offers Query to somebody who can already read it, not a second badge', async () => {
     fetchEligibility.mockResolvedValue(eligibility({ readable: true }));
     renderBox();
 
-    expect(await screen.findByText('You can read this')).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Query' })).toBeInTheDocument();
+    expect(screen.queryByText('You can read this')).toBeNull();
     expect(screen.queryByRole('button', { name: 'Request access' })).toBeNull();
+  });
+
+  it('opens the console on the table and its source, without running anything', async () => {
+    fetchEligibility.mockResolvedValue(eligibility({ readable: true }));
+    fetchSources.mockResolvedValue([
+      { id: 'src-other', name: 'another-source' },
+      { id: 'src-1', name: 'demo-pg' },
+    ]);
+    renderBox('TABLE', AssetAccessAction, 'demo-pg');
+
+    const query = await screen.findByRole('button', { name: 'Query' });
+    // Pressed until the source list has landed, as a person pressing after
+    // the page settles would find it.
+    await waitFor(() => {
+      fireEvent.click(query);
+      expect(useAssistStore.getState().sql?.sourceId).toBe('src-1');
+    });
+
+    expect(useAssistStore.getState().sql).toMatchObject({
+      text: 'SELECT *\nFROM sales.customer',
+      sourceId: 'src-1',
+    });
+    expect(mockNavigate).toHaveBeenCalledWith('/query');
+  });
+
+  it('still opens the console when the source is not one it can name', async () => {
+    fetchEligibility.mockResolvedValue(eligibility({ readable: true }));
+    renderBox();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Query' }));
+
+    expect(fetchSources).not.toHaveBeenCalled();
+    expect(useAssistStore.getState().sql).toMatchObject({
+      text: 'SELECT *\nFROM sales.customer',
+      sourceId: null,
+    });
+    expect(mockNavigate).toHaveBeenCalledWith('/query');
   });
 
   it('links to the open request instead of offering a second', async () => {
@@ -201,7 +254,7 @@ describe('AssetAccessAction', () => {
 
     expect(await screen.findByText('Not connected — nothing to query yet')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Request access' })).toBeNull();
-    expect(screen.queryByText('You can read this')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Query' })).toBeNull();
   });
 
   it('draws nothing when refused with no reason it may say', async () => {

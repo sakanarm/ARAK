@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { useNavigate } from 'react-router-dom';
 import { Dialog, Heading, Modal, ModalOverlay } from 'react-aria-components';
 import { Button } from '@openmetadata/ui-core-components/components/base/buttons/button';
-import { CheckCircle, Clock, Send01 } from '@untitledui/icons';
+import { Clock, SearchRefraction, Send01 } from '@untitledui/icons';
 import {
   fetchEligibility,
   type AccessRequest,
@@ -11,13 +12,16 @@ import {
   type Refusal,
 } from '../../api/accessRequests';
 import type { AssetSummary } from '../../api/client';
+import { fetchSources } from '../../api/sources';
+import { useAssistStore } from '../../assist/assistStore';
+import { segments } from '../../lib/fqn';
 import { canAsk, RequestAccessForm, RequestedNote } from '../query/RequestAccess';
 import { AccessBadge } from './reach';
 
 /** Only these hold rows a grant can open; a schema or a service has none. */
 const REQUESTABLE_TYPES = new Set(['TABLE', 'VIEW']);
 
-type Asset = Pick<AssetSummary, 'fqn' | 'assetType'>;
+type Asset = Pick<AssetSummary, 'fqn' | 'assetType'> & Pick<Partial<AssetSummary>, 'querySource'>;
 
 /**
  * Where the caller stands on this table, asked once for the header and the
@@ -36,6 +40,44 @@ function useEligibility(asset: Asset) {
 }
 
 /**
+ * "Query", for somebody the table already lets in: the console, on the source
+ * the table is connected through, with a statement over the table in the
+ * editor. Nothing runs until they press Run there, and what comes back is
+ * whatever their masks and row filters leave, as for any other query.
+ *
+ * <p>The source list is the console's own, by its key, so it is fetched once
+ * for the two. Should the source not be found by name, the statement goes
+ * without it and the console's own choice stands.
+ */
+function QueryThisTable({ asset }: { asset: Asset }) {
+  const navigate = useNavigate();
+  const deliverSql = useAssistStore((state) => state.deliverSql);
+  const { data: sources } = useQuery({
+    queryKey: ['sources'],
+    queryFn: fetchSources,
+    enabled: Boolean(asset.querySource),
+    staleTime: 60_000,
+  });
+
+  return (
+    <Button
+      color="primary"
+      iconLeading={SearchRefraction}
+      onPress={() => {
+        const sourceId =
+          sources?.find((source) => source.name === asset.querySource)?.id ?? null;
+        // Schema-qualified, as the console's explorer inserts it: the proxy
+        // refuses a bare table name rather than guess the schema.
+        deliverSql(`SELECT *\nFROM ${segments(asset.fqn).slice(-2).join('.')}`, sourceId);
+        navigate('/query');
+      }}
+      size="sm">
+      Query
+    </Button>
+  );
+}
+
+/**
  * "Request access", in the header of a table the reader cannot read.
  *
  * <p>At the top right, beside the other things one does to an asset, because
@@ -46,8 +88,8 @@ function useEligibility(asset: Asset) {
  *
  * <p>The server decides every state -- connected, readable, whether a grant
  * would be enough, who decides, an open request -- so the header says only
- * what it was told: a grey "Not connected" note, a quiet "You can read this",
- * a link to the open request, or the button. The button is there even when a
+ * what it was told: a grey "Not connected" note, a Query button, a link to
+ * the open request, or the Request access button. The button is there even when a
  * policy would still refuse after a grant: the request is sent all the same,
  * and the form says a policy may have to change too. Nothing while the answer
  * is still coming or could not be had.
@@ -75,12 +117,7 @@ export function AssetAccessAction({ asset }: { asset: Asset }) {
   }
 
   if (data.readable) {
-    return (
-      <span className="tw:inline-flex tw:items-center tw:gap-1.5 tw:rounded-md tw:bg-utility-success-50 tw:px-2.5 tw:py-1.5 tw:text-sm tw:font-medium tw:text-utility-success-700">
-        <CheckCircle aria-hidden className="tw:size-4" />
-        You can read this
-      </span>
-    );
+    return <QueryThisTable asset={asset} />;
   }
 
   const refusal = asRefusal(data);

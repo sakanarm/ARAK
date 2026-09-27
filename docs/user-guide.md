@@ -159,10 +159,17 @@ Open a table from the catalogue to see its page. The header shows its location
 - **Access** and **Audit**: shown to the table's owners and stewards and to
   auditors. See the sections on the Access tab and on grants.
 
-The button at the top right of the header tells you where you stand: *You can
-read this*, *Access requested* (you already have an open request), **Request
-access**, or a lock with the name of the policy that blocks you when no grant
-could help.
+The badge at the top right says where you stand (*You can query*, *You
+requested access*, *You can request*, *You have no access*), and the button
+beside it is what you can do about it:
+
+- **Query** when you can already read the table. It opens the Query page on
+  the source the table is connected through, with `SELECT * FROM
+  <schema>.<table>` in the editor. Nothing runs until you press **Run**, and
+  the result is what your masks and row filters leave, as for any query.
+- **Access requested** when you already have an open request; it opens
+  **Requests**.
+- **Request access** when you cannot read it yet.
 
 ### Column descriptions
 
