@@ -290,4 +290,38 @@ class StewardshipGuardsTest {
       verify(views).state(OWNED);
     }
   }
+
+  @Nested
+  class DirectAccess {
+    final com.mfec.dac.enforcement.DirectAccessService service =
+        mock(com.mfec.dac.enforcement.DirectAccessService.class);
+    final DirectAccessResource resource = new DirectAccessResource(service);
+
+    DirectAccessResource.Target on(String fqn) {
+      return new DirectAccessResource.Target(fqn);
+    }
+
+    @Test
+    @DisplayName("who reads a table at the source is for its stewards and auditors only")
+    void guarded() {
+      assertThatThrownBy(() -> resource.check(on(OWNED), as(REQUESTER), null))
+          .isInstanceOf(ForbiddenException.class);
+      assertThatThrownBy(() -> resource.check(on(ELSEWHERE), as(SALES_OWNER), null))
+          .isInstanceOf(ForbiddenException.class);
+      verify(service, never()).check(anyString(), anyString(), any());
+
+      resource.check(on(OWNED), as(SALES_OWNER), null);
+      resource.check(on(ELSEWHERE), as(AUDITOR), null);
+      resource.check(on(ELSEWHERE), as(ADMIN), null);
+      verify(service).check(OWNED, "sales_owner", null);
+      verify(service).check(ELSEWHERE, "auditor", null);
+    }
+
+    @Test
+    @DisplayName("a check with no table is a bad request")
+    void needsATable() {
+      assertThatThrownBy(() -> resource.check(on(" "), as(ADMIN), null))
+          .isInstanceOf(BadRequestException.class);
+    }
+  }
 }

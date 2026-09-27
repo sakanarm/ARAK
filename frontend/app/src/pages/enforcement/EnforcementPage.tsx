@@ -560,6 +560,8 @@ function actionLabel(action: string): string {
       return 'Dry run';
     case 'APPLY':
       return 'Apply';
+    case 'DIRECT_ACCESS_CHECK':
+      return 'Direct access check';
     default:
       return 'Roll back';
   }

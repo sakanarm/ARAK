@@ -256,3 +256,46 @@ export async function fetchExpiringGrants(
   );
   return data;
 }
+
+/** One principal that can read a table at the source without ARAK (FR-6.3.1). */
+export interface DirectHolder {
+  name: string;
+  /** False for a role nobody logs in as; `members` are the logins that inherit it. */
+  login: boolean;
+  /** OWNER, GRANT, COLUMN, PUBLIC, SUPERUSER, READ_ALL_DATA, SCHEMA, DATABASE, ROLE …, SYSADMIN. */
+  via: string[];
+  members: string[];
+  memberCount: number;
+  /** The login ARAK itself connects as, which is meant to hold the table. */
+  self: boolean;
+}
+
+export type DirectVerdict = 'EXPOSED' | 'CLOSED' | 'OPEN' | 'NOT_FOUND';
+
+export interface DirectAccessCheck {
+  assetFqn: string;
+  source: string;
+  engine: string;
+  mode: string;
+  secureViewInstalled: boolean;
+  /** Whether the mode relies on the base table being shut to everyone else. */
+  guarded: boolean;
+  schema: string;
+  table: string;
+  connectedAs: string | null;
+  holders: DirectHolder[];
+  /** Holders that are not ARAK's own login. */
+  bypass: number;
+  verdict: DirectVerdict;
+  message: string;
+  checkedAt: string;
+  millis: number;
+}
+
+/** Asks the source who can read this table around ARAK. Read-only, and audited. */
+export async function checkDirectAccess(assetFqn: string): Promise<DirectAccessCheck> {
+  const { data } = await apiClient.post<DirectAccessCheck>('/v1/direct-access/check', {
+    assetFqn,
+  });
+  return data;
+}

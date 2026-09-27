@@ -291,13 +291,14 @@ conf/dac.yml                 config เดียวที่ commit — ใช�
 - **FR-6.0a** เลือกโหมดได้ต่อ source/asset และ **ผสมกันได้** (เช่น RLS ด้วย 5.1.1 + masking ด้วย 5.1.2) ⬜
 - **FR-6.0b** **Capability matrix** ต่อ engine/เวอร์ชัน + เตือนตอนเลือกโหมดว่า policy ข้อไหน enforce ไม่ได้ ⬜ (ตาราง `engine_capability` มีแล้ว)
 - **FR-6.0c** **Cross-mode consistency** — asset+policy เดียวกัน 3 โหมดต้องได้ผลเหมือนกันทุก byte + test ใน CI ⬜ (M7b)
+- **FR-6.3.1** **Direct-access detector** ✅ — ปุ่ม *Check at the source* ใน tab Access ของ table (`POST /v1/direct-access/check`) ถาม permission ของ source เองว่าใครอ่าน table ได้โดยไม่ผ่าน ARAK: PG = owner · GRANT บน table · GRANT ระดับ column · PUBLIC · superuser · `pg_read_all_data` (ต้องมี USAGE บน schema ด้วยถึงนับ) · MSSQL = GRANT / CONTROL บน object · column · schema · database · `db_datareader` / `db_owner` · owner · sysadmin (ตัดคนที่โดน DENY ตรงออก) · role ที่ไม่ใช่ login กางสมาชิกที่เป็น login ให้ (สูงสุด 50) · login ของ ARAK เองถูกติดป้าย *ARAK itself* ไม่นับ · ผล: `EXPOSED` (mode PROXY / SECURE_VIEW หรือมี secure view ติดตั้งอยู่ แล้วมีคนอื่นถือ table) · `CLOSED` · `OPEN` (NATIVE_CONFIG / NONE — รายชื่อเป็นข้อมูลเฉยๆ) · `NOT_FOUND` · ไม่อ่านข้อมูลใน table · ไม่แก้สิทธิ์ที่ source (ARAK ไม่ REVOKE ให้เอง) · รันเมื่อกดเท่านั้น และเขียน `audit_enforcement` ทุกครั้ง (V37: action `DIRECT_ACCESS_CHECK` outcome `CHECKED` / `FAILED` / `REFUSED`) · ใครกดได้ = คนที่ดูแล table (`Stewardship.oversees`) + auditor + admin
 - **FR-6.4** Dry-run **เสมอ** · rollback script ทุกครั้ง · **drift detection** ทุก N ชม. · state ต่อ asset: `NOT_ENFORCED / PENDING / APPLIED / DRIFTED / FAILED` ⬜
 
 **ข้อจำกัดที่ต้องบอกผู้ใช้ตรงๆ:**
 - SQL Server DDM mask แบบ conditional ต่อ user ไม่ได้ → **cell masking ทำไม่ได้ในโหมด 5.1.1**
 - SQL Server ต้อง **2022+** ถึงจะ `GRANT UNMASK` ระดับ column ได้ (รุ่นเก่าเป็น db-wide = ใช้จริงไม่ได้) — **ยังไม่ยืนยันเวอร์ชัน production**
 - PostgreSQL ไม่มี column masking ใน core → ต้องลง extension `anon` (managed service หลายเจ้าไม่ให้) — **ยังไม่ยืนยันว่าลงได้ไหม**
-- โหมด 5.2 ถูก bypass ได้ถ้าต่อ DB ตรง → ต้อง firewall + ระบบต้องตรวจและเตือน (FR-6.3.1)
+- โหมด 5.2 ถูก bypass ได้ถ้าต่อ DB ตรง → ต้อง firewall + ระบบต้องตรวจและเตือน (FR-6.3.1 ✅ ตัวตรวจมีแล้ว — firewall ยังเป็นหน้าที่ของ source)
 - โหมด 5.2 เรียก function ได้เฉพาะ built-in ที่คำนวณจากค่าที่ส่งเข้าไป (allow-list ต่อ engine ใน `ProxyFunctions`) · function นอกรายการ ชื่อที่มี schema นำหน้า `{fn ...}` sequence และ session variable ถูกปฏิเสธ เพราะ statement รันในนาม account ของ source และ function ที่รัน SQL จากข้อความ proxy มองไม่เห็นว่าอ่านตารางอะไร · ทุก reference ของตารางใน statement ต้องเป็นตัวที่ถูก rewrite แล้ว (เทียบ identity ทั้งต้นไม้ ไม่ใช่ชื่อ)
 
 ### FR-7 Manual Grant (Phase 1) — M8 ✅ เสร็จ (grant ตรง + auto-revoke + audit trail + หน้าจอ)
@@ -458,7 +459,7 @@ login ด้วย **PAT / service account** (M14) ไม่ใช่รหั�
 | **M4** | Policy Authoring UI (global + local builder, data policy builder, หน้า effective policy, view-as-user, impact analysis) | 4 wk | ✅ **เสร็จ** |
 | **M5** | **5.1.2 Secure View** — ViewCompiler + dialect · `row_entitlement` maintainer · `DbPrincipalProvisioner` · cutover helper · dry-run/rollback · golden-file + Testcontainers | 4 wk | 🚧 **~85%** |
 | **M6** | **5.1.1 Push config** — PG `CREATE POLICY` + column GRANT + `anon` · MSSQL `CREATE SECURITY POLICY` + granular UNMASK + `CREATE USER FROM EXTERNAL PROVIDER` · capability matrix · **ไม่ทำ DDM** (FR-6.2a) | 3 wk | ⏸️ **ON HOLD** (ผู้ใช้สั่ง 2026-09-24) |
-| **M7** | **5.2a Query API** — JSqlParser rewrite · table resolution (CTE/sub-query/`SELECT *`) · fail-closed · stream · row limit/timeout · direct-access detector | 3 wk | 🚧 **~80%** — เหลือ direct-access detector · result cache |
+| **M7** | **5.2a Query API** — JSqlParser rewrite · table resolution (CTE/sub-query/`SELECT *`) · fail-closed · stream · row limit/timeout · direct-access detector | 3 wk | 🚧 **~90%** — direct-access detector ✅ (FR-6.3.1) · เหลือ result cache |
 | **M7b** | Cross-mode consistency harness + CI | 1 wk | ⬜ ต้องมี M5 / M6 ก่อน |
 | **M8** | Audit 3 ตาราง · DriftDetector + re-apply · manual grant + auto-revoke · compliance report · metrics · Vault | 3 wk | 🚧 **~35%** |
 | **M9** | Access Request Management (FR-11) — ขอสิทธิ์ · workflow หลาย step · inbox · review · Dashboard ใกล้หมดสิทธิ์ · สถิติต่อ table · **ไฟล์แนบ** | – | 🚧 **~75%** — เหลือไฟล์แนบ · recertification · break-glass · email / Teams |

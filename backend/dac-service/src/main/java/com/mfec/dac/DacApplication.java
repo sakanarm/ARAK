@@ -73,8 +73,10 @@ import com.mfec.dac.policy.QueryService;
 import com.mfec.dac.resources.ExpressionResource;
 import com.mfec.dac.resources.DecisionResource;
 import com.mfec.dac.resources.QueryResource;
+import com.mfec.dac.resources.DirectAccessResource;
 import com.mfec.dac.resources.EnforcementResource;
 import com.mfec.dac.enforcement.AppDbEntitlementSource;
+import com.mfec.dac.enforcement.DirectAccessService;
 import com.mfec.dac.enforcement.EnforcementStateStore;
 import com.mfec.dac.enforcement.ReviewedPlans;
 import com.mfec.dac.enforcement.SecureViewService;
@@ -96,6 +98,7 @@ import com.mfec.dac.resources.PrincipalResource;
 import com.mfec.dac.resources.SourceResource;
 import com.mfec.dac.source.DataSourceStore;
 import com.mfec.dac.source.jdbc.CredentialResolver;
+import com.mfec.dac.source.jdbc.DirectAccessReader;
 import com.mfec.dac.source.jdbc.SourceProbe;
 import com.mfec.dac.resources.SyncResource;
 import com.mfec.dac.resources.SystemResource;
@@ -454,17 +457,25 @@ public class DacApplication extends Application<DacConfiguration> {
     // connection: a second one without the Fernet opener would read a stored
     // credential as unresolvable. Reviews are held in this process, which is
     // one PM2 process; a restart forgets them and the dry run is run again.
+    EnforcementStateStore enforcementStates = new EnforcementStateStore(jdbi);
+    SecureViewService secureViews =
+        new SecureViewService(
+            jdbi,
+            sources,
+            credentials,
+            new SecureViewApplier(),
+            SecureViewService.everyone(jdbi, principalLoader, decisionService),
+            new AppDbEntitlementSource(jdbi),
+            enforcementStates,
+            new ReviewedPlans());
+    environment.jersey().register(new EnforcementResource(secureViews));
+    // Who can read a table at the source around the platform (FR-6.3.1): the
+    // source's catalogue, on the same resolver and a read-only connection.
+    DirectAccessReader directAccess = new DirectAccessReader(credentials, 10);
     environment.jersey().register(
-        new EnforcementResource(
-            new SecureViewService(
-                jdbi,
-                sources,
-                credentials,
-                new SecureViewApplier(),
-                SecureViewService.everyone(jdbi, principalLoader, decisionService),
-                new AppDbEntitlementSource(jdbi),
-                new EnforcementStateStore(jdbi),
-                new ReviewedPlans())));
+        new DirectAccessResource(
+            new DirectAccessService(
+                secureViews, directAccess::read, enforcementStates, java.time.Clock.systemUTC())));
     // Registered before the auth filter for no reason other than reading order;
     // the filter is a @Secured name binding and this resource carries no
     // annotation, so it is never in its path. Its authentication is the HMAC.

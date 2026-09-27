@@ -164,7 +164,7 @@ public class EnforcementResource {
   }
 
   /** The service's four refusals, as the statuses a client can act on. */
-  private static RuntimeException translate(RuntimeException e) {
+  static RuntimeException translate(RuntimeException e) {
     Response.Status status;
     if (e instanceof SecureViewService.NotFoundException) {
       status = Response.Status.NOT_FOUND;

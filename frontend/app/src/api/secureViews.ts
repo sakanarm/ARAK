@@ -111,8 +111,15 @@ export interface EnforcementAuditEntry {
   id: number;
   occurredAt: string;
   actor: string;
-  action: 'DRY_RUN' | 'APPLY' | 'ROLLBACK';
-  outcome: 'REVIEWED' | 'APPLIED' | 'ROLLED_BACK' | 'STALE' | 'FAILED' | 'REFUSED';
+  action: 'DRY_RUN' | 'APPLY' | 'ROLLBACK' | 'DIRECT_ACCESS_CHECK';
+  outcome:
+    | 'REVIEWED'
+    | 'APPLIED'
+    | 'ROLLED_BACK'
+    | 'STALE'
+    | 'FAILED'
+    | 'REFUSED'
+    | 'CHECKED';
   reviewId: string | null;
   statements: number | null;
   rowsInserted: number | null;

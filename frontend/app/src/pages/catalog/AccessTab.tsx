@@ -23,6 +23,7 @@ import { apiErrorMessage } from '../../api/client';
 import { Panel } from './panels';
 import { GrantDialog } from './GrantDialog';
 import { AccessDecision } from './AccessDecision';
+import { DirectAccessPanel } from './DirectAccessPanel';
 import { useAuthStore } from '../../auth/authStore';
 import { governs } from '../../auth/stewardship';
 
@@ -203,6 +204,8 @@ export function AccessTab({ fqn }: { fqn: string }) {
           </p>
         )}
       </Panel>
+
+      <DirectAccessPanel fqn={fqn} />
 
       <GrantDialog
         assetFqn={fqn}

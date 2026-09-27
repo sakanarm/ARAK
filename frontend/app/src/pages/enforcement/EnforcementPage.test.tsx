@@ -214,6 +214,34 @@ describe('EnforcementPage', () => {
     expect(screen.queryByRole('button', { name: 'Roll back' })).not.toBeInTheDocument();
   });
 
+  it('names a direct access check in the history for what it is', async () => {
+    history.mockResolvedValue({
+      assetFqn: 'demo-pg.salesdb.sales.customer',
+      state: null,
+      history: [
+        {
+          id: 7,
+          occurredAt: '2026-09-27T08:00:00Z',
+          actor: 'owner',
+          action: 'DIRECT_ACCESS_CHECK',
+          outcome: 'CHECKED',
+          reviewId: null,
+          statements: null,
+          rowsInserted: null,
+          rowsDeleted: null,
+          detail: 'EXPOSED: 2 holders, 1 outside the platform',
+        },
+      ],
+    });
+    renderPage();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'History' }));
+
+    expect(await screen.findByText('Direct access check')).toBeInTheDocument();
+    expect(screen.getByText('checked')).toBeInTheDocument();
+    expect(screen.getByText('EXPOSED: 2 holders, 1 outside the platform')).toBeInTheDocument();
+  });
+
   it('passes the search to the server', async () => {
     renderPage();
     await screen.findByText('customer');
