@@ -22,3 +22,12 @@ export function governs(user: SessionUser | null | undefined, fqn: string): bool
     return Boolean(owned) && (target === owned || target.startsWith(`${owned}.`));
   });
 }
+
+/**
+ * Whether this person may see who reaches a table, and how that changed: whoever
+ * governs it, and auditors. The server's {@code Stewardship.oversees}; it
+ * refuses everybody else, so the page does not offer them the tab.
+ */
+export function oversees(user: SessionUser | null | undefined, fqn: string): boolean {
+  return governs(user, fqn) || (user?.roles ?? []).includes('AUDITOR');
+}

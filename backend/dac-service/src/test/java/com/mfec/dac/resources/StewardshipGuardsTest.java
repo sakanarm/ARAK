@@ -63,6 +63,42 @@ class StewardshipGuardsTest {
   }
 
   @Nested
+  class WhoCanReach {
+    final AccessQuery access = mock(AccessQuery.class);
+    final GrantStore grants = mock(GrantStore.class);
+    final AccessResource resource = new AccessResource(access, grants);
+
+    @Test
+    @DisplayName("a requester sees neither who can reach a table nor its grant history")
+    void notARequester() {
+      assertThatThrownBy(() -> resource.onAsset(OWNED, as(REQUESTER)))
+          .isInstanceOf(ForbiddenException.class);
+      assertThatThrownBy(() -> resource.history(OWNED, 100, as(REQUESTER)))
+          .isInstanceOf(ForbiddenException.class);
+      verify(access, never()).onAsset(anyString());
+      verify(grants, never()).historyFor(anyString(), anyInt());
+    }
+
+    @Test
+    @DisplayName("a data owner sees it for a table they own, and not for one they do not")
+    void theOwner() {
+      resource.onAsset(OWNED, as(SALES_OWNER));
+      verify(access).onAsset(OWNED);
+      assertThatThrownBy(() -> resource.onAsset(ELSEWHERE, as(SALES_OWNER)))
+          .isInstanceOf(ForbiddenException.class);
+    }
+
+    @Test
+    @DisplayName("an administrator and an auditor see it for any table")
+    void adminAndAuditor() {
+      resource.onAsset(ELSEWHERE, as(ADMIN));
+      resource.history(ELSEWHERE, 100, as(AUDITOR));
+      verify(access).onAsset(ELSEWHERE);
+      verify(grants).historyFor(ELSEWHERE, 100);
+    }
+  }
+
+  @Nested
   class Grants {
     final GrantStore grants = mock(GrantStore.class);
     final AccessResource resource = new AccessResource(mock(AccessQuery.class), grants);

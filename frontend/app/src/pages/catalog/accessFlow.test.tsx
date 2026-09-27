@@ -1,10 +1,11 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import type { GrantAccess } from '../../api/access';
 import type { AppliedPolicy, StoredPolicy } from '../../api/policies';
 import { AccessDecision } from './AccessDecision';
 import { accessFlow } from './accessFlow';
+import { DATA, DENIED, DENIES, EXIT, accessDiagram } from './accessDiagram';
 
 const fetchPoliciesForAsset = jest.fn();
 
@@ -141,10 +142,47 @@ describe('the access decision for one table', () => {
     const flow = accessFlow([], [grant({ live: false })]);
     expect(flow.steps[0].title).toBe('Nothing opens this table');
     expect(flow.exitTone).toBe('deny');
-    expect(flow.layers).toEqual([]);
   });
 
-  it('draws the layers as a diagram, and each policy links to its page', async () => {
+  it('draws denies as one node, a node per allow layer, and data policies as one', () => {
+    const { nodes, edges, steps } = accessDiagram(
+      accessFlow([MASK_AMOUNT, ALLOW_BUYERS, DENY_CONTRACTORS, ALLOW_FINANCE], [grant()])
+    );
+    const tasks = nodes.filter((node) => node.kind === 'task').map((node) => node.id);
+    expect(tasks).toEqual([DENIES, 'gate-ORG', 'gate-TABLE', DATA]);
+
+    // Every way to be refused runs down to the one Denied end, past the last check.
+    const refused = edges.filter((edge) => edge.to === DENIED);
+    expect(refused.map((edge) => [edge.from, edge.label])).toEqual([
+      [DENIES, 'Yes'],
+      ['gate-ORG', 'No'],
+      ['gate-TABLE', 'No'],
+    ]);
+    const denied = nodes.find((node) => node.id === DENIED)!;
+    expect(denied.column).toBe(nodes.find((node) => node.id === DATA)!.column);
+    expect(edges.find((edge) => edge.from === DENIES && edge.to === 'gate-ORG')?.label).toBe('No');
+
+    // A gate a grant can get past says so, first.
+    const table = nodes.find((node) => node.id === 'gate-TABLE')!;
+    expect(table.lines?.[0]).toEqual({
+      text: 'A direct grant or a narrower layer can let them past',
+      caution: true,
+    });
+    expect(nodes.find((node) => node.id === DATA)?.lines?.[0].text).toBe(
+      'Mask PO amounts · in the team Procurement'
+    );
+    expect(nodes.find((node) => node.id === EXIT)?.tone).toBe('warning');
+    expect(steps[DATA].map((step) => step.id)).toEqual(['data-mask-amount']);
+  });
+
+  it('ends without a Denied lane when nothing opens the table', () => {
+    const { nodes, edges } = accessDiagram(accessFlow([], []));
+    expect(nodes.some((node) => node.id === DENIED)).toBe(false);
+    expect(edges.at(-1)).toEqual({ from: 'grants', to: EXIT });
+    expect(nodes.find((node) => node.id === EXIT)?.tone).toBe('error');
+  });
+
+  it('draws the decision on a canvas, a click opens a step in full, and the flowchart is a toggle away', async () => {
     fetchPoliciesForAsset.mockResolvedValue([ALLOW_FINANCE, MASK_AMOUNT]);
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     render(
@@ -155,17 +193,27 @@ describe('the access decision for one table', () => {
       </QueryClientProvider>
     );
 
-    expect(await screen.findByText('Someone asks to read this table')).toBeInTheDocument();
+    expect(
+      await screen.findByRole('figure', { name: 'How access to this table is decided' })
+    ).toBeInTheDocument();
+    expect(screen.getByText('Read requested')).toBeInTheDocument();
+    expect(screen.getByText('What they see')).toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'The step, in full' })).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: /What they see/ }));
+    const detail = screen.getByRole('region', { name: 'The step, in full' });
+    expect(within(detail).getByRole('link', { name: 'Mask PO amounts' })).toHaveAttribute(
+      'href',
+      '/policies/mask-amount'
+    );
+    expect(within(detail).getByText('Apply these restrictions, then carry on')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Flowchart' }));
+    expect(screen.getByText('Someone asks to read this table')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Finance reads finance' })).toHaveAttribute(
       'href',
       '/policies/allow-finance'
     );
-
-    fireEvent.click(screen.getByRole('button', { name: 'Diagram' }));
-    expect(screen.getByRole('button', { name: 'Diagram' })).toHaveAttribute('aria-pressed', 'true');
-    expect(screen.getByText('1. Organisation')).toBeInTheDocument();
-    expect(screen.getByText(/^3\. Table/)).toBeInTheDocument();
-    expect(screen.getByText('restricts amount')).toBeInTheDocument();
     expect(fetchPoliciesForAsset).toHaveBeenCalledWith(FQN);
   });
 });

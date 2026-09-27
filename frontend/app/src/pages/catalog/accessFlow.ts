@@ -56,6 +56,10 @@ export interface DecisionStep {
   noTone?: 'deny' | 'allow' | 'skip';
   /** A policy to open, when the step is one policy. */
   policyId?: string;
+  /** Whom the step is about, in words, for a line on the diagram. */
+  who?: string;
+  /** A gate a more specific layer or a direct grant can get somebody past. */
+  passable?: boolean;
 }
 
 export interface DecisionFlow {
@@ -63,23 +67,6 @@ export interface DecisionFlow {
   /** Where somebody who passed every check ends up. */
   exit: string;
   exitTone: 'allow' | 'restrict' | 'deny';
-  /** Every layer and what sits in it, for the diagram view. */
-  layers: DiagramLayer[];
-}
-
-export interface DiagramLayer {
-  key: string;
-  label: string;
-  entries: DiagramEntry[];
-}
-
-export interface DiagramEntry {
-  id: string;
-  name: string;
-  kind: 'deny' | 'allow' | 'grant' | 'data';
-  who: string;
-  what?: string;
-  policyId?: string;
 }
 
 const LEVEL_ORDER = ['ORG', 'DOMAIN', 'SERVICE', 'DATABASE', 'SCHEMA', 'TABLE', 'COLUMN'];
@@ -175,6 +162,7 @@ export function accessFlow(applied: AppliedPolicy[], grants: GrantAccess[]): Dec
         : 'Denied. A deny beats every allow and every grant.',
       yesTone: 'deny',
       policyId: policy.id,
+      who: describeSubject(document.subject),
     });
   }
 
@@ -208,6 +196,8 @@ export function accessFlow(applied: AppliedPolicy[], grants: GrantAccess[]): Dec
         : 'Denied. Every layer must allow, and this one does not let a grant past it.',
       noTone: 'deny',
       policyId: members.length === 1 ? members[0].policy.id : undefined,
+      who: members.map(({ policy }) => describeSubject(policy.document.subject)).join(' or '),
+      passable: relaxable,
     });
   }
 
@@ -248,6 +238,7 @@ export function accessFlow(applied: AppliedPolicy[], grants: GrantAccess[]): Dec
       no: document.subject ? 'This policy is skipped for them' : undefined,
       noTone: 'skip',
       policyId: entry.policy.id,
+      who: document.subject ? describeSubject(document.subject) : 'everyone',
     });
   }
 
@@ -259,43 +250,6 @@ export function accessFlow(applied: AppliedPolicy[], grants: GrantAccess[]): Dec
       ? 'They read the table, with every restriction that applied — row filters ANDed, the strictest mask on each column'
       : 'They read the table in full';
 
-  return { steps, exit, exitTone, layers: diagram(applied, live) };
+  return { steps, exit, exitTone };
 }
 
-function diagram(applied: AppliedPolicy[], live: GrantAccess[]): DiagramLayer[] {
-  const layers = new Map<string, DiagramLayer>();
-  const add = (key: string, label: string, entry: DiagramEntry) => {
-    const layer = layers.get(key) ?? { key, label, entries: [] };
-    layer.entries.push(entry);
-    layers.set(key, layer);
-  };
-  for (const entry of applied) {
-    const document = entry.policy.document;
-    const kind =
-      document.policyType === 'DATA' ? 'data' : document.effect === 'DENY' ? 'deny' : 'allow';
-    const columns = columnsReached(entry);
-    add(layerKey(document), layerLabel(document), {
-      id: entry.policy.id,
-      name: nameOf(document),
-      kind,
-      who: describeSubject(document.subject),
-      what:
-        kind === 'data'
-          ? columns.length
-            ? `restricts ${columns.join(', ')}`
-            : `${document.data?.rowFilters?.length ?? 0} row filter(s)`
-          : undefined,
-      policyId: entry.policy.id,
-    });
-  }
-  for (const grant of live) {
-    add('TABLE', 'Table', {
-      id: `grant-${grant.id}`,
-      name: 'Direct grant',
-      kind: 'grant',
-      who: grantWho(grant),
-      what: grant.validUntil ? `until ${grant.validUntil.slice(0, 10)}` : 'no expiry',
-    });
-  }
-  return [...layers.values()].sort((a, b) => layerRank(a.key) - layerRank(b.key));
-}

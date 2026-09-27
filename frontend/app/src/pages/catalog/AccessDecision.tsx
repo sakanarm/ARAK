@@ -4,16 +4,13 @@ import { Link } from 'react-router-dom';
 import type { GrantAccess } from '../../api/access';
 import { apiErrorMessage } from '../../api/client';
 import { fetchPoliciesForAsset } from '../../api/policies';
-import {
-  accessFlow,
-  type DecisionStep,
-  type DiagramEntry,
-  type DiagramLayer,
-} from './accessFlow';
+import FlowDiagram from '../../components/diagram/FlowDiagram';
+import { accessDiagram } from './accessDiagram';
+import { accessFlow, type DecisionFlow, type DecisionStep } from './accessFlow';
 
 /**
- * How a request for this table is decided, as a decision flowchart or as the
- * stack of layers it is decided from.
+ * How a request for this table is decided, drawn on a canvas the way a
+ * policy's own decision is, or as a flowchart read top to bottom.
  *
  * Built only from what the server already says binds here, so the chart can
  * be wrong only in the ways the policy list above it would also be wrong.
@@ -34,17 +31,10 @@ const BRANCH_TONE: Record<string, string> = {
   skip: 'tw:border-secondary tw:text-tertiary',
 };
 
-const ENTRY_TONE: Record<DiagramEntry['kind'], { box: string; label: string }> = {
-  deny: { box: 'tw:border-error tw:bg-error-primary', label: 'Deny' },
-  allow: { box: 'tw:border-success tw:bg-success-primary', label: 'Allow' },
-  grant: { box: 'tw:border-brand tw:bg-brand-primary', label: 'Grant' },
-  data: { box: 'tw:border-warning tw:bg-warning-primary', label: 'Data' },
-};
-
-type View = 'flow' | 'layers';
+type View = 'diagram' | 'flow';
 
 export function AccessDecision({ fqn, grants }: { fqn: string; grants: GrantAccess[] }) {
-  const [view, setView] = useState<View>('flow');
+  const [view, setView] = useState<View>('diagram');
   const { data, isLoading, error } = useQuery({
     queryKey: ['asset-policies', fqn],
     queryFn: () => fetchPoliciesForAsset(fqn),
@@ -73,8 +63,8 @@ export function AccessDecision({ fqn, grants }: { fqn: string; grants: GrantAcce
         role="group">
         {(
           [
+            ['diagram', 'Diagram'],
             ['flow', 'Flowchart'],
-            ['layers', 'Diagram'],
           ] as const
         ).map(([key, label]) => (
           <button
@@ -92,7 +82,9 @@ export function AccessDecision({ fqn, grants }: { fqn: string; grants: GrantAcce
         ))}
       </div>
 
-      {view === 'flow' ? (
+      {view === 'diagram' ? (
+        <Canvas flow={flow} />
+      ) : (
         <div className="tw:flex tw:flex-col">
           <Terminal>Someone asks to read this table</Terminal>
           {flow.steps.map((step) => (
@@ -110,8 +102,6 @@ export function AccessDecision({ fqn, grants }: { fqn: string; grants: GrantAcce
           <Down />
           <Terminal tone={flow.exitTone}>{flow.exit}</Terminal>
         </div>
-      ) : (
-        <Layers layers={flow.layers} />
       )}
     </div>
   );
@@ -191,57 +181,52 @@ function StepCard({ step }: { step: DecisionStep }) {
   );
 }
 
-/** Outermost layer on top; each layer has to agree before the next is asked. */
-function Layers({ layers }: { layers: DiagramLayer[] }) {
-  if (!layers.length) {
-    return (
-      <p className="tw:text-sm tw:text-warning-primary">
-        No policy and no grant reaches this table, so nobody can read it.
-      </p>
-    );
-  }
+/**
+ * The canvas, and under it whichever node was clicked, in full: a node shows
+ * three lines, and a table under a dozen policies has more than that.
+ */
+function Canvas({ flow }: { flow: DecisionFlow }) {
+  const [picked, setPicked] = useState<string | null>(null);
+  const { nodes, edges, steps } = accessDiagram(flow);
+  const shown = picked ? steps[picked] : undefined;
+
   return (
-    <ol className="tw:flex tw:flex-col tw:gap-2">
-      {layers.map((layer, index) => (
-        <li
-          className="tw:rounded-xl tw:border tw:border-secondary tw:bg-secondary tw:p-3"
-          key={layer.key}
-          style={{ marginLeft: `${Math.min(index, 6) * 0.75}rem` }}>
-          <p className="tw:text-xs tw:font-semibold tw:uppercase tw:tracking-wide tw:text-quaternary">
-            {index + 1}. {layer.label}
-          </p>
-          <ul className="tw:mt-2 tw:flex tw:flex-wrap tw:gap-2">
-            {layer.entries.map((entry) => {
-              const tone = ENTRY_TONE[entry.kind];
-              const body = (
-                <>
-                  <span className="tw:text-xs tw:font-semibold tw:uppercase">{tone.label}</span>
-                  <span className="tw:text-sm tw:font-medium tw:text-primary">{entry.name}</span>
-                  <span className="tw:text-xs tw:text-secondary">{entry.who}</span>
-                  {entry.what && <span className="tw:text-xs tw:text-tertiary">{entry.what}</span>}
-                </>
-              );
-              return (
-                <li
-                  className={`tw:flex tw:max-w-xs tw:flex-col tw:gap-0.5 tw:rounded-lg tw:border tw:px-3 tw:py-2 ${tone.box}`}
-                  key={entry.id}>
-                  {entry.policyId ? (
-                    <Link className="tw:flex tw:flex-col tw:gap-0.5 tw:hover:underline" to={`/policies/${entry.policyId}`}>
-                      {body}
-                    </Link>
-                  ) : (
-                    body
-                  )}
-                </li>
-              );
-            })}
-          </ul>
-        </li>
-      ))}
-      <li className="tw:pt-1 tw:text-xs tw:text-tertiary">
-        A deny anywhere wins. Every layer with an allow must admit the caller. Data
-        policies then narrow what is read.
-      </li>
-    </ol>
+    <div className="tw:flex tw:flex-col tw:gap-3">
+      <FlowDiagram
+        edges={edges}
+        label="How access to this table is decided"
+        nodes={nodes}
+        onSelect={(id) => setPicked((current) => (current === id ? null : id))}
+        overlay={
+          <span className="tw:inline-flex tw:items-center tw:gap-2 tw:rounded-lg tw:border tw:border-secondary tw:bg-primary tw:px-2.5 tw:py-1 tw:text-xs tw:text-tertiary tw:shadow-xs">
+            <span className="tw:font-semibold tw:text-secondary">Access</span>
+            <span aria-hidden="true">·</span>
+            <span>Click a step to see every policy in it</span>
+          </span>
+        }
+        selected={picked}
+      />
+
+      {shown && (
+        <div aria-label="The step, in full" className="tw:flex tw:flex-col tw:gap-2" role="region">
+          {shown.map((step) => (
+            <div
+              className="tw:grid tw:gap-2 tw:md:grid-cols-[minmax(0,1fr)_minmax(0,18rem)] tw:md:items-start"
+              key={step.id}>
+              <StepCard step={step} />
+              <div className="tw:flex tw:flex-col tw:gap-2 tw:md:self-center">
+                {step.yes && <Branch label="Yes" text={step.yes} tone={step.yesTone} />}
+                {step.no && <Branch label="No" text={step.no} tone={step.noTone} />}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <p className="tw:text-xs tw:text-tertiary">
+        A deny anywhere wins. Every layer with an allow must admit the caller. Data policies then
+        narrow what is read. {flow.exit}.
+      </p>
+    </div>
   );
 }

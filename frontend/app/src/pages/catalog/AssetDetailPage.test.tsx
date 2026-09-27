@@ -8,6 +8,8 @@ import {
 } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import AssetDetailPage from './AssetDetailPage';
+import { useAuthStore } from '../../auth/authStore';
+import type { SessionUser } from '../../auth/session';
 import type { FacetRow } from '../../api/client';
 import type { AppliedPolicy } from '../../api/policies';
 
@@ -32,6 +34,23 @@ jest.mock('./AssetRequestAccess', () => ({
 jest.mock('./LocalTags', () => ({
   LocalTagControl: () => null,
 }));
+
+// The two steward tabs have their own tests; here only whether they are offered.
+jest.mock('./AccessTab', () => ({ AccessTab: () => 'who can reach it' }));
+jest.mock('./AuditTab', () => ({ AuditTab: () => 'grant history' }));
+
+function signIn(roles: string[], scopes: string[] = []) {
+  const user: SessionUser = {
+    id: 'u-1',
+    username: 'someone',
+    email: null,
+    displayName: null,
+    source: 'local',
+    roles,
+    scopes,
+  };
+  useAuthStore.setState({ token: 'token', user, initialising: false });
+}
 
 jest.mock('../../api/policies', () => ({
   fetchPoliciesForAsset: (...args: unknown[]) => fetchPoliciesForAsset(...args),
@@ -182,6 +201,40 @@ beforeEach(() => {
   fetchPoliciesForAsset.mockReset();
   fetchPoliciesForAsset.mockResolvedValue([]);
   fetchAssets.mockReset();
+  signIn(['PLATFORM_ADMIN']);
+});
+
+test('who can reach a table is shown to whoever answers for it, and nobody else', async () => {
+  signIn(['REQUESTER']);
+  renderPage('prod-pg.SalesDB.dbo.customer', 'access');
+
+  // A link straight at the tab opens the overview instead.
+  expect(await screen.findByRole('heading', { name: 'Governance' })).toBeInTheDocument();
+  expect(screen.queryByRole('tab', { name: /Access/ })).not.toBeInTheDocument();
+  expect(screen.queryByRole('tab', { name: /Audit/ })).not.toBeInTheDocument();
+  expect(screen.queryByText('who can reach it')).not.toBeInTheDocument();
+  expect(screen.getByRole('tab', { name: /Policies/ })).toBeInTheDocument();
+});
+
+test.each([
+  ['an administrator', ['PLATFORM_ADMIN'], []],
+  ['a policy author', ['POLICY_AUTHOR'], []],
+  ['the data owner', ['DATA_OWNER'], ['prod-pg.SalesDB']],
+  ['an auditor', ['AUDITOR'], []],
+])('%s sees the Access and Audit tabs', async (_who, roles, scopes) => {
+  signIn(roles, scopes);
+  renderPage('prod-pg.SalesDB.dbo.customer', 'access');
+
+  expect(await screen.findByText('who can reach it')).toBeInTheDocument();
+  expect(screen.getByRole('tab', { name: /Audit/ })).toBeInTheDocument();
+});
+
+test('an owner of somewhere else does not', async () => {
+  signIn(['DATA_OWNER'], ['prod-pg.HRDB']);
+  renderPage('prod-pg.SalesDB.dbo.customer', 'audit');
+
+  expect(await screen.findByRole('heading', { name: 'Governance' })).toBeInTheDocument();
+  expect(screen.queryByText('grant history')).not.toBeInTheDocument();
 });
 
 test('the two kinds of policy are answered separately', async () => {

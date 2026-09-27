@@ -1,6 +1,6 @@
 # HANDOFF — ARAK (Data Access Control Platform)
 
-> อัปเดต: 2026-09-27 · ข้อ BU (FR-1.7 local tag + demo group บน prod) · push ขึ้น origin/main แล้ว · repo https://github.com/sakanarm/ARAK (**public**)
+> อัปเดต: 2026-09-27 · ข้อ BV (tab Access เฉพาะผู้ดูแล + Diagram แบบ canvas) · ข้อ BU (FR-1.7 local tag + demo group บน prod) · push ขึ้น origin/main แล้ว · repo https://github.com/sakanarm/ARAK (**public**)
 >
 > อ่านคู่กับ **[docs/DESIGN.md](docs/DESIGN.md)** — ไฟล์นั้นคือ requirement + feature catalogue + สถานะครบทุกข้อ
 > ไฟล์นี้บอกเฉพาะ "ทำถึงไหน จะไปต่อยังไง อะไรที่ลองแล้วไม่เวิร์ค"
@@ -619,7 +619,21 @@ M25 ทำแยกได้ (profile ผ่าน proxy ที่มีแล�
 
 ---
 
-## รอบนี้ — **ข้อ BU: ติด tag เองใน ARAK (FR-1.7) · ตัวอย่าง group บน prod**
+## รอบนี้ — **ข้อ BV: tab Access ของ table เห็นเฉพาะผู้ดูแล · "How access is decided" วาดแบบ canvas**
+
+ผู้ใช้สั่ง 2026-09-27: *"Tab Access ใน Catalog ของ Table ไม่ให้ user ทั่วไปเห็น ให้เฉพาะคนทำ policy กับ Admin นะ"* · และ Diagram แบบ layer *"ดูอ่านยาก"* อยากได้แบบเดียวกับ Diagram ของหน้า policy
+
+### BV.1 สิทธิ์
+- `GET /v1/access/assets/{fqn}` กับ `GET /v1/access/history/{fqn}` → 403 ถ้าไม่ใช่ `Stewardship.oversees` (admin · policy author · data owner ของ scope นั้น · auditor) · `/v1/access/mine` ยังเปิดให้ทุกคน
+- หน้า table ซ่อน tab **Access** และ **Audit** จากคนอื่น · ลิงก์ `?tab=access` เปิด Overview แทน · frontend `oversees()` ใน `auth/stewardship.ts`
+- data owner กับ auditor รวมอยู่ด้วย (owner ต้องใช้ tab นี้ grant/revoke, auditor ต้องตรวจ) — ถ้าจะตัดออกแก้ `Stewardship.oversees` กับ `oversees()` ที่เดียว
+- test: `StewardshipGuardsTest.WhoCanReach` (3) · `AssetDetailPage.test.tsx` (6 ใหม่)
+
+### BV.2 Diagram
+- `accessDiagram.tsx` สร้าง node/edge ให้ `FlowDiagram` จาก `accessFlow()` ตัวเดิม: Read requested → Deny (รวมเป็น node เดียว) → หนึ่ง node ต่อ layer ที่มี allow (หรือ Direct grants) → What they see (data policy ทั้งหมด) → They read it in full / narrowed · ทุกทาง "ไม่ผ่าน" ลงเส้นประไปที่ **Denied** ด้านล่าง
+- คลิก node → แสดง step เต็มด้านล่าง (ลิงก์ policy + Yes/No) · Diagram เป็นค่าเริ่มต้น, Flowchart ยังอยู่ · มุมมอง layer grid เดิมเอาออก (`diagram()`/`layers` ใน accessFlow ลบแล้ว)
+
+## รอบก่อนหน้า — **ข้อ BU: ติด tag เองใน ARAK (FR-1.7) · ตัวอย่าง group บน prod**
 
 ผู้ใช้อนุญาต *"ติด tag Arak เองก่อนได้"* (ไม่เขียนกลับเข้า OM ของทีม) · แล้วถาม *"ยังไม่เห็นมีตัวอย่าง group ใน Production เลย"*
 

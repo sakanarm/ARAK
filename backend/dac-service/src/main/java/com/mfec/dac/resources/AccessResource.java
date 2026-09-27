@@ -36,11 +36,12 @@ import java.util.UUID;
  * do across the estate"; a data owner standing on one table asks "who can read
  * this, and can I stop them". This resource is the second question.
  *
- * <p>Reading is open to any authenticated caller: an access list is not a
- * secret from the people governed by it, and hiding it is how organisations end
- * up with access nobody reviews. Writing is restricted to the three roles that
- * may change who sees data -- and, for a data owner, only on the tables they
- * own ({@link Stewardship}).
+ * <p>Who can reach a table, and how that changed, is for the people who answer
+ * for it: whoever governs the table, and auditors ({@link Stewardship#oversees}).
+ * Anybody else learns what they themselves hold from {@code /mine}; the whole
+ * list names people and groups a requester has no reason to see. Writing is
+ * restricted to the three roles that may change who sees data -- and, for a data
+ * owner, only on the tables they own.
  */
 @Path("/v1/access")
 @Produces(MediaType.APPLICATION_JSON)
@@ -75,7 +76,9 @@ public class AccessResource {
    */
   @GET
   @Path("/assets/{fqn: .+}")
-  public AccessQuery.AssetAccess onAsset(@PathParam("fqn") String fqn) {
+  public AccessQuery.AssetAccess onAsset(
+      @PathParam("fqn") String fqn, @Context SecurityContext security) {
+    mustOversee(fqn, security);
     return access.onAsset(fqn);
   }
 
@@ -93,7 +96,10 @@ public class AccessResource {
   @GET
   @Path("/history/{fqn: .+}")
   public List<GrantStore.HistoryEntry> history(
-      @PathParam("fqn") String fqn, @QueryParam("limit") @DefaultValue("100") int limit) {
+      @PathParam("fqn") String fqn,
+      @QueryParam("limit") @DefaultValue("100") int limit,
+      @Context SecurityContext security) {
+    mustOversee(fqn, security);
     return grants.historyFor(fqn, limit);
   }
 
@@ -347,6 +353,13 @@ public class AccessResource {
           .orElseThrow(() -> new NotFoundException("No grant " + id + " is outstanding"));
     } catch (IllegalArgumentException e) {
       throw new BadRequestException(e.getMessage());
+    }
+  }
+
+  private static void mustOversee(String fqn, SecurityContext security) {
+    if (!Stewardship.oversees(caller(security), fqn)) {
+      throw new ForbiddenException(
+          "Who can reach a table is shown to whoever governs it and to auditors");
     }
   }
 

@@ -302,6 +302,7 @@ conf/dac.yml                 config เดียวที่ commit — ใช�
 
 ### FR-7 Manual Grant (Phase 1) — M8 ✅ เสร็จ (grant ตรง + auto-revoke + audit trail + หน้าจอ)
 FR-7.1 owner สร้าง grant ตรงๆ พร้อม `validFrom`/`validUntil` + เหตุผล · FR-7.2 job auto-revoke · FR-7.3 หน้า "สิทธิ์ของฉัน" / "ใครมีสิทธิ์ใน asset นี้"
+("ใครมีสิทธิ์ใน asset นี้" กับประวัติ grant ของ table เห็นได้เฉพาะคนที่ govern table นั้น — admin, policy author, data owner ของ scope — และ auditor · server ตอบ 403 คนอื่น, หน้าเว็บซ่อน tab Access/Audit · คนทั่วไปดูของตัวเองที่ `/mine`)
 (ตาราง `access_grant` มี `source` = manual|request และ `request_id` nullable ไว้แล้วเพื่อไม่ต้อง migrate ตอน Phase 2)
 
 ### FR-8 Audit & Compliance — M8 / M10 🚧 (FR-8.1–8.3 ✅ · FR-8.5 ✅ บน Dashboard (export ⬜) · FR-8.4 SIEM ⬜)

@@ -32,6 +32,8 @@ import {
   groupFacets,
 } from './facets';
 import { AccessTab } from './AccessTab';
+import { useAuthStore } from '../../auth/authStore';
+import { oversees } from '../../auth/stewardship';
 import { AssetAccessAction, AssetStanding } from './AssetRequestAccess';
 import { AuditTab } from './AuditTab';
 import { LocalTagControl } from './LocalTags';
@@ -77,6 +79,7 @@ export default function AssetDetailPage() {
   const fqn = params['*'] ?? params.fqn ?? '';
   const requested = search.get('tab');
   const tab: TabId = isTab(requested) ? requested : 'overview';
+  const user = useAuthStore((state) => state.user);
 
   const openTab = (next: TabId) => {
     const updated = new URLSearchParams(search);
@@ -126,10 +129,16 @@ export default function AssetDetailPage() {
 
   const { asset, columns, customProperties } = data;
   const container = isContainer(asset.assetType);
+  // Who can reach a table, and its grant history, are for whoever answers for
+  // it; the server refuses anybody else, so they do not get the tabs.
+  const stewarded = oversees(user, asset.fqn);
   // A link to a table's "contents" or a schema's "columns" -- a tab this kind
-  // of asset does not have -- opens on the overview instead of on nothing.
+  // of asset does not have -- opens on the overview instead of on nothing, and
+  // so does a link to a tab this person is not shown.
   const shown: TabId =
-    (tab === 'contents' && !container) || (tab === 'columns' && container)
+    (tab === 'contents' && !container) ||
+    (tab === 'columns' && container) ||
+    (STEWARD_TABS.has(tab) && !stewarded)
       ? 'overview'
       : tab;
   const look = lookFor(asset.assetType);
@@ -259,6 +268,7 @@ export default function AssetDetailPage() {
         childCount={asset.childCount ?? 0}
         columnCount={columns.length}
         onChange={openTab}
+        stewarded={stewarded}
         value={shown}
       />
 
@@ -391,6 +401,9 @@ const TABS = [
 
 type TabId = (typeof TABS)[number]['value'];
 
+/** The tabs only a steward of the table, or an auditor, is shown. */
+const STEWARD_TABS: ReadonlySet<TabId> = new Set<TabId>(['access', 'audit']);
+
 function isTab(value: string | null): value is TabId {
   return TABS.some((tab) => tab.value === value);
 }
@@ -416,17 +429,25 @@ function AssetTabs({
   columnCount,
   assetType,
   childCount,
+  stewarded,
 }: {
   value: TabId;
   onChange: (next: TabId) => void;
   columnCount: number;
   assetType: string;
   childCount: number;
+  stewarded: boolean;
 }) {
   const container = isContainer(assetType);
   // A container holds assets, not columns; a table holds columns, not assets.
   const tabs = TABS.filter((tab) =>
-    tab.value === 'contents' ? container : tab.value === 'columns' ? !container : true
+    tab.value === 'contents'
+      ? container
+      : tab.value === 'columns'
+        ? !container
+        : STEWARD_TABS.has(tab.value)
+          ? stewarded
+          : true
   );
   const count = (tab: TabId) =>
     tab === 'columns' ? columnCount : tab === 'contents' ? childCount : 0;
