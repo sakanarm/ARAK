@@ -462,7 +462,9 @@ class GrantCompositionIT {
     @Test
     @DisplayName("the expiry job tombstones what has lapsed and nothing else")
     void expiryJobIsNarrow() {
-      Instant now = Instant.now();
+      // A grant cannot be written already over, so the job is run as of a
+      // moment after this one lapses rather than the grant being backdated.
+      Instant now = Instant.now().plus(2, ChronoUnit.HOURS);
       GrantStore.StoredGrant lapsing =
           grants.grant(
               new GrantStore.NewGrant(
@@ -535,6 +537,39 @@ class GrantCompositionIT {
           .isInstanceOf(IllegalArgumentException.class);
 
       assertThat(grants.onAsset(LEDGER)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("a window that is already over is not written")
+    void windowMustNotBeOver() {
+      Instant now = Instant.now();
+      assertThatThrownBy(
+              () ->
+                  grants.grant(
+                      new GrantStore.NewGrant(
+                          LEDGER,
+                          idOf("analyst_a"),
+                          now.minus(30, ChronoUnit.DAYS),
+                          now.minus(1, ChronoUnit.DAYS),
+                          "Last month's close",
+                          "owner_o")))
+          .isInstanceOf(IllegalArgumentException.class)
+          .hasMessageContaining("already past");
+
+      assertThat(grants.onAsset(LEDGER)).isEmpty();
+      assertThat(grants.historyFor(LEDGER, 10)).isEmpty();
+
+      // A start in the past is fine while the end is still ahead: that is a
+      // grant backdated to when the work began, and it is live now.
+      grants.grant(
+          new GrantStore.NewGrant(
+              LEDGER,
+              idOf("analyst_a"),
+              now.minus(3, ChronoUnit.DAYS),
+              now.plus(1, ChronoUnit.DAYS),
+              "Since Monday",
+              "owner_o"));
+      assertThat(grants.onAsset(LEDGER)).hasSize(1);
     }
   }
 

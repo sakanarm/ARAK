@@ -542,6 +542,13 @@ public class GrantStore {
     if (request.validUntil() != null && !request.validUntil().isAfter(from)) {
       throw new IllegalArgumentException("a grant must end after it starts");
     }
+    // The rule amend already keeps. A window wholly in the past opens nothing,
+    // yet it would sit in the trail as access given, and the expiry job would
+    // then write a second line saying it lapsed.
+    if (request.validUntil() != null && !request.validUntil().isAfter(Instant.now())) {
+      throw new IllegalArgumentException(
+          "the end is already past; a grant has to end in the future");
+    }
 
     UUID id =
         handle

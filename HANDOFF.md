@@ -682,6 +682,12 @@ M25 ทำแยกได้ (profile ผ่าน proxy ที่มีแล�
 - ชื่อ "Sakan Punyanon" ในโค้ดตอนนี้อยู่ที่ Settings → Credits กับ README เท่านั้น (secret scan allowlist ตามนี้)
 - ผ่าน: jest `Rail` + `SettingsPage` 20/20 · tsc
 
+### BT.12 Grant ที่หมดไปแล้วตั้งแต่ตอนสร้าง — ไม่รับอีกต่อไป
+- เดิม `GrantStore.insert` เช็คแค่ end > start จึงรับ grant ที่ทั้งช่วงอยู่ในอดีตได้ (เช่น 1–29 ส.ค. สร้างวันนี้) ไม่เปิดอะไรให้ใคร แต่ขึ้นใน trail ว่า "ให้สิทธิ์" แล้ว expiry job ก็เขียน EXPIRE ซ้ำอีกบรรทัด
+- ตอนนี้ใช้กติกาเดียวกับ amend: end ต้องอยู่ในอนาคต → 400 *"the end is already past; a grant has to end in the future"* · start ย้อนหลังได้ถ้า end ยังไม่ถึง
+- `GrantCompositionIT.Rejected.windowMustNotBeOver` ใหม่ · `expiryJobIsNarrow` เปลี่ยนเป็นรัน job ณ เวลาหลัง grant หมด แทนการสร้าง grant ย้อนหลัง
+- ผ่าน: IT `GrantCompositionIT` 20/20 · unit grant/stewardship
+
 ### BT.6 ค้าง
 - credential ของ source บน prod ที่ auth ไม่ผ่าน ผู้ใช้เป็นคนตัดสิน · แก้แล้วให้รัน Q1–Q7 ใน `prod-demo-policies.mjs` อีกรอบ
 - กรณี group บน prod รอ push แล้ว deploy V35 ก่อน
