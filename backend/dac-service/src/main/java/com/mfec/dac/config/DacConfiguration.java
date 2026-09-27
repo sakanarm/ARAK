@@ -55,6 +55,11 @@ public class DacConfiguration extends Configuration {
 
   @Valid
   @NotNull
+  @JsonProperty("queryLimits")
+  private QueryLimitsConfiguration queryLimits = new QueryLimitsConfiguration();
+
+  @Valid
+  @NotNull
   @JsonProperty("web")
   private WebConfiguration web = new WebConfiguration();
 }

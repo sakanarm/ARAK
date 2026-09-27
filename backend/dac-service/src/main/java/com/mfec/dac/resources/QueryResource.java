@@ -135,7 +135,23 @@ public class QueryResource {
       // will take for the current state of the table.
       body.put("cached", result.cached());
       body.put("readAt", result.readAt());
+      // The planner's price for it, in the source's own units (FR-6.3 cost
+      // guard); null when the engine was not asked.
+      body.put("estimatedCost", result.estimatedCost());
       return body;
+    } catch (QueryService.BusyException e) {
+      // 429 and not 403: nothing about the caller or the statement is wrong,
+      // and the same request a few seconds from now will very likely run.
+      Map<String, Object> busy = new LinkedHashMap<>();
+      busy.put("message", e.getMessage());
+      busy.put("busy", true);
+      busy.put("retryAfterSeconds", e.retryAfterSeconds());
+      throw new WebApplicationException(
+          Response.status(Response.Status.TOO_MANY_REQUESTS)
+              .header("Retry-After", e.retryAfterSeconds())
+              .entity(busy)
+              .type(MediaType.APPLICATION_JSON)
+              .build());
     } catch (QueryService.RejectedException e) {
       Map<String, Object> refusal = new LinkedHashMap<>();
       refusal.put("message", e.getMessage());

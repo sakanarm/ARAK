@@ -3,6 +3,7 @@ package com.mfec.dac.policy;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyDouble;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
@@ -170,7 +171,8 @@ class QueryResultCacheIT {
               }
               return decision;
             });
-    when(executor.run(any(SourceProbe.Target.class), anyString(), anyString(), anyInt(), anyInt()))
+    when(executor.run(
+            any(SourceProbe.Target.class), anyString(), anyString(), anyInt(), anyInt(), anyDouble()))
         .thenAnswer(
             call -> {
               sent.add(call.getArgument(2));

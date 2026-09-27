@@ -34,8 +34,12 @@ public final class QueryRefusals {
     UNQUALIFIED,
     /** A shape of SELECT the proxy does not rewrite. */
     UNSUPPORTED,
+    /** The source's planner priced it over the ceiling for its engine. */
+    TOO_COSTLY,
     /** The source is not registered or is switched off. */
     SOURCE_UNAVAILABLE,
+    /** No room for one more read; the same statement later will likely run. */
+    BUSY,
     /** Enforced and sent, and the source refused it. */
     SOURCE_ERROR,
     /** Nothing was sent. */
@@ -82,8 +86,14 @@ public final class QueryRefusals {
         || text.startsWith("The tables this statement reads could not be listed")) {
       return Category.UNSUPPORTED;
     }
+    if (text.startsWith("The source's planner estimates this statement at a cost of ")) {
+      return Category.TOO_COSTLY;
+    }
     if (text.startsWith("No data source ") || text.endsWith(" is disabled")) {
       return Category.SOURCE_UNAVAILABLE;
+    }
+    if (text.startsWith("Too many ") && text.contains(" running ")) {
+      return Category.BUSY;
     }
     if (text.equals("No SQL was sent")) {
       return Category.EMPTY;

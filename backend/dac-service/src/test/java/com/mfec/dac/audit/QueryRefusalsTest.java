@@ -18,6 +18,8 @@ class QueryRefusalsTest {
   @ParameterizedTest(name = "{0}")
   @CsvSource(
       delimiter = '|',
+      // The cost refusal has an apostrophe in it, which is CsvSource's quote.
+      quoteCharacter = '"',
       value = {
         "POLICY_DENY|Access to demo-pg.salesdb.sales.customer is denied. finance-subscription: subject rule not satisfied",
         "POLICY_DENY|Access to demo-pg.salesdb.sales.customer is denied by policy",
@@ -34,6 +36,10 @@ class QueryRefusalsTest {
         "SOURCE_UNAVAILABLE|No data source 3f2b1c9e-0000-4000-8000-000000000001",
         "SOURCE_UNAVAILABLE|demo-pg is disabled",
         "EMPTY|No SQL was sent",
+        "TOO_COSTLY|The source's planner estimates this statement at a cost of 48,210,555, over the ceiling of 10,000,000 set for POSTGRES sources, so it was not run. A WHERE on an indexed column, fewer joins or less to sort usually brings it under.",
+        "BUSY|Too many of your queries are running right now: ARAK runs 2 at a time for one person. Let one finish and run this again.",
+        "BUSY|Too many queries are running against demo-pg right now: ARAK sends it at most 4 at a time, so that the source is not overloaded. Try again in a few seconds.",
+        "BUSY|Too many queries are running on ARAK right now: it runs at most 16 at a time. Try again in a few seconds.",
         "OTHER|Something nobody has written yet",
       })
   void refusals(Category expected, String reason) {

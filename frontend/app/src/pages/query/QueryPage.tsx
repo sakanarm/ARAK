@@ -31,7 +31,9 @@ import { useAuthStore } from '../../auth/authStore';
 import { fetchPrincipals } from '../../api/governance';
 import { fetchSources } from '../../api/sources';
 import {
+  busyOf,
   DEFAULT_ROWS,
+  formatCost,
   MAX_ROWS,
   runQuery,
   type Explanation,
@@ -39,6 +41,7 @@ import {
 } from '../../api/query';
 import { download, exportName, toCsv, toXlsx } from '../../lib/tabular';
 import { Field, Select, TextField } from '../policies/controls';
+import BusyNote from './BusyNote';
 import CachedNote from './CachedNote';
 import RequestAccess from './RequestAccess';
 import {
@@ -560,6 +563,7 @@ export default function QueryPage() {
                   : undefined
               }
               isPending={run.isPending}
+              onRetry={() => run.mutate()}
               onRunFresh={() => run.mutate({ fresh: true })}
               ran={ran.current}
               result={result}
@@ -900,12 +904,15 @@ function ResultPanel({
   ran,
   fix,
   onRunFresh,
+  onRetry,
 }: {
   result: QueryResult | undefined;
   error: unknown;
   isPending: boolean;
   /** Runs the same statement again, straight at the source. */
   onRunFresh?: () => void;
+  /** Sends the same statement again, after the service said it was busy. */
+  onRetry?: () => void;
   /** Present when the reader has an assistant to ask for a corrected statement. */
   fix?: { engine?: string; onUse: (sql: string) => void };
   /** The statement the error is about, for a request made from it. */
@@ -913,6 +920,11 @@ function ResultPanel({
   tab: 'results' | 'sql' | 'details';
   setTab: (tab: 'results' | 'sql' | 'details') => void;
 }) {
+  const busy = error ? busyOf(error) : null;
+  if (busy) {
+    return <BusyNote busy={busy} onRetry={onRetry} />;
+  }
+
   if (error) {
     const refusal = refusalOf(error);
     // Fills the pane and scrolls inside it. The console is sized to the
@@ -1246,6 +1258,13 @@ function JobDetails({ result }: { result: QueryResult }) {
           : 'from the source, for this run'}
       </Detail>
       <Detail label="Duration">{result.millis} ms</Detail>
+      <Detail label="Planner estimate">
+        {formatCost(result.estimatedCost) ? (
+          `${formatCost(result.estimatedCost)}, in the source's own planner units`
+        ) : (
+          <span className="tw:text-tertiary">not priced</span>
+        )}
+      </Detail>
       <Detail label="Rows returned">
         {result.rows.length}
         {result.truncated && ' (truncated at the row limit)'}

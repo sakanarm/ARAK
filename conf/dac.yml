@@ -127,6 +127,24 @@ resultCache:
   maxCells: ${RESULT_CACHE_MAX_CELLS:-1000000}
   ttlSeconds: ${RESULT_CACHE_TTL_SECONDS:-30}
 
+queryLimits:
+  # How many Query API reads may be out at the sources at once (FR-6.3). Each
+  # one is a connection to somebody else's database, so maxPerSource stays well
+  # under what a shared server allows. A statement with no room waits
+  # queueWaitMillis and is then refused as busy (429); cached answers and
+  # refusals never take a slot.
+  enabled: ${QUERY_LIMITS_ENABLED:-true}
+  maxConcurrent: ${QUERY_MAX_CONCURRENT:-16}
+  maxPerSource: ${QUERY_MAX_PER_SOURCE:-4}
+  maxPerCaller: ${QUERY_MAX_PER_CALLER:-2}
+  queueWaitMillis: ${QUERY_QUEUE_WAIT_MS:-3000}
+  # The source's planner prices each statement, row cap included, before it is
+  # sent; one priced over its engine's ceiling is refused. Planner units, not
+  # seconds, and different per engine. 0 switches the guard off for an engine.
+  costGuard: ${QUERY_COST_GUARD_ENABLED:-true}
+  maxCostPostgres: ${QUERY_MAX_COST_POSTGRES:-10000000}
+  maxCostSqlServer: ${QUERY_MAX_COST_SQLSERVER:-5000}
+
 secrets:
   provider: ${SECRETS_PROVIDER:-FERNET}
   fernetKey: "${FERNET_KEY:-}"

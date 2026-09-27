@@ -69,6 +69,8 @@ import com.mfec.dac.engine.PolicyExpressionEvaluator;
 import com.mfec.dac.policy.DecisionService;
 import com.mfec.dac.policy.ImpactAnalysis;
 import com.mfec.dac.policy.PrincipalLoader;
+import com.mfec.dac.policy.QueryAdmission;
+import com.mfec.dac.policy.QueryCostGuard;
 import com.mfec.dac.policy.QueryResultCache;
 import com.mfec.dac.policy.QueryService;
 import com.mfec.dac.resources.ExpressionResource;
@@ -273,7 +275,20 @@ public class DacApplication extends Application<DacConfiguration> {
             config.getResultCache().ttl());
 
     environment.healthChecks().register("app-db", new AppDatabaseHealthCheck(jdbi));
-    environment.jersey().register(new SystemResource(config, decisionCache, resultCache));
+    QueryAdmission queryAdmission =
+        new QueryAdmission(
+            config.getQueryLimits().isEnabled(),
+            config.getQueryLimits().getMaxConcurrent(),
+            config.getQueryLimits().getMaxPerSource(),
+            config.getQueryLimits().getMaxPerCaller(),
+            config.getQueryLimits().queueWait());
+    QueryCostGuard queryCosts =
+        new QueryCostGuard(
+            config.getQueryLimits().isCostGuard(), config.getQueryLimits().costCeilings());
+    environment
+        .jersey()
+        .register(
+            new SystemResource(config, decisionCache, resultCache, queryAdmission, queryCosts));
     environment.jersey().register(new AuthResource(identities, tokens, identity));
     // Built here rather than inside startCatalogSync, because the screen that
     // moves the nightly crawl and the thread that runs it have to be holding
@@ -463,6 +478,8 @@ public class DacApplication extends Application<DacConfiguration> {
                 decisionService,
                 new QueryExecutor(credentials, 10),
                 resultCache,
+                queryAdmission,
+                queryCosts,
                 java.time.Clock.systemUTC()),
             eligibility));
     // Statements kept under a name; the text only, never what it returned.

@@ -67,6 +67,8 @@ public class QueryService {
    *     than a read made for this call
    * @param readAt when the source was read for these rows: now, or when the
    *     cached read was made
+   * @param estimatedCost what the source's planner priced the statement at
+   *     before it ran (FR-6.3 cost guard); null when it was not priced
    */
   public record Result(
       List<String> columns,
@@ -79,7 +81,8 @@ public class QueryService {
       List<Explanation> explanations,
       List<Unenforceable> unenforceable,
       boolean cached,
-      Instant readAt) {}
+      Instant readAt,
+      Double estimatedCost) {}
 
   /**
    * Why this result looks the way it does, for one asset.
@@ -133,12 +136,32 @@ public class QueryService {
     }
   }
 
+  /**
+   * There was no room at the source or in the service for one more read
+   * (FR-6.3 concurrency limit). Nothing was sent; the same statement sent
+   * again in a few seconds will very likely run.
+   */
+  public static class BusyException extends RuntimeException {
+    private final int retryAfterSeconds;
+
+    public BusyException(String message, int retryAfterSeconds) {
+      super(message);
+      this.retryAfterSeconds = retryAfterSeconds;
+    }
+
+    public int retryAfterSeconds() {
+      return retryAfterSeconds;
+    }
+  }
+
   private final Jdbi jdbi;
   private final ObjectMapper json;
   private final DataSourceStore sources;
   private final DecisionService decisions;
   private final QueryExecutor executor;
   private final QueryResultCache results;
+  private final QueryAdmission admission;
+  private final QueryCostGuard costs;
   private final Clock clock;
 
   public QueryService(
@@ -162,12 +185,42 @@ public class QueryService {
       QueryExecutor executor,
       QueryResultCache results,
       Clock clock) {
+    this(
+        jdbi,
+        json,
+        sources,
+        decisions,
+        executor,
+        results,
+        QueryAdmission.unlimited(),
+        QueryCostGuard.off(),
+        clock);
+  }
+
+  /**
+   * @param admission how many reads may be out at the sources at once;
+   *     {@link QueryAdmission#unlimited()} lets every one through
+   * @param costs the planner estimate each engine's statements must stay
+   *     under; {@link QueryCostGuard#off()} prices nothing
+   */
+  public QueryService(
+      Jdbi jdbi,
+      ObjectMapper json,
+      DataSourceStore sources,
+      DecisionService decisions,
+      QueryExecutor executor,
+      QueryResultCache results,
+      QueryAdmission admission,
+      QueryCostGuard costs,
+      Clock clock) {
     this.jdbi = jdbi;
     this.json = json;
     this.sources = sources;
     this.decisions = decisions;
     this.executor = executor;
     this.results = results == null ? QueryResultCache.disabled() : results;
+    this.admission = admission == null ? QueryAdmission.unlimited() : admission;
+    this.costs = costs == null ? QueryCostGuard.off() : costs;
     this.clock = clock == null ? Clock.systemUTC() : clock;
   }
 
@@ -309,16 +362,23 @@ public class QueryService {
             explain(rewritten.governed()),
             rewritten.unenforceable(),
             true,
-            hit.get().storedAt());
+            hit.get().storedAt(),
+            held.estimatedCost());
       }
     }
 
     // Read before the statement goes out, so a flush while it runs keeps its
     // rows out of the cache.
     long generation = results.generation();
-    Instant readAt = clock.instant();
+    double ceiling = costs.ceilingFor(source.engine().name());
+    Instant readAt;
     QueryExecutor.Page page;
-    try {
+    // A slot is taken only here, for the read itself: a refusal never needed
+    // one and a cached answer costs the source nothing. The sender is the one
+    // charged for it, since the load is theirs whoever the rows are for.
+    try (QueryAdmission.Permit slot =
+        admission.admit(source.id(), runBy == null ? principal : runBy)) {
+      readAt = clock.instant();
       page =
           executor.run(
               new SourceProbe.Target(
@@ -326,7 +386,55 @@ public class QueryService {
               source.credentialRef(),
               rewritten.sql(),
               rows,
-              TIMEOUT_SECONDS);
+              TIMEOUT_SECONDS,
+              ceiling);
+    } catch (QueryAdmission.BusyException e) {
+      // REJECTED rather than a new outcome: the statement did not run, which
+      // is what the outcome records; QueryRefusals files it as BUSY from the
+      // wording, so a throttle is never read as somebody refused access.
+      String reason = busy(e, source);
+      long millis = (System.nanoTime() - started) / 1_000_000;
+      audit(
+          principal,
+          source.id(),
+          sql,
+          rewritten.sql(),
+          "REJECTED",
+          reason,
+          null,
+          (int) millis,
+          clientIp,
+          touched,
+          runBy,
+          false);
+      throw new BusyException(reason, e.retryAfterSeconds());
+    } catch (QueryExecutor.CostExceededException e) {
+      costs.refused(e.estimate());
+      String reason =
+          "The source's planner estimates this statement at a cost of "
+              + QueryCostGuard.format(e.estimate())
+              + ", over the ceiling of "
+              + QueryCostGuard.format(e.ceiling())
+              + " set for "
+              + source.engine().name()
+              + " sources, so it was not run. A WHERE on an indexed column, fewer joins"
+              + " or less to sort usually brings it under.";
+      long millis = (System.nanoTime() - started) / 1_000_000;
+      audit(
+          principal,
+          source.id(),
+          sql,
+          rewritten.sql(),
+          "REJECTED",
+          reason,
+          null,
+          (int) millis,
+          clientIp,
+          touched,
+          runBy,
+          false);
+      // About the statement, so the console offers to narrow it.
+      throw new RejectedException(reason, null, true);
     } catch (Exception e) {
       long millis = (System.nanoTime() - started) / 1_000_000;
       audit(
@@ -363,6 +471,13 @@ public class QueryService {
         runBy,
         false);
 
+    if (ceiling > 0 && costs.admitted(page.estimatedCost(), page.unpricedBecause())) {
+      LOG.info(
+          "Statements to {} are running without a cost estimate: {}",
+          source.name(),
+          page.unpricedBecause());
+    }
+
     results.put(key, page, readAt, generation);
 
     return new Result(
@@ -376,7 +491,25 @@ public class QueryService {
         explain(rewritten.governed()),
         rewritten.unenforceable(),
         false,
-        readAt);
+        readAt,
+        page.estimatedCost());
+  }
+
+  /** Why there was no room, in the words of whichever ceiling was full. */
+  private static String busy(QueryAdmission.BusyException e, DataSourceStore.Source source) {
+    return switch (e.scope()) {
+      case CALLER -> "Too many of your queries are running right now: ARAK runs "
+          + e.limit()
+          + " at a time for one person. Let one finish and run this again.";
+      case SOURCE -> "Too many queries are running against "
+          + source.name()
+          + " right now: ARAK sends it at most "
+          + e.limit()
+          + " at a time, so that the source is not overloaded. Try again in a few seconds.";
+      case SERVICE -> "Too many queries are running on ARAK right now: it runs at most "
+          + e.limit()
+          + " at a time. Try again in a few seconds.";
+    };
   }
 
   // -------------------------------------------------------- explainability

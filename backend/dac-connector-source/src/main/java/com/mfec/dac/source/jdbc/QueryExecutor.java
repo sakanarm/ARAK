@@ -28,6 +28,9 @@ import java.util.List;
  *       open indefinitely.
  *   <li>Read-only connection and {@code executeQuery}, which fails rather than
  *       runs if something that is not a query got this far.
+ *   <li>A cost ceiling, when the caller sets one: the source's planner prices
+ *       the statement on the same connection first, and one priced above the
+ *       ceiling is never sent ({@link CostEstimate}).
  * </ul>
  */
 public final class QueryExecutor {
@@ -35,13 +38,48 @@ public final class QueryExecutor {
   /**
    * @param truncated true when the cap stopped the read, so the caller can say
    *     "first 200 rows" instead of presenting a partial answer as complete
+   * @param estimatedCost what the source's planner priced the statement at,
+   *     in its own units; null when it was not asked or could not answer
+   * @param unpricedBecause why a guarded read has no estimate; null otherwise
    */
   public record Page(
       List<String> columns,
       List<String> columnTypes,
       List<List<Object>> rows,
       boolean truncated,
-      long millis) {}
+      long millis,
+      Double estimatedCost,
+      String unpricedBecause) {
+
+    public Page(
+        List<String> columns,
+        List<String> columnTypes,
+        List<List<Object>> rows,
+        boolean truncated,
+        long millis) {
+      this(columns, columnTypes, rows, truncated, millis, null, null);
+    }
+  }
+
+  /** The planner priced the statement over the ceiling, so it was not run. */
+  public static final class CostExceededException extends Exception {
+    private final double estimate;
+    private final double ceiling;
+
+    public CostExceededException(double estimate, double ceiling) {
+      super("Estimated cost " + estimate + " is over the ceiling of " + ceiling);
+      this.estimate = estimate;
+      this.ceiling = ceiling;
+    }
+
+    public double estimate() {
+      return estimate;
+    }
+
+    public double ceiling() {
+      return ceiling;
+    }
+  }
 
   private final CredentialResolver credentials;
   private final int loginTimeoutSeconds;
@@ -55,6 +93,7 @@ public final class QueryExecutor {
     this.loginTimeoutSeconds = loginTimeoutSeconds;
   }
 
+  /** Unpriced: as the six-argument form with no ceiling. */
   public Page run(
       SourceProbe.Target target,
       String credentialRef,
@@ -62,12 +101,56 @@ public final class QueryExecutor {
       int maxRows,
       int timeoutSeconds)
       throws SQLException, CredentialResolver.UnresolvableCredentialException {
+    try {
+      return run(target, credentialRef, sql, maxRows, timeoutSeconds, 0);
+    } catch (CostExceededException e) {
+      throw new IllegalStateException("A read with no ceiling was refused on cost", e);
+    }
+  }
+
+  /**
+   * @param maxCost the most the source's planner may price this statement at,
+   *     in that engine's units; zero or less sends it unpriced
+   * @throws CostExceededException when the planner priced it higher, in which
+   *     case nothing but the {@code EXPLAIN} reached the source
+   */
+  public Page run(
+      SourceProbe.Target target,
+      String credentialRef,
+      String sql,
+      int maxRows,
+      int timeoutSeconds,
+      double maxCost)
+      throws SQLException, CredentialResolver.UnresolvableCredentialException,
+          CostExceededException {
 
     long started = System.nanoTime();
     CredentialResolver.Credential credential = credentials.resolve(credentialRef);
 
-    try (Connection connection = JdbcTargets.open(target, credential, loginTimeoutSeconds);
-        PreparedStatement statement = connection.prepareStatement(sql)) {
+    try (Connection connection = JdbcTargets.open(target, credential, loginTimeoutSeconds)) {
+      // Priced on the connection the statement will run on: a second login
+      // just to ask the planner would double what every query costs the
+      // source, which is the opposite of what the guard is for.
+      CostEstimate.Price price =
+          maxCost > 0
+              ? CostEstimate.price(connection, target.engine(), sql, maxRows + 1, timeoutSeconds)
+              : new CostEstimate.Price(null, null);
+      if (price.cost() != null && price.cost() > maxCost) {
+        throw new CostExceededException(price.cost(), maxCost);
+      }
+      return read(connection, sql, maxRows, timeoutSeconds, started, price);
+    }
+  }
+
+  private static Page read(
+      Connection connection,
+      String sql,
+      int maxRows,
+      int timeoutSeconds,
+      long started,
+      CostEstimate.Price price)
+      throws SQLException {
+    try (PreparedStatement statement = connection.prepareStatement(sql)) {
 
       // One over the cap: reading the extra row is how we know there was more
       // to read. Capping at exactly the limit makes a result of precisely N
@@ -99,7 +182,14 @@ public final class QueryExecutor {
           }
           rows.add(row);
         }
-        return new Page(columns, types, rows, truncated, (System.nanoTime() - started) / 1_000_000);
+        return new Page(
+            columns,
+            types,
+            rows,
+            truncated,
+            (System.nanoTime() - started) / 1_000_000,
+            price.cost(),
+            price.unpricedBecause());
       }
     }
   }

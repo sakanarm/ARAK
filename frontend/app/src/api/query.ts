@@ -1,3 +1,4 @@
+import axios from 'axios';
 import { apiClient } from './client';
 
 /**
@@ -66,6 +67,54 @@ export interface QueryResult {
   cached: boolean;
   /** When the source was read for these rows (ISO-8601). */
   readAt: string | null;
+  /**
+   * What the source's planner priced the statement at before it ran, in that
+   * engine's own units (FR-6.3 cost guard). Null when it was not priced: the
+   * guard is off for the engine, or the planner could not be asked.
+   */
+  estimatedCost?: number | null;
+}
+
+/** The service had no room for one more read; nothing was sent (FR-6.3). */
+export interface Busy {
+  message: string;
+  retryAfterSeconds: number;
+}
+
+/**
+ * The busy body of a failed query, when it is one.
+ *
+ * A 429 is told apart from a refusal because the advice is the opposite:
+ * nothing about the statement or the person is wrong, and the same statement
+ * a few seconds later will very likely run.
+ */
+export function busyOf(error: unknown): Busy | null {
+  if (!axios.isAxiosError(error) || error.response?.status !== 429) {
+    return null;
+  }
+  const body = error.response.data as Partial<Busy> | undefined;
+  const header = Number.parseInt(String(error.response.headers?.['retry-after'] ?? ''), 10);
+  const retry =
+    typeof body?.retryAfterSeconds === 'number'
+      ? body.retryAfterSeconds
+      : Number.isFinite(header)
+        ? header
+        : 3;
+  return {
+    message:
+      typeof body?.message === 'string'
+        ? body.message
+        : 'Too many queries are running right now. Try again in a few seconds.',
+    retryAfterSeconds: Math.min(Math.max(retry, 1), 60),
+  };
+}
+
+/** A planner estimate the way Job details prints it; null when there is none. */
+export function formatCost(cost: number | null | undefined): string | null {
+  if (cost === null || cost === undefined || !Number.isFinite(cost)) {
+    return null;
+  }
+  return cost >= 100 ? Math.round(cost).toLocaleString('en-US') : cost.toFixed(2);
 }
 
 /** What the server will return at most, whatever this screen asks for. */

@@ -25,7 +25,9 @@ export type RefusalCategory =
   | 'NOT_READ_ONLY'
   | 'UNQUALIFIED'
   | 'UNSUPPORTED'
+  | 'TOO_COSTLY'
   | 'SOURCE_UNAVAILABLE'
+  | 'BUSY'
   | 'SOURCE_ERROR'
   | 'EMPTY'
   | 'OTHER';
@@ -39,7 +41,9 @@ export const CATEGORY_LABELS: Record<RefusalCategory, string> = {
   NOT_READ_ONLY: 'Not a SELECT',
   UNQUALIFIED: 'Table name ambiguous',
   UNSUPPORTED: 'Not supported by the proxy',
+  TOO_COSTLY: 'Too expensive to run',
   SOURCE_UNAVAILABLE: 'Source unavailable',
+  BUSY: 'Too busy, not run',
   SOURCE_ERROR: 'Source returned an error',
   EMPTY: 'No SQL sent',
   OTHER: 'Other',

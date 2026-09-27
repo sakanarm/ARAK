@@ -336,6 +336,8 @@ public final class QueryResultCache {
         page.columnTypes() == null ? null : Collections.unmodifiableList(new ArrayList<>(page.columnTypes())),
         Collections.unmodifiableList(rows),
         page.truncated(),
-        page.millis());
+        page.millis(),
+        page.estimatedCost(),
+        page.unpricedBecause());
   }
 }

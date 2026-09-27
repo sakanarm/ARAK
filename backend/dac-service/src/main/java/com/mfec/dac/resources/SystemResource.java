@@ -3,6 +3,8 @@ package com.mfec.dac.resources;
 import com.mfec.dac.auth.Secured;
 import com.mfec.dac.config.DacConfiguration;
 import com.mfec.dac.policy.DecisionCache;
+import com.mfec.dac.policy.QueryAdmission;
+import com.mfec.dac.policy.QueryCostGuard;
 import com.mfec.dac.policy.QueryResultCache;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.Path;
@@ -18,6 +20,11 @@ public class SystemResource {
   private final DacConfiguration config;
   private final DecisionCache decisionCache;
   private final QueryResultCache resultCache;
+  private final QueryAdmission admission;
+  private final QueryCostGuard costs;
+
+  /** The Query API's two guards on the sources, read together (FR-6.3). */
+  public record QueryLimits(QueryAdmission.Stats concurrency, QueryCostGuard.Stats cost) {}
 
   public SystemResource(DacConfiguration config, DecisionCache decisionCache) {
     this(config, decisionCache, QueryResultCache.disabled());
@@ -25,9 +32,20 @@ public class SystemResource {
 
   public SystemResource(
       DacConfiguration config, DecisionCache decisionCache, QueryResultCache resultCache) {
+    this(config, decisionCache, resultCache, QueryAdmission.unlimited(), QueryCostGuard.off());
+  }
+
+  public SystemResource(
+      DacConfiguration config,
+      DecisionCache decisionCache,
+      QueryResultCache resultCache,
+      QueryAdmission admission,
+      QueryCostGuard costs) {
     this.config = config;
     this.decisionCache = decisionCache;
     this.resultCache = resultCache;
+    this.admission = admission;
+    this.costs = costs;
   }
 
   @GET
@@ -71,5 +89,18 @@ public class SystemResource {
   @Path("/result-cache")
   public QueryResultCache.Stats resultCache() {
     return resultCache.stats();
+  }
+
+  /**
+   * How close the Query API is to its limits on the sources (FR-6.3): reads
+   * out right now, how many had to wait or were turned away as busy, and what
+   * the cost guard has priced and refused. The first place to look when
+   * somebody reports "too many queries" or a statement refused on cost.
+   */
+  @GET
+  @Secured
+  @Path("/query-limits")
+  public QueryLimits queryLimits() {
+    return new QueryLimits(admission.stats(), costs.stats());
   }
 }
