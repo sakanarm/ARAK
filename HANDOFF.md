@@ -645,7 +645,7 @@ M25 ทำแยกได้ (profile ผ่าน proxy ที่มีแล�
 ### BV.1 สิทธิ์
 - `GET /v1/access/assets/{fqn}` กับ `GET /v1/access/history/{fqn}` → 403 ถ้าไม่ใช่ `Stewardship.oversees` (admin · policy author · data owner ของ scope นั้น · auditor) · `/v1/access/mine` ยังเปิดให้ทุกคน
 - หน้า table ซ่อน tab **Access** และ **Audit** จากคนอื่น · ลิงก์ `?tab=access` เปิด Overview แทน · frontend `oversees()` ใน `auth/stewardship.ts`
-- data owner กับ auditor รวมอยู่ด้วย (owner ต้องใช้ tab นี้ grant/revoke, auditor ต้องตรวจ) — ถ้าจะตัดออกแก้ `Stewardship.oversees` กับ `oversees()` ที่เดียว
+- data owner กับ auditor รวมอยู่ด้วย (owner ต้องใช้ tab นี้ grant/revoke, auditor ต้องตรวจ) — **ผู้ใช้ยืนยัน 2026-09-27: "ให้ data owner auditor เห็นด้วย"** · ถ้าวันหน้าจะตัดออกแก้ `Stewardship.oversees` กับ `oversees()` ที่เดียว
 - test: `StewardshipGuardsTest.WhoCanReach` (3) · `AssetDetailPage.test.tsx` (6 ใหม่)
 
 ### BV.2 Diagram
