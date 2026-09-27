@@ -2,13 +2,38 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Dialog, Heading, Modal, ModalOverlay } from 'react-aria-components';
 import { Button } from '@openmetadata/ui-core-components/components/base/buttons/button';
-import { CheckCircle, Clock, Lock01, Send01 } from '@untitledui/icons';
-import { fetchEligibility, type AccessRequest, type Eligibility, type Refusal } from '../../api/accessRequests';
+import { CheckCircle, Clock, Send01 } from '@untitledui/icons';
+import {
+  fetchEligibility,
+  type AccessRequest,
+  type Eligibility,
+  type EligibilityBrief,
+  type Refusal,
+} from '../../api/accessRequests';
 import type { AssetSummary } from '../../api/client';
-import { BlockedNote, RequestAccessForm, RequestedNote } from '../query/RequestAccess';
+import { canAsk, RequestAccessForm, RequestedNote } from '../query/RequestAccess';
+import { AccessBadge, standingOf } from './reach';
 
 /** Only these hold rows a grant can open; a schema or a service has none. */
 const REQUESTABLE_TYPES = new Set(['TABLE', 'VIEW']);
+
+type Asset = Pick<AssetSummary, 'fqn' | 'assetType'>;
+
+/**
+ * Where the caller stands on this table, asked once for the header and the
+ * "Your access" row alike. Under 'access-requests', so sending a request
+ * refreshes this answer too.
+ */
+function useEligibility(asset: Asset) {
+  const applies = REQUESTABLE_TYPES.has(asset.assetType);
+  const query = useQuery({
+    queryKey: ['access-requests', 'eligibility', asset.fqn],
+    queryFn: () => fetchEligibility(asset.fqn),
+    enabled: applies,
+    retry: false,
+  });
+  return { applies, ...query };
+}
 
 /**
  * "Request access", in the header of a table the reader cannot read.
@@ -19,26 +44,34 @@ const REQUESTABLE_TYPES = new Set(['TABLE', 'VIEW']);
  * before anything has run: somebody browsing the catalog should not have to
  * write a statement and be refused before they learn who to ask.
  *
- * <p>The server decides every state -- readable, whether a grant would help,
- * who decides, an open request -- so the header says only what it was told:
- * a quiet "You can read this", a link to the open request, the button, or a
- * locked button that explains which policy is in the way. Nothing while the
- * answer is still coming or could not be had.
+ * <p>The server decides every state -- connected, readable, whether a grant
+ * would be enough, who decides, an open request -- so the header says only
+ * what it was told: a grey "Not connected" note, a quiet "You can read this",
+ * a link to the open request, or the button. The button is there even when a
+ * policy would still refuse after a grant: the request is sent all the same,
+ * and the form says a policy may have to change too. Nothing while the answer
+ * is still coming or could not be had.
  */
-export function AssetAccessAction({ asset }: { asset: Pick<AssetSummary, 'fqn' | 'assetType'> }) {
-  const applies = REQUESTABLE_TYPES.has(asset.assetType);
+export function AssetAccessAction({ asset }: { asset: Asset }) {
   const [open, setOpen] = useState(false);
   const [sent, setSent] = useState<AccessRequest | null>(null);
-  const { data } = useQuery({
-    // Under 'access-requests', so sending a request refreshes this answer too.
-    queryKey: ['access-requests', 'eligibility', asset.fqn],
-    queryFn: () => fetchEligibility(asset.fqn),
-    enabled: applies,
-    retry: false,
-  });
+  const { applies, data } = useEligibility(asset);
 
   if (!applies || !data) {
     return null;
+  }
+
+  // No source ARAK knows maps the table: there is nothing a grant could open,
+  // so there is no request to make either.
+  if (data.queryable === false) {
+    return (
+      <span
+        className="tw:inline-flex tw:items-center tw:gap-1.5 tw:rounded-md tw:border tw:border-dashed tw:border-primary tw:px-2.5 tw:py-1.5 tw:text-sm tw:font-medium tw:text-quaternary"
+        title="No data source registered in ARAK maps this table, so nobody can query it through ARAK yet. An admin can register its source to connect it.">
+        <span aria-hidden className="tw:size-2 tw:shrink-0 tw:rounded-full tw:border tw:border-current" />
+        Not connected — nothing to query yet
+      </span>
+    );
   }
 
   if (data.readable) {
@@ -59,7 +92,7 @@ export function AssetAccessAction({ asset }: { asset: Pick<AssetSummary, 'fqn' |
         <Done onClose={() => { setOpen(false); setSent(null); }}>
           <RequestedNote className="" refusal={refusal} sent={sent} />
         </Done>
-      ) : refusal.requestable ? (
+      ) : (
         <RequestAccessForm
           className="tw:shadow-xl"
           from="catalog"
@@ -70,10 +103,6 @@ export function AssetAccessAction({ asset }: { asset: Pick<AssetSummary, 'fqn' |
           sourceId={null}
           sql=""
         />
-      ) : (
-        <Done onClose={() => setOpen(false)}>
-          <BlockedNote className="" refusal={refusal} />
-        </Done>
       )}
     </RequestDialog>
   );
@@ -86,17 +115,13 @@ export function AssetAccessAction({ asset }: { asset: Pick<AssetSummary, 'fqn' |
     );
   }
 
-  if (!data.requestable && !data.blockedBy) {
+  if (!sent && !canAsk(refusal)) {
     return null;
   }
 
   return (
     <>
-      <Button
-        color={data.requestable ? 'primary' : 'secondary'}
-        iconLeading={data.requestable ? Send01 : Lock01}
-        onPress={() => setOpen(true)}
-        size="sm">
+      <Button color="primary" iconLeading={Send01} onPress={() => setOpen(true)} size="sm">
         Request access
       </Button>
       {dialog}
@@ -104,12 +129,59 @@ export function AssetAccessAction({ asset }: { asset: Pick<AssetSummary, 'fqn' |
   );
 }
 
+/**
+ * The "Your access" row on a table's page: the same "You …" badge the catalog
+ * rows carry, and a sentence saying what it means here. Blank until the
+ * answer comes; nothing for a schema or a service.
+ */
+export function AssetStanding({ asset }: { asset: Asset }) {
+  const { applies, data, isError } = useEligibility(asset);
+  if (!applies) {
+    return null;
+  }
+  if (!data) {
+    return <span className="tw:text-quaternary">{isError ? 'Could not be checked' : '--'}</span>;
+  }
+  const brief = briefOf(data);
+  const standing = standingOf(brief);
+  if (!standing) {
+    return (
+      <span className="tw:max-w-72 tw:text-xs tw:font-normal tw:text-tertiary">
+        Nothing to query yet: the table is not connected.
+      </span>
+    );
+  }
+  return (
+    <span className="tw:flex tw:flex-col tw:items-start tw:gap-1">
+      <AccessBadge asset={asset} brief={brief} />
+      <span className="tw:max-w-72 tw:text-xs tw:font-normal tw:text-tertiary">{standing.sentence}</span>
+    </span>
+  );
+}
+
+/** The single answer, cut down to what a catalog row is told. */
+export function briefOf(data: Eligibility): EligibilityBrief {
+  return {
+    assetFqn: data.assetFqn,
+    queryable: data.queryable !== false,
+    readable: data.readable,
+    requestable: data.requestable,
+    openRequestId: data.openRequestId,
+    blockedKind: data.blockedKind ?? null,
+  };
+}
+
 function asRefusal(data: Eligibility): Refusal {
   return {
     message: `You cannot read ${data.assetFqn} yet.`,
     assetFqn: data.assetFqn,
     requestable: data.requestable,
+    queryable: data.queryable,
+    blockedKind: data.blockedKind,
     blockedBy: data.blockedBy,
+    blockedByPolicyId: data.blockedByPolicyId,
+    blockedByPolicy: data.blockedByPolicy,
+    blockedByReason: data.blockedByReason,
     approvers: data.approvers,
     openRequestId: data.openRequestId,
     stranded: data.stranded,

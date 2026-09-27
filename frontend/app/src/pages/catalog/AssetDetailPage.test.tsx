@@ -21,8 +21,12 @@ jest.mock('../../api/client', () => ({
   fetchAssets: (...args: unknown[]) => fetchAssets(...args),
 }));
 
-// The request button has its own tests; here it only has to stay out of the way.
-jest.mock('./AssetRequestAccess', () => ({ AssetAccessAction: () => null }));
+// The request button and the reader's standing have their own tests; here
+// they only have to stay out of the way, and say where they would be.
+jest.mock('./AssetRequestAccess', () => ({
+  AssetAccessAction: () => null,
+  AssetStanding: () => 'standing of the reader',
+}));
 
 jest.mock('../../api/policies', () => ({
   fetchPoliciesForAsset: (...args: unknown[]) => fetchPoliciesForAsset(...args),
@@ -398,6 +402,15 @@ test('the header strip names the deepest domain and the owner', async () => {
   expect(screen.getByText('Tier1')).toBeInTheDocument();
 });
 
+test('a table says where the reader stands next to whether it is connected', async () => {
+  renderPage();
+
+  // About the table: whether anybody can query it through ARAK.
+  expect(await screen.findByText('Connection')).toBeInTheDocument();
+  // About the person looking, in a row of its own.
+  expect(screen.getByText('Your access').parentElement).toHaveTextContent('standing of the reader');
+});
+
 test('an asset nobody owns says so in the header', async () => {
   fetchAsset.mockResolvedValue({ ...DETAIL, owners: [] });
   renderPage();
@@ -446,6 +459,9 @@ describe('a schema', () => {
 
   test('has a Tables tab listing what is in it, and no Columns tab', async () => {
     renderPage('prod-pg.SalesDB.dbo');
+    // Access is asked for and given on tables, so a schema has no row for it.
+    expect(await screen.findByText('Connection')).toBeInTheDocument();
+    expect(screen.queryByText('Your access')).toBeNull();
 
     const tab = await screen.findByRole('tab', { name: /Tables/ });
     expect(tab).toHaveTextContent('2');

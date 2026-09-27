@@ -32,7 +32,7 @@ import {
   groupFacets,
 } from './facets';
 import { AccessTab } from './AccessTab';
-import { AssetAccessAction } from './AssetRequestAccess';
+import { AssetAccessAction, AssetStanding } from './AssetRequestAccess';
 import { AuditTab } from './AuditTab';
 import { Field, Panel } from './panels';
 import { ChildrenPanel, childLabel, childrenTitle, isContainer } from './hierarchy';
@@ -240,6 +240,13 @@ export default function AssetDetailPage() {
               </span>
             </span>
           </Stat>
+          {/* About the person, next to the one about the table: "Connection"
+            * says whether anybody can query it, this whether you can. */}
+          {(asset.assetType === 'TABLE' || asset.assetType === 'VIEW') && (
+            <Stat label="Your access">
+              <AssetStanding asset={asset} />
+            </Stat>
+          )}
           {container ? (
             <Stat label="Contains">{childLabel(asset.assetType, asset.childCount ?? 0)}</Stat>
           ) : (

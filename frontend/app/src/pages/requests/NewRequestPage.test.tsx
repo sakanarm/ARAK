@@ -129,6 +129,8 @@ async function choose(...names: string[]) {
 
 describe('NewRequestPage', () => {
   it('sends one request per table it can ask for, and leaves the rest out saying why', async () => {
+    // invoices: a policy would still refuse after a grant. It is sent all the
+    // same; this caller may change policies, so they are told which one.
     requestAccess.mockImplementation((ask: { assetFqn: string }) =>
       ask.assetFqn === fqn('orders')
         ? Promise.resolve({ ticket: 'AR-101' })
@@ -143,11 +145,13 @@ describe('NewRequestPage', () => {
       'href',
       '/requests?tab=mine&status=&id=req-7'
     );
-    expect(within(tray).getByText(/No finance outside HQ still refuses/)).toBeInTheDocument();
+    expect(
+      within(tray).getByText(/Will be requested, but approving would not let you in: No finance outside HQ still refuses/)
+    ).toBeInTheDocument();
     expect(await within(tray).findAllByText('Will be requested')).toHaveLength(2);
 
     fireEvent.change(screen.getByLabelText('Why you need them'), { target: { value: 'Quarterly review' } });
-    const send = screen.getByRole('button', { name: 'Send 2 requests' });
+    const send = screen.getByRole('button', { name: 'Send 3 requests' });
     // The customers table's template wants a DPIA number, so the whole form does.
     expect(send).toBeDisabled();
     expect(screen.getByRole('status')).toHaveTextContent('Give the DPIA no.');
@@ -156,8 +160,8 @@ describe('NewRequestPage', () => {
     await waitFor(() => expect(send).toBeEnabled());
     fireEvent.click(send);
 
-    expect(await screen.findByText('1 of 2 requests sent')).toBeInTheDocument();
-    expect(requestAccess).toHaveBeenCalledTimes(2);
+    expect(await screen.findByText('1 of 3 requests sent')).toBeInTheDocument();
+    expect(requestAccess).toHaveBeenCalledTimes(3);
     // The reference goes only where the table's template asks one.
     expect(requestAccess.mock.calls[0][0]).toEqual({
       assetFqn: fqn('orders'),
@@ -167,8 +171,38 @@ describe('NewRequestPage', () => {
       days: 30,
     });
     expect(requestAccess.mock.calls[1][0]).toMatchObject({ assetFqn: fqn('customers'), reference: 'DPIA-9' });
+    expect(requestAccess.mock.calls[2][0]).toMatchObject({ assetFqn: fqn('invoices') });
     expect(screen.getByRole('link', { name: 'AR-101' })).toHaveAttribute('href', '/requests/AR-101');
-    expect(screen.getByText('The workflow is switched off')).toBeInTheDocument();
+    expect(screen.getAllByText('The workflow is switched off')).toHaveLength(2);
+  });
+
+  it('sends a blocked table with a plain note, and leaves out one that is not connected', async () => {
+    // What a plain requester is told: no policy name, only that one may need to change.
+    fetchEligibility.mockImplementation((f: string) =>
+      Promise.resolve(
+        f === fqn('orders')
+          ? eligible(f, { requestable: false, blockedKind: 'DENIED', blockedBy: null })
+          : eligible(f, { queryable: false, requestable: false, approvers: [] })
+      )
+    );
+    requestAccess.mockResolvedValue({ ticket: 'AR-102' });
+    renderPage();
+    await choose('orders', 'stock');
+
+    const tray = screen.getByRole('list', { name: 'Chosen tables' });
+    expect(
+      await within(tray).findByText(/Will be requested\. A policy may also need to change before this can be granted/)
+    ).toBeInTheDocument();
+    expect(within(tray).queryByText(/still refuses/)).toBeNull();
+    expect(within(tray).getByText(/Not connected: no data source in ARAK maps it/)).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText('Why you need them'), { target: { value: 'Quarterly review' } });
+    const send = screen.getByRole('button', { name: 'Send request' });
+    await waitFor(() => expect(send).toBeEnabled());
+    fireEvent.click(send);
+
+    await waitFor(() => expect(requestAccess).toHaveBeenCalledTimes(1));
+    expect(requestAccess.mock.calls[0][0]).toMatchObject({ assetFqn: fqn('orders') });
   });
 
   it('holds the whole form to the shortest ceiling of the tables chosen', async () => {
@@ -206,6 +240,12 @@ describe('standingOf', () => {
     expect(standingOf({ ...e, readable: true, openRequestId: 'r' }, null).kind).toBe('readable');
     expect(standingOf({ ...e, openRequestId: 'r', requestable: false }, null).kind).toBe('requested');
     expect(standingOf({ ...e, requestable: false, blockedBy: 'P' }, null)).toEqual({ kind: 'blocked', by: 'P' });
+    // The policy's title, when the server gave one, over its engine words.
+    expect(
+      standingOf({ ...e, requestable: false, blockedBy: 'p-1', blockedByPolicy: 'Finance at HQ' }, null)
+    ).toEqual({ kind: 'blocked', by: 'Finance at HQ' });
+    expect(standingOf({ ...e, requestable: false, blockedKind: 'DENIED' }, null)).toEqual({ kind: 'blocked', by: null });
+    expect(standingOf({ ...e, queryable: false, requestable: false, openRequestId: 'r' }, null).kind).toBe('unconnected');
     expect(standingOf(e, null).kind).toBe('ready');
   });
 });

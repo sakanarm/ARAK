@@ -1,8 +1,13 @@
 package com.mfec.dac.resources;
 
 import static com.mfec.dac.resources.StewardshipGuardsTest.ADMIN;
+import static com.mfec.dac.resources.StewardshipGuardsTest.AUDITOR;
+import static com.mfec.dac.resources.StewardshipGuardsTest.ELSEWHERE;
+import static com.mfec.dac.resources.StewardshipGuardsTest.OWNED;
+import static com.mfec.dac.resources.StewardshipGuardsTest.REQUESTER;
 import static com.mfec.dac.resources.StewardshipGuardsTest.SALES_OWNER;
 import static com.mfec.dac.resources.StewardshipGuardsTest.as;
+import static com.mfec.dac.resources.StewardshipGuardsTest.user;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
@@ -18,11 +23,16 @@ import com.mfec.dac.access.AccessEligibility;
 import com.mfec.dac.access.AccessRequestStore;
 import com.mfec.dac.access.AccessRequestStore.RequestException;
 import com.mfec.dac.access.AccessReview;
+import com.mfec.dac.auth.AuthenticatedUser;
 import jakarta.ws.rs.BadRequestException;
 import jakarta.ws.rs.ForbiddenException;
 import jakarta.ws.rs.NotFoundException;
 import jakarta.ws.rs.WebApplicationException;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -168,6 +178,134 @@ class AccessRequestResourceTest {
         .thenThrow(new RequestException(RequestException.Kind.FORBIDDEN, "not for the requester"));
     assertThatThrownBy(() -> reviewing.review(id, null, as(SALES_OWNER)))
         .isInstanceOf(ForbiddenException.class);
+  }
+
+  // ------------------------------------------------ asking, and where one stands
+
+  final AccessEligibility eligible = mock(AccessEligibility.class);
+  final AccessRequestResource asking = new AccessRequestResource(store, eligible);
+  final UUID policyId = UUID.randomUUID();
+
+  /** Where analyst stands on a connected table: readable, requestable, or kept out by a DENY. */
+  AccessEligibility.Verdict standing(boolean readable, boolean requestable) {
+    boolean blocked = !readable && !requestable;
+    return new AccessEligibility.Verdict(
+        OWNED,
+        readable,
+        requestable,
+        blocked ? "no-l1: subject rule satisfied" : null,
+        List.of(new AccessRequestStore.Approver("user", "sales_owner", true, null)),
+        null,
+        false,
+        null,
+        true,
+        blocked ? AccessEligibility.DENIED : null,
+        blocked ? policyId : null,
+        blocked ? "No L1 on sales" : null,
+        null);
+  }
+
+  AccessEligibility.Verdict notConnected() {
+    return new AccessEligibility.Verdict(
+        OWNED, false, false, null, List.of(), null, false, null, false, null, null, null, null);
+  }
+
+  AccessRequestResource.Ask askFor(String fqn) {
+    return new AccessRequestResource.Ask(fqn, null, "Quarter-end", null, 7, null, null);
+  }
+
+  @Test
+  @DisplayName("an ask a grant alone would not satisfy is still sent: 201")
+  void blockedAskIsSent() {
+    when(eligible.check(eq("analyst"), eq(OWNED), isNull(), isNull())).thenReturn(standing(false, false));
+
+    assertThat(asking.create(askFor(OWNED), as(REQUESTER), null).getStatus()).isEqualTo(201);
+    verify(store).create(any(), eq(new AccessRequestStore.Actor("analyst", false)));
+  }
+
+  @Test
+  @DisplayName("a table that is not connected is refused with 409, and the store is not asked")
+  void notConnectedIsRefused() {
+    when(eligible.check(anyString(), eq(OWNED), isNull(), isNull())).thenReturn(notConnected());
+
+    assertThatThrownBy(() -> asking.create(askFor(OWNED), as(REQUESTER), null))
+        .isInstanceOfSatisfying(
+            WebApplicationException.class,
+            e -> {
+              assertThat(e.getResponse().getStatus()).isEqualTo(409);
+              assertThat(e.getResponse().getEntity().toString())
+                  .contains(OWNED + " is not connected", "The request was not sent");
+            });
+    verify(store, never()).create(any(), any());
+  }
+
+  @Test
+  @DisplayName("a table the caller can already read is refused with 409")
+  void readableIsRefused() {
+    when(eligible.check(anyString(), eq(OWNED), isNull(), isNull())).thenReturn(standing(true, false));
+
+    assertThatThrownBy(() -> asking.create(askFor(OWNED), as(REQUESTER), null))
+        .isInstanceOfSatisfying(
+            WebApplicationException.class,
+            e -> assertThat(e.getResponse().getEntity().toString()).contains("already read"));
+    verify(store, never()).create(any(), any());
+  }
+
+  @Test
+  @DisplayName("the policy in the way is named to whoever could change it, and to nobody else")
+  void blockerNamedOnlyToThoseWhoCouldChangeIt() {
+    when(eligible.check(anyString(), eq(OWNED), isNull(), isNull())).thenReturn(standing(false, false));
+
+    for (AuthenticatedUser plain :
+        List.of(REQUESTER, user("other_owner", Set.of("DATA_OWNER"), List.of("pg.hrdb")))) {
+      AccessEligibility.Verdict seen = asking.eligibility(OWNED, null, as(plain), null);
+      assertThat(seen.blockedKind()).as(plain.username()).isEqualTo(AccessEligibility.DENIED);
+      assertThat(seen.blockedBy()).as(plain.username()).isNull();
+      assertThat(seen.blockedByPolicyId()).as(plain.username()).isNull();
+      assertThat(seen.blockedByPolicy()).as(plain.username()).isNull();
+      assertThat(seen.blockedByReason()).as(plain.username()).isNull();
+      // The rest of the answer is still theirs.
+      assertThat(seen.approvers()).as(plain.username()).hasSize(1);
+    }
+    // An administrator, the table's steward, an auditor, and a person the
+    // request would go to: each could act on the policy, or is shown it in review.
+    for (AuthenticatedUser told :
+        List.of(ADMIN, SALES_OWNER, AUDITOR, user("sales_owner", Set.of(), List.of()))) {
+      AccessEligibility.Verdict seen = asking.eligibility(OWNED, null, as(told), null);
+      assertThat(seen.blockedBy()).as(told.username()).startsWith("no-l1");
+      assertThat(seen.blockedByPolicyId()).as(told.username()).isEqualTo(policyId);
+      assertThat(seen.blockedByPolicy()).as(told.username()).isEqualTo("No L1 on sales");
+    }
+  }
+
+  @Test
+  @DisplayName("the catalog's batch: at most fifty, blanks and repeats dropped, the caller only")
+  void batch() {
+    List<String> fifty = new ArrayList<>();
+    for (int i = 0; i < 51; i++) {
+      fifty.add("pg.salesdb.sales.t" + i);
+    }
+    assertThatThrownBy(
+            () ->
+                asking.eligibilities(new AccessRequestResource.Check(fifty, null), as(REQUESTER), null))
+        .isInstanceOf(BadRequestException.class)
+        .hasMessage("Ask about at most 50 tables at a time");
+    assertThatThrownBy(() -> asking.eligibilities(null, as(REQUESTER), null))
+        .isInstanceOf(BadRequestException.class);
+    assertThatThrownBy(
+            () -> asking.eligibilities(new AccessRequestResource.Check(null, null), as(REQUESTER), null))
+        .isInstanceOf(BadRequestException.class);
+    verify(eligible, never()).briefs(anyString(), any(), any(), any());
+
+    fifty.remove(50);
+    asking.eligibilities(new AccessRequestResource.Check(fifty, null), as(REQUESTER), null);
+    verify(eligible).briefs(eq("analyst"), eq(fifty), isNull(), isNull());
+
+    asking.eligibilities(
+        new AccessRequestResource.Check(Arrays.asList(OWNED, " ", null, OWNED, ELSEWHERE), "audit"),
+        as(REQUESTER),
+        null);
+    verify(eligible).briefs(eq("analyst"), eq(List.of(OWNED, ELSEWHERE)), isNull(), eq("audit"));
   }
 
   @Test

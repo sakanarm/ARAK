@@ -174,7 +174,7 @@ export interface AssetSummary {
   childCount: number;
   /** Where ARAK learned of it: openmetadata, discovered (read off the source) or local. */
   provenance?: string | null;
-  /** The connected source a query reaches it (or what is under it) through; null = metadata only. */
+  /** The connected source a query reaches it (or what is under it) through; null = not connected. */
   querySource?: string | null;
 }
 

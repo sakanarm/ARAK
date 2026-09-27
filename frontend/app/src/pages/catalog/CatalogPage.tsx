@@ -34,13 +34,18 @@ import { PAGE_SIZES, Pager } from '../../components/Pager';
 import { leaf, segments, shortFqn } from '../../lib/fqn';
 import { plainText } from '../../lib/text';
 import { AssetTree } from './hierarchy';
-import { ReachBadges } from './reach';
+import { AccessBadge, ReachBadges } from './reach';
+import { useMyAccess } from './myAccess';
+import type { EligibilityBrief } from '../../api/accessRequests';
 import { AskArakButton } from '../../assist/AskArak';
 import { CatalogExportMenu } from './CatalogExportMenu';
 
 const PAGE_SIZE = 25;
 
 const ASSET_TYPES = ['TABLE', 'VIEW', 'SCHEMA', 'DATABASE', 'SERVICE'];
+
+/** One empty list, so a page with no rows does not ask for its badges again on every render. */
+const NO_ROWS: AssetSummary[] = [];
 
 /** List or hierarchy. */
 function ViewToggle({
@@ -120,6 +125,8 @@ export default function CatalogPage() {
     // page jumps; the stale rows are correct until the new ones arrive.
     placeholderData: keepPreviousData,
   });
+  // The "You …" badge on each table row: one batched call for the page.
+  const myAccess = useMyAccess(view === 'list' ? (data?.items ?? NO_ROWS) : NO_ROWS);
   const { data: summary } = useQuery({
     queryKey: ['catalog-summary'],
     queryFn: fetchCatalogSummary,
@@ -214,16 +221,21 @@ export default function CatalogPage() {
             Assets cached from OpenMetadata with the tags, terms, domains and owners a
             policy can select them by.
           </p>
-          {/* The key to the two marks every row carries. */}
+          {/* The key to the marks every row carries: about the table, and
+            * about the person looking. */}
           <p className="tw:mt-2 tw:flex tw:flex-wrap tw:items-center tw:gap-x-4 tw:gap-y-1 tw:text-xs tw:text-tertiary">
             <span className="tw:inline-flex tw:items-center tw:gap-1.5">
               <span className="tw:size-2 tw:rounded-full tw:bg-utility-green-500" />
-              Queryable — a connected source serves it
+              Connected — a data source in ARAK maps it, so queries can run on it
             </span>
             <span className="tw:inline-flex tw:items-center tw:gap-1.5">
               <span className="tw:size-2 tw:rounded-full tw:border tw:border-current" />
-              Metadata only — ARAK holds its description, not a connection
+              Not connected — no data source in ARAK maps it yet
             </span>
+          </p>
+          <p className="tw:mt-1 tw:text-xs tw:text-tertiary">
+            Connected / Not connected is about the table: whether ARAK can reach its data.
+            &lsquo;You …&rsquo; badges are about you: whether you can query it or ask for access.
           </p>
         </div>
         {summary && (
@@ -311,8 +323,8 @@ export default function CatalogPage() {
               }
               options={[
                 { value: '', label: 'Any connection' },
-                { value: 'queryable', label: 'Queryable' },
-                { value: 'metadata', label: 'Metadata only' },
+                { value: 'queryable', label: 'Connected' },
+                { value: 'metadata', label: 'Not connected' },
               ]}
               value={reach}
             />
@@ -446,7 +458,7 @@ export default function CatalogPage() {
           style={railHeight === null ? undefined : { maxHeight: railHeight }}>
           <ul className="tw:grid tw:auto-rows-fr tw:gap-3">
             {data?.items.map((asset) => (
-              <AssetCard asset={asset} key={asset.id} />
+              <AssetCard asset={asset} key={asset.id} standing={myAccess.get(asset.fqn)} />
             ))}
           </ul>
         </div>
@@ -504,7 +516,14 @@ function Stat({
   );
 }
 
-function AssetCard({ asset }: { asset: AssetSummary }) {
+function AssetCard({
+  asset,
+  standing,
+}: {
+  asset: AssetSummary;
+  /** Where the person looking stands on it; absent while loading, or for a container. */
+  standing?: EligibilityBrief;
+}) {
   const facets = listFacets(asset.facets);
   const look = lookFor(asset.assetType);
   const Icon = look.Icon;
@@ -532,6 +551,7 @@ function AssetCard({ asset }: { asset: AssetSummary }) {
           <p className="tw:min-w-0 tw:flex-1 tw:truncate tw:font-mono tw:text-xs tw:text-quaternary">
             {asset.fqn}
           </p>
+          <AccessBadge asset={asset} brief={standing} />
           <ReachBadges asset={asset} />
         </div>
 

@@ -273,31 +273,72 @@ export function isPreauthorization(request: { kind?: RequestKind | string | null
 }
 
 /**
- * Whether a person can read a table, and if not, whether asking would help.
+ * What kind of rule keeps somebody out after a grant: a DENY that shuts them
+ * out, or a higher layer that only lets in people it names. This is all a
+ * requester is told; which policy it is goes only to somebody who could
+ * change it.
+ */
+export type BlockedKind = 'DENIED' | 'NOT_ADMITTED';
+
+/**
+ * Where the caller stands on one table.
  *
- * `requestable` is the engine's answer to "would a grant from the owner open
- * this", not a guess from the refusal: a DENY, or a higher layer that refuses
- * this person, makes it false and `blockedBy` names the policy in the way.
+ * `readable` is a query through ARAK being allowed now, so it is false for a
+ * table that is not connected. `requestable` is a grant alone being enough;
+ * when it is not, a request can still be sent -- the owner may change the
+ * policy in the way -- and `blockedKind` says what kind of rule that is. The
+ * policy itself (`blockedBy`, `blockedByPolicy…`) comes only to somebody who
+ * oversees the table or would decide the request.
  */
 export interface Eligibility {
   assetFqn: string;
   readable: boolean;
   requestable: boolean;
+  /** False when no data source registered in ARAK maps the table: nothing to query or ask for. */
+  queryable?: boolean;
+  blockedKind?: BlockedKind | null;
+  /** The policy in the way, in engine words; for overseers and approvers only. */
   blockedBy: string | null;
+  blockedByPolicyId?: string | null;
+  /** That policy's title: its display name, else its name. */
+  blockedByPolicy?: string | null;
+  /** What that policy says, in its own words; null for a DENY that simply matched. */
+  blockedByReason?: string | null;
   /** Empty means no owner is recorded, and a platform administrator decides. */
   approvers: Approver[];
   openRequestId: string | null;
   stranded?: boolean;
-  /** The stages a request would walk; null when the table is readable already. */
+  /** The stages a request would walk; null when readable or not connected. */
   route?: Route | null;
 }
+
+/**
+ * One catalog row's worth of {@link Eligibility}, for the "You …" badges. It
+ * names no policy and no approver, whoever asks.
+ */
+export interface EligibilityBrief {
+  assetFqn: string;
+  queryable: boolean;
+  readable: boolean;
+  requestable: boolean;
+  openRequestId: string | null;
+  blockedKind: BlockedKind | null;
+}
+
+/** The most tables the batch answers at once; the server refuses more with 400. */
+export const MAX_ELIGIBILITY = 50;
 
 /** What a refused query carries when the refusal names one table. */
 export interface Refusal {
   message: string;
   assetFqn?: string;
   requestable?: boolean;
+  queryable?: boolean;
+  blockedKind?: BlockedKind | null;
   blockedBy?: string | null;
+  blockedByPolicyId?: string | null;
+  blockedByPolicy?: string | null;
+  blockedByReason?: string | null;
   approvers?: Approver[];
   openRequestId?: string | null;
   stranded?: boolean;
@@ -372,6 +413,25 @@ export async function fetchEligibility(
     `/v1/access-requests/eligibility/${encodeURIComponent(assetFqn)}`,
     { params: purpose ? { purpose } : {} }
   );
+  return data;
+}
+
+/**
+ * Where the caller stands on each of these tables, at most
+ * {@link MAX_ELIGIBILITY} at a time, in the order asked. The caller only: there
+ * is no asking on somebody else's behalf.
+ */
+export async function fetchEligibilities(
+  assetFqns: string[],
+  purpose?: string | null
+): Promise<EligibilityBrief[]> {
+  if (assetFqns.length === 0) {
+    return [];
+  }
+  const { data } = await apiClient.post<EligibilityBrief[]>('/v1/access-requests/eligibility', {
+    assetFqns,
+    purpose: purpose || null,
+  });
   return data;
 }
 

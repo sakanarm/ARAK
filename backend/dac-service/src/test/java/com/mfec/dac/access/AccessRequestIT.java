@@ -3,6 +3,8 @@ package com.mfec.dac.access;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.tuple;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
@@ -13,6 +15,7 @@ import com.mfec.dac.access.AccessWorkflow.OnReject;
 import com.mfec.dac.access.AccessWorkflow.Rule;
 import com.mfec.dac.access.AccessWorkflow.Seat;
 import com.mfec.dac.access.AccessWorkflow.Stage;
+import com.mfec.dac.auth.AuthenticatedUser;
 import com.mfec.dac.catalog.AssetStore;
 import com.mfec.dac.engine.EngineConfig;
 import com.mfec.dac.engine.PolicyEngine;
@@ -26,6 +29,7 @@ import com.mfec.dac.policy.DecisionService;
 import com.mfec.dac.policy.PolicyBindingMaterializer;
 import com.mfec.dac.policy.PolicyStore;
 import com.mfec.dac.policy.PrincipalLoader;
+import com.mfec.dac.resources.AccessRequestResource;
 import com.mfec.dac.schema.api.MaskingSpec;
 import com.mfec.dac.schema.api.PolicyDecision;
 import com.mfec.dac.schema.api.ResolvedColumnMask;
@@ -39,12 +43,15 @@ import com.mfec.dac.schema.entity.policy.FacetCondition;
 import com.mfec.dac.schema.entity.policy.Policy;
 import com.mfec.dac.schema.entity.policy.PrincipalMatch;
 import com.mfec.dac.schema.entity.policy.SubjectRule;
+import jakarta.ws.rs.core.Response;
+import jakarta.ws.rs.core.SecurityContext;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import org.flywaydb.core.Flyway;
 import org.jdbi.v3.core.Handle;
@@ -1310,14 +1317,17 @@ class AccessRequestIT {
     }
 
     @Test
-    @DisplayName("a gate that refuses the person: the route is not offered, whatever the workflow")
-    void gateHidesTheRoute() {
+    @DisplayName("a gate that refuses the person: the route is still shown, because the request still goes")
+    void gateKeepsTheRoute() {
       workflow(DBO, List.of(), stage(1, "Security", Rule.ANY, null, OnReject.VETO, user("sec_a")));
       activate(orgAllow("l2-only", "L2"));
 
       AccessEligibility.Verdict verdict = eligibility.check("analyst_a", CUSTOMER, null, null);
       assertThat(verdict.requestable()).isFalse();
-      assertThat(verdict.route()).isNull();
+      assertThat(verdict.blockedKind()).isEqualTo(AccessEligibility.NOT_ADMITTED);
+      // A grant alone would not do, but the request is sent all the same, so
+      // the form says where it goes.
+      assertThat(verdict.route().workflowName()).isEqualTo("Workflow on " + DBO);
       // The ledger is outside the gate's selector: the workflow's route is shown.
       assertThat(eligibility.check("analyst_a", LEDGER, null, null).route().workflowName())
           .isEqualTo("Workflow on " + DBO);
@@ -1647,9 +1657,13 @@ class AccessRequestIT {
       AccessEligibility.Verdict a = eligibility.check("analyst_a", CUSTOMER, null, null);
       assertThat(a.readable()).isFalse();
       assertThat(a.requestable()).isFalse();
+      assertThat(a.queryable()).isTrue();
       assertThat(a.blockedBy()).startsWith("l2-only");
-      // Nothing to ask for, so no route to show.
-      assertThat(a.route()).isNull();
+      assertThat(a.blockedKind()).isEqualTo(AccessEligibility.NOT_ADMITTED);
+      assertThat(a.blockedByPolicyId()).isEqualTo(policyNamed("l2-only"));
+      assertThat(a.blockedByPolicy()).isEqualTo("l2-only");
+      // The request still goes to the owner, so the route is shown.
+      assertThat(a.route().workflowName()).isEqualTo("Built-in");
       // L2 satisfies the gate, but the gate only speaks for layers; with no
       // grant the TABLE layer is silent, so analyst_b is already in.
       assertThat(eligibility.check("analyst_b", CUSTOMER, null, null).readable()).isTrue();
@@ -1681,6 +1695,10 @@ class AccessRequestIT {
       assertThat(verdict.readable()).isFalse();
       assertThat(verdict.requestable()).isFalse();
       assertThat(verdict.blockedBy()).startsWith("no-l1");
+      assertThat(verdict.blockedKind()).isEqualTo(AccessEligibility.DENIED);
+      assertThat(verdict.blockedByPolicyId()).isEqualTo(policyNamed("no-l1"));
+      // A matched DENY's own words only say that it matched; they are not a reason.
+      assertThat(verdict.blockedByReason()).isNull();
       assertThat(eligibility.check("analyst_b", CUSTOMER, null, null).readable()).isTrue();
     }
 
@@ -1719,6 +1737,305 @@ class AccessRequestIT {
       AccessEligibility.Verdict verdict = eligibility.check("ghost", LEDGER, null, null);
       assertThat(verdict.readable()).isFalse();
       assertThat(verdict.requestable()).isFalse();
+    }
+  }
+
+  // ------------------------------------------------- a table not connected
+
+  @Nested
+  @DisplayName("a table no registered source maps (not connected)")
+  class NotConnected {
+
+    @Test
+    @DisplayName("is neither readable nor requestable, whatever the policies say")
+    void neither() {
+      activate(orgAllow("everyone", null));
+      assertThat(eligibility.check("analyst_a", CUSTOMER, null, null).readable()).isTrue();
+      assertThat(eligibility.check("analyst_a", LEDGER, null, null).requestable()).isTrue();
+
+      disconnect(CUSTOMER);
+      disconnect(LEDGER);
+
+      // The ALLOW still holds, but nothing reads the table, so nothing is open.
+      AccessEligibility.Verdict customer = eligibility.check("analyst_a", CUSTOMER, null, null);
+      assertThat(customer.queryable()).isFalse();
+      assertThat(customer.readable()).isFalse();
+      assertThat(customer.requestable()).isFalse();
+      AccessEligibility.Verdict ledger = eligibility.check("analyst_a", LEDGER, null, null);
+      assertThat(ledger.queryable()).isFalse();
+      assertThat(ledger.requestable()).isFalse();
+      // Nothing to ask for, so nobody to ask and no route; and no rule to name,
+      // since none is what is in the way.
+      assertThat(ledger.approvers()).isEmpty();
+      assertThat(ledger.route()).isNull();
+      assertThat(ledger.blockedBy()).isNull();
+      assertThat(ledger.blockedKind()).isNull();
+    }
+
+    @Test
+    @DisplayName("a disabled source disconnects every table it maps")
+    void disabledSource() {
+      jdbi.useHandle(handle -> handle.execute("UPDATE data_source SET enabled = false"));
+
+      assertThat(eligibility.check("analyst_a", LEDGER, null, null).queryable()).isFalse();
+      assertThat(eligibility.check("analyst_a", LEDGER, null, null).requestable()).isFalse();
+    }
+
+    @Test
+    @DisplayName("a request for one is refused with 409, and nothing is written")
+    void createRefused() {
+      disconnect(LEDGER);
+
+      assertThatThrownBy(() -> resource().create(askFor(LEDGER), as("analyst_a"), null))
+          .isInstanceOfSatisfying(
+              jakarta.ws.rs.WebApplicationException.class,
+              e -> {
+                assertThat(e.getResponse().getStatus()).isEqualTo(409);
+                assertThat(e.getResponse().getEntity().toString())
+                    .contains(LEDGER + " is not connected", "The request was not sent");
+              });
+      assertThat(requests.madeBy(ANALYST_A, 10)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("a request already waiting from before is still the requester's to see")
+    void waitingRequestStays() {
+      AccessRequestStore.StoredRequest made = ask("analyst_a", LEDGER, 7);
+      disconnect(LEDGER);
+
+      AccessEligibility.Verdict verdict = eligibility.check("analyst_a", LEDGER, null, null);
+      assertThat(verdict.queryable()).isFalse();
+      assertThat(verdict.openRequestId()).isEqualTo(made.id().toString());
+    }
+  }
+
+  // ------------------------------------------------------- many at once
+
+  @Nested
+  @DisplayName("a page of catalog rows at once")
+  class Briefs {
+
+    @Test
+    @DisplayName("says of every row what the single answer says, in the order asked, once each")
+    void agreesWithTheSingleAnswer() {
+      activate(orgAllow("l2-only", "L2"));
+      AccessRequestStore.StoredRequest waiting = ask("analyst_a", LEDGER, 7);
+      disconnect(ORPHAN);
+      String missing = DBO + ".nope";
+
+      List<String> asked = List.of(CUSTOMER, LEDGER, ORPHAN, missing, CUSTOMER);
+      List<AccessEligibility.Brief> briefs = eligibility.briefs("analyst_a", asked, null, null);
+
+      assertThat(briefs)
+          .extracting(AccessEligibility.Brief::assetFqn)
+          .containsExactly(CUSTOMER, LEDGER, ORPHAN, missing);
+      for (AccessEligibility.Brief brief : briefs) {
+        AccessEligibility.Verdict one = eligibility.check("analyst_a", brief.assetFqn(), null, null);
+        assertThat(brief.queryable()).as(brief.assetFqn()).isEqualTo(one.queryable());
+        assertThat(brief.readable()).as(brief.assetFqn()).isEqualTo(one.readable());
+        assertThat(brief.requestable()).as(brief.assetFqn()).isEqualTo(one.requestable());
+        assertThat(brief.openRequestId()).as(brief.assetFqn()).isEqualTo(one.openRequestId());
+        assertThat(brief.blockedKind()).as(brief.assetFqn()).isEqualTo(one.blockedKind());
+      }
+      // And what that is, spelled out: the gate keeps analyst_a off the
+      // customer table; the ledger is waiting on the request already made; the
+      // orphan is not connected; a table not in the catalog is the same "no"
+      // as one that is not connected.
+      assertThat(briefs)
+          .extracting(
+              AccessEligibility.Brief::queryable,
+              AccessEligibility.Brief::readable,
+              AccessEligibility.Brief::requestable,
+              AccessEligibility.Brief::openRequestId,
+              AccessEligibility.Brief::blockedKind)
+          .containsExactly(
+              tuple(true, false, false, null, AccessEligibility.NOT_ADMITTED),
+              tuple(true, false, true, waiting.id().toString(), null),
+              tuple(false, false, false, null, null),
+              tuple(false, false, false, null, null));
+    }
+
+    @Test
+    @DisplayName("another person's requests are not the caller's")
+    void callerOnly() {
+      ask("analyst_b", LEDGER, 7);
+
+      assertThat(eligibility.briefs("analyst_a", List.of(LEDGER), null, null))
+          .singleElement()
+          .satisfies(b -> assertThat(b.openRequestId()).isNull());
+    }
+
+    @Test
+    @DisplayName("names no policy, whoever asks")
+    void namesNoPolicy() throws Exception {
+      activate(orgAllow("everyone", null));
+      activate(orgDeny("no-l1", "L1"));
+
+      List<AccessEligibility.Brief> briefs =
+          resource().eligibilities(
+              new AccessRequestResource.Check(List.of(CUSTOMER, LEDGER), null),
+              as("admin", "PLATFORM_ADMIN"),
+              null);
+
+      assertThat(briefs.get(0).blockedKind()).isNull();
+      String body = json.writeValueAsString(briefs);
+      assertThat(body).doesNotContain("no-l1", policyNamed("no-l1").toString(), "everyone");
+
+      List<AccessEligibility.Brief> mine =
+          resource().eligibilities(
+              new AccessRequestResource.Check(List.of(CUSTOMER), null), as("analyst_a"), null);
+      assertThat(mine.get(0).blockedKind()).isEqualTo(AccessEligibility.DENIED);
+      assertThat(json.writeValueAsString(mine))
+          .doesNotContain("no-l1", policyNamed("no-l1").toString());
+    }
+  }
+
+  // --------------------------------- asking when a grant alone would not do
+
+  @Nested
+  @DisplayName("asking when a grant alone would not open the table")
+  class BlockedAsk {
+
+    @BeforeEach
+    void denied() {
+      activate(orgAllow("everyone", null));
+      activate(orgDeny("no-l1", "L1"));
+    }
+
+    @Test
+    @DisplayName("the request is still sent (201), and nothing the requester gets back names the policy")
+    void sent() throws Exception {
+      Response response = resource().create(askFor(CUSTOMER), as("analyst_a"), null);
+
+      assertThat(response.getStatus()).isEqualTo(201);
+      AccessRequestStore.StoredRequest made = (AccessRequestStore.StoredRequest) response.getEntity();
+      assertThat(made.status()).isEqualTo("PENDING");
+      assertThat(made.approvers())
+          .extracting(AccessRequestStore.Approver::name)
+          .containsExactly("owner_o");
+      String policyId = policyNamed("no-l1").toString();
+      assertThat(json.writeValueAsString(made)).doesNotContain("no-l1", policyId);
+
+      // Its own page afterwards: the kind of rule, the request waiting, no policy.
+      AccessEligibility.Verdict seen =
+          resource().eligibility(CUSTOMER, null, as("analyst_a"), null);
+      assertThat(seen.requestable()).isFalse();
+      assertThat(seen.blockedKind()).isEqualTo(AccessEligibility.DENIED);
+      assertThat(seen.blockedBy()).isNull();
+      assertThat(seen.blockedByPolicyId()).isNull();
+      assertThat(seen.blockedByPolicy()).isNull();
+      assertThat(seen.blockedByReason()).isNull();
+      assertThat(seen.openRequestId()).isEqualTo(made.id().toString());
+      assertThat(json.writeValueAsString(seen)).doesNotContain("no-l1", policyId);
+    }
+
+    @Test
+    @DisplayName("somebody who could change the policy is told which one")
+    void overseersAreTold() {
+      UUID policy = policyNamed("no-l1");
+      // An administrator, looking at it as if they were the one refused.
+      AccessEligibility.Verdict admin =
+          AccessEligibility.toldTo(
+              signedIn("admin", "PLATFORM_ADMIN"), eligibility.check("analyst_a", CUSTOMER, null, null));
+      assertThat(admin.blockedBy()).startsWith("no-l1");
+      assertThat(admin.blockedByPolicyId()).isEqualTo(policy);
+      assertThat(admin.blockedByPolicy()).isEqualTo("no-l1");
+      assertThat(admin.blockedKind()).isEqualTo(AccessEligibility.DENIED);
+
+      // The table's owner holds no role in ARAK, but a request goes to them.
+      AccessEligibility.Verdict owner =
+          AccessEligibility.toldTo(
+              signedIn("owner_o"), eligibility.check("analyst_a", CUSTOMER, null, null));
+      assertThat(owner.blockedByPolicyId()).isEqualTo(policy);
+
+      // Another analyst is not.
+      AccessEligibility.Verdict other =
+          AccessEligibility.toldTo(
+              signedIn("analyst_b"), eligibility.check("analyst_a", CUSTOMER, null, null));
+      assertThat(other.blockedBy()).isNull();
+      assertThat(other.blockedByPolicyId()).isNull();
+      assertThat(other.blockedKind()).isEqualTo(AccessEligibility.DENIED);
+    }
+
+    @Test
+    @DisplayName("the owner's review names the policy, and configuring it as a grant is still refused")
+    void reviewerSeesTheBlocker() {
+      AccessRequestStore.StoredRequest made =
+          (AccessRequestStore.StoredRequest)
+              resource().create(askFor(CUSTOMER), as("analyst_a"), null).getEntity();
+      AccessReview review =
+          new AccessReview(
+              jdbi,
+              decisions,
+              requests,
+              policies,
+              new PrincipalQuery(jdbi),
+              new AssetContextLoader(json),
+              grants);
+
+      AccessReview.Review seen = review.review(made.id(), OWNER, null);
+      assertThat(seen.ifGranted().allowed()).isFalse();
+      assertThat(seen.ifGranted().blockedBy()).startsWith("no-l1");
+      assertThat(seen.conflicts().get(0).policyId()).isEqualTo(policyNamed("no-l1"));
+
+      requests.approve(made.id(), OWNER, null, null);
+      AccessRequestResource reviewing = new AccessRequestResource(requests, eligibility, review);
+      assertThatThrownBy(
+              () ->
+                  reviewing.complete(
+                      made.id(),
+                      new AccessRequestResource.Configure("GRANT", 7, null, null),
+                      as("owner_o")))
+          .isInstanceOfSatisfying(
+              jakarta.ws.rs.WebApplicationException.class,
+              e -> assertThat(e.getResponse().getStatus()).isEqualTo(409));
+      assertThat(requests.find(made.id(), OWNER).status()).isEqualTo("APPROVED");
+      assertThat(read("analyst_a", CUSTOMER)).isFalse();
+    }
+
+    @Test
+    @DisplayName("one the caller can already read is still refused with 409")
+    void readableRefused() {
+      assertThatThrownBy(() -> resource().create(askFor(CUSTOMER), as("analyst_b"), null))
+          .isInstanceOfSatisfying(
+              jakarta.ws.rs.WebApplicationException.class,
+              e -> {
+                assertThat(e.getResponse().getStatus()).isEqualTo(409);
+                assertThat(e.getResponse().getEntity().toString()).contains("already read");
+              });
+    }
+  }
+
+  @Nested
+  @DisplayName("asking past a higher layer that does not admit the person")
+  class GatedAsk {
+
+    @Test
+    @DisplayName("the request is sent too, and the requester is told only the kind of rule")
+    void notAdmitted() throws Exception {
+      activate(orgAllow("l2-only", "L2"));
+
+      AccessEligibility.Verdict seen =
+          resource().eligibility(CUSTOMER, null, as("analyst_a"), null);
+      assertThat(seen.requestable()).isFalse();
+      assertThat(seen.blockedKind()).isEqualTo(AccessEligibility.NOT_ADMITTED);
+      assertThat(seen.blockedBy()).isNull();
+      assertThat(seen.blockedByPolicyId()).isNull();
+      assertThat(json.writeValueAsString(seen))
+          .doesNotContain("l2-only", policyNamed("l2-only").toString());
+
+      Response created = resource().create(askFor(CUSTOMER), as("analyst_a"), null);
+      assertThat(created.getStatus()).isEqualTo(201);
+      assertThat(json.writeValueAsString(created.getEntity()))
+          .doesNotContain("l2-only", policyNamed("l2-only").toString());
+
+      // The administrator, who could change the gate, is told which it is.
+      AccessEligibility.Verdict told =
+          AccessEligibility.toldTo(
+              signedIn("admin", "PLATFORM_ADMIN"),
+              eligibility.check("analyst_a", CUSTOMER, null, null));
+      assertThat(told.blockedByPolicy()).isEqualTo("l2-only");
+      assertThat(told.blockedByPolicyId()).isEqualTo(policyNamed("l2-only"));
     }
   }
 
@@ -2599,6 +2916,46 @@ class AccessRequestIT {
     AssetSelector selector = new AssetSelector();
     selector.setCondition(condition);
     return selector;
+  }
+
+  /** The endpoints, over this test's stores; review-less, as the create path needs none. */
+  private AccessRequestResource resource() {
+    return new AccessRequestResource(requests, eligibility);
+  }
+
+  /** An ordinary ask for one table, as the form sends it. */
+  private static AccessRequestResource.Ask askFor(String fqn) {
+    return new AccessRequestResource.Ask(fqn, null, "Quarter-end reconciliation", null, 7, null, null);
+  }
+
+  /** Signed in as this directory person, holding these ARAK roles and no scopes. */
+  private static AuthenticatedUser signedIn(String username, String... roles) {
+    return new AuthenticatedUser(
+        idOf(username), username, username + "@example.test", username, "local", Set.of(roles),
+        List.of());
+  }
+
+  private static SecurityContext as(String username, String... roles) {
+    AuthenticatedUser user = signedIn(username, roles);
+    SecurityContext security = mock(SecurityContext.class);
+    when(security.getUserPrincipal()).thenReturn(user);
+    return security;
+  }
+
+  /**
+   * Takes the table off every registered source, as if its mapping had gone:
+   * the catalog calls it not connected from then on.
+   */
+  private static void disconnect(String fqn) {
+    int gone =
+        jdbi.withHandle(
+            handle ->
+                handle
+                    .createUpdate(
+                        "DELETE FROM asset_fqn_map WHERE om_fqn = :fqn OR om_fqn LIKE :fqn || '.%'")
+                    .bind("fqn", fqn)
+                    .execute());
+    assertThat(gone).as("mapped rows of " + fqn).isPositive();
   }
 
   private static UUID idOf(String username) {

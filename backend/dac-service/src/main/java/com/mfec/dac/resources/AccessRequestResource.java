@@ -55,6 +55,13 @@ public class AccessRequestResource {
   /** At most this many tables in one readability check, which is a suggestion list's worth. */
   static final int MAX_CHECK = 500;
 
+  /**
+   * At most this many tables in one eligibility batch: two catalog pages at the
+   * default size. Each one not readable costs a second decision, uncached, so
+   * this is kept to what a page shows rather than what a list could hold.
+   */
+  static final int MAX_ELIGIBILITY = 50;
+
   private final AccessRequestStore requests;
   private final AccessEligibility eligibility;
   private final AccessReview review;
@@ -158,12 +165,20 @@ public class AccessRequestResource {
   /**
    * Opens a request.
    *
-   * <p>The engine is asked first whether a grant would open this table for this
-   * person. If it would not -- a DENY, or a higher layer that refuses them -- the
-   * request is refused here with the policy that is in the way, instead of
-   * sitting in an owner's inbox waiting for a "yes" that changes nothing.
+   * <p>Refused here for two reasons only, both about there being nothing to
+   * ask for: the table is not connected, so no grant could let anybody query
+   * it; or the caller can read it already.
    *
-   * <p>A pre-authorization skips that question: it is not for the caller, and
+   * <p>A request a grant alone would not satisfy -- a DENY, or a higher layer
+   * that refuses this person -- is sent all the same. It used to be refused
+   * with the policy in the way, which left the person shut out with a policy
+   * name and nobody to take it to. The owner can take it further: the review
+   * names that policy to them, and configuring the request as a grant is still
+   * refused while the grant would not open the table ({@link
+   * #refuseAGrantThatWouldNotOpen}), so their way through is to change the
+   * policy and finish it as "Policy updated", or to decline it.
+   *
+   * <p>A pre-authorization skips both questions: it is not for the caller, and
    * what fulfils it is a policy the reviewer drafts, not a grant to them.
    */
   @POST
@@ -191,15 +206,19 @@ public class AccessRequestResource {
     if (!preauth) {
       AccessEligibility.Verdict verdict =
           eligibility.check(caller.username(), fqn, clientIp(http), ask.purpose());
+      // First, because it is about the table rather than the person: a grant
+      // on a table no source maps would be approved, configured, and still let
+      // nobody query it. The catalog does not offer the button; this is for
+      // whoever posts anyway.
+      if (!verdict.queryable()) {
+        throw conflict(
+            fqn
+                + " is not connected: no data source registered in ARAK maps it, so a grant"
+                + " would not let anyone query it. The request was not sent; an administrator"
+                + " can register its source first.");
+      }
       if (verdict.readable()) {
         throw conflict("You can already read " + fqn + "; there is nothing to ask for");
-      }
-      if (!verdict.requestable()) {
-        throw conflict(
-            "A grant from the owner would not open "
-                + fqn
-                + " for you, so the request was not sent. Still refusing: "
-                + verdict.blockedBy());
       }
     }
 
@@ -305,7 +324,12 @@ public class AccessRequestResource {
     return out;
   }
 
-  /** The full answer for one table: readable, requestable, or what is in the way. */
+  /**
+   * The full answer for one table: readable, requestable, or what is in the way.
+   *
+   * <p>What is in the way is named only to somebody who could change it (see
+   * {@link AccessEligibility#toldTo}); anybody else gets its kind.
+   */
   @GET
   @Path("/eligibility/{fqn: .+}")
   public AccessEligibility.Verdict eligibility(
@@ -313,7 +337,41 @@ public class AccessRequestResource {
       @QueryParam("purpose") String purpose,
       @Context SecurityContext security,
       @Context HttpServletRequest http) {
-    return eligibility.check(caller(security).username(), fqn, clientIp(http), purpose);
+    AuthenticatedUser caller = caller(security);
+    return AccessEligibility.toldTo(
+        caller, eligibility.check(caller.username(), fqn, clientIp(http), purpose));
+  }
+
+  /**
+   * Where the caller stands on each of a page of catalog rows, for the "You …"
+   * badges beside them.
+   *
+   * <p>The caller only, as with {@link #check}: there is no principal to name,
+   * because a page of these on somebody else's behalf would be a map of what
+   * they can reach. Each answer is {@link AccessEligibility#briefs}, which
+   * stands on the same decisions as the single {@code GET} above, so a badge
+   * and the table's own page agree -- a table not in the catalog included. It
+   * names no policy, whoever asks.
+   */
+  @POST
+  @Path("/eligibility")
+  @Consumes(MediaType.APPLICATION_JSON)
+  public List<AccessEligibility.Brief> eligibilities(
+      Check check, @Context SecurityContext security, @Context HttpServletRequest http) {
+    AuthenticatedUser caller = caller(security);
+    if (check == null || check.assetFqns() == null) {
+      throw new BadRequestException("Send {\"assetFqns\": [\"…\"]}");
+    }
+    if (check.assetFqns().size() > MAX_ELIGIBILITY) {
+      throw new BadRequestException("Ask about at most " + MAX_ELIGIBILITY + " tables at a time");
+    }
+    List<String> fqns = new ArrayList<>();
+    for (String fqn : check.assetFqns()) {
+      if (fqn != null && !fqn.isBlank() && !fqns.contains(fqn)) {
+        fqns.add(fqn);
+      }
+    }
+    return eligibility.briefs(caller.username(), fqns, clientIp(http), check.purpose());
   }
 
   /**

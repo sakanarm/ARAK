@@ -40,8 +40,10 @@ import { BUILT_IN_TEMPLATE } from '../query/RequestAccess';
  * table's workflow, is decided on its own, and is held by the server to its
  * own table's template. The form is the strictest of the tables' templates, so
  * answers that pass it pass each of them. Tables the requester can read
- * already, has asked for already, or that a policy would refuse whatever an
- * owner granted, are shown and left out rather than sent to be refused.
+ * already, has asked for already, or that are not connected (nothing to query,
+ * so nothing to grant) are shown and left out rather than sent to be refused.
+ * A table a policy would still refuse after a grant is sent all the same, with
+ * a note that a policy may have to change too: the owner may get it changed.
  */
 
 /** Enough for a project's worth of tables; past it, a pre-authorization says it better. */
@@ -52,16 +54,26 @@ export type Standing =
   | { kind: 'failed'; message: string }
   | { kind: 'readable' }
   | { kind: 'requested'; requestId: string }
+  | { kind: 'unconnected' }
+  /** Sent, though a grant alone would not open it; `by` only for who could change the policy. */
   | { kind: 'blocked'; by: string | null }
   | { kind: 'ready' };
+
+/** Whether the table goes out with the request. */
+export function goes(standing: Standing): boolean {
+  return standing.kind === 'ready' || standing.kind === 'blocked';
+}
 
 /** Whether a table goes out with the request, and if not, why not. */
 export function standingOf(eligibility: Eligibility | undefined, error: unknown): Standing {
   if (error) return { kind: 'failed', message: apiErrorMessage(error, 'Could not check this table') };
   if (!eligibility) return { kind: 'checking' };
   if (eligibility.readable) return { kind: 'readable' };
+  if (eligibility.queryable === false) return { kind: 'unconnected' };
   if (eligibility.openRequestId) return { kind: 'requested', requestId: eligibility.openRequestId };
-  if (!eligibility.requestable) return { kind: 'blocked', by: eligibility.blockedBy };
+  if (!eligibility.requestable) {
+    return { kind: 'blocked', by: eligibility.blockedByPolicy ?? eligibility.blockedBy };
+  }
   return { kind: 'ready' };
 }
 
@@ -114,7 +126,7 @@ export default function NewRequestPage() {
   const templateOf = (i: number): RequestTemplate => templates[i]?.data ?? BUILT_IN_TEMPLATE;
   const going = chosen
     .map((asset, i) => ({ asset, template: templateOf(i), standing: standings[i] }))
-    .filter((row) => row.standing.kind === 'ready');
+    .filter((row) => goes(row.standing));
   const checking =
     standings.some((s) => s.kind === 'checking') || templates.some((t) => t.isPending);
 
@@ -518,13 +530,36 @@ function StandingNote({ standing, template }: { standing: Standing; template?: R
           </Link>
         </p>
       );
-    case 'blocked':
+    case 'unconnected':
       return (
+        <p className={`${line} tw:text-tertiary`}>
+          Not connected: no data source in ARAK maps it, so there is nothing to ask for yet; it will be
+          left out.
+        </p>
+      );
+    case 'blocked':
+      // Sent all the same. The policy is named only to somebody who could
+      // change it; the server names it to nobody else.
+      return standing.by ? (
         <p className={`${line} tw:text-warning-primary`}>
           <AlertTriangle aria-hidden className="tw:size-3.5 tw:shrink-0" />
-          {standing.by
-            ? `Asking would not help: ${standing.by} still refuses. It will be left out.`
-            : 'It cannot be asked for; it will be left out.'}
+          {`Will be requested, but approving would not let you in: ${standing.by} still refuses. Change that policy to give access.`}
+          {template?.id && (
+            <Badge color="gray" size="sm" type="pill-color">
+              {template.name}
+            </Badge>
+          )}
+        </p>
+      ) : (
+        <p className={`${line} tw:text-tertiary`}>
+          <InfoCircle aria-hidden className="tw:size-3.5 tw:shrink-0" />
+          Will be requested. A policy may also need to change before this can be granted, so it may
+          take longer.
+          {template?.id && (
+            <Badge color="gray" size="sm" type="pill-color">
+              {template.name}
+            </Badge>
+          )}
         </p>
       );
     case 'ready':

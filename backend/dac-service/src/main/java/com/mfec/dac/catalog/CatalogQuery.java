@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.core.type.TypeReference;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -114,6 +115,32 @@ public class CatalogQuery {
        WHERE qm.verification_status <> 'ORPHANED'
          AND (qm.om_fqn = a.fqn OR qm.om_fqn LIKE a.fqn || '.%')
        ORDER BY qs.name LIMIT 1) AS query_source""";
+
+  /**
+   * The source a query reaches each of these assets through, for those one
+   * does; an asset no source maps, or one not in the catalog, is left out.
+   *
+   * <p>It is {@link #QUERY_SOURCE} itself rather than a second query that
+   * agrees with it, because the access pages ask it before offering "Request
+   * access": a table this list calls not connected must not be one a request
+   * can be made for, and the other way round.
+   */
+  public static Map<String, String> querySources(Handle handle, Collection<String> fqns) {
+    if (fqns == null || fqns.isEmpty()) {
+      return Map.of();
+    }
+    Map<String, String> out = new LinkedHashMap<>();
+    handle
+        .createQuery(
+            "SELECT * FROM (SELECT a.fqn, "
+                + QUERY_SOURCE
+                + " FROM asset a WHERE a.is_current AND a.fqn IN (<fqns>)) reached"
+                + " WHERE query_source IS NOT NULL")
+        .bindList("fqns", List.copyOf(fqns))
+        .map((rs, ctx) -> Map.entry(rs.getString("fqn"), rs.getString("query_source")))
+        .forEach(row -> out.putIfAbsent(row.getKey(), row.getValue()));
+    return out;
+  }
 
   /** One page of {@link AssetSummary}, with what it took to get there. */
   public record AssetPage(List<AssetSummary> items, int total, int limit, int offset) {}

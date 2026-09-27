@@ -3,9 +3,16 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { MemoryRouter } from 'react-router-dom';
 import CatalogPage from './CatalogPage';
 import type { AssetSummary, FacetRow } from '../../api/client';
+import type { EligibilityBrief } from '../../api/accessRequests';
 
 const fetchAssets = jest.fn();
 const fetchFacetValues = jest.fn();
+const fetchEligibilities = jest.fn();
+
+jest.mock('../../api/accessRequests', () => ({
+  ...jest.requireActual('../../api/accessRequests'),
+  fetchEligibilities: (...args: unknown[]) => fetchEligibilities(...args),
+}));
 
 jest.mock('../../api/client', () => ({
   apiErrorMessage: (_error: unknown, fallback: string) => fallback,
@@ -69,9 +76,23 @@ function renderPage(path = '/catalog') {
   );
 }
 
+function brief(assetFqn: string, overrides: Partial<EligibilityBrief> = {}): EligibilityBrief {
+  return {
+    assetFqn,
+    queryable: true,
+    readable: false,
+    requestable: true,
+    openRequestId: null,
+    blockedKind: null,
+    ...overrides,
+  };
+}
+
 beforeEach(() => {
   fetchAssets.mockReset();
   fetchFacetValues.mockReset();
+  fetchEligibilities.mockReset();
+  fetchEligibilities.mockResolvedValue([]);
   fetchFacetValues.mockResolvedValue([
     { facetType: 'tags', facetFqn: 'PII.Sensitive', assets: 3 },
     { facetType: 'domains', facetFqn: 'Finance', assets: 4 },
@@ -187,6 +208,71 @@ test('asks for as many assets per page as the URL says', async () => {
   );
 });
 
+test('says where the reader stands on each table, asking once for the whole page', async () => {
+  const named = (name: string, overrides: Partial<AssetSummary> = {}) =>
+    asset({ id: name, fqn: `prod-pg.SalesDB.dbo.${name}`, name, querySource: 'prod-pg', ...overrides });
+  fetchAssets.mockResolvedValue({
+    items: [
+      named('customer'),
+      named('ledger'),
+      named('payroll'),
+      named('refunds'),
+      named('archive', { querySource: null }),
+      asset({ id: 'sc', fqn: 'prod-pg.SalesDB.dbo', name: 'dbo', assetType: 'SCHEMA', querySource: 'prod-pg' }),
+    ],
+    total: 6,
+    limit: 25,
+    offset: 0,
+  });
+  fetchEligibilities.mockImplementation((fqns: string[]) =>
+    Promise.resolve(
+      fqns.map((fqn) =>
+        fqn.endsWith('.customer')
+          ? brief(fqn, { readable: true, requestable: false })
+          : fqn.endsWith('.payroll')
+            ? brief(fqn, { requestable: false, blockedKind: 'DENIED' })
+            : fqn.endsWith('.refunds')
+              ? brief(fqn, { openRequestId: 'req-3' })
+              : fqn.endsWith('.archive')
+                ? brief(fqn, { queryable: false, requestable: false })
+                : brief(fqn)
+      )
+    )
+  );
+  renderPage();
+
+  expect(await screen.findByText('You can query')).toBeInTheDocument();
+  expect(screen.getByText('You can request')).toBeInTheDocument();
+  expect(screen.getByText('You have no access')).toBeInTheDocument();
+  expect(screen.getByText('You requested access')).toBeInTheDocument();
+  // Four badges for five tables: a table nobody can query has nothing to say
+  // about the reader, and neither does a schema.
+  expect(screen.getAllByText(/^You /)).toHaveLength(4);
+  // One call for the page, tables only, never one per row.
+  expect(fetchEligibilities).toHaveBeenCalledTimes(1);
+  expect(fetchEligibilities).toHaveBeenCalledWith([
+    'prod-pg.SalesDB.dbo.archive',
+    'prod-pg.SalesDB.dbo.customer',
+    'prod-pg.SalesDB.dbo.ledger',
+    'prod-pg.SalesDB.dbo.payroll',
+    'prod-pg.SalesDB.dbo.refunds',
+  ]);
+  // The badges about the table never say "you".
+  expect(screen.getAllByText('Connected · prod-pg').length).toBeGreaterThanOrEqual(4);
+  // Once on the archive card, and again in the connection filter.
+  expect(screen.getAllByText('Not connected').length).toBeGreaterThanOrEqual(1);
+  expect(screen.getByText(/is about the table: whether ARAK can reach its data/)).toBeInTheDocument();
+});
+
+test('shows the table badges without the reader\'s when their standing cannot be had', async () => {
+  fetchEligibilities.mockRejectedValue(new Error('down'));
+  renderPage();
+
+  expect(await screen.findByText('customer')).toBeInTheDocument();
+  await waitFor(() => expect(fetchEligibilities).toHaveBeenCalled());
+  expect(screen.queryByText(/^You /)).toBeNull();
+});
+
 describe('hierarchy', () => {
   const page = (items: AssetSummary[]) => ({ items, total: items.length, limit: 500, offset: 0 });
   const service = asset({ id: 's', fqn: 'prod-pg', name: 'prod-pg', assetType: 'SERVICE', parentFqn: null, columnCount: 0, childCount: 2 });
@@ -195,6 +281,9 @@ describe('hierarchy', () => {
   const dbo = asset({ id: 'sc', fqn: 'prod-pg.SalesDB.dbo', name: 'dbo', assetType: 'SCHEMA', parentFqn: 'prod-pg.SalesDB', columnCount: 0, childCount: 1 });
 
   beforeEach(() => {
+    fetchEligibilities.mockImplementation((fqns: string[]) =>
+      Promise.resolve(fqns.map((fqn) => brief(fqn, { readable: true, requestable: false })))
+    );
     fetchAssets.mockImplementation((query: { assetType?: string; parent?: string }) => {
       if (query.assetType === 'SERVICE') return Promise.resolve(page([service]));
       if (query.parent === 'prod-pg') return Promise.resolve(page([sales, hr]));
@@ -223,6 +312,9 @@ describe('hierarchy', () => {
     expect(table).toHaveAttribute('href', `/catalog/${encodeURIComponent('prod-pg.SalesDB.dbo.customer')}`);
     expect(fetchAssets).toHaveBeenCalledWith({ parent: 'prod-pg.SalesDB', limit: 500 });
     expect(within(tree).getByRole('treeitem', { name: 'customer' })).toHaveAttribute('aria-level', '4');
+    // The reader's standing, asked for the schema's tables in one call.
+    expect(await within(tree).findByText('You can query')).toBeInTheDocument();
+    expect(fetchEligibilities).toHaveBeenCalledWith(['prod-pg.SalesDB.dbo.customer']);
     // The filtered list is not asked for while the tree is shown.
     expect(fetchAssets).not.toHaveBeenCalledWith(expect.objectContaining({ offset: 0 }));
   });

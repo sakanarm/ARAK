@@ -94,7 +94,8 @@ class AssistToolboxTest {
   }
 
   private static AccessEligibility.Verdict verdict(String fqn, boolean read, boolean request) {
-    return new AccessEligibility.Verdict(fqn, read, request, null, List.of(), null, false, null);
+    return new AccessEligibility.Verdict(
+        fqn, read, request, null, List.of(), null, false, null, true, null, null, null, null);
   }
 
   private static SearchQuery.Hit table(String fqn, String description) {

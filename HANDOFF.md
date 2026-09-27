@@ -688,6 +688,19 @@ M25 ทำแยกได้ (profile ผ่าน proxy ที่มีแล�
 - `GrantCompositionIT.Rejected.windowMustNotBeOver` ใหม่ · `expiryJobIsNarrow` เปลี่ยนเป็นรัน job ณ เวลาหลัง grant หมด แทนการสร้าง grant ย้อนหลัง
 - ผ่าน: IT `GrantCompositionIT` 20/20 · unit grant/stewardship
 
+### BT.10 Catalog บอกว่าตารางต่อ source แล้วหรือยัง และคนดู query ได้ไหม · ตารางที่ไม่ได้ต่อไม่มีปุ่มขอ · คำขอที่ policy กันยังส่งได้
+- ผู้ใช้แจ้ง 2 เรื่อง: ตาราง "Metadata only" ยังมีปุ่ม Request access · ใน Catalog ดูไม่ออกว่าตัวเอง query ตารางไหนได้
+- เปลี่ยนคำ (ชื่อใน API เดิมทั้งหมด เช่น `querySource`): badge `Queryable · src` → `Connected · src` · `Metadata only` → `Not connected` · filter เป็น Connected / Not connected · คอลัมน์ export `Queryable via` → `Connected through` · หน้า detail มี 2 แถวแยกกัน **Connection** (เรื่องของตาราง) กับ **Your access** (เรื่องของคนดู) · badge ของตารางไม่พูดว่า "you" · badge ของคนขึ้นต้นด้วย "You" เสมอ · Catalog มีบรรทัด legend อธิบายความต่าง
+- badge ของคน (TABLE/VIEW เท่านั้น · ตารางที่ Not connected ไม่มี): `You can query` · `You requested access` · `You can request` · `You have no access` (tooltip บอกแค่ชนิดของกฎ ไม่บอกชื่อ policy) · ขึ้นบน card, tree และตาราง Contents · ยังไม่ได้ทำ filter "My access"
+- endpoint ใหม่ `POST /v1/access-requests/eligibility` body `{"assetFqns": [...], "purpose": null}` → `[{assetFqn, queryable, readable, requestable, openRequestId, blockedKind}]` ของผู้เรียกเองเท่านั้น · สูงสุด 50 ต่อครั้ง (เกิน หรือไม่มี list → 400) · ตัดค่าว่างและค่าซ้ำ · frontend (`catalog/myAccess.ts`) ถามทีละ 50 ต่อหน้า ไม่ถามทีละแถว
+- ตาราง Not connected: eligibility ตอบ `queryable:false, requestable:false` · หน้า detail แสดงป้ายเทาเส้นประ *"Not connected — nothing to query yet"* แทนปุ่ม · `POST /v1/access-requests` ตอบ 409 (FQN ที่ไม่มีอยู่จริงก็ได้ 409 นี้)
+- ปิดชื่อ policy: เพิ่ม `blockedKind` = `DENIED` / `NOT_ADMITTED` · `blockedBy` / `blockedByPolicy` / `blockedByPolicyId` / `blockedByReason` ส่งให้เฉพาะคนที่ `Stewardship.oversees` (admin, POLICY_AUTHOR, DATA_OWNER ใน scope, AUDITOR) หรือ approver แบบ user · requester ธรรมดาได้แค่ `blockedKind` · ใช้ที่ `GET /v1/access-requests/eligibility/{fqn}` และ 403 ของ `POST /v1/query` ผ่าน `AccessEligibility.toldTo` · batch ไม่ส่งชื่อ policy ให้ใครเลย
+- ผู้ใช้สั่ง 2026-09-27 (*"User ยังต้องสามารถกรอกขอได้สิ"*): คำขอที่ policy กันยังส่งได้ → 201 · 409 เหลือแค่ Not connected กับ "อ่านได้อยู่แล้ว" · ฟอร์มกด Send ได้ · requester เห็น *"A policy may also need to change before this can be granted. Your request still goes to the owner, who will see what else is needed, so it may take longer."* · owner/admin เห็น *"Approving would not let you in: [policy] still refuses ([เหตุผล]). Change that policy to give access."* ชื่อ policy ลิงก์ไป `/policies/:id` (DENIED ใช้เหตุผล *you are among the people it shuts out*) · หน้า Review ยังเหมือนเดิม
+- New request หลายตาราง: ตารางที่ policy กันถูกส่งไปด้วย · ตาราง Not connected ถูกตัดออกพร้อมบอกเหตุผล
+- endpoint ที่ shape เปลี่ยน: `GET /v1/access-requests/eligibility/{fqn}` (field ใหม่ + ปิดชื่อ policy) · 403 ของ `POST /v1/query` (เหมือนกัน) · `POST /v1/access-requests/eligibility` (ใหม่) · `POST /v1/access-requests` (policy กัน → 201 · Not connected → 409)
+- NokRak (`AssistToolbox`) ไม่เสนอตารางที่ policy กันหรือที่ไม่ได้ต่อ
+- ผ่าน: unit `AccessRequestResourceTest` 14 · `AssistToolboxTest` 15 · `AccessEligibilityTest` 4 · IT `AccessRequestIT` 91/91 + `CatalogQueryIT` 22/22 · jest ทั้งหมด 63 suites / 628 · tsc · eslint ไฟล์ที่แก้
+
 ### BT.6 ค้าง
 - credential ของ source บน prod ที่ auth ไม่ผ่าน ผู้ใช้เป็นคนตัดสิน · แก้แล้วให้รัน Q1–Q7 ใน `prod-demo-policies.mjs` อีกรอบ
 - กรณี group บน prod รอ push แล้ว deploy V35 ก่อน

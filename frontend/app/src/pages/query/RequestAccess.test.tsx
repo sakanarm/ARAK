@@ -404,17 +404,59 @@ describe('RequestAccess', () => {
     expect(screen.getByRole('link', { name: 'Access requests' })).toBeInTheDocument();
   });
 
-  it('names the policy in the way when a grant from the owner would not help', () => {
-    // A DENY, or a stricter layer, outranks any grant: sending this to the
-    // owner would ask them for something they cannot give.
-    renderBox(refusal({ requestable: false, blockedBy: 'No PII outside Thailand' }));
+  it('still lets a requester a policy would refuse send the request, telling them only that a policy may need to change', async () => {
+    // A DENY, or a stricter layer, outranks any grant -- but the owner may get
+    // that policy changed, so the request still goes. The requester is told
+    // what kind of rule it is and nothing about which one.
+    requestAccess.mockResolvedValue(sent());
+    renderBox(refusal({ requestable: false, blockedKind: 'NOT_ADMITTED', blockedBy: null }));
 
-    expect(screen.getByText(/Asking the owner would not help/)).toBeInTheDocument();
-    expect(screen.getByText('No PII outside Thailand')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Request access from the owner' })).toBeNull();
+    expect(screen.getByText('You can still ask the owner')).toBeInTheDocument();
+    const { reason, send } = openForm();
+    expect(
+      screen.getByText(/A policy may also need to change before this can be granted. Your request still goes to the owner/)
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/still refuses/)).toBeNull();
+    fireEvent.change(reason, { target: { value: 'Month-end reconciliation' } });
+    expect(send).toBeEnabled();
+    fireEvent.click(send);
+
+    await waitFor(() => expect(requestAccess).toHaveBeenCalledTimes(1));
+    expect(await screen.findByText(/Request sent/)).toBeInTheDocument();
+  });
+
+  it('names the policy in the way, with a link and its reason, to somebody who could change it', () => {
+    renderBox(
+      refusal({
+        requestable: false,
+        blockedKind: 'NOT_ADMITTED',
+        blockedBy: 'no-pii-abroad',
+        blockedByPolicy: 'No PII outside Thailand',
+        blockedByPolicyId: 'pol-7',
+        blockedByReason: 'only staff in Thailand are let in',
+      })
+    );
+
+    openForm();
+    expect(screen.getByRole('link', { name: 'No PII outside Thailand' })).toHaveAttribute(
+      'href',
+      '/policies/pol-7'
+    );
+    expect(screen.getByText(/Approving would not let you in:/)).toBeInTheDocument();
+    expect(screen.getByText(/still refuses \(only staff in Thailand are let in\)\. Change that policy to give access\./)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Send request' })).toBeInTheDocument();
+  });
+
+  it('offers nothing to ask for on a table that is not connected', () => {
+    renderBox(refusal({ requestable: false, queryable: false }));
+
+    expect(screen.getByText(/is not connected: no data source/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Request access/ })).toBeNull();
   });
 
   it('offers nothing for a run on somebody else’s behalf', () => {
+    // The server says neither whether a grant would do nor what kind of rule
+    // is in the way: it is not the caller's refusal.
     const { container } = renderBox(refusal({ requestable: false, blockedBy: null }));
     expect(container).toBeEmptyDOMElement();
   });

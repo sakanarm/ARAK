@@ -29,12 +29,13 @@ import { FIELD, Select, TextField } from '../policies/controls';
 /**
  * What to do about a refusal, under the refusal itself.
  *
- * <p>Only what the server said is offered. Whether a request could help is the
- * engine's answer — the same decision re-run with a grant from the owner in the
- * stack — so the button is drawn only when a "yes" from the owner would open
- * the table. When a DENY or a stricter layer would still refuse, the box says
- * which policy that is instead, because asking the owner would put a request in
- * front of somebody who cannot give the answer being asked for.
+ * <p>Only what the server said is offered. Whether a grant alone would open
+ * the table is the engine's answer — the same decision re-run with a grant
+ * from the owner in the stack. When a DENY or a stricter layer would still
+ * refuse, the request can still be sent: the owner may get that policy
+ * changed. The form then says so, plainly to the requester and with the
+ * policy's name to somebody who could change it — the server names it only
+ * to them. A table that is not connected has nothing to ask for.
  *
  * <p>The catalog asks the same question before anybody has run anything
  * (`from="catalog"`): there is no statement and no refusal to send along, so
@@ -62,23 +63,35 @@ export default function RequestAccess({
     return null;
   }
 
+  if (refusal.queryable === false) {
+    return <NotConnectedNote refusal={refusal} />;
+  }
+
   if (sent || refusal.openRequestId) {
     return <RequestedNote refusal={refusal} sent={sent} />;
   }
 
-  if (!refusal.requestable) {
-    return <BlockedNote refusal={refusal} />;
+  if (!canAsk(refusal)) {
+    return null;
   }
 
+  // A grant alone would not do it, so "the owner can let you in" would promise
+  // too much; the form says what else is needed.
+  const blocked = refusal.requestable === false;
   if (!asking) {
     return (
       <Card>
         <div className="tw:min-w-0 tw:flex-1">
           <p className="tw:text-sm tw:font-semibold tw:text-primary">
-            {catalog ? 'You cannot read this table yet' : 'The owner can let you in'}
+            {catalog
+              ? 'You cannot read this table yet'
+              : blocked
+                ? 'You can still ask the owner'
+                : 'The owner can let you in'}
           </p>
           <p className="tw:mt-0.5 tw:text-sm tw:text-tertiary">
-            {catalog && 'The owner can let you in. '}
+            {catalog && !blocked && 'The owner can let you in. '}
+            {blocked && 'A policy may also need to change, so it may take longer. '}
             {whoDecides(refusal)}
           </p>
         </div>
@@ -101,6 +114,22 @@ export default function RequestAccess({
       sql={sql}
     />
   );
+}
+
+/**
+ * Whether the caller can send a request about this refusal.
+ *
+ * <p>Yes when a grant would open the table, and yes when a policy would still
+ * refuse -- the server says what kind (`blockedKind`) whenever it is the
+ * caller's own refusal. A refusal with neither is a run on somebody else's
+ * behalf, and a request is theirs to make, not ours. Never for a table that is
+ * not connected.
+ */
+export function canAsk(refusal: Refusal): boolean {
+  if (!refusal.assetFqn || refusal.queryable === false) {
+    return false;
+  }
+  return !!refusal.requestable || !!refusal.blockedKind || !!refusal.blockedBy;
 }
 
 /**
@@ -230,6 +259,7 @@ export function RequestAccessForm({
             <p className="tw:min-w-0 tw:whitespace-pre-line tw:break-words">{form.guidance}</p>
           </div>
         )}
+        {refusal.requestable === false && <BlockedNote className="" refusal={refusal} />}
         {refusal.route && !refusal.stranded && !ownersOnly(refusal.route) && (
           <RouteSteps route={refusal.route} />
         )}
@@ -566,19 +596,57 @@ export function RequestedNote({
 }
 
 /**
- * A grant would not help, and which policy is in the way.
+ * A grant alone would not open the table, said in the request form.
  *
- * <p>Nothing to say when the server gave no reason: that is a run on
- * somebody else's behalf, and a request is theirs to make, not ours.
+ * <p>The request still goes: the owner may get the policy in the way changed.
+ * Somebody who could change it -- an administrator, a policy author, the
+ * table's owner, whoever decides the request -- is told which policy it is,
+ * with a link to it; the server sends the name to nobody else. Everyone else
+ * is told only that a policy may have to change, which is true and names
+ * nobody's rules. Nothing when a grant would be enough.
  */
 export function BlockedNote({ refusal, className }: { refusal: Refusal; className?: string }) {
-  return refusal.blockedBy ? (
+  if (refusal.requestable !== false) {
+    return null;
+  }
+  const title = refusal.blockedByPolicy ?? refusal.blockedBy;
+  if (!title) {
+    return (
+      <Note className={className} icon={InfoCircle} tone="info">
+        A policy may also need to change before this can be granted. Your request still goes to the
+        owner, who will see what else is needed, so it may take longer.
+      </Note>
+    );
+  }
+  const reason =
+    refusal.blockedKind === 'DENIED' ? 'you are among the people it shuts out' : refusal.blockedByReason;
+  return (
     <Note className={className} icon={AlertTriangle} tone="warning">
-      Asking the owner would not help: even with their grant,{' '}
-      <strong>{refusal.blockedBy}</strong> still refuses. Access to{' '}
-      <span className="tw:font-mono">{refusal.assetFqn}</span> has to change in that policy.
+      Approving would not let you in:{' '}
+      {refusal.blockedByPolicyId ? (
+        <Link
+          className="tw:font-semibold tw:text-brand-secondary tw:hover:underline"
+          to={`/policies/${encodeURIComponent(refusal.blockedByPolicyId)}`}>
+          {title}
+        </Link>
+      ) : (
+        <strong>{title}</strong>
+      )}{' '}
+      still refuses{reason ? ` (${reason})` : ''}. Change that policy to give access. The request can
+      still be sent.
     </Note>
-  ) : null;
+  );
+}
+
+/** Nothing to ask for: no source ARAK knows reaches the table. */
+export function NotConnectedNote({ refusal, className }: { refusal: Refusal; className?: string }) {
+  return (
+    <Note className={className} icon={InfoCircle} tone="info">
+      <span className="tw:font-mono">{refusal.assetFqn}</span> is not connected: no data source
+      registered in ARAK maps it, so there is nothing to query or ask for yet. An administrator can
+      register its source.
+    </Note>
+  );
 }
 
 function Note({
@@ -589,7 +657,7 @@ function Note({
 }: {
   children: ReactNode;
   icon: typeof CheckCircle;
-  tone: 'success' | 'warning';
+  tone: 'success' | 'warning' | 'info';
   className?: string;
 }) {
   return (
@@ -597,7 +665,11 @@ function Note({
       className={`${className} tw:flex tw:items-start tw:gap-2 tw:rounded-lg tw:border tw:border-secondary tw:bg-primary tw:px-3 tw:py-2.5 tw:text-sm tw:text-secondary`}>
       <Icon
         className={`tw:mt-0.5 tw:size-4 tw:shrink-0 ${
-          tone === 'success' ? 'tw:text-fg-success-primary' : 'tw:text-fg-warning-primary'
+          tone === 'success'
+            ? 'tw:text-fg-success-primary'
+            : tone === 'warning'
+              ? 'tw:text-fg-warning-primary'
+              : 'tw:text-fg-quaternary'
         }`}
       />
       <span>{children}</span>

@@ -4,7 +4,9 @@ import { Link } from 'react-router-dom';
 import { ChevronRight, SearchLg } from '@untitledui/icons';
 import { lookFor } from './assetLook';
 import { Chip as Badge } from '../../components/chips';
-import { ReachBadges } from './reach';
+import { AccessBadge, ReachBadges } from './reach';
+import { useMyAccess } from './myAccess';
+import type { EligibilityBrief } from '../../api/accessRequests';
 import { FacetChip, listFacets } from './facets';
 import { Panel } from './panels';
 import {
@@ -29,6 +31,9 @@ import { plainText } from '../../lib/text';
 
 /** A branch holds at most this many children before it asks for a search. */
 const BRANCH_LIMIT = 500;
+
+/** One empty list, so a closed branch does not ask for badges on every render. */
+const NO_ROWS: AssetSummary[] = [];
 
 /** What a kind of asset holds, in the words its page uses. */
 const CHILD_NOUN: Record<string, [string, string]> = {
@@ -124,11 +129,14 @@ function Branch({
   asset,
   depth,
   lone,
+  standing,
 }: {
   asset: AssetSummary;
   depth: number;
   /** The only child of its parent -- opened for the reader. */
   lone: boolean;
+  /** Where the person looking stands on it, when it is a table and the answer is in. */
+  standing?: EligibilityBrief;
 }) {
   const holds = isContainer(asset.assetType) && (asset.childCount ?? 0) > 0;
   // A service with one database is opened for the reader: one click that
@@ -136,6 +144,9 @@ function Branch({
   // the leaves, so this never cascades past a schema.
   const [open, setOpen] = useState(lone);
   const children = useChildren(asset.fqn, holds && open);
+  // The "You …" badges of the tables in this branch, once it is open: one
+  // batched call for the branch rather than one per row.
+  const access = useMyAccess(children.data?.items ?? NO_ROWS);
   const look = lookFor(asset.assetType);
   const name = asset.displayName || asset.name;
   const what = contents(asset);
@@ -180,6 +191,7 @@ function Branch({
           {what && (
             <span className="tw:text-xs tw:tabular-nums tw:text-tertiary">{what}</span>
           )}
+          <AccessBadge asset={asset} brief={standing} />
           <ReachBadges asset={asset} />
         </span>
       </div>
@@ -208,6 +220,7 @@ function Branch({
               depth={depth + 1}
               key={child.id}
               lone={children.data?.items.length === 1}
+              standing={access.get(child.fqn)}
             />
           ))}
           {children.data && children.data.total > children.data.items.length && (
@@ -238,8 +251,11 @@ export function ChildrenPanel({ asset }: { asset: AssetSummary }) {
   const { data, isLoading, error } = useChildren(asset.fqn);
   const [filter, setFilter] = useState('');
   const title = childrenTitle(asset.assetType);
-  const items = data?.items ?? [];
+  const items = data?.items ?? NO_ROWS;
   const wanted = filter.trim().toLowerCase();
+  // Asked for everything listed rather than what the filter shows, so typing
+  // in the filter does not ask again.
+  const access = useMyAccess(items);
   const shown = useMemo(
     () =>
       wanted
@@ -298,7 +314,7 @@ export function ChildrenPanel({ asset }: { asset: AssetSummary }) {
             </thead>
             <tbody>
               {shown.map((child) => (
-                <ChildRow asset={child} key={child.id} />
+                <ChildRow asset={child} key={child.id} standing={access.get(child.fqn)} />
               ))}
             </tbody>
           </table>
@@ -314,7 +330,7 @@ export function ChildrenPanel({ asset }: { asset: AssetSummary }) {
   );
 }
 
-function ChildRow({ asset }: { asset: AssetSummary }) {
+function ChildRow({ asset, standing }: { asset: AssetSummary; standing?: EligibilityBrief }) {
   const look = lookFor(asset.assetType);
   const facets = listFacets(asset.facets);
   const description = plainText(asset.description);
@@ -334,6 +350,7 @@ function ChildRow({ asset }: { asset: AssetSummary }) {
           <Badge color={look.badge} size="sm" type="color">
             {asset.assetType}
           </Badge>
+          <AccessBadge asset={asset} brief={standing} />
           <ReachBadges asset={asset} />
         </div>
         {description && (

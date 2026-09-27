@@ -138,11 +138,20 @@ public class QueryResource {
       // in their own name for a table they were never refused would be wrong
       // twice over.
       if (e.deniedAsset() != null && principal.equals(caller.getName()) && eligibility != null) {
+        // The policy in the way is named only to somebody who could change it;
+        // the person refused is told what kind of rule it is.
         AccessEligibility.Verdict verdict =
-            eligibility.check(principal, e.deniedAsset(), clientIp(request), ask.purpose());
+            AccessEligibility.toldTo(
+                caller,
+                eligibility.check(principal, e.deniedAsset(), clientIp(request), ask.purpose()));
         refusal.put("assetFqn", verdict.assetFqn());
         refusal.put("requestable", verdict.requestable());
+        refusal.put("queryable", verdict.queryable());
+        refusal.put("blockedKind", verdict.blockedKind());
         refusal.put("blockedBy", verdict.blockedBy());
+        refusal.put("blockedByPolicyId", verdict.blockedByPolicyId());
+        refusal.put("blockedByPolicy", verdict.blockedByPolicy());
+        refusal.put("blockedByReason", verdict.blockedByReason());
         refusal.put("approvers", verdict.approvers());
         refusal.put("openRequestId", verdict.openRequestId());
         refusal.put("stranded", verdict.stranded());

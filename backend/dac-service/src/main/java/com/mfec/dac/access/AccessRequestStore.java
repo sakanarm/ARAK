@@ -12,11 +12,13 @@ import com.mfec.dac.access.AccessWorkflow.Stage;
 import com.mfec.dac.access.AccessWorkflow.Workflow;
 import com.mfec.dac.access.ApproverDirectory.Member;
 import com.mfec.dac.access.ApproverDirectory.Pool;
+import com.mfec.dac.catalog.CatalogQuery;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -472,6 +474,60 @@ public class AccessRequestStore {
                 .bind("limit", clamp(limit))
                 .map(this::map)
                 .list());
+  }
+
+  /**
+   * Which of these assets a query can reach, with the source it reaches each
+   * through; one not connected is left out. See {@link CatalogQuery#querySources}.
+   */
+  public Map<String, String> querySources(Collection<String> assetFqns) {
+    if (assetFqns == null || assetFqns.isEmpty()) {
+      return Map.of();
+    }
+    return jdbi.withHandle(handle -> CatalogQuery.querySources(handle, assetFqns));
+  }
+
+  /**
+   * The open requests this person already has on any of these assets, by FQN:
+   * {@link #openRequest} for a page of catalog rows in one query.
+   */
+  public Map<String, String> openRequestIds(Collection<String> assetFqns, String requesterUsername) {
+    if (assetFqns == null || assetFqns.isEmpty()) {
+      return Map.of();
+    }
+    return jdbi.withHandle(
+        handle -> {
+          Map<String, String> out = new LinkedHashMap<>();
+          handle
+              .createQuery(
+                  """
+                  SELECT asset_fqn, id FROM access_request
+                  WHERE asset_fqn IN (<fqns>) AND lower(requester_username) = lower(:who)
+                    AND status IN (<open>) AND kind = 'ASSET'
+                  ORDER BY created_at
+                  """)
+              .bindList("fqns", List.copyOf(assetFqns))
+              .bind("who", requesterUsername)
+              .bindList("open", OPEN)
+              .map((rs, ctx) -> Map.entry(rs.getString("asset_fqn"), rs.getObject("id", UUID.class)))
+              .forEach(row -> out.putIfAbsent(row.getKey(), row.getValue().toString()));
+          return out;
+        });
+  }
+
+  /** A policy as its page is titled: its display name, or its name when it has none. */
+  public Optional<String> policyTitle(UUID policyId) {
+    if (policyId == null) {
+      return Optional.empty();
+    }
+    return jdbi.withHandle(
+        handle ->
+            handle
+                .createQuery(
+                    "SELECT coalesce(nullif(trim(display_name), ''), name) FROM policy WHERE id = :id")
+                .bind("id", policyId)
+                .mapTo(String.class)
+                .findOne());
   }
 
   public Optional<StoredRequest> openRequest(String assetFqn, String requesterUsername) {

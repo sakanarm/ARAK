@@ -1,7 +1,9 @@
 import { AxiosError, type AxiosResponse, type InternalAxiosRequestConfig } from 'axios';
-import { describeApprovers, refusalOf } from './accessRequests';
+import { describeApprovers, fetchEligibilities, refusalOf } from './accessRequests';
 
-jest.mock('./client', () => ({ apiClient: {} }));
+const mockPost = jest.fn();
+
+jest.mock('./client', () => ({ apiClient: { post: (...args: unknown[]) => mockPost(...args) } }));
 
 function httpError(status: number, data: unknown): AxiosError {
   const config = { headers: {} } as InternalAxiosRequestConfig;
@@ -54,5 +56,42 @@ describe('describeApprovers', () => {
     expect(
       describeApprovers([{ type: 'user', name: 'admin', direct: true, inheritedFrom: null }], true)
     ).toMatch(/^Only the requester owns this table/);
+  });
+});
+
+describe('fetchEligibilities', () => {
+  beforeEach(() => mockPost.mockReset());
+
+  it('asks about the whole page in one call, for the caller only', async () => {
+    const briefs = [
+      {
+        assetFqn: 'demo-pg.salesdb.sales.customer',
+        queryable: true,
+        readable: false,
+        requestable: true,
+        openRequestId: null,
+        blockedKind: null,
+      },
+    ];
+    mockPost.mockResolvedValue({ data: briefs });
+
+    await expect(fetchEligibilities(['demo-pg.salesdb.sales.customer', 'demo-pg.salesdb.sales.orders'], 'Audit')).resolves.toEqual(briefs);
+    expect(mockPost).toHaveBeenCalledWith('/v1/access-requests/eligibility', {
+      assetFqns: ['demo-pg.salesdb.sales.customer', 'demo-pg.salesdb.sales.orders'],
+      purpose: 'Audit',
+    });
+  });
+
+  it('sends a blank purpose as none, and asks nothing about no tables', async () => {
+    mockPost.mockResolvedValue({ data: [] });
+    await fetchEligibilities(['demo-pg.salesdb.sales.customer'], '');
+    expect(mockPost).toHaveBeenCalledWith('/v1/access-requests/eligibility', {
+      assetFqns: ['demo-pg.salesdb.sales.customer'],
+      purpose: null,
+    });
+
+    mockPost.mockClear();
+    await expect(fetchEligibilities([])).resolves.toEqual([]);
+    expect(mockPost).not.toHaveBeenCalled();
   });
 });

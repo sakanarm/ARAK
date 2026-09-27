@@ -106,7 +106,7 @@ export const ASSET_COLUMNS = [
   'Owners',
   'Columns',
   'Tagged columns',
-  'Queryable via',
+  'Connected through',
   'Catalogued by',
   'Custom properties',
   'OpenMetadata URL',
