@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.mfec.dac.compiler.sql.PostgresDialect;
+import com.mfec.dac.compiler.sql.SqlServerDialect;
 import com.mfec.dac.engine.AssetContext;
 import com.mfec.dac.engine.EngineConfig;
 import com.mfec.dac.engine.PolicyEngine;
@@ -474,5 +475,151 @@ class QueryRewriterTest {
     assertThat(new QueryRewriter.RefusedException("x").aboutStatement()).isTrue();
     assertThat(new QueryRewriter.RefusedException("x", false).aboutStatement()).isFalse();
     assertThat(new QueryRewriter.DeniedException("a.b.c.d", "x").aboutStatement()).isFalse();
+  }
+
+  // ------------------------------------------------------------ functions
+  //
+  // The statement runs as the source's own account, so a function that runs a
+  // query of its own would read past every policy. Only built-ins that compute
+  // over the values they are given are allowed.
+
+  @Test
+  void refusesAFunctionThatRunsAQueryOfItsOwn() {
+    for (String sql :
+        List.of(
+            "SELECT query_to_xml('select 1', true, true, '')",
+            "SELECT id FROM sales.customer WHERE query_to_xml('select 1', true, true, '') IS NULL",
+            "SELECT id FROM sales.customer ORDER BY query_to_xml('select 1', true, true, '')",
+            "SELECT id FROM sales.customer GROUP BY id, table_to_xml('x', true, true, '')",
+            "SELECT count(*) FROM sales.customer HAVING count(dblink('x', 'select 1')) > 0",
+            "SELECT pg_sleep(0)",
+            "SELECT current_setting('server_version')",
+            "SELECT set_config('x.y', 'z', false)",
+            "SELECT lower(query_to_xml('select 1', true, true, '')::text) FROM sales.customer",
+            // a call that is the only argument of another has no node of its own
+            "SELECT count(query_to_xml('select 1', true, true, '')) FROM sales.customer",
+            "SELECT max(coalesce(pg_sleep(0)::text, 'x')) FROM sales.customer",
+            "SELECT sum(length(lower(current_setting('server_version')))) FROM sales.customer")) {
+      assertThatThrownBy(() -> rewriter.rewrite(sql, governing(allowed())))
+          .as(sql)
+          .isInstanceOf(QueryRewriter.RefusedException.class)
+          .hasMessageContaining("not a function the query proxy allows");
+    }
+  }
+
+  @Test
+  void refusesAFunctionOnlyAQualifiedNameCanReach() {
+    assertThatThrownBy(
+            () -> rewriter.rewrite("SELECT pg_catalog.lower(full_name) FROM sales.customer",
+                governing(allowed())))
+        .isInstanceOf(QueryRewriter.RefusedException.class)
+        .hasMessageContaining("with a schema");
+  }
+
+  @Test
+  void aQuotedNameMustBeSpelledTheWayTheEngineResolvesIt() {
+    assertThat(rewriter.rewrite("SELECT \"lower\"(full_name) FROM sales.customer",
+            governing(allowed())).sql()).contains("lower");
+    // On PostgreSQL a quoted name keeps its case, so this is not lower().
+    assertThatThrownBy(
+            () -> rewriter.rewrite("SELECT \"LOWER\"(full_name) FROM sales.customer",
+                governing(allowed())))
+        .isInstanceOf(QueryRewriter.RefusedException.class);
+  }
+
+  @Test
+  void refusesAJdbcEscapeASequenceAndASessionVariable() {
+    assertThatThrownBy(
+            () -> rewriter.rewrite("SELECT {fn ucase(full_name)} FROM sales.customer",
+                governing(allowed())))
+        .isInstanceOf(QueryRewriter.RefusedException.class);
+    assertThatThrownBy(
+            () -> rewriter.rewrite("SELECT nextval('s') FROM sales.customer", governing(allowed())))
+        .isInstanceOf(QueryRewriter.RefusedException.class);
+    assertThatThrownBy(
+            () -> rewriter.rewrite("SELECT NEXT VALUE FOR s FROM sales.customer",
+                governing(allowed())))
+        .isInstanceOf(QueryRewriter.RefusedException.class);
+    assertThatThrownBy(
+            () -> rewriter.rewrite("SELECT @@version FROM sales.customer", governing(allowed())))
+        .isInstanceOf(QueryRewriter.RefusedException.class);
+  }
+
+  @Test
+  void letsTheEverydayBuiltInsThrough() {
+    QueryRewriter.Rewritten out =
+        rewriter.rewrite(
+            "SELECT branch_code, count(*), max(salary), lower(full_name), "
+                + "coalesce(phone, 'none'), round(avg(salary), 2), date_trunc('month', now()), "
+                + "row_number() OVER (PARTITION BY branch_code ORDER BY id) "
+                + "FROM sales.customer c GROUP BY branch_code, full_name, phone, id "
+                + "ORDER BY upper(branch_code)",
+            governing(restricted()));
+    assertThat(out.assets()).containsExactly("demo-pg.salesdb.sales.customer");
+  }
+
+  @Test
+  void aSqlServerSourceHasItsOwnBuiltInsAndNotPostgresOnes() {
+    QueryRewriter mssql = new QueryRewriter(new SqlServerDialect(), null);
+    assertThat(
+            mssql.rewrite("SELECT isnull(phone, 'none'), len(full_name) FROM sales.customer",
+                governing(allowed())).assets())
+        .containsExactly("demo-pg.salesdb.sales.customer");
+    for (String sql :
+        List.of(
+            "SELECT query_to_xml('select 1', true, true, '') FROM sales.customer",
+            "SELECT xp_cmdshell('dir') FROM sales.customer",
+            "SELECT id FROM sales.customer WHERE EXISTS "
+                + "(SELECT 1 FROM OPENROWSET('SQLNCLI', 'x', 'select 1') o)")) {
+      assertThatThrownBy(() -> mssql.rewrite(sql, governing(allowed())))
+          .as(sql)
+          .isInstanceOf(QueryRewriter.RefusedException.class);
+    }
+  }
+
+  // ------------------------------------------------ the second gate, by identity
+
+  @Test
+  void refusesASecondReadOfAGovernedTableFromWhereTheWalkDoesNotReach() {
+    // The outer reference is governed; the inner one is the same table by name
+    // and would have gone to the source with no policy in front of it.
+    for (String sql :
+        List.of(
+            "SELECT id FROM sales.customer WHERE EXISTS "
+                + "(SELECT 1 FROM sales.customer x WHERE x.salary > 0)",
+            "SELECT id FROM sales.customer ORDER BY (SELECT max(salary) FROM sales.customer)",
+            "SELECT id FROM sales.customer GROUP BY id, (SELECT max(salary) FROM sales.customer)",
+            "SELECT (SELECT max(salary) FROM sales.customer) FROM sales.customer")) {
+      assertThatThrownBy(() -> rewriter.rewrite(sql, governing(restricted())))
+          .as(sql)
+          .isInstanceOf(QueryRewriter.RefusedException.class)
+          .hasMessageContaining("does not rewrite");
+    }
+  }
+
+  @Test
+  void refusesAnUngovernedTableInOrderBy() {
+    assertThatThrownBy(
+            () ->
+                rewriter.rewrite(
+                    "SELECT id FROM sales.customer ORDER BY (SELECT 1 FROM public.other LIMIT 1)",
+                    governing(allowed())))
+        .isInstanceOf(QueryRewriter.RefusedException.class)
+        .hasMessageContaining("public.other");
+  }
+
+  @Test
+  void aTableQualifiedStarIsNotARead() {
+    QueryRewriter.Rewritten out =
+        rewriter.rewrite("SELECT c.* FROM sales.customer c", governing(restricted()));
+    assertThat(out.sql()).doesNotContain("salary");
+  }
+
+  @Test
+  void refusesSelectIntoAndLockingReads() {
+    assertThat(refusalOf("SELECT * INTO sales.copy FROM sales.customer", allowed()).getMessage())
+        .contains("INTO");
+    assertThat(refusalOf("SELECT id FROM sales.customer FOR UPDATE", allowed()).getMessage())
+        .contains("locking");
   }
 }

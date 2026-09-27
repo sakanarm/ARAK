@@ -5,7 +5,11 @@ import com.mfec.dac.compiler.sql.SqlDialect;
 import com.mfec.dac.engine.Refusals;
 import com.mfec.dac.schema.api.PolicyDecision;
 import com.mfec.dac.schema.api.Unenforceable;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Deque;
+import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -14,17 +18,27 @@ import java.util.Map;
 import java.util.Set;
 import net.sf.jsqlparser.JSQLParserException;
 import net.sf.jsqlparser.expression.Alias;
+import net.sf.jsqlparser.expression.AnalyticExpression;
+import net.sf.jsqlparser.expression.ExpressionVisitorAdapter;
+import net.sf.jsqlparser.expression.Function;
+import net.sf.jsqlparser.expression.NextValExpression;
+import net.sf.jsqlparser.expression.UserVariable;
+import net.sf.jsqlparser.expression.VariableAssignment;
+import net.sf.jsqlparser.parser.CCJSqlParserTreeConstants;
 import net.sf.jsqlparser.parser.CCJSqlParserUtil;
+import net.sf.jsqlparser.parser.Node;
+import net.sf.jsqlparser.parser.SimpleNode;
 import net.sf.jsqlparser.schema.Table;
 import net.sf.jsqlparser.statement.Statement;
+import net.sf.jsqlparser.statement.select.AllTableColumns;
 import net.sf.jsqlparser.statement.select.FromItem;
 import net.sf.jsqlparser.statement.select.Join;
 import net.sf.jsqlparser.statement.select.ParenthesedSelect;
 import net.sf.jsqlparser.statement.select.PlainSelect;
 import net.sf.jsqlparser.statement.select.Select;
+import net.sf.jsqlparser.statement.select.SelectItem;
 import net.sf.jsqlparser.statement.select.SetOperationList;
 import net.sf.jsqlparser.statement.select.WithItem;
-import net.sf.jsqlparser.util.TablesNamesFinder;
 
 /**
  * Enforcement mode 5.2: the SQL a caller sent, rewritten so that the policy is
@@ -41,16 +55,27 @@ import net.sf.jsqlparser.util.TablesNamesFinder;
  * <p>Two gates, not one. The first is the walk below, which refuses anything
  * that is not a {@code SELECT}, any table it cannot resolve to an asset, and
  * any asset the principal is not subscribed to. The second runs <em>after</em>
- * the rewrite: every table the parser can find in the statement as it arrived —
- * including inside a subquery in a {@code WHERE} clause, which the walk does not
- * descend into — must be either a CTE whose body the walk rewrote, or a table
- * the walk actually replaced. A reference the walk never saw means a position it
- * does not cover, and the statement is refused rather than sent.
+ * the rewrite: every table reference in the parser's own tree of the statement
+ * as it arrived — every position, including a subquery in a {@code WHERE},
+ * {@code GROUP BY} or {@code ORDER BY}, which the walk does not descend into —
+ * must be the very reference the walk replaced or passed as a CTE. The check is
+ * by identity, not by name: a second read of a governed table from a position
+ * the walk never saw names the same table as the first, and would otherwise
+ * pass on the strength of it with no policy in front of it.
  *
  * <p>That gate looks at the statement as it arrived and not at the output. The
  * output still names the physical table — inside the derived table we built,
  * which is the entire point — so counting references there can only pass
  * everything or fail everything.
+ *
+ * <h2>Functions</h2>
+ *
+ * <p>The statement runs as the source's own account, and a function is code the
+ * rewrite cannot see into: one that takes the text of a query and runs it would
+ * read past every policy here. So a call is allowed only to a built-in that
+ * computes over the values it is given ({@link ProxyFunctions}). Anything else —
+ * anything schema-qualified, a JDBC escape, a sequence, a session variable — is
+ * refused before any table is resolved.
  *
  * <p>That second gate is the reason this class can be honest about what it does
  * not yet handle. A subquery in an expression is refused, not leaked, and the
@@ -143,13 +168,23 @@ public final class QueryRewriter {
     this.defaultSchema = defaultSchema == null || defaultSchema.isBlank() ? null : defaultSchema;
   }
 
+  /**
+   * Parses as the source's engine writes SQL. On SQL Server {@code [name]} is a
+   * quoted name, which is also how its dialect quotes the enforced form; read as
+   * an array subscript instead, no statement against that engine gets through.
+   */
+  private Statement parse(String sql) throws JSQLParserException {
+    boolean brackets = "SQLSERVER".equals(dialect.name());
+    return CCJSqlParserUtil.parse(sql, parser -> parser.withSquareBracketQuotation(brackets));
+  }
+
   public Rewritten rewrite(String sql, Governance governance) {
     if (sql == null || sql.isBlank()) {
       throw new RefusedException("No SQL was sent", false);
     }
     Statement statement;
     try {
-      statement = CCJSqlParserUtil.parse(sql);
+      statement = parse(sql);
     } catch (JSQLParserException e) {
       // The message is deliberately not the parser's: it names positions in a
       // statement the caller may not have written by hand, and it is not worth
@@ -163,29 +198,24 @@ public final class QueryRewriter {
           false);
     }
 
+    // The parser's own tree of the statement as it arrived. The walk below edits
+    // the statement in place; this tree keeps pointing at what the caller wrote,
+    // every position of it, which is what both gates need.
+    SimpleNode tree = treeOf(select);
+    screen(tree);
+
     Set<String> cteNames = new LinkedHashSet<>();
     collectCteNames(select, cteNames);
 
-    // Taken before the walk, because the walk edits the statement in place and
-    // the gate below has to see the references the caller wrote rather than the
-    // ones that survived.
-    List<String> referenced;
-    try {
-      referenced = new TablesNamesFinder().getTableList(statement);
-    } catch (RuntimeException e) {
-      throw new RefusedException(
-          "The tables this statement reads could not be listed, so it cannot be enforced");
-    }
-
     Map<String, Governed> governed = new LinkedHashMap<>();
     List<Unenforceable> unenforceable = new ArrayList<>();
-    Set<String> replaced = new LinkedHashSet<>();
+    Set<Table> replaced = Collections.newSetFromMap(new IdentityHashMap<>());
     boolean[] restricted = {false};
 
     walk(select, cteNames, governance, governed, unenforceable, restricted, replaced);
 
     String rewritten = statement.toString();
-    verify(rewritten, referenced, cteNames, replaced);
+    verify(rewritten, tree, replaced);
 
     return new Rewritten(
         rewritten,
@@ -226,7 +256,7 @@ public final class QueryRewriter {
       Map<String, Governed> governed,
       List<Unenforceable> unenforceable,
       boolean[] restricted,
-      Set<String> replaced) {
+      Set<Table> replaced) {
 
     if (select == null) {
       return;
@@ -255,6 +285,15 @@ public final class QueryRewriter {
     if (!(select instanceof PlainSelect plain)) {
       throw new RefusedException("This form of SELECT is not supported by the query proxy");
     }
+    if (plain.getIntoTables() != null || plain.getIntoTempTable() != null) {
+      throw new RefusedException(
+          "SELECT ... INTO writes a table, and the query proxy is read-only (FR-6.3)", false);
+    }
+    if (plain.getForMode() != null || plain.getForUpdateTable() != null) {
+      throw new RefusedException(
+          "A locking read (FOR UPDATE, FOR SHARE) is not allowed through the read-only query proxy",
+          false);
+    }
 
     FromItem from = plain.getFromItem();
     FromItem replacedFrom =
@@ -282,7 +321,7 @@ public final class QueryRewriter {
       Map<String, Governed> governed,
       List<Unenforceable> unenforceable,
       boolean[] restricted,
-      Set<String> replaced) {
+      Set<Table> replaced) {
 
     if (item == null) {
       return null;
@@ -300,6 +339,7 @@ public final class QueryRewriter {
     if (cteNames.contains(name.toLowerCase(Locale.ROOT)) && table.getSchemaName() == null) {
       // A CTE the walk has already rewritten the body of. Rewriting the
       // reference too would enforce the same policy twice.
+      replaced.add(table);
       return item;
     }
 
@@ -341,9 +381,9 @@ public final class QueryRewriter {
       restricted[0] = true;
     }
     governed.put(asset.fqn(), asset);
-    // Recorded as the caller spelled it, because that is the spelling the gate
-    // below gets back from the parser.
-    replaced.add(normalise(table.getFullyQualifiedName()));
+    // This reference, not this name: the gate below must still refuse a second
+    // reference to the same table from a position the walk did not reach.
+    replaced.add(table);
 
     StringBuilder sub = new StringBuilder("SELECT ");
     sub.append(result.selectList());
@@ -359,7 +399,7 @@ public final class QueryRewriter {
 
     Select inner;
     try {
-      inner = (Select) CCJSqlParserUtil.parse(sub.toString());
+      inner = (Select) parse(sub.toString());
     } catch (JSQLParserException | ClassCastException e) {
       // The compiler generated something this parser will not take back. That
       // is our bug, not the caller's, and the statement must not be sent on the
@@ -379,40 +419,173 @@ public final class QueryRewriter {
     return derived;
   }
 
+  /** The parser's tree for the statement, from its root; refused when there is none. */
+  private static SimpleNode treeOf(Select select) {
+    SimpleNode node = select.getASTNode();
+    if (node == null) {
+      throw new RefusedException(
+          "This statement could not be read in full, so it cannot be enforced and will not be run");
+    }
+    while (node.jjtGetParent() instanceof SimpleNode parent) {
+      node = parent;
+    }
+    return node;
+  }
+
+  /** Every node of the tree, in no particular order. */
+  private static List<SimpleNode> nodesOf(SimpleNode root) {
+    List<SimpleNode> out = new ArrayList<>();
+    Deque<SimpleNode> todo = new ArrayDeque<>();
+    todo.push(root);
+    while (!todo.isEmpty()) {
+      SimpleNode node = todo.pop();
+      out.add(node);
+      for (int i = 0; i < node.jjtGetNumChildren(); i++) {
+        Node child = node.jjtGetChild(i);
+        if (child instanceof SimpleNode simple) {
+          todo.push(simple);
+        } else if (child != null) {
+          throw new RefusedException(
+              "This statement could not be read in full, so it cannot be enforced and will not be run");
+        }
+      }
+    }
+    return out;
+  }
+
   /**
-   * The second gate: every table the caller named must have been governed.
-   *
-   * @param referenced every table reference the parser found in the statement as
-   *     it arrived, including the positions the walk does not descend into
-   * @param replaced the references the walk actually put a policy in front of
+   * The first gate, before any table is resolved: nothing in the statement may
+   * run code the rewrite cannot see into.
    */
-  private static void verify(
-      String rewritten, List<String> referenced, Set<String> cteNames, Set<String> replaced) {
+  private void screen(SimpleNode tree) {
+    for (SimpleNode node : nodesOf(tree)) {
+      int id = node.getId();
+      Object value = node.jjtGetValue();
+      if (id == CCJSqlParserTreeConstants.JJTSEQUENCE
+          || id == CCJSqlParserTreeConstants.JJTSYNONYM
+          || value instanceof NextValExpression) {
+        throw new RefusedException(
+            "A sequence cannot be used through the read-only query proxy", false);
+      }
+      if (value instanceof UserVariable || value instanceof VariableAssignment) {
+        throw new RefusedException("Session variables cannot be read or set through the query proxy");
+      }
+      if (id == CCJSqlParserTreeConstants.JJTFUNCTION && !(value instanceof Function)) {
+        throw new RefusedException(
+            "A function call in this statement could not be read, so it will not be run");
+      }
+      // The tree does not always give a call its own node: one that is the only
+      // argument of another, as in sum(lower(x)), is folded into its parent. So
+      // every call is also read through its arguments, which is where those are.
+      if (value instanceof Function function) {
+        function.accept(new CallScreen());
+      } else if (value instanceof AnalyticExpression analytic) {
+        analytic.accept(new CallScreen());
+      }
+    }
+  }
+
+  /** Checks a call and every call among its arguments, however deep. */
+  private final class CallScreen extends ExpressionVisitorAdapter {
+    @Override
+    public void visit(Function function) {
+      if (function.isEscaped()) {
+        throw new RefusedException(
+            "JDBC escape functions ({fn ...}) are not allowed; call the function directly");
+      }
+      allow(function.getMultipartName(), function.getName());
+      super.visit(function);
+    }
+
+    @Override
+    public void visit(AnalyticExpression analytic) {
+      allow(List.of(analytic.getName() == null ? "" : analytic.getName()), analytic.getName());
+      super.visit(analytic);
+    }
+
+    @Override
+    public void visit(UserVariable variable) {
+      throw new RefusedException("Session variables cannot be read or set through the query proxy");
+    }
+
+    @Override
+    public void visit(NextValExpression next) {
+      throw new RefusedException(
+          "A sequence cannot be used through the read-only query proxy", false);
+    }
+  }
+
+  private void allow(List<String> name, String written) {
+    if (ProxyFunctions.allowed(dialect.name(), name)) {
+      return;
+    }
+    String shown = written == null || written.isBlank() ? "This function" : written;
+    if (name != null && name.size() > 1) {
+      throw new RefusedException(
+          shown
+              + " is called with a schema. The query proxy allows only built-in functions, "
+              + "called by their plain name");
+    }
+    throw new RefusedException(
+        shown
+            + " is not a function the query proxy allows. Only built-in functions that work on "
+            + "the values in front of them can be used, because a function runs as the source's "
+            + "own account, where no policy can follow it");
+  }
+
+  /**
+   * The second gate: every table the caller named must be one the walk put a
+   * policy in front of — that very reference, not merely one with the same name.
+   *
+   * @param tree the parser's tree of the statement as it arrived, which holds
+   *     every table reference in every position, including the ones the walk
+   *     does not descend into
+   * @param replaced the references the walk replaced, or passed as a CTE whose
+   *     body it rewrote
+   */
+  private void verify(String rewritten, SimpleNode tree, Set<Table> replaced) {
 
     // The output has to survive a round trip, because what goes to the source is
     // this text and not the tree it was built from.
     try {
-      CCJSqlParserUtil.parse(rewritten);
+      parse(rewritten);
     } catch (JSQLParserException e) {
       throw new RefusedException("The rewritten statement did not parse; it was not run", false);
     }
 
-    for (String name : referenced) {
-      String normalised = normalise(name);
-      if (replaced.contains(normalised)) {
+    for (SimpleNode node : nodesOf(tree)) {
+      if (node.getId() != CCJSqlParserTreeConstants.JJTTABLENAME) {
         continue;
       }
-      // A CTE is only a CTE unqualified. Schema-qualifying the name makes it a
-      // table again, and one this walk has not been through.
-      if (!normalised.contains(".") && cteNames.contains(normalised)) {
+      if (!(node.jjtGetValue() instanceof Table table)) {
+        throw new RefusedException(
+            "A table in this statement could not be read, so it cannot be enforced");
+      }
+      if (replaced.contains(table) || qualifies(node, table)) {
         continue;
       }
       throw new RefusedException(
-          normalised
+          normalise(table.getFullyQualifiedName())
               + " is read from a position the proxy does not rewrite — a subquery inside an "
               + "expression, most likely — so no policy could be placed in front of it. Rewrite it "
               + "as a join and try again");
     }
+  }
+
+  /**
+   * Whether this table reference only names the table of a {@code t.*}, which
+   * reads nothing of its own: the {@code t} has to be supplied by the FROM
+   * clause, which the gate has already been through.
+   */
+  private static boolean qualifies(SimpleNode node, Table table) {
+    if (!(node.jjtGetParent() instanceof SimpleNode parent)) {
+      return false;
+    }
+    Object value = parent.jjtGetValue();
+    if (value instanceof SelectItem<?> item) {
+      value = item.getExpression();
+    }
+    return value instanceof AllTableColumns columns && columns.getTable() == table;
   }
 
   /**
