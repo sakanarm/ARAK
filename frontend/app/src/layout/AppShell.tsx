@@ -214,13 +214,13 @@ export function Sidebar({
           compact ? 'tw:mt-2 tw:pt-2' : 'tw:mt-3 tw:pt-3'
         } ${collapsed ? 'tw:justify-center' : compact ? 'tw:gap-2 tw:pl-2.5' : 'tw:gap-2 tw:pl-3.5'}`}>
         {!collapsed && (
-          // Who made it sits under the copyright, one size smaller and in the
-          // same quiet grey: there for anyone who looks, in nobody's way.
+          // The notice only, in the same quiet grey. Who made it is under
+          // Settings, Credits: a line every page carries is the company's.
           <div
             className="tw:min-w-0 tw:flex-1 tw:leading-tight tw:text-quaternary"
-            title="© 2026 MFEC. All rights reserved. Designed and built by Sakan Punyanon.">
+            title="© 2026 MFEC. All rights reserved.">
             <p className={`tw:truncate ${compact ? 'tw:text-xs' : 'tw:text-sm'}`}>&copy; 2026 MFEC</p>
-            <p className="tw:truncate tw:text-xs">by Sakan Punyanon</p>
+            <p className="tw:truncate tw:text-xs">All rights reserved</p>
           </div>
         )}
         <button

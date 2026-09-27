@@ -231,6 +231,27 @@ export default function SettingsPage() {
             </section>
           );
         })}
+
+        {/*
+          Not a setting, and so not a tile: nothing here opens anything. It is
+          at the foot of the page every role reaches, which is where a console
+          says who made it.
+        */}
+        <section aria-labelledby="settings-credits">
+          <h2 className="tw:text-lg tw:font-semibold tw:text-primary" id="settings-credits">
+            Credits
+          </h2>
+          <div className="tw:mt-4 tw:max-w-xl tw:rounded-xl tw:border tw:border-secondary tw:bg-primary tw:p-5 tw:shadow-xs">
+            <p className="tw:text-sm tw:font-semibold tw:text-primary">ARAK · Data Access Control Platform</p>
+            <dl className="tw:mt-3 tw:grid tw:grid-cols-[auto_1fr] tw:gap-x-6 tw:gap-y-1.5 tw:text-sm">
+              <dt className="tw:text-tertiary">Designed and built by</dt>
+              <dd className="tw:text-secondary">Sakan Punyanon</dd>
+              <dt className="tw:text-tertiary">For</dt>
+              <dd className="tw:text-secondary">MFEC</dd>
+            </dl>
+            <p className="tw:mt-3 tw:text-xs tw:text-quaternary">&copy; 2026 MFEC. All rights reserved.</p>
+          </div>
+        </section>
       </div>
     </>
   );

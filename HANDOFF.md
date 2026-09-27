@@ -675,6 +675,13 @@ M25 ทำแยกได้ (profile ผ่าน proxy ที่มีแล�
 - `RefusalsTest` 8 ข้อ (5 ข้อเขียน reason เอง · 3 ข้อใช้ engine จริง รวมกรณีมี grant ที่ TABLE แล้วติด gate ของ ORG)
 - ผ่าน: unit ทั้ง backend 1,123 (engine 293) · IT `AccessRequestIT` + `PolicyOverviewIT` + `GrantCompositionIT` 122/122
 
+### BT.11 Footer เหลือแค่ลิขสิทธิ์ · ชื่อคนทำย้ายไป Settings → Credits
+- ผู้ใช้สั่ง 2026-09-27: เอาชื่อออกจาก footer ใส่ *All rights reserved* แทน แล้วย้ายชื่อไปไว้ section ผู้จัดทำใน Settings
+- `AppShell` footer: `© 2026 MFEC` / `All rights reserved` (tooltip `© 2026 MFEC. All rights reserved.`)
+- `SettingsPage` section **Credits** ท้ายหน้า — ไม่ใช่ tile ไม่ลิงก์ไปไหน ทุก role เห็น · README ยังมีเครดิตเหมือนเดิม
+- ชื่อ "Sakan Punyanon" ในโค้ดตอนนี้อยู่ที่ Settings → Credits กับ README เท่านั้น (secret scan allowlist ตามนี้)
+- ผ่าน: jest `Rail` + `SettingsPage` 20/20 · tsc
+
 ### BT.6 ค้าง
 - credential ของ source บน prod ที่ auth ไม่ผ่าน ผู้ใช้เป็นคนตัดสิน · แก้แล้วให้รัน Q1–Q7 ใน `prod-demo-policies.mjs` อีกรอบ
 - กรณี group บน prod รอ push แล้ว deploy V35 ก่อน

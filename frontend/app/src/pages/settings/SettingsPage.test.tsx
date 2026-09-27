@@ -42,6 +42,14 @@ describe('SettingsPage', () => {
     expect(card('Enforcement')).toBeNull();
   });
 
+  it('names who made it under Credits, for every role', () => {
+    renderAs();
+    const credits = screen.getByRole('region', { name: 'Credits' });
+    expect(credits).toHaveTextContent('Designed and built by');
+    expect(credits).toHaveTextContent('Sakan Punyanon');
+    expect(credits).toHaveTextContent('All rights reserved');
+  });
+
   it('an administrator sees every card in the source group', () => {
     renderAs('PLATFORM_ADMIN');
     expect(card('Registered sources')).toBeInTheDocument();
