@@ -121,8 +121,17 @@ export async function login(
   return data;
 }
 
-export async function fetchMe(): Promise<SessionUser> {
-  const { data } = await apiClient.get<SessionUser>('/v1/auth/me');
+/**
+ * The signed-in user as the backend holds them now, and whether the password
+ * they signed in with still has to be replaced -- asked again on a reload, so
+ * that reloading is not a way past the screen that asks for a new one.
+ */
+export interface Me extends SessionUser {
+  mustChangePassword: boolean;
+}
+
+export async function fetchMe(): Promise<Me> {
+  const { data } = await apiClient.get<Me>('/v1/auth/me');
   return data;
 }
 

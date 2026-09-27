@@ -21,7 +21,12 @@ jest.mock('react-router-dom', () => ({
 describe('RequireAuth', () => {
   beforeEach(() => {
     mockStates.length = 0;
-    useAuthStore.setState({ token: null, user: null, initialising: false });
+    useAuthStore.setState({
+      token: null,
+      user: null,
+      initialising: false,
+      mustChangePassword: false,
+    });
   });
 
   function renderAt(path: string) {
@@ -63,6 +68,29 @@ describe('RequireAuth', () => {
     const { getByText } = renderAt('/query');
 
     expect(getByText('guarded')).toBeInTheDocument();
+    expect(mockStates).toHaveLength(0);
+  });
+
+  it('asks for a new password in place of the page while the old one was set by an administrator', () => {
+    useAuthStore.setState({
+      token: 'token',
+      initialising: false,
+      mustChangePassword: true,
+      user: {
+        id: '11111111-1111-1111-1111-111111111111',
+        username: 'analyst_a',
+        email: null,
+        displayName: 'Analyst A',
+        source: 'local',
+        roles: [],
+        scopes: [],
+      },
+    });
+    const { getByRole, queryByText } = renderAt('/query');
+
+    expect(getByRole('heading', { name: 'Choose a new password' })).toBeInTheDocument();
+    expect(queryByText('guarded')).not.toBeInTheDocument();
+    // In place, not a redirect: the address asked for is kept.
     expect(mockStates).toHaveLength(0);
   });
 });

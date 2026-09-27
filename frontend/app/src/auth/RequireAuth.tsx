@@ -1,5 +1,6 @@
 import { useEffect, useMemo, type ReactNode } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
+import PasswordChangeGate from './PasswordChangeGate';
 import { useAuthStore } from './authStore';
 
 /**
@@ -14,6 +15,7 @@ export default function RequireAuth({ children }: { children: ReactNode }) {
   const token = useAuthStore((state) => state.token);
   const initialising = useAuthStore((state) => state.initialising);
   const refresh = useAuthStore((state) => state.refresh);
+  const mustChangePassword = useAuthStore((state) => state.mustChangePassword);
   const location = useLocation();
 
   useEffect(() => {
@@ -56,6 +58,12 @@ export default function RequireAuth({ children }: { children: ReactNode }) {
         <p className="tw:text-sm tw:text-tertiary">Restoring your session…</p>
       </div>
     );
+  }
+
+  // In place of the page, not as a redirect to one: the address stays, and the
+  // page asked for is what appears once the new password is saved.
+  if (mustChangePassword) {
+    return <PasswordChangeGate />;
   }
 
   return <>{children}</>;

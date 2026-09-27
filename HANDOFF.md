@@ -1,6 +1,6 @@
 # HANDOFF — ARAK (Data Access Control Platform)
 
-> อัปเดต: 2026-09-27 · ข้อ CF (NokRak ตอบคำถามวิธีใช้ ARAK จากคู่มือที่แพ็กเข้า jar — `search_docs`) · ข้อ CE (สร้าง classification / tag ของ ARAK เองในหน้า Governance — provenance local · sync ไม่ทับ · ไม่เขียนกลับ OM) · ข้อ CD (Column description เขียนใน ARAK · NokRak ร่าง · แสดงใน ticket) · ข้อ CC (tab Access รับ list ยาว — แถบสรุป · chip · ค้น · แบ่งหน้า · กดดูรายละเอียดเต็ม) · ข้อ CB (NokRak ช่วยแก้ policy ที่มีอยู่ — คน review แล้วกด Save เอง) · ข้อ CA (ประวัติ policy · diff · rollback) · ข้อ BW (tag จาก OM ผ่าน webhook/poller ย้าย policy binding ทันที) · ข้อ BV (tab Access เฉพาะผู้ดูแล + Diagram แบบ canvas) · ข้อ BU (FR-1.7 local tag + demo group บน prod) · push ขึ้น origin/main แล้ว · repo https://github.com/sakanarm/ARAK (**public**)
+> อัปเดต: 2026-09-27 · ข้อ CG (เปลี่ยนรหัสผ่านเอง — Profile → Password · หน้าบังคับเปลี่ยนเมื่อรหัสถูก admin ตั้ง · M2 / FR-2.2) · ข้อ CF (NokRak ตอบคำถามวิธีใช้ ARAK จากคู่มือที่แพ็กเข้า jar — `search_docs`) · ข้อ CE (สร้าง classification / tag ของ ARAK เองในหน้า Governance — provenance local · sync ไม่ทับ · ไม่เขียนกลับ OM) · ข้อ CD (Column description เขียนใน ARAK · NokRak ร่าง · แสดงใน ticket) · ข้อ CC (tab Access รับ list ยาว — แถบสรุป · chip · ค้น · แบ่งหน้า · กดดูรายละเอียดเต็ม) · ข้อ CB (NokRak ช่วยแก้ policy ที่มีอยู่ — คน review แล้วกด Save เอง) · ข้อ CA (ประวัติ policy · diff · rollback) · ข้อ BW (tag จาก OM ผ่าน webhook/poller ย้าย policy binding ทันที) · ข้อ BV (tab Access เฉพาะผู้ดูแล + Diagram แบบ canvas) · ข้อ BU (FR-1.7 local tag + demo group บน prod) · push ขึ้น origin/main แล้ว · repo https://github.com/sakanarm/ARAK (**public**)
 >
 > อ่านคู่กับ **[docs/DESIGN.md](docs/DESIGN.md)** — ไฟล์นั้นคือ requirement + feature catalogue + สถานะครบทุกข้อ
 > ไฟล์นี้บอกเฉพาะ "ทำถึงไหน จะไปต่อยังไง อะไรที่ลองแล้วไม่เวิร์ค"
@@ -620,7 +620,33 @@ M25 ทำแยกได้ (profile ผ่าน proxy ที่มีแล�
 
 ---
 
-## รอบนี้ — **ข้อ CF: NokRak ตอบคำถามวิธีใช้ ARAK จากคู่มือของระบบ (`search_docs` · M28)**
+## รอบนี้ — **ข้อ CG: เปลี่ยนรหัสผ่านเองได้ + บังคับเปลี่ยนเมื่อรหัสผ่านถูก admin ตั้ง (M2 · FR-2.2)**
+
+ทำต่อจาก milestone ที่ค้าง: `local_credential.must_change` มีมาตั้งแต่แรก (bootstrap · สร้างบัญชี · admin reset ตั้งเป็น true ทุกทาง) แต่ไม่มีหน้าไหนใช้ และคู่มือบอกว่า "ยังไม่มีหน้าเปลี่ยนรหัสผ่านเอง"
+
+### CG.1 Backend
+- `AuthResource` `POST /v1/auth/password` `{currentPassword, newPassword}` ตรวจตามลำดับ: ช่องว่าง → 400 · สั้นกว่า 12 / ยาวกว่า 200 → 400 · เท่ากับ username (ไม่สนตัวพิมพ์) → 400 · เท่ากับรหัสเดิม → 400 · ไม่มีรหัส local (บัญชี directory หรือชื่อซ้ำแต่ id ไม่ตรง) → 403 · บัญชีถูกปิด → 403 · ถูก lock → **429** · รหัสเดิมผิด → `recordFailure` (นับเป็น failed sign-in ตาม `maxFailedLoginAttempts` / `lockoutSeconds`) + **403** (ไม่ใช่ 401 เพราะ axios interceptor ถือ 401 = session หมด แล้วเด้งออก) · ผ่าน → `{"status":"changed"}` · ล้าง char array ทุกทาง
+- `LocalIdentityDao.changeOwnPassword` ใน transaction เดียว: hash ใหม่ · `must_change=false` · ล้าง failed attempts / lock · audit `audit_identity_change` `SET_PASSWORD` actor = เจ้าของบัญชี reason "changed by the account holder" · ไม่มี migration
+- `GET /v1/auth/me` คืน `mustChangePassword` เพิ่ม (เฉพาะ `source=local` และ id ตรงกับบัญชี local) → reload หน้าไม่ใช่ทางหนีหน้าบังคับ
+- ค้นบัญชีด้วย username แล้ว **กรองด้วย id** กันชื่อชนข้าม directory
+
+### CG.2 Frontend
+- `auth/ChangePasswordForm.tsx` — รหัสเดิม · ใหม่ · ยืนยัน · ตรวจฝั่ง client ก่อนส่ง (ไม่เปลือง attempt กับเรื่องพิมพ์ไม่ตรง) · สำเร็จ → บอก + `passwordChanged()` ใน store · error → ข้อความจาก backend · ล้างทั้ง 3 ช่องหลังทุกครั้งที่ส่ง
+- `auth/PasswordChangeGate.tsx` — หน้า "Choose a new password" แทนหน้าที่ขอ (ไม่ redirect · URL เดิมอยู่ · เปลี่ยนเสร็จหน้านั้นขึ้นเอง) · มีปุ่ม "Sign out instead"
+- `RequireAuth` แสดง gate เมื่อ `mustChangePassword` · `authStore.refresh` อ่าน flag จาก `/me` · `ProfilePage` มี section Password (บัญชี local) / บอกให้ไปเปลี่ยนที่ directory (บัญชีอื่น)
+- คู่มือ `docs/user-guide.md` หัวข้อ *Signing in and your account* แก้ตามแล้ว (NokRak ตอบจากหัวข้อนี้)
+
+### CG.3 Test
+- `AuthResourceTest` 7 (เปลี่ยนได้ + IP ลง audit · รหัสเดิมผิดนับ failure · lock → 429 · รหัสอ่อน/ซ้ำ ไม่แตะ store · ไม่มีรหัส local / id ไม่ตรง → 403 · `/me` มี flag · บัญชี entra ไม่ถูกถาม) · `IdentityAdminStoreIT.changingOnesOwnPassword` (lock แล้วเปลี่ยน → ปลด lock · must_change false · audit ถูก) · backend unit **639 ผ่าน** · IT 36 ผ่าน
+- jest: `ChangePasswordForm.test` 4 · `RequireAuth.test` +1 (gate แทนหน้า ไม่ redirect) · `ProfilePage.test` +2 → **721 ผ่าน**
+
+### CG.4 ข้อจำกัดที่รู้ (ตั้งใจไว้ก่อน)
+- **gate อยู่ฝั่ง UI อย่างเดียว** — JWT ไม่มี claim must-change และ API อื่นไม่ปฏิเสธ คนที่ยิง API ตรงด้วย token ยังใช้ได้ (สิทธิ์เท่าเดิม ไม่ได้เพิ่ม) · ถ้าจะบังคับฝั่ง server ต้องใส่ claim แล้วให้ filter ปฏิเสธทุก path ยกเว้น `/auth/me` `/auth/password`
+- **token เป็น stateless** — เปลี่ยนรหัสแล้ว session อื่นที่เปิดอยู่ยังใช้ได้จนหมดอายุ (คู่มือบอกไว้) · จะตัดทันทีต้องมี token version ต่อ principal
+- ไม่มีกฎความซับซ้อน (ตัวใหญ่/สัญลักษณ์) — ใช้ความยาวแทนตาม NIST 800-63B · ไม่มี password history
+- **prod:** admin ที่ตั้งรหัสไว้ (must_change=true) จะเจอหน้า "Choose a new password" ตอน sign in ครั้งถัดไป — ต้องให้ผู้ใช้เปลี่ยนเอง **ห้าม agent เปลี่ยนรหัส admin บน prod**
+
+## รอบก่อนหน้า — **ข้อ CF: NokRak ตอบคำถามวิธีใช้ ARAK จากคู่มือของระบบ (`search_docs` · M28)**
 
 ผู้ใช้ขอ: *"ให้ NokRak มีข้อมูล Document ของระบบด้วย เผื่อ user ถาม"*
 

@@ -6,6 +6,7 @@ import com.mfec.dac.auth.LocalIdentityDao;
 import com.mfec.dac.auth.PasswordHasher;
 import com.mfec.dac.auth.Secured;
 import com.mfec.dac.config.IdentityConfiguration;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.POST;
@@ -49,6 +50,16 @@ public class AuthResource {
    */
   private static final String DECOY_HASH = PasswordHasher.hash("not-a-password".toCharArray());
 
+  /** The shortest password somebody may choose for themselves. */
+  static final int MIN_PASSWORD = 12;
+
+  /**
+   * The longest. Every character is hashed on each sign-in, so an unbounded
+   * one is a way to make the server spend its time; 200 is what an
+   * administrator's reset allows.
+   */
+  static final int MAX_PASSWORD = 200;
+
   public record LoginRequest(String username, String password) {}
 
   public record UserSummary(
@@ -78,6 +89,38 @@ public class AuthResource {
       long expiresInSeconds,
       boolean mustChangePassword,
       UserSummary user) {}
+
+  /**
+   * The signed-in user, and whether they still have to replace a password
+   * somebody else chose.
+   *
+   * <p>The flag is here as well as in the login response because the console
+   * keeps its session across a reload, and a reload is otherwise how anyone
+   * would step past the screen that asks for a new password.
+   */
+  public record Me(
+      String id,
+      String username,
+      String email,
+      String displayName,
+      String source,
+      Set<String> roles,
+      List<String> scopes,
+      boolean mustChangePassword) {
+
+    static Me of(AuthenticatedUser user, boolean mustChangePassword) {
+      UserSummary summary = UserSummary.of(user);
+      return new Me(
+          summary.id(),
+          summary.username(),
+          summary.email(),
+          summary.displayName(),
+          summary.source(),
+          summary.roles(),
+          summary.scopes(),
+          mustChangePassword);
+    }
+  }
 
   public record PasswordChangeRequest(String currentPassword, String newPassword) {}
 
@@ -188,15 +231,19 @@ public class AuthResource {
   @GET
   @Path("/me")
   @Secured
-  public UserSummary me(@Context SecurityContext security) {
+  public Me me(@Context SecurityContext security) {
     AuthenticatedUser caller = caller(security);
     // Read through to the database rather than replay the token claims, so a
     // role change takes effect on the next page load.
-    return identities
-        .loadUser(caller.id())
-        .map(UserSummary::of)
-        .orElseThrow(
-            () -> error(Response.Status.UNAUTHORIZED, "this account no longer exists"));
+    AuthenticatedUser user =
+        identities
+            .loadUser(caller.id())
+            .orElseThrow(
+                () -> error(Response.Status.UNAUTHORIZED, "this account no longer exists"));
+    boolean mustChange =
+        "local".equals(user.source())
+            && localPassword(user).map(LocalIdentityDao.LocalAccount::mustChange).orElse(false);
+    return Me.of(user, mustChange);
   }
 
   @POST
@@ -204,38 +251,89 @@ public class AuthResource {
   @Secured
   @Consumes(MediaType.APPLICATION_JSON)
   public Map<String, String> changePassword(
-      @Context SecurityContext security, PasswordChangeRequest request) {
+      @Context SecurityContext security,
+      @Context HttpServletRequest http,
+      PasswordChangeRequest request) {
     AuthenticatedUser caller = caller(security);
     if (request == null || !isSet(request.currentPassword()) || !isSet(request.newPassword())) {
       throw error(Response.Status.BAD_REQUEST, "currentPassword and newPassword are required");
     }
-    if (request.newPassword().length() < 12) {
-      throw error(Response.Status.BAD_REQUEST, "the new password must be at least 12 characters");
+    String chosen = request.newPassword();
+    if (chosen.length() < MIN_PASSWORD) {
+      throw error(
+          Response.Status.BAD_REQUEST,
+          "the new password must be at least " + MIN_PASSWORD + " characters");
+    }
+    if (chosen.length() > MAX_PASSWORD) {
+      throw error(
+          Response.Status.BAD_REQUEST,
+          "the new password must be at most " + MAX_PASSWORD + " characters");
+    }
+    if (chosen.equalsIgnoreCase(caller.username())) {
+      throw error(Response.Status.BAD_REQUEST, "the new password cannot be your username");
+    }
+    if (chosen.equals(request.currentPassword())) {
+      throw error(
+          Response.Status.BAD_REQUEST, "the new password must be different from the current one");
     }
 
     LocalIdentityDao.LocalAccount account =
-        identities
-            .findLocalAccount(caller.username())
-            .filter(LocalIdentityDao.LocalAccount::hasCredential)
+        localPassword(caller)
             .orElseThrow(
                 () ->
                     error(
                         Response.Status.FORBIDDEN,
                         "this account has no local password to change"));
+    if (!account.enabled()) {
+      throw error(Response.Status.FORBIDDEN, "this account exists but is not enabled");
+    }
+    if (account.isLocked(Instant.now())) {
+      // The same lock as the sign-in form's. Without it a session left open
+      // on somebody's desk is an unlimited number of guesses at the password
+      // behind it, one form submission at a time.
+      throw error(
+          Response.Status.TOO_MANY_REQUESTS,
+          "too many failed attempts; this account is locked until " + account.lockedUntil());
+    }
 
     char[] current = request.currentPassword().toCharArray();
-    char[] replacement = request.newPassword().toCharArray();
+    char[] replacement = chosen.toCharArray();
     try {
       if (!PasswordHasher.verify(current, account.passwordHash())) {
+        // Counted like a failed sign-in, for the reason above. 403 rather than
+        // 401: the session is fine, and the console signs out on a 401.
+        identities.recordFailure(
+            account.id(),
+            config.getMaxFailedLoginAttempts(),
+            Duration.ofSeconds(config.getLockoutSeconds()));
+        LOG.warn("wrong current password in a password change for {}", account.username());
         throw error(Response.Status.FORBIDDEN, "the current password is not correct");
       }
-      identities.setPassword(account.id(), PasswordHasher.hash(replacement), false);
+      identities.changeOwnPassword(
+          account.id(),
+          account.username(),
+          PasswordHasher.hash(replacement),
+          http == null ? null : http.getRemoteAddr());
       LOG.info("password changed for {}", account.username());
       return Map.of("status", "changed");
     } finally {
       PasswordHasher.wipe(current);
       PasswordHasher.wipe(replacement);
     }
+  }
+
+  /**
+   * The caller's own local account, if they sign in with a password.
+   *
+   * <p>Matched on the id as well as the name: a username is unique only
+   * within its directory, so a lookup by name alone could find somebody
+   * else's local account for a person who signed in through Entra.
+   */
+  private Optional<LocalIdentityDao.LocalAccount> localPassword(AuthenticatedUser user) {
+    return identities
+        .findLocalAccount(user.username())
+        .filter(account -> account.id().equals(user.id()))
+        .filter(LocalIdentityDao.LocalAccount::hasCredential);
   }
 
   private static AuthenticatedUser caller(SecurityContext security) {

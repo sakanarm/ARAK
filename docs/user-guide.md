@@ -39,8 +39,23 @@ you. Your platform roles decide which pages you see in the left-hand menu.
   attributes (such as department, country or clearance) and your platform roles.
   Policies are written against these attributes and groups, so this is the page
   to check when access is not what you expect.
-- There is no screen yet for changing your own password. Ask a platform
-  administrator.
+- **Changing your password.** On **Profile**, the **Password** section at the
+  bottom asks for your current password and a new one twice. The new password
+  needs at least 12 characters, cannot be your username and must differ from
+  the current one; a sentence you will remember works well. Other browsers
+  where you are already signed in stay signed in until their session ends.
+  This is only for accounts ARAK holds the password of (account type
+  `local`). If you sign in through a directory such as Entra ID, change your
+  password there.
+- **The first time you sign in** with a password an administrator chose for
+  you (a new account, or after they reset it), ARAK shows **Choose a new
+  password** before anything else. Enter the password you were given and one
+  only you know; the page you were going to opens once it is saved. **Sign out
+  instead** leaves without changing it, and you will be asked again next time.
+- A wrong current password counts as a failed sign-in. After too many in a row
+  the account is locked for a while and both signing in and changing the
+  password are refused until the lock ends. An administrator can reset the
+  password if you have forgotten it.
 - An administrator creates local accounts under **Settings → Application
   roles**. Attributes of a local account are set by an administrator under
   **People**.

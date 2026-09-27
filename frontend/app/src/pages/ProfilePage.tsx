@@ -4,18 +4,21 @@ import {
   Key01,
   Lock01,
   Mail01,
+  PasscodeLock,
   Users01,
 } from '@untitledui/icons';
 import type { ComponentType } from 'react';
 import { Chip as Badge } from '../components/chips';
 import { apiErrorMessage } from '../api/client';
 import { fetchPrincipalDetail } from '../api/governance';
+import ChangePasswordForm from '../auth/ChangePasswordForm';
 import { useAuthStore } from '../auth/authStore';
 
 /**
  * What the platform knows about the person reading it.
  *
- * <p>Not a settings screen — nothing here is editable. It answers the question
+ * <p>Not a settings screen — apart from one's own password, nothing here is
+ * editable. It answers the question
  * somebody asks after being refused a table: "what does this system think I
  * am?" Until now the only way to see one's own attributes was the directory,
  * which lists everybody and reads as somebody else's business; people
@@ -97,8 +100,8 @@ export default function ProfilePage() {
         </h1>
         <p className="tw:mt-2 tw:max-w-3xl tw:text-md tw:text-tertiary">
           Everything a policy can know about you when it decides what you see.
-          Nothing here is editable — it is synced from the directory you signed
-          in through.
+          Apart from your password, nothing here is editable — it is synced from
+          the directory you signed in through.
         </p>
       </header>
 
@@ -269,6 +272,35 @@ export default function ProfilePage() {
           )}
         </section>
       </div>
+
+      <section className="tw:mt-6 tw:rounded-xl tw:border tw:border-secondary tw:bg-primary tw:p-6">
+        <SectionHead
+          icon={PasscodeLock}
+          tint="tw:bg-utility-warning-50 tw:text-utility-warning-700"
+          title="Password"
+        />
+        {/*
+          Only for an account ARAK holds the password of. Somebody signed in
+          through a directory changes it there, and a form here would either
+          do nothing or, worse, look as if it had.
+        */}
+        {user?.source === 'local' ? (
+          <>
+            <p className="tw:mt-1 tw:text-sm tw:text-tertiary">
+              The password you sign in to ARAK with. It is not a password to any
+              database — ARAK connects to those with its own.
+            </p>
+            <div className="tw:mt-4 tw:max-w-md">
+              <ChangePasswordForm />
+            </div>
+          </>
+        ) : (
+          <p className="tw:mt-1 tw:text-sm tw:text-tertiary">
+            You sign in through {user?.source ?? 'your directory'}, so your
+            password is changed there, not in ARAK.
+          </p>
+        )}
+      </section>
     </>
   );
 }
@@ -286,7 +318,7 @@ function SectionHead({
   tint,
   title,
 }: {
-  count: number;
+  count?: number;
   icon: ComponentType<{ className?: string }>;
   tint: string;
   title: string;
@@ -298,9 +330,11 @@ function SectionHead({
         <Icon className="tw:size-4.5" />
       </span>
       <h2 className="tw:text-lg tw:font-semibold tw:text-primary">{title}</h2>
-      <Badge color="gray" size="sm" type="pill-color">
-        {count}
-      </Badge>
+      {count !== undefined && (
+        <Badge color="gray" size="sm" type="pill-color">
+          {count}
+        </Badge>
+      )}
     </div>
   );
 }

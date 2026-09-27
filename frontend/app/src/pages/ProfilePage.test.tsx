@@ -19,13 +19,14 @@ jest.mock('../api/governance', () => ({
 
 jest.mock('../api/client', () => ({
   apiErrorMessage: (_error: unknown, fallback: string) => fallback,
+  changePassword: jest.fn(),
 }));
 
 const detail = fetchPrincipalDetail as jest.MockedFunction<
   typeof fetchPrincipalDetail
 >;
 
-function signedInAs(roles: string[]) {
+function signedInAs(roles: string[], source: 'local' | 'entra' = 'local') {
   useAuthStore.setState({
     token: 'test-token',
     initialising: false,
@@ -34,10 +35,32 @@ function signedInAs(roles: string[]) {
       username: 'analyst_a',
       email: 'analyst_a@example.test',
       displayName: 'Analyst A',
-      source: 'local',
+      source,
       roles,
       scopes: [],
     },
+  });
+}
+
+function nothingAbout(source: 'local' | 'entra') {
+  detail.mockResolvedValue({
+    principal: {
+      id: '11111111-1111-1111-1111-111111111111',
+      principalType: 'USER',
+      username: 'analyst_a',
+      email: 'analyst_a@example.test',
+      displayName: 'Analyst A',
+      source,
+      enabled: true,
+      attributeCount: 0,
+      memberCount: 0,
+      groupCount: 0,
+      groups: [],
+      appRoles: [],
+    },
+    attributes: [],
+    groups: [],
+    members: [],
   });
 }
 
@@ -180,4 +203,26 @@ test('does not claim a platform role grants access to data', async () => {
   expect(
     screen.getByText(/do not grant access to any data/)
   ).toBeInTheDocument();
+});
+
+test('lets an account ARAK holds the password of change it here', async () => {
+  nothingAbout('local');
+
+  show();
+
+  expect(await screen.findByRole('heading', { name: 'Password' })).toBeInTheDocument();
+  expect(screen.getByLabelText('Current password')).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Change password' })).toBeInTheDocument();
+});
+
+test('sends somebody signed in through a directory back to it for their password', async () => {
+  signedInAs([], 'entra');
+  nothingAbout('entra');
+
+  show();
+
+  expect(
+    await screen.findByText(/You sign in through entra, so your password is changed there/)
+  ).toBeInTheDocument();
+  expect(screen.queryByLabelText('Current password')).not.toBeInTheDocument();
 });

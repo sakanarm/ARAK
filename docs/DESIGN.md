@@ -187,7 +187,7 @@ conf/dac.yml                 config เดียวที่ commit — ใช�
 | # | Feature | สถานะ |
 |---|---|---|
 | FR-2.1 | Login ผ่าน Entra ID (OIDC) + ดึง group/attribute ผ่าน Microsoft Graph | ⬜ |
-| FR-2.2 | Local user / group / attribute (สำหรับ test + service account) | ✅ บางส่วน — local sign-in ใช้ได้แล้ว (`local_credential`, bcrypt, lockout, must-change) · **local group (V35): admin สร้าง group และเพิ่ม/เอาสมาชิกออกได้ พร้อม reason บังคับ และ audit `ADD_MEMBER`/`REMOVE_MEMBER` · group ที่ sync มาแก้ใน ARAK ไม่ได้** |
+| FR-2.2 | Local user / group / attribute (สำหรับ test + service account) | ✅ บางส่วน — local sign-in ใช้ได้แล้ว (`local_credential`, bcrypt, lockout, must-change) · **เปลี่ยนรหัสผ่านเองได้ (ข้อ CG): Profile → Password และหน้าบังคับ "Choose a new password" เมื่อรหัสผ่านถูก admin ตั้ง (บัญชีใหม่ / reset / bootstrap) · `POST /v1/auth/password` ตรวจรหัสเดิม (ผิดนับเป็น failed attempt · lock แล้วได้ 429) · ≥ 12 ตัว ไม่ซ้ำ username ไม่ซ้ำของเดิม · audit `SET_PASSWORD` โดยเจ้าของบัญชี** · **local group (V35): admin สร้าง group และเพิ่ม/เอาสมาชิกออกได้ พร้อม reason บังคับ และ audit `ADD_MEMBER`/`REMOVE_MEMBER` · group ที่ sync มาแก้ใน ARAK ไม่ได้** |
 | FR-2.3 | ใช้ OpenMetadata Team เป็นแหล่ง group | ⬜ |
 | FR-2.4 | Attribute store key–value รองรับ multi-value + `source` (entra/om/local) + ลำดับความสำคัญ | ⬜ (ตาราง `principal_attribute` มีแล้ว) |
 | FR-2.5 | Sync membership ตามรอบ + cache TTL · token claim ใช้ได้ทันที | ⬜ |
@@ -459,7 +459,7 @@ login ด้วย **PAT / service account** (M14) ไม่ใช่รหั�
 |---|---|---|---|
 | **M0** | Maven multi-module + Dropwizard skeleton · Vite+React+Tailwind shell + vendor ui-core-components · JSON Schema codegen · OM client จาก swagger · Flyway · docker-compose · CI | 3 wk | ✅ **เสร็จ** |
 | **M1** | OM connector: REST client · entity mapper ครบทุก governance object · FQN mapping · full crawl · **webhook + poller** · `asset_facet` + effective facet · nightly reconcile · **Catalog UI** | 4 wk | 🚧 **~95%** — เหลือ FR-1.6 (reconcile กับ JDBC) · FR-1.7 push-back (ผู้ใช้สั่ง read-only) |
-| **M2** | Entra OIDC · Graph sync · LocalProvider · OmTeamProvider · AttributeResolver · app RBAC | 2 wk | 🚧 **~50%** — local sign-in + local account + app role จาก UI · ยังไม่มี Entra / Graph / write API ของ attribute |
+| **M2** | Entra OIDC · Graph sync · LocalProvider · OmTeamProvider · AttributeResolver · app RBAC | 2 wk | 🚧 **~55%** — local sign-in + local account + app role จาก UI + **เปลี่ยนรหัสผ่านเอง / บังคับเปลี่ยนหลัง admin ตั้ง (ข้อ CG)** · ยังไม่มี Entra / Graph / write API ของ attribute |
 | **M3** | Policy IR · AssetSelector resolver + `policy_binding` materializer · SubjectRule evaluator · layered composer · ConflictResolver · decision cache · Simulator | 5 wk | 🚧 **~97%** — เหลือ ANTLR grammar ของ `expr` |
 | **M4** | Policy Authoring UI (global + local builder, data policy builder, หน้า effective policy, view-as-user, impact analysis) | 4 wk | ✅ **เสร็จ** |
 | **M5** | **5.1.2 Secure View** — ViewCompiler + dialect · `row_entitlement` maintainer · `DbPrincipalProvisioner` · cutover helper · dry-run/rollback · golden-file + Testcontainers | 4 wk | 🚧 **~85%** |

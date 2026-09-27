@@ -111,6 +111,42 @@ class IdentityAdminStoreIT {
     }
 
     @Test
+    @DisplayName("changing the password oneself clears must_change and the lock, and is audited")
+    void changingOnesOwnPassword() {
+      UUID id = create("analyst_a");
+      LocalIdentityDao dao = new LocalIdentityDao(jdbi);
+      dao.recordFailure(id, 1, java.time.Duration.ofMinutes(15));
+      assertThat(dao.findLocalAccount("analyst_a").orElseThrow().isLocked(java.time.Instant.now()))
+          .isTrue();
+
+      dao.changeOwnPassword(
+          id,
+          "analyst_a",
+          PasswordHasher.hash("a password of my own".toCharArray()),
+          "192.0.2.20");
+
+      LocalIdentityDao.LocalAccount account = dao.findLocalAccount("analyst_a").orElseThrow();
+      assertThat(account.mustChange()).isFalse();
+      assertThat(account.failedAttempts()).isZero();
+      assertThat(account.lockedUntil()).isNull();
+      assertThat(PasswordHasher.verify("a password of my own".toCharArray(), account.passwordHash()))
+          .isTrue();
+      List<String> audit =
+          jdbi.withHandle(
+              handle ->
+                  handle
+                      .createQuery(
+                          "SELECT actor || ' ' || action || ' ' || reason || ' ' || host(client_ip)"
+                              + " FROM audit_identity_change"
+                              + " WHERE target_principal_id = :id AND actor = 'analyst_a'")
+                      .bind("id", id)
+                      .mapTo(String.class)
+                      .list());
+      assertThat(audit)
+          .containsExactly("analyst_a SET_PASSWORD changed by the account holder 192.0.2.20");
+    }
+
+    @Test
     @DisplayName("a name differing only in case is the same name, because signing in says so")
     void caseInsensitiveNames() {
       create("analyst_a");

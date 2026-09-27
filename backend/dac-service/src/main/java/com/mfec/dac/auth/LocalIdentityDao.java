@@ -1,5 +1,6 @@
 package com.mfec.dac.auth;
 
+import com.mfec.dac.audit.ClientAddress;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
@@ -217,6 +218,49 @@ public class LocalIdentityDao {
                 .bind("hash", passwordHash)
                 .bind("mustChange", mustChange)
                 .execute());
+  }
+
+  /**
+   * The holder of an account replacing their own password.
+   *
+   * <p>Clears {@code must_change} and the lockout, and records the change in
+   * the identity audit next to an administrator's reset, in one transaction:
+   * a password that changed with no row saying so is exactly the gap an
+   * auditor looks for after an account is misused.
+   */
+  public void changeOwnPassword(
+      UUID principalId, String username, String passwordHash, String clientIp) {
+    jdbi.useTransaction(
+        handle -> {
+          handle
+              .createUpdate(
+                  """
+                  UPDATE local_credential
+                  SET password_hash = :hash,
+                      must_change = false,
+                      password_changed_at = now(),
+                      failed_attempts = 0,
+                      locked_until = NULL
+                  WHERE principal_id = :id
+                  """)
+              .bind("id", principalId)
+              .bind("hash", passwordHash)
+              .execute();
+          handle
+              .createUpdate(
+                  """
+                  INSERT INTO audit_identity_change
+                      (actor, action, target_principal_id, target_username, target_source,
+                       reason, client_ip)
+                  VALUES (:actor, 'SET_PASSWORD', :id, :username, 'local',
+                          'changed by the account holder', CAST(:ip AS inet))
+                  """)
+              .bind("actor", username)
+              .bind("id", principalId)
+              .bind("username", username)
+              .bind("ip", ClientAddress.normalise(clientIp))
+              .execute();
+        });
   }
 
   /** Re-hashes in place after a successful login, without touching the lockout state. */

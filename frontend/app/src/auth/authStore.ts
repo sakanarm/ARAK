@@ -26,9 +26,12 @@ export interface AuthState {
   user: SessionUser | null;
   /** True until the stored session has been checked against the backend. */
   initialising: boolean;
+  /** The password signed in with was set by an administrator; see PasswordChangeGate. */
   mustChangePassword: boolean;
   signIn: (username: string, password: string) => Promise<void>;
   signOut: () => void;
+  /** The holder has chosen their own password, so nothing stands in front of the console. */
+  passwordChanged: () => void;
   refresh: () => Promise<void>;
   hasRole: (...roles: string[]) => boolean;
 }
@@ -57,18 +60,20 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     set({ token: null, user: null, mustChangePassword: false, initialising: false });
   },
 
+  passwordChanged: () => set({ mustChangePassword: false }),
+
   refresh: async () => {
     if (!get().token) {
       set({ initialising: false });
       return;
     }
     try {
-      const user = await api.fetchMe();
+      const { mustChangePassword, ...user } = await api.fetchMe();
       const token = get().token;
       if (token) {
         writeSession(token, user);
       }
-      set({ user, initialising: false });
+      set({ user, mustChangePassword: Boolean(mustChangePassword), initialising: false });
     } catch {
       // A 401 has already cleared the session through the interceptor; anything
       // else (backend down) leaves the cached user in place so the console is
