@@ -16,6 +16,8 @@ import com.mfec.dac.schema.api.Unenforceable;
 import com.mfec.dac.source.DataSourceStore;
 import com.mfec.dac.source.jdbc.QueryExecutor;
 import com.mfec.dac.source.jdbc.SourceProbe;
+import java.time.Clock;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -60,6 +62,11 @@ public class QueryService {
    * @param explanations what each of those assets was restricted by, in words
    * @param unenforceable restrictions this dialect could not express; they were
    *     tightened rather than dropped, and the caller is told (FR-6.0b)
+   * @param millis how long the source took, on the read these rows came from
+   * @param cached whether the rows came from {@link QueryResultCache} rather
+   *     than a read made for this call
+   * @param readAt when the source was read for these rows: now, or when the
+   *     cached read was made
    */
   public record Result(
       List<String> columns,
@@ -70,7 +77,9 @@ public class QueryService {
       String rewrittenSql,
       List<String> assets,
       List<Explanation> explanations,
-      List<Unenforceable> unenforceable) {}
+      List<Unenforceable> unenforceable,
+      boolean cached,
+      Instant readAt) {}
 
   /**
    * Why this result looks the way it does, for one asset.
@@ -129,6 +138,8 @@ public class QueryService {
   private final DataSourceStore sources;
   private final DecisionService decisions;
   private final QueryExecutor executor;
+  private final QueryResultCache results;
+  private final Clock clock;
 
   public QueryService(
       Jdbi jdbi,
@@ -136,19 +147,31 @@ public class QueryService {
       DataSourceStore sources,
       DecisionService decisions,
       QueryExecutor executor) {
+    this(jdbi, json, sources, decisions, executor, QueryResultCache.disabled(), Clock.systemUTC());
+  }
+
+  /**
+   * @param results where a result may be reused from; {@link
+   *     QueryResultCache#disabled()} sends every statement to the source
+   */
+  public QueryService(
+      Jdbi jdbi,
+      ObjectMapper json,
+      DataSourceStore sources,
+      DecisionService decisions,
+      QueryExecutor executor,
+      QueryResultCache results,
+      Clock clock) {
     this.jdbi = jdbi;
     this.json = json;
     this.sources = sources;
     this.decisions = decisions;
     this.executor = executor;
+    this.results = results == null ? QueryResultCache.disabled() : results;
+    this.clock = clock == null ? Clock.systemUTC() : clock;
   }
 
-  /**
-   * @param principal whose access governs the rows; not necessarily the caller,
-   *     because the explorer doubles as the simulator's evidence (FR-5.2)
-   * @param runBy the signed-in account that sent it, recorded beside the
-   *     principal so a query run as somebody else is never filed as theirs alone
-   */
+  /** As the eight-argument form, with a held result allowed. */
   public Result run(
       UUID sourceId,
       String sql,
@@ -157,6 +180,26 @@ public class QueryService {
       int maxRows,
       String clientIp,
       String purpose) {
+    return run(sourceId, sql, principal, runBy, maxRows, clientIp, purpose, false);
+  }
+
+  /**
+   * @param principal whose access governs the rows; not necessarily the caller,
+   *     because the explorer doubles as the simulator's evidence (FR-5.2)
+   * @param runBy the signed-in account that sent it, recorded beside the
+   *     principal so a query run as somebody else is never filed as theirs alone
+   * @param fresh read the source even when a young enough result is held; the
+   *     new result then replaces it
+   */
+  public Result run(
+      UUID sourceId,
+      String sql,
+      String principal,
+      String runBy,
+      int maxRows,
+      String clientIp,
+      String purpose,
+      boolean fresh) {
 
     // Audited before anything else can go right, because a query aimed at a
     // source that is gone or switched off is still someone trying to read data
@@ -166,13 +209,13 @@ public class QueryService {
     Optional<DataSourceStore.Source> found = sources.find(sourceId);
     if (found.isEmpty()) {
       String reason = "No data source " + sourceId;
-      audit(principal, null, sql, null, "REJECTED", reason, null, null, clientIp, Set.of(), runBy);
+      audit(principal, null, sql, null, "REJECTED", reason, null, null, clientIp, Set.of(), runBy, false);
       throw new RejectedException(reason);
     }
     DataSourceStore.Source source = found.get();
     if (!source.enabled()) {
       String reason = source.name() + " is disabled";
-      audit(principal, source.id(), sql, null, "REJECTED", reason, null, null, clientIp, Set.of(), runBy);
+      audit(principal, source.id(), sql, null, "REJECTED", reason, null, null, clientIp, Set.of(), runBy, false);
       throw new RejectedException(reason);
     }
 
@@ -193,7 +236,7 @@ public class QueryService {
       if (e instanceof QueryRewriter.DeniedException denied && denied.assetFqn() != null) {
         touched.add(denied.assetFqn());
       }
-      audit(principal, source.id(), sql, null, "REJECTED", e.getMessage(), null, null, clientIp, touched, runBy);
+      audit(principal, source.id(), sql, null, "REJECTED", e.getMessage(), null, null, clientIp, touched, runBy, false);
       throw new RejectedException(
           e.getMessage(),
           e instanceof QueryRewriter.DeniedException denied ? denied.assetFqn() : null,
@@ -213,11 +256,67 @@ public class QueryService {
           null,
           clientIp,
           touched,
-          runBy);
+          runBy,
+          false);
       throw e;
     }
 
+    // Looked up only now, after every table has been governed and every
+    // decision recorded: the key is the enforced statement, so a refusal has
+    // already been thrown and a hit is exactly the rows a read would return
+    // (see QueryResultCache on why no principal is needed in the key).
+    QueryResultCache.Key key =
+        new QueryResultCache.Key(
+            source.id(),
+            source.engine().name(),
+            source.host(),
+            source.port(),
+            source.defaultDatabase(),
+            source.credentialRef(),
+            source.updatedAt(),
+            rewritten.sql(),
+            rows);
     long started = System.nanoTime();
+    if (!fresh) {
+      Optional<QueryResultCache.Hit> hit = results.get(key, clock.instant());
+      if (hit.isPresent()) {
+        QueryExecutor.Page held = hit.get().page();
+        // The duration recorded is what this caller waited, which is the
+        // number a latency report is about; the source's own time for the
+        // read goes back to the caller with the rows.
+        long millis = (System.nanoTime() - started) / 1_000_000;
+        audit(
+            principal,
+            source.id(),
+            sql,
+            rewritten.sql(),
+            "EXECUTED",
+            null,
+            (long) held.rows().size(),
+            (int) millis,
+            clientIp,
+            touched,
+            runBy,
+            true);
+        return new Result(
+            held.columns(),
+            held.columnTypes(),
+            held.rows(),
+            held.truncated(),
+            held.millis(),
+            rewritten.sql(),
+            rewritten.assets(),
+            explain(rewritten.governed()),
+            rewritten.unenforceable(),
+            true,
+            hit.get().storedAt());
+      }
+    }
+
+    // Read before the statement goes out, so a flush while it runs keeps its
+    // rows out of the cache.
+    long generation = results.generation();
+    Instant readAt = clock.instant();
     QueryExecutor.Page page;
     try {
       page =
@@ -241,7 +340,8 @@ public class QueryService {
           (int) millis,
           clientIp,
           touched,
-          runBy);
+          runBy,
+          false);
       // The source's message can name objects the caller is not entitled to
       // know exist, so it goes to the log and a shorter one goes back.
       LOG.warn("Query against {} failed: {}", source.name(), e.toString());
@@ -260,7 +360,10 @@ public class QueryService {
         (int) page.millis(),
         clientIp,
         touched,
-        runBy);
+        runBy,
+        false);
+
+    results.put(key, page, readAt, generation);
 
     return new Result(
         page.columns(),
@@ -271,7 +374,9 @@ public class QueryService {
         rewritten.sql(),
         rewritten.assets(),
         explain(rewritten.governed()),
-        rewritten.unenforceable());
+        rewritten.unenforceable(),
+        false,
+        readAt);
   }
 
   // -------------------------------------------------------- explainability
@@ -549,7 +654,8 @@ public class QueryService {
       Integer millis,
       String clientIp,
       Set<String> assets,
-      String runBy) {
+      String runBy,
+      boolean fromCache) {
 
     try {
       jdbi.useHandle(
@@ -559,10 +665,11 @@ public class QueryService {
                       """
                       INSERT INTO audit_query (principal_name, data_source_id, original_sql,
                                                rewritten_sql, outcome, reject_reason, row_count,
-                                               duration_ms, client_ip, asset_fqns, run_by)
+                                               duration_ms, client_ip, asset_fqns, run_by,
+                                               served_from_cache)
                       VALUES (:principal, CAST(:sourceId AS uuid), :original, :rewritten,
                               :outcome, :reason, :rowCount, :millis, CAST(:ip AS inet),
-                              :assets, :runBy)
+                              :assets, :runBy, :fromCache)
                       """)
                   .bind("principal", principal)
                   .bind("sourceId", sourceId)
@@ -575,6 +682,7 @@ public class QueryService {
                   .bind("ip", inet(clientIp))
                   .bindArray("assets", String.class, assets.toArray(new String[0]))
                   .bind("runBy", runBy == null || runBy.equalsIgnoreCase(principal) ? null : runBy)
+                  .bind("fromCache", fromCache)
                   .execute());
     } catch (Exception e) {
       LOG.error("Could not write the query audit row for {}", principal, e);

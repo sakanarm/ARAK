@@ -87,7 +87,8 @@ public class QueryLog {
       String rejectReason,
       Long rowCount,
       Integer durationMs,
-      List<String> assets) {}
+      List<String> assets,
+      boolean fromCache) {}
 
   /** How many rows in the window, before paging, by outcome. */
   public record Counts(int total, int executed, int rejected, int failed) {}
@@ -144,7 +145,8 @@ public class QueryLog {
                         """
                         SELECT q.id, q.occurred_at, q.principal_name, q.run_by, q.data_source_id,
                                d.name AS source_name, q.original_sql, q.rewritten_sql, q.outcome,
-                               q.reject_reason, q.row_count, q.duration_ms, q.asset_fqns
+                               q.reject_reason, q.row_count, q.duration_ms, q.asset_fqns,
+                               q.served_from_cache
                           FROM audit_query q
                           LEFT JOIN data_source d ON d.id = q.data_source_id
                         """
@@ -293,6 +295,7 @@ public class QueryLog {
         rs.getString("reject_reason"),
         rows,
         millis,
-        List.copyOf(fqns));
+        List.copyOf(fqns),
+        rs.getBoolean("served_from_cache"));
   }
 }

@@ -83,6 +83,8 @@ public class AuditResource {
    * @param originalSql null with {@code sqlHidden} when the reader may not read it
    * @param assets the tables it touched that the reader oversees
    * @param hiddenAssets how many more it touched that the reader does not
+   * @param fromCache answered from the result cache, so the source has no
+   *     record of this read
    */
   public record QueryRow(
       long id,
@@ -101,7 +103,8 @@ public class AuditResource {
       Integer durationMs,
       List<String> assets,
       int hiddenAssets,
-      boolean own) {}
+      boolean own,
+      boolean fromCache) {}
 
   /**
    * @param nextBefore pass as {@code before} for the page after this one; null
@@ -242,7 +245,8 @@ public class AuditResource {
           entry.durationMs(),
           entry.assets(),
           0,
-          own);
+          own,
+          entry.fromCache());
     }
     List<String> mine = new ArrayList<>();
     for (String fqn : entry.assets()) {
@@ -277,7 +281,8 @@ public class AuditResource {
         entry.durationMs(),
         List.copyOf(mine),
         hidden,
-        false);
+        false,
+        entry.fromCache());
   }
 
   private static Instant instant(String value, String name) {

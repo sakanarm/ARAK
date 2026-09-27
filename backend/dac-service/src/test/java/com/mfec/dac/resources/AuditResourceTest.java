@@ -47,7 +47,8 @@ class AuditResourceTest {
         reason,
         "EXECUTED".equals(outcome) ? 12L : null,
         40,
-        assets);
+        assets,
+        false);
   }
 
   @Test

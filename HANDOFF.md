@@ -33,7 +33,7 @@ Phase 1 รองรับ SQL Server + PostgreSQL · identity หลักค�
 | **M4 Policy Authoring UI** | ✅ **เสร็จ** — Policy list + Policy builder + readback + capability matrix + `/policies/:id` หน้าสรุปอ่านอย่างเดียว + panel Policies ในหน้า asset (FR-3.1.5) + View-as-user (FR-5.2, ข้อ Z) · **รอบนี้ปิดข้อสุดท้าย: impact analysis (FR-5.3) — `GET /v1/policies/{id}/impact` + panel “Who it changes things for” ดูข้อ AA** · **รอบนี้เพิ่มหน้า `/docs/expressions` — syntax reference ที่ backend ส่งมาจาก jar ของ engine กดจากช่อง expression ได้ พร้อม 11 policy ตัวอย่างจริงใน DB (ข้อ AF.3/AF.4)** |
 | **M5 Secure View (5.1.2)** | 🚧 ~85% — **slice 1 จบ: `ViewCompiler` + golden-file test 2 dialect ดูข้อ AK.1** · **slice 2 จบ: `RowEntitlementMaintainer` (17 tests) — pure ทั้งคลาส · **refuse ไม่ใช่ skip** เมื่อ treatment/entitlement key ไม่ตรงกับ view ที่ติดตั้งอยู่ · ⚠️ **ไม่ต้องมี migration** (ตาราง `acl.*` อยู่ที่ source) — ดูข้อ AT** · `DecisionSql` + dialect ใช้ร่วมกับ 5.2 เหมือนเดิม · **slice 3 ครึ่งแรกจบ: `SecureViewApplier` — dry-run / apply / rollback ใน transaction เดียว · `StaleReviewException` เมื่อแถวเปลี่ยนหลังคนอนุมัติ · **11 tests บน Postgres จริง = ครั้งแรกที่ secure view ของ ARAK รันบนฐานข้อมูล** — ดูข้อ AU** · **slice 3 ครึ่งหลังจบรอบนี้: `SecureViewService` + `EnforcementResource` (`/api/v1/enforcement/secure-views` dry-run / apply / rollback) + V20 (`audit_enforcement` + ชื่อ view ที่ apply) + หน้า `/enforcement` + เมนูกลับมาแล้ว · apply ส่งแค่ `reviewId` · ทดสอบสดครบวงบน Postgres dev — ดูข้อ AW** · เหลือ slice 4 (MSSQL Testcontainers) · credential แยกสำหรับ DDL · cutover (FR-6.1.1) · `DbPrincipalProvisioner` |
 | **M6 Push Config (5.1.1)** | ⏸️ **ON HOLD — ผู้ใช้สั่ง 2026-09-24 *"M6 Push Config (5.1.1) Hold ไว้ก่อน"*** · ห้ามเริ่มจนกว่าผู้ใช้จะปลด · scope ที่ตกลงไว้ยังเหมือนเดิม: opt-in ต่อ source · ยิงเฉพาะ **policy object ที่แยกจาก table** (PG `CREATE POLICY` · MSSQL `CREATE SECURITY POLICY` · column GRANT) · **ตัด MSSQL DDM ออก** เพราะมัน `ALTER COLUMN` ทับนิยาม table — ดูข้อ AC.1 และ DESIGN FR-6.2a |
-| **M7 Query API (5.2a)** | 🚧 ~90% — **`POST /v1/query` + Query console ใช้งานได้จริงรอบนี้** · rewrite → RLS + mask + hidden column → execute → audit ครบ · พิสูจน์กับ Postgres จริงแล้วทั้ง allow / RLS / mask / refuse · **direct-access detector (FR-6.3.1) เสร็จ ดูข้อ BX** · เหลือ result cache |
+| **M7 Query API (5.2a)** | ✅ 100% — `POST /v1/query` + Query console · rewrite → RLS + mask + hidden column → execute → audit ครบ · พิสูจน์กับ Postgres จริงแล้วทั้ง allow / RLS / mask / refuse · direct-access detector (FR-6.3.1 ดูข้อ BX) · **result cache เสร็จ ดูข้อ BY** · (concurrency limit / cost guard ต่อยอดรอบถัดไป) |
 | **M7b Cross-mode consistency** | ⬜ — ต้องมี M5/M6 ก่อน |
 | **M8 Audit + Ops** | 🚧 ~35% — **FR-7 ปิดครบวงรอบนี้ (grant ตรงระดับ table + auto-revoke + audit trail + หน้าจอ) ดูข้อ AD.1** · `audit_query` / `audit_decision` / `audit_policy_change` เขียนจริงแล้วและอ่านได้ · **`evaluation_ms` มีค่าแล้ว (ข้อ AE.5)** · **ยังไม่มี audit ของการ configure** (เปลี่ยน data source / OM settings ไม่ถูกบันทึกที่ไหนเลย) · ยังไม่มี compliance report / drift detector / auto-revoke / SIEM export |
 | **M9 Access Request Management** | 🚧 **~75% — slice 2c จบรอบนี้ (ข้อ BD)** · slice 1 (ข้อ AX): `access_request` (V21) + ขอ / inbox / approve / reject / withdraw + audit · **slice 2a:** Access Request Workflow ออกแบบได้ต่อ scope (default องค์กร / service / database / schema / table) — หลาย step เรียงกัน, stage ใน step เดียวกันวิ่งพร้อมกัน, กติกา ALL / ANY / AT_LEAST n, Reject เลือกได้ต่อ stage (VETO / QUORUM / FIRST_RESPONSE), ผู้อนุมัติเป็น owner / steward / custodian / role / team / คน · admin ตอบแทนทุก stage ได้ · table ไม่มี owner → ตกไปหา platform admin **และขึ้นใน Inbox + กระดิ่งแล้ว** · Approve ≠ ให้สิทธิ์: APPROVED → IN_PROGRESS → COMPLETED (GRANT ไม่เกินวันที่ขอ / POLICY_UPDATED / POLICY_CREATED อ้างถึง policy เท่านั้น) หรือ Decline โดยผู้ configure · หน้า `/settings/workflows` (V23) · **slice 2b:** หน้า review ของคำขอ `GET /v1/access-requests/{id}/review` — ผู้ขอ (attribute / group / role / grant / ประวัติ) · grant จะเปิด column ไหน (visible / masked / hidden + sensitive) · row filter · risk LOW/MEDIUM/HIGH + เหตุผล · conflict (BLOCKER / WARNING / INFO) · suggestion (DECLINE / GRANT / UPDATE_POLICY / CREATE_POLICY_DRAFT — **draft เท่านั้น ไม่มีอะไร activate เอง**) · เช็ค policy ที่จะใช้ configure แบบอ่านอย่างเดียว · **GRANT ที่ policy ยังปฏิเสธ → 409** · IP ของคำขอ (V24) ใช้ตัดสิน ipCidr แต่ไม่เคยออกใน response · · **slice 2c:** Dashboard `GET /v1/access/grants/expiring` — ใครใกล้หมดสิทธิ์ใน table ไหน + **นับถอยหลังทีละวินาทีจากนาฬิกา server** (admin / author / auditor เห็นทุกแถว · owner เห็น table ของตัวเอง · requester เห็นของตัวเอง) · `GET /v1/access-requests/stats` — สถิติคำขอต่อ table (asked / open / granted / rejected / declined / withdrawn / คนขอ / median เวลาตอบ) นับจาก `access_request` ตรงๆ ไม่มีตารางนับแยก · การ์ด Home ใหม่ 2 ใบ · **ต่อไป:** recertification (access review รอบ 90 วัน) · **แนบไฟล์ในคำขอ (ผู้ใช้ขอ 2026-09-25 — เก็บไฟล์ไว้บน server ดูข้อ AP.11)** · ยังไม่ทำ: Automatic configuration (Roadmap) · recertification · break-glass · notification ทาง email/Teams |
@@ -619,7 +619,35 @@ M25 ทำแยกได้ (profile ผ่าน proxy ที่มีแล�
 
 ---
 
-## รอบนี้ — **ข้อ BX: ตัวตรวจคนที่อ่าน table ได้โดยไม่ผ่าน ARAK (FR-6.3.1 · M7)**
+## รอบนี้ — **ข้อ BY: Result cache ของ Query API (FR-6.3 · M7 ครบ)**
+
+SQL เดิมที่ถูกยิงซ้ำภายในไม่กี่วินาที (Query console กด Run ซ้ำ · dashboard refresh · BI DirectQuery ในอนาคต) ไม่ต้องไปถาม source ทุกครั้ง — แต่ policy ยังตัดสินและลง audit ทุกครั้งเหมือนเดิม
+
+### BY.1 ทำไมใช้ร่วมกันข้ามคนได้โดยไม่รั่ว (`QueryResultCache` ใน `dac-service/policy`)
+- **key = SQL หลัง rewrite** (projection + mask + ค่า RLS อยู่ใน statement แล้ว) + source id / engine / host / port / database / credentialRef / `updated_at` ของ source + row cap → คนสองคนได้ผลเดียวกันก็ต่อเมื่อ statement ที่บังคับ policy แล้วเหมือนกันทุกตัวอักษร ซึ่งแปลว่า source จะตอบเหมือนกันอยู่แล้ว (proxy ต่อด้วย service account ไม่ตั้ง session identity)
+- lookup เกิด **หลัง** rewrite → deny ถูก throw ก่อนถึง cache เสมอ · decision ยังถูกคำนวณและเขียน `audit_decision` ทุกครั้ง
+- ไม่ cache statement ที่คำตอบขึ้นกับเวลา/สุ่ม/session: `now()` `current_timestamp` `current_date` `random()` `NEWID()` `GETDATE()` `age(` `TABLESAMPLE` `'now'` `@@…` `nextval(` · `current_user` `session_user` `current_setting(` `SESSION_CONTEXT(` `SUSER_SNAME(` … (ชื่อ column อย่าง `user_name` `age` ไม่โดน — ต้องตามด้วย `(`)
+- ขอบเขตหน่วยความจำ: 500 statement · 1,000,000 cell (row × column) · ผลเดียวเกิน ¼ ของ budget ไม่เก็บ · TTL 30 วินาที · LRU · rows ถูก freeze เป็น unmodifiable (null อยู่รอด)
+- flush ทั้งหมดเมื่อ policy / binding / identity / enforcement / OM sync / grant / local tag เปลี่ยน (listener เดียวกับ decision cache) · read ที่ออกไปก่อน flush แล้วกลับมาหลัง flush ไม่ถูกเก็บ (generation)
+- process เดียว (in-memory) — ถ้า scale หลาย instance แต่ละตัวมี cache ของตัวเอง ไม่มีผลเรื่องความถูกต้อง
+- config `resultCache:` ใน `conf/dac.yml` — `RESULT_CACHE_ENABLED` · `RESULT_CACHE_MAX_ENTRIES` · `RESULT_CACHE_MAX_CELLS` · `RESULT_CACHE_TTL_SECONDS`
+
+### BY.2 API
+- `POST /api/v1/query` รับ `fresh: true` = อ่าน source ใหม่ (และแทนผลเดิมใน cache) · ผลลัพธ์มี `cached` + `readAt` (เวลาที่ source ถูกอ่านจริง)
+- `GET /api/v1/system/result-cache` (ต้อง login) → entries / cells / hits / misses / stale / evictions / invalidations / lapped / uncacheable / oversized / เหตุผล flush ล่าสุด
+- **V38** `audit_query.served_from_cache` — hit ยังเป็น `EXECUTED` แต่ติดว่า source ไม่มี record ของ read นี้ (auditor ที่ reconcile กับ log ของ source ต้องรู้) · `duration_ms` ของ hit = เวลาที่คนเรียกรอจริง
+- test: `QueryResultCacheTest` 14 · `QueryResultCacheIT` 7 (postgres:16 — ซ้ำไม่ยิง source · fresh ยิง · คนละ RLS ไม่ใช้ผลร่วม · RLS เดียวกันใช้ร่วม · deny ยัง deny · row cap / TTL / flush / แก้ source = miss · audit false/true)
+
+### BY.3 หน้าจอ
+- Query console: ผลจาก cache ขึ้นป้าย **from cache · read Ns ago** + ปุ่ม **Run fresh** · Job details บอก "Read from the result cache — the source was read at …"
+- Audit → Query log: แถวที่ตอบจาก cache มีป้าย **from cache**
+- `CachedNote.test.tsx` 3 · `QueryLogPage.test.tsx` +1
+
+### BY.4 ที่ยังไม่ทำ (ตั้งใจ)
+- concurrency limit / cost guard ของ FR-6.3 — ทำรอบถัดไป
+- REST ต่อ table แบบ data service ของ Denodo (`GET /data/{table}?branch=…`) — ผู้ใช้ถาม 2026-09-27 · ถ้าทำให้เป็นชั้นบางที่สร้าง `SELECT` แล้วส่งเข้า `/v1/query` เดิม (enforcement จุดเดียว)
+
+## รอบก่อนหน้า — **ข้อ BX: ตัวตรวจคนที่อ่าน table ได้โดยไม่ผ่าน ARAK (FR-6.3.1 · M7)**
 
 proxy / secure view กันได้เฉพาะคนที่ยอมผ่าน ARAK — ใครมี login ของตัวเองที่ SELECT table ได้ก็อ้อมทุก policy ได้ รอบนี้ ARAK ถามจาก source เองว่ามีใครบ้าง
 

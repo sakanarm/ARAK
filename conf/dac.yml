@@ -117,6 +117,16 @@ decisionCache:
   # this one never hears.
   ttlSeconds: ${DECISION_CACHE_TTL_SECONDS:-60}
 
+resultCache:
+  # Reuse of Query API results (FR-6.3). Keyed on the enforced statement, so it
+  # never crosses a decision; bounded in age by ttlSeconds alone, because the
+  # source never says when its rows change.
+  enabled: ${RESULT_CACHE_ENABLED:-true}
+  maxEntries: ${RESULT_CACHE_MAX_ENTRIES:-500}
+  # Rows times columns across every held result; one result may use a quarter.
+  maxCells: ${RESULT_CACHE_MAX_CELLS:-1000000}
+  ttlSeconds: ${RESULT_CACHE_TTL_SECONDS:-30}
+
 secrets:
   provider: ${SECRETS_PROVIDER:-FERNET}
   fernetKey: "${FERNET_KEY:-}"

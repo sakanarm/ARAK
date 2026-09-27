@@ -17,6 +17,11 @@ export interface QueryAsk {
   asPrincipal?: string | null;
   maxRows?: number;
   purpose?: string | null;
+  /**
+   * Read the source even when the same enforced statement was answered
+   * moments ago (FR-6.3 result cache).
+   */
+  fresh?: boolean;
 }
 
 /** A restriction the dialect could not express; it was tightened, not dropped. */
@@ -53,6 +58,14 @@ export interface QueryResult {
   rewrittenSql: string;
   explanations: Explanation[];
   unenforceable: Unenforceable[];
+  /**
+   * The rows are a read made moments ago for the same enforced statement,
+   * not one made for this run. The policy was still applied to this run:
+   * only the source was not asked again.
+   */
+  cached: boolean;
+  /** When the source was read for these rows (ISO-8601). */
+  readAt: string | null;
 }
 
 /** What the server will return at most, whatever this screen asks for. */

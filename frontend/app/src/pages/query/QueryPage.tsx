@@ -39,6 +39,7 @@ import {
 } from '../../api/query';
 import { download, exportName, toCsv, toXlsx } from '../../lib/tabular';
 import { Field, Select, TextField } from '../policies/controls';
+import CachedNote from './CachedNote';
 import RequestAccess from './RequestAccess';
 import {
   ExplainButton,
@@ -278,7 +279,7 @@ export default function QueryPage() {
   const ran = useRef({ sql: '', purpose: '', sourceId: '' });
 
   const run = useMutation({
-    mutationFn: () => {
+    mutationFn: (options?: { fresh?: boolean }) => {
       const now = latest.current;
       const rows = Number.parseInt(now.maxRows, 10);
       ran.current = {
@@ -292,6 +293,7 @@ export default function QueryPage() {
         asPrincipal: now.asPrincipal || null,
         maxRows: Number.isFinite(rows) ? Math.min(rows, MAX_ROWS) : DEFAULT_ROWS,
         purpose: now.purpose || null,
+        ...(options?.fresh ? { fresh: true } : {}),
       });
     },
     onSuccess: () => setTab('results'),
@@ -558,6 +560,7 @@ export default function QueryPage() {
                   : undefined
               }
               isPending={run.isPending}
+              onRunFresh={() => run.mutate({ fresh: true })}
               ran={ran.current}
               result={result}
               setTab={setTab}
@@ -896,10 +899,13 @@ function ResultPanel({
   setTab,
   ran,
   fix,
+  onRunFresh,
 }: {
   result: QueryResult | undefined;
   error: unknown;
   isPending: boolean;
+  /** Runs the same statement again, straight at the source. */
+  onRunFresh?: () => void;
   /** Present when the reader has an assistant to ask for a corrected statement. */
   fix?: { engine?: string; onUse: (sql: string) => void };
   /** The statement the error is about, for a request made from it. */
@@ -996,6 +1002,9 @@ function ResultPanel({
             <Badge color="warning" size="sm" type="pill-color">
               truncated
             </Badge>
+          )}
+          {result.cached && (
+            <CachedNote onRunFresh={onRunFresh} readAt={result.readAt} />
           )}
           <span className="tw:text-xs tw:text-quaternary">
             {result.millis} ms · as {result.principal}
@@ -1229,6 +1238,13 @@ function JobDetails({ result }: { result: QueryResult }) {
   return (
     <dl className="tw:grid tw:grid-cols-[auto_1fr] tw:gap-x-6 tw:gap-y-2 tw:p-4 tw:text-sm">
       <Detail label="Ran as">{result.principal}</Detail>
+      <Detail label="Read">
+        {result.cached
+          ? `from the result cache — the source was read at ${
+              result.readAt ? new Date(result.readAt).toLocaleString() : 'an unknown time'
+            }`
+          : 'from the source, for this run'}
+      </Detail>
       <Detail label="Duration">{result.millis} ms</Detail>
       <Detail label="Rows returned">
         {result.rows.length}

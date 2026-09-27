@@ -33,6 +33,7 @@ function row(overrides: Partial<QueryLogRow> = {}): QueryLogRow {
     sqlHidden: false,
     rowCount: 12,
     durationMs: 40,
+    fromCache: false,
     assets: [CUSTOMER],
     hiddenAssets: 0,
     own: true,
@@ -96,6 +97,21 @@ describe('QueryLogPage', () => {
     expect(fetchLog).toHaveBeenCalledWith(
       expect.objectContaining({ days: 30, outcome: null, before: null, limit: 50 })
     );
+  });
+
+  it('marks a statement answered from the result cache, and only that one', async () => {
+    fetchLog.mockResolvedValue(
+      page({
+        rows: [
+          row({ id: 11, fromCache: true, originalSql: 'SELECT id FROM sales.customer' }),
+          row({ id: 10 }),
+        ],
+      })
+    );
+    renderPage();
+
+    expect(await screen.findByText('SELECT id FROM sales.customer')).toBeInTheDocument();
+    expect(screen.getAllByText('from cache')).toHaveLength(1);
   });
 
   it('opens a row to the statement as written and as it ran', async () => {

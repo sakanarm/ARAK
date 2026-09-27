@@ -44,9 +44,16 @@ public class QueryResource {
    *     the same code path as a real query rather than a preview of it, because
    *     a simulator that approximates enforcement is worse than none: people
    *     trust it and it is wrong.
+   * @param fresh read the source even when the same enforced statement was
+   *     answered moments ago (FR-6.3 result cache)
    */
   public record Ask(
-      String sourceId, String sql, String asPrincipal, Integer maxRows, String purpose) {}
+      String sourceId,
+      String sql,
+      String asPrincipal,
+      Integer maxRows,
+      String purpose,
+      Boolean fresh) {}
 
   private final QueryService queries;
   private final AccessEligibility eligibility;
@@ -104,7 +111,8 @@ public class QueryResource {
               caller.getName(),
               ask.maxRows() == null ? 0 : ask.maxRows(),
               clientIp(request),
-              ask.purpose());
+              ask.purpose(),
+              Boolean.TRUE.equals(ask.fresh()));
 
       Map<String, Object> body = new LinkedHashMap<>();
       body.put("columns", result.columns());
@@ -122,6 +130,11 @@ public class QueryResource {
       // SQL is not the only reader this screen has (FR-5.4).
       body.put("explanations", result.explanations());
       body.put("unenforceable", result.unenforceable());
+      // Whether the rows are a read made now or one made moments ago, and
+      // when: a result from memory that does not say so is one somebody
+      // will take for the current state of the table.
+      body.put("cached", result.cached());
+      body.put("readAt", result.readAt());
       return body;
     } catch (QueryService.RejectedException e) {
       Map<String, Object> refusal = new LinkedHashMap<>();

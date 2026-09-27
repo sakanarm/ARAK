@@ -363,6 +363,13 @@ function LogRow({ row }: { row: QueryLogRow }) {
                 {CATEGORY_LABELS[row.category] ?? row.category}
               </Badge>
             )}
+            {row.fromCache && (
+              <span title="Answered from the result cache: the policy was applied, but the source was not asked and has no record of this read.">
+                <Badge color="blue" size="sm" type="pill-color">
+                  from cache
+                </Badge>
+              </span>
+            )}
           </div>
           <p
             className={`tw:mt-1 tw:truncate tw:text-xs ${

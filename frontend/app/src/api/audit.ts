@@ -64,6 +64,12 @@ export interface QueryLogRow {
   sqlHidden: boolean;
   rowCount: number | null;
   durationMs: number | null;
+  /**
+   * Answered from the result cache: the rows went back to the caller but the
+   * source has no record of this read, which matters when reconciling this log
+   * with the source's own.
+   */
+  fromCache: boolean;
   /** The tables it touched that the reader oversees. */
   assets: string[];
   /** How many more it touched that the reader does not. */

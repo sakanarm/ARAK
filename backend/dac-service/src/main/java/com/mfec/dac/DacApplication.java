@@ -69,6 +69,7 @@ import com.mfec.dac.engine.PolicyExpressionEvaluator;
 import com.mfec.dac.policy.DecisionService;
 import com.mfec.dac.policy.ImpactAnalysis;
 import com.mfec.dac.policy.PrincipalLoader;
+import com.mfec.dac.policy.QueryResultCache;
 import com.mfec.dac.policy.QueryService;
 import com.mfec.dac.resources.ExpressionResource;
 import com.mfec.dac.resources.DecisionResource;
@@ -262,9 +263,17 @@ public class DacApplication extends Application<DacConfiguration> {
             config.getDecisionCache().isEnabled(),
             config.getDecisionCache().getMaxEntries(),
             config.getDecisionCache().ttl());
+    // The Query API's result cache (FR-6.3), built beside the decision cache
+    // so the same announcements reach both.
+    QueryResultCache resultCache =
+        new QueryResultCache(
+            config.getResultCache().isEnabled(),
+            config.getResultCache().getMaxEntries(),
+            config.getResultCache().getMaxCells(),
+            config.getResultCache().ttl());
 
     environment.healthChecks().register("app-db", new AppDatabaseHealthCheck(jdbi));
-    environment.jersey().register(new SystemResource(config, decisionCache));
+    environment.jersey().register(new SystemResource(config, decisionCache, resultCache));
     environment.jersey().register(new AuthResource(identities, tokens, identity));
     // Built here rather than inside startCatalogSync, because the screen that
     // moves the nightly crawl and the thread that runs it have to be holding
@@ -392,6 +401,17 @@ public class DacApplication extends Application<DacConfiguration> {
     sync.changes().listen(decisionCache::invalidateAll);
     grants.changes().listen(decisionCache::invalidateAll);
     localTags.changes().listen(decisionCache::invalidateAll);
+    // The result cache hears the same list. Its key is the enforced statement,
+    // so no change here can make a held result wrong; it is flushed so that a
+    // change an administrator just made is never followed by a result from
+    // before it.
+    policyStore.changes().listen(resultCache::invalidateAll);
+    materializer.changes().listen(resultCache::invalidateAll);
+    identityAdmin.changes().listen(resultCache::invalidateAll);
+    applier.changes().listen(resultCache::invalidateAll);
+    sync.changes().listen(resultCache::invalidateAll);
+    grants.changes().listen(resultCache::invalidateAll);
+    localTags.changes().listen(resultCache::invalidateAll);
 
     DecisionService decisionService =
         new DecisionService(
@@ -441,7 +461,9 @@ public class DacApplication extends Application<DacConfiguration> {
                 environment.getObjectMapper(),
                 sources,
                 decisionService,
-                new QueryExecutor(credentials, 10)),
+                new QueryExecutor(credentials, 10),
+                resultCache,
+                java.time.Clock.systemUTC()),
             eligibility));
     // Statements kept under a name; the text only, never what it returned.
     environment.jersey().register(new SavedQueryResource(new SavedQueryStore(jdbi)));

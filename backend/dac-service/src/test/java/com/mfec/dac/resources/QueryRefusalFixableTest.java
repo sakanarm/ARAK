@@ -3,6 +3,7 @@ package com.mfec.dac.resources;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowableOfType;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
@@ -48,7 +49,7 @@ class QueryRefusalFixableTest {
 
   @SuppressWarnings("unchecked")
   private Map<String, Object> refusalFor(QueryService.RejectedException rejection) {
-    when(queries.run(any(), anyString(), anyString(), anyString(), anyInt(), any(), any()))
+    when(queries.run(any(), anyString(), anyString(), anyString(), anyInt(), any(), any(), anyBoolean()))
         .thenThrow(rejection);
     WebApplicationException thrown =
         catchThrowableOfType(
@@ -56,7 +57,7 @@ class QueryRefusalFixableTest {
             () ->
                 resource.run(
                     new QueryResource.Ask(
-                        UUID.randomUUID().toString(), "SELECT 1", null, null, null),
+                        UUID.randomUUID().toString(), "SELECT 1", null, null, null, null),
                     as(analyst),
                     request));
     assertThat(thrown.getResponse().getStatus()).isEqualTo(403);

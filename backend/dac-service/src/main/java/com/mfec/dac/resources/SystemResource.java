@@ -3,6 +3,7 @@ package com.mfec.dac.resources;
 import com.mfec.dac.auth.Secured;
 import com.mfec.dac.config.DacConfiguration;
 import com.mfec.dac.policy.DecisionCache;
+import com.mfec.dac.policy.QueryResultCache;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.Produces;
@@ -16,10 +17,17 @@ public class SystemResource {
 
   private final DacConfiguration config;
   private final DecisionCache decisionCache;
+  private final QueryResultCache resultCache;
 
   public SystemResource(DacConfiguration config, DecisionCache decisionCache) {
+    this(config, decisionCache, QueryResultCache.disabled());
+  }
+
+  public SystemResource(
+      DacConfiguration config, DecisionCache decisionCache, QueryResultCache resultCache) {
     this.config = config;
     this.decisionCache = decisionCache;
+    this.resultCache = resultCache;
   }
 
   @GET
@@ -50,5 +58,18 @@ public class SystemResource {
   @Path("/decision-cache")
   public DecisionCache.Stats decisionCache() {
     return decisionCache.stats();
+  }
+
+  /**
+   * What the Query API's result cache is holding (FR-6.3): how often a
+   * statement was answered without asking the source, and how much memory
+   * that is costing, in cells. Behind the auth filter for the same reason as
+   * the decision cache.
+   */
+  @GET
+  @Secured
+  @Path("/result-cache")
+  public QueryResultCache.Stats resultCache() {
+    return resultCache.stats();
   }
 }

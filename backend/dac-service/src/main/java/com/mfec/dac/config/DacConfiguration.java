@@ -50,6 +50,11 @@ public class DacConfiguration extends Configuration {
 
   @Valid
   @NotNull
+  @JsonProperty("resultCache")
+  private ResultCacheConfiguration resultCache = new ResultCacheConfiguration();
+
+  @Valid
+  @NotNull
   @JsonProperty("web")
   private WebConfiguration web = new WebConfiguration();
 }
