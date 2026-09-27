@@ -118,6 +118,53 @@ class ChangeEventPollerTest {
     verify(syncState).eventCursor(eq(CatalogSyncService.SOURCE), eq(HIGH_WATER));
   }
 
+  @Test
+  void doesNotReapplyTheOverlapWhileTheFeedStaysQuiet() throws Exception {
+    when(applier.apply(any())).thenReturn(new CatalogChangeApplier.Outcome(1, 0, 0, 0));
+
+    poller.pollOnce();
+    assertEmpty(poller.pollOnce());
+    assertEmpty(poller.pollOnce());
+
+    verify(applier, times(1)).apply(any());
+  }
+
+  @Test
+  void appliesOnlyWhatIsNewInTheOverlap() throws Exception {
+    CatalogChange first = change();
+    CatalogChange next =
+        new CatalogChange(
+            CatalogChange.Subject.TABLE,
+            CatalogChange.Kind.UPSERTED,
+            "table",
+            UUID.randomUUID(),
+            "prod-mssql.SalesDB.dbo.order",
+            HIGH_WATER + 1);
+    when(reader.read(anyLong()))
+        .thenReturn(new ChangeEventReader.Batch(List.of(first), HIGH_WATER, 1, 0))
+        .thenReturn(new ChangeEventReader.Batch(List.of(first, next), HIGH_WATER + 1, 2, 0));
+    when(applier.apply(any())).thenReturn(new CatalogChangeApplier.Outcome(1, 0, 0, 0));
+
+    poller.pollOnce();
+    poller.pollOnce();
+
+    verify(applier).apply(List.of(first));
+    verify(applier).apply(List.of(next));
+  }
+
+  @Test
+  void reappliesTheOverlapAfterAFailure() throws Exception {
+    when(applier.apply(any()))
+        .thenReturn(new CatalogChangeApplier.Outcome(0, 0, 0, 1))
+        .thenReturn(new CatalogChangeApplier.Outcome(1, 0, 0, 0));
+
+    poller.pollOnce();
+    poller.pollOnce();
+    poller.pollOnce();
+
+    verify(applier, times(2)).apply(any());
+  }
+
   private static void assertEmpty(Optional<CatalogChangeApplier.Outcome> outcome) {
     org.assertj.core.api.Assertions.assertThat(outcome).isEmpty();
   }

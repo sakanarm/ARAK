@@ -632,7 +632,13 @@ M25 ทำแยกได้ (profile ผ่าน proxy ที่มีแล�
 - `DacApplication` สร้าง materializer ก่อน applier แล้วส่ง hook เข้าไป · decision cache ล้างเองผ่าน `materializer.changes()` เหมือนเดิม
 - test: `CatalogChangeBindingsIT` (4) — tag ใหม่ → bind ทันที · ลบ schema → ถอด table ใต้มันแต่ไม่แตะ `SalesDBArchive` · segment match · re-resolve พัง → failed
 
- tab Access ของ table เห็นเฉพาะผู้ดูแล · "How access is decided" วาดแบบ canvas**
+### BW.2 poller ไม่ apply ช่วง overlap ซ้ำ
+- เจอบน prod หลัง deploy: cursor ย้อน 1 นาที (OVERLAP) กัน event หลุด → พอ OM เงียบ poller ดึง 7 event เดิมมา refresh ซ้ำ **ทุกนาทีหลายชั่วโมง** (re-read OM 7 ครั้ง + re-bind ทุกนาที)
+- `ChangeEventPoller` จำ `CatalogChange` ที่ apply สำเร็จแล้วใน overlap (in-memory · ทิ้งตัวที่เก่ากว่า cursor − overlap) → tick ถัดไปส่งเฉพาะตัวใหม่ให้ applier · ไม่มีอะไรใหม่ = เดิน cursor แล้วจบเงียบ
+- ยังย้อน cursor เหมือนเดิม (ไม่ลดความปลอดภัย) · apply พัง = ไม่จำ → tick ถัดไป apply ซ้ำ · restart = apply overlap อีกรอบเดียว
+- test: `ChangeEventPollerTest` +3 (feed เงียบไม่ apply ซ้ำ · มีตัวใหม่ใน window ส่งเฉพาะตัวใหม่ · พังแล้ว apply ซ้ำ)
+
+## รอบก่อนหน้า — **ข้อ BV: tab Access ของ table เห็นเฉพาะผู้ดูแล · "How access is decided" วาดแบบ canvas**
 
 ผู้ใช้สั่ง 2026-09-27: *"Tab Access ใน Catalog ของ Table ไม่ให้ user ทั่วไปเห็น ให้เฉพาะคนทำ policy กับ Admin นะ"* · และ Diagram แบบ layer *"ดูอ่านยาก"* อยากได้แบบเดียวกับ Diagram ของหน้า policy
 

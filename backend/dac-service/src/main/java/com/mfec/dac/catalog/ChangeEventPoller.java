@@ -1,11 +1,15 @@
 package com.mfec.dac.catalog;
 
 import com.mfec.dac.om.OpenMetadataClient;
+import com.mfec.dac.om.events.CatalogChange;
 import com.mfec.dac.om.events.ChangeEventReader;
 import io.dropwizard.lifecycle.Managed;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.HashSet;
+import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -71,6 +75,18 @@ public class ChangeEventPoller implements Managed {
 
   /** Consecutive polls that left the cursor where it was. Touched only by the poll thread. */
   private int stalledPolls;
+
+  /**
+   * Changes this poller has already applied that still fall inside the overlap.
+   *
+   * <p>The rewind means a quiet feed hands back its last minute of events on
+   * every tick, for as long as it stays quiet. Each of those is an entity re-read
+   * from OpenMetadata and a re-resolve of its tables' bindings, once a minute,
+   * for nothing. Held in memory only: after a restart the window is applied once
+   * more, which is the free case the rewind was built on. Touched only by the
+   * poll thread.
+   */
+  private final Set<CatalogChange> applied = new HashSet<>();
 
   public ChangeEventPoller(
       OpenMetadataClient client,
@@ -153,7 +169,17 @@ public class ChangeEventPoller implements Managed {
       return Optional.empty();
     }
 
-    CatalogChangeApplier.Outcome outcome = applier.apply(batch.changes());
+    List<CatalogChange> fresh =
+        batch.changes().stream().filter(change -> !applied.contains(change)).toList();
+    if (fresh.isEmpty()) {
+      // Nothing but the overlap, already applied. The cursor still moves, so an
+      // ignored event does not keep the window where it is.
+      syncState.eventCursor(CatalogSyncService.SOURCE, batch.highWaterMark());
+      forgetBefore(batch.highWaterMark());
+      return Optional.empty();
+    }
+
+    CatalogChangeApplier.Outcome outcome = applier.apply(fresh);
 
     if (outcome.failed() > 0 && stalledPolls < MAX_STALLED_POLLS) {
       // The cursor stays where it is so the next tick reads this window again.
@@ -164,7 +190,7 @@ public class ChangeEventPoller implements Managed {
       LOG.warn(
           "{} of {} change(s) could not be applied; holding the cursor at {} (hold {} of {})",
           outcome.failed(),
-          batch.changes().size(),
+          fresh.size(),
           Instant.ofEpochMilli(since),
           stalledPolls,
           MAX_STALLED_POLLS);
@@ -183,6 +209,12 @@ public class ChangeEventPoller implements Managed {
     // has quietly agreed the work will never be done.
     stalledPolls = 0;
     syncState.eventCursor(CatalogSyncService.SOURCE, batch.highWaterMark());
+    if (outcome.failed() == 0) {
+      // Which of them failed is not known, so after a give-up nothing is
+      // remembered and the next tick applies the overlap once more.
+      applied.addAll(fresh);
+    }
+    forgetBefore(batch.highWaterMark());
     LOG.debug(
         "Polled {} event(s) since {} ({} ignored): {}",
         batch.seen(),
@@ -190,6 +222,12 @@ public class ChangeEventPoller implements Managed {
         batch.ignored(),
         outcome);
     return Optional.of(outcome);
+  }
+
+  /** Drops what the next read, rewound from {@code cursor}, can no longer return. */
+  private void forgetBefore(long cursor) {
+    long floor = cursor - OVERLAP.toMillis();
+    applied.removeIf(change -> change.timestamp() < floor);
   }
 
   /**
