@@ -187,7 +187,7 @@ class LlmAssistChatTest {
     assertThatThrownBy(
             () ->
                 resource.policy(
-                    new LlmAssistResource.PolicyAsk("mask email", null, null), security))
+                    new LlmAssistResource.PolicyAsk("mask email", null, null, null), security))
         .isInstanceOf(ForbiddenException.class)
         .hasMessageContaining("Draft policies");
     verifyNoInteractions(client);

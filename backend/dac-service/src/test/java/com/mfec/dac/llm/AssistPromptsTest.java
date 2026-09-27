@@ -1,6 +1,7 @@
 package com.mfec.dac.llm;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.mfec.dac.llm.AssistPrompts.Column;
 import com.mfec.dac.llm.AssistPrompts.Table;
@@ -150,6 +151,59 @@ class AssistPromptsTest {
     void briefIsOptional() {
       assertThat(AssistPrompts.policyUser("mask PII for everyone below L2", ""))
           .isEqualTo("Draft a policy for: mask PII for everyone below L2");
+    }
+  }
+
+  @Nested
+  @DisplayName("a change to a policy")
+  class PolicyEdit {
+
+    @Test
+    @DisplayName("takes out what the store owns and keeps everything else as it was")
+    void stripsStoreFields() {
+      String stored =
+          "{\"id\":\"p-1\",\"name\":\"mask-pii\",\"version\":4,"
+              + "\"lifecycleState\":\"ACTIVE\",\"subject\":{\"anyOf\":[{\"team\":\"Finance\"}]},"
+              + "\"updatedAt\":\"2026-09-20T10:00:00Z\",\"updatedBy\":\"author@example.com\"}";
+
+      assertThat(AssistPrompts.policyForEdit(stored))
+          .isEqualTo("{\"name\":\"mask-pii\",\"subject\":{\"anyOf\":[{\"team\":\"Finance\"}]}}");
+    }
+
+    @Test
+    @DisplayName("accepts only one JSON object, of a size worth sending")
+    void refusesWhatIsNotAPolicy() {
+      for (String bad : new String[] {null, "", "   ", "nope", "[]", "42", "{\"name\":"}) {
+        assertThatThrownBy(() -> AssistPrompts.policyForEdit(bad))
+            .as(String.valueOf(bad))
+            .isInstanceOf(IllegalArgumentException.class);
+      }
+      String huge = "{\"description\":\"" + "x".repeat(AssistPrompts.MAX_POLICY) + "\"}";
+      assertThatThrownBy(() -> AssistPrompts.policyForEdit(huge))
+          .isInstanceOf(IllegalArgumentException.class)
+          .hasMessageContaining("longer than");
+    }
+
+    @Test
+    @DisplayName("asks for the whole policy back, changed only where it was asked to be")
+    void changesOnlyWhatWasAsked() {
+      String schema = "{\"title\":\"Policy\"}";
+
+      assertThat(AssistPrompts.policyEditSystem(schema))
+          .contains(schema)
+          .contains("Answer with the whole policy")
+          .contains("Change only what the sentence asks for")
+          .contains("Keep \"name\" as it is")
+          .contains("you never activate, disable or archive anything");
+    }
+
+    @Test
+    @DisplayName("says what to change before the policy it applies to")
+    void theAsk() {
+      assertThat(AssistPrompts.policyEditUser(" make it a deny ", "{\"name\":\"p\"}", ""))
+          .isEqualTo("Change this policy: make it a deny\n\nThe policy now:\n\n{\"name\":\"p\"}");
+      assertThat(AssistPrompts.policyEditUser("x", "{}", "sales.customer"))
+          .endsWith("Tables it may need to refer to:\n\nsales.customer");
     }
   }
 

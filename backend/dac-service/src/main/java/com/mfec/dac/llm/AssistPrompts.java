@@ -1,5 +1,9 @@
 package com.mfec.dac.llm;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -298,6 +302,105 @@ public final class AssistPrompts {
 
   public static String policyUser(String intent, String brief) {
     StringBuilder out = new StringBuilder("Draft a policy for: ").append(intent.trim());
+    if (notBlank(brief)) {
+      out.append("\n\nTables it may need to refer to:\n\n").append(brief);
+    }
+    return out.toString();
+  }
+
+  // ------------------------------------------------------------ policy edits
+
+  /**
+   * The longest policy document that is sent to be edited.
+   *
+   * <p>A policy with a long exemption list and a dozen masks is a few thousand
+   * characters. Past this it is not a form anybody filled in, and it is a large
+   * bill on somebody's own gateway.
+   */
+  public static final int MAX_POLICY = 50_000;
+
+  /**
+   * What the store owns, and the model is never shown or asked to write: which
+   * policy this is, which version, whether it is in force, and who touched it
+   * last. The store decides all five on save, so a model that rewrote them would
+   * be changing nothing, and one that saw {@code ACTIVE} might take it as an
+   * instruction to keep the policy in force.
+   */
+  static final List<String> STORE_FIELDS =
+      List.of("id", "version", "lifecycleState", "updatedAt", "updatedBy");
+
+  private static final ObjectMapper JSON = new ObjectMapper();
+
+  /**
+   * The document as it is in the builder, ready to be put in a prompt: one JSON
+   * object, compact, without the fields the store owns.
+   *
+   * @throws IllegalArgumentException when it is not one JSON object, or is
+   *     longer than {@link #MAX_POLICY}
+   */
+  public static String policyForEdit(String current) {
+    if (current == null || current.isBlank()) {
+      throw new IllegalArgumentException("There is no policy to change");
+    }
+    if (current.length() > MAX_POLICY) {
+      throw new IllegalArgumentException(
+          "The policy is longer than " + MAX_POLICY + " characters, which is more than is sent");
+    }
+    JsonNode node;
+    try {
+      node = JSON.readTree(current);
+    } catch (JsonProcessingException e) {
+      throw new IllegalArgumentException("The policy to change is not a JSON document");
+    }
+    if (node == null || !node.isObject()) {
+      throw new IllegalArgumentException("The policy to change is not a JSON object");
+    }
+    ObjectNode document = (ObjectNode) node;
+    document.remove(STORE_FIELDS);
+    return document.toString();
+  }
+
+  /**
+   * The standing instruction for changing a policy somebody already has.
+   *
+   * <p>It differs from {@link #policySystem} in what it protects. A draft is
+   * read as a whole by whoever asked for it; a change to an existing policy is
+   * read as a diff, and a diff is only reviewable when it is small. So the model
+   * is told to touch what it was asked to and leave the rest exactly as it was,
+   * down to the name and the author's own wording.
+   */
+  public static String policyEditSystem(String schemas) {
+    return "You change an existing access policy for ARAK, a data access control platform."
+        + " You are given the policy as JSON and a sentence saying what to change.\n"
+        + "Rules:\n"
+        + "- Answer with the whole policy, changed, as one JSON object and nothing else. No"
+        + " prose, no fences, no patch.\n"
+        + "- It must validate against the schema below.\n"
+        + "- Change only what the sentence asks for. Every other field stays exactly as it was:"
+        + " same values, same order in lists. Do not tidy, reword or add defaults.\n"
+        + "- Keep \"name\" as it is unless you are asked to rename the policy.\n"
+        + "- Leave \"description\" alone unless the change makes it wrong. If you were unsure"
+        + " about something, add one short sentence to the end of it, so the reviewer knows"
+        + " what to check.\n"
+        + "- Do not write \"id\", \"version\", \"lifecycleState\", \"updatedAt\" or"
+        + " \"updatedBy\". You are writing a proposal for a person to review and save; you never"
+        + " activate, disable or archive anything.\n"
+        + "- Use only facets and masking functions the schema allows.\n\n"
+        + "Schema:\n\n"
+        + schemas;
+  }
+
+  /**
+   * The ask for a change: what to change, then the policy it applies to.
+   *
+   * @param current a document already passed through {@link #policyForEdit}
+   */
+  public static String policyEditUser(String intent, String current, String brief) {
+    StringBuilder out =
+        new StringBuilder("Change this policy: ")
+            .append(intent.trim())
+            .append("\n\nThe policy now:\n\n")
+            .append(current);
     if (notBlank(brief)) {
       out.append("\n\nTables it may need to refer to:\n\n").append(brief);
     }

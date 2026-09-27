@@ -1,6 +1,6 @@
 # HANDOFF — ARAK (Data Access Control Platform)
 
-> อัปเดต: 2026-09-27 · ข้อ BW (tag จาก OM ผ่าน webhook/poller ย้าย policy binding ทันที) · ข้อ BV (tab Access เฉพาะผู้ดูแล + Diagram แบบ canvas) · ข้อ BU (FR-1.7 local tag + demo group บน prod) · push ขึ้น origin/main แล้ว · repo https://github.com/sakanarm/ARAK (**public**)
+> อัปเดต: 2026-09-27 · ข้อ CB (NokRak ช่วยแก้ policy ที่มีอยู่ — คน review แล้วกด Save เอง) · ข้อ CA (ประวัติ policy · diff · rollback) · ข้อ BW (tag จาก OM ผ่าน webhook/poller ย้าย policy binding ทันที) · ข้อ BV (tab Access เฉพาะผู้ดูแล + Diagram แบบ canvas) · ข้อ BU (FR-1.7 local tag + demo group บน prod) · push ขึ้น origin/main แล้ว · repo https://github.com/sakanarm/ARAK (**public**)
 >
 > อ่านคู่กับ **[docs/DESIGN.md](docs/DESIGN.md)** — ไฟล์นั้นคือ requirement + feature catalogue + สถานะครบทุกข้อ
 > ไฟล์นี้บอกเฉพาะ "ทำถึงไหน จะไปต่อยังไง อะไรที่ลองแล้วไม่เวิร์ค"
@@ -620,6 +620,29 @@ M25 ทำแยกได้ (profile ผ่าน proxy ที่มีแล�
 
 ---
 
+## รอบนี้ — **ข้อ CB: NokRak ช่วยแก้ policy ที่มีอยู่ (M28b) — แนะนำได้ แต่คนต้อง review แล้วกด Save เอง**
+
+ผู้ใช้ขอ: *"NokRak Help me ตอนนี้มีตอนสร้าง Policy ใหม่ ให้เพิ่มตอนแก้ไขด้วย สามารถช่วยแก้ไขได้ แต่ต้องรอคน Review save เหมือนเดิม"* — ปุ่มเดิมบนหน้า New policy ตอนนี้อยู่บนหน้า **Edit** ด้วย และเส้นทางยังเหมือนเดิมทุกอย่าง: NokRak เปลี่ยนแค่ form บนจอ ไม่มีอะไรถูกบันทึก ไม่มีอะไร activate จนกว่าคนจะกด Save
+
+### CB.1 API — `POST /v1/llm/assist/policy` รับ `current` เพิ่ม
+- body `{intent, sourceId?, model?, current?}` · ไม่ส่ง `current` = ร่างใหม่เหมือนเดิม · ส่ง `current` (policy document เป็น JSON string) = **แก้ใบนั้น** ตอบเป็น document ทั้งใบที่แก้แล้ว
+- server ตัดช่องที่เป็นของ store ออกก่อนส่งให้ LLM: `id · version · lifecycleState · updatedAt · updatedBy` (`AssistPrompts.policyForEdit`) — model จึงไม่เห็นชื่อคนแก้ และไม่มีช่องให้มัน "activate" อะไรได้
+- `current` ที่ไม่ใช่ JSON / ไม่ใช่ object / ว่าง / ยาวเกิน 50,000 ตัวอักษร → **400 ก่อนถึง LLM** (ไม่เสียโควตา gateway)
+- prompt แยก (`policyEditSystem` / `policyEditUser`): ตอบเป็น policy ทั้งใบเป็น JSON ใบเดียว · เปลี่ยนเฉพาะที่ขอ ที่เหลือคงเดิมทุกช่อง · ชื่อคงเดิมเว้นแต่ขอเปลี่ยน · ห้ามเขียน id / version / lifecycleState / updatedAt / updatedBy · schema ชุดเดียวกับตอนร่าง
+- สิทธิ์เหมือนตอนร่างทุกอย่าง: `DRAFT_POLICY` ของ role (V29) · metadata เท่านั้น · endpoint คืนข้อความ ไม่เก็บอะไร · ตอบไม่เป็น document → 503 "did not answer with the changed policy"
+
+### CB.2 หน้าจอ — หน้า Edit ของ policy
+- ปุ่ม **NokRak, help me** บนหัวหน้า Edit (ไม่ขึ้นกับ policy ARCHIVED · ไม่ขึ้นถ้า role ไม่มีงาน DRAFT_POLICY) → ช่อง *Tell NokRak what to change* + ปุ่ม **Suggest it** · ส่ง form **ตามที่เห็นบนจอตอนนี้** (รวมที่แก้มือแล้วแต่ยังไม่ save)
+- policy ACTIVE: บอกก่อนกดว่า *Save puts the change in force straight away*
+- ได้คำตอบ → form เปลี่ยนตาม + panel **NokRak's suggestion**: "NokRak suggests N changes" ตาราง *Before | Suggested* เฉพาะช่องที่ต่าง (ใช้ `policyDiff.ts` ตัวเดียวกับ History) · ACTIVE มีคำเตือนซ้ำใน panel · ปุ่ม **Undo the suggestion** (กลับไปเป็น form ก่อน NokRak แตะ — ถามซ้ำกี่รอบก็เทียบกับ "ก่อน" ตัวแรก) · **Keep editing** · คำตอบที่ไม่เปลี่ยนอะไร → "NokRak's answer changes nothing" + Close
+- **Save เป็นทางเดียวที่ถึง store** — `updatePolicy(id, doc, expectedVersion)` ตัวเดิม (409 ถ้ามีคนแก้ก่อน · lifecycleState / version จากคำตอบถูกตัดทิ้งก่อน) · ไม่เรียก transition · ลงชื่อคนกด Save ใน History ตามปกติ
+- test: backend +8 (`AssistPromptsTest$PolicyEdit` 4 · `LlmAssistResourceTest$PolicyEdit` 4) → unit 565 ผ่าน · jest +4 (`NokRak, help me, on a policy that exists`) → 677 ผ่าน
+- E2E local: ไม่ login 401 · `current` ไม่ใช่ JSON / array / ยาวเกิน → 400 ×3 · แก้ ALLOW → DENY ได้ 200 (ชื่อคงเดิม · ไม่มี id / lifecycleState) · จำนวน policy ใน store เท่าเดิม
+
+### CB.3 ที่ยังไม่ทำ (ตั้งใจ)
+- NokRak ไม่ส่ง diff/patch — ตอบทั้งใบ เพื่อให้ validate ด้วย schema เดียวกับตอนร่าง และหน้าเว็บเทียบเองด้วย `policyDiff`
+- ไม่มีปุ่ม "ใช้แล้ว save เลย" — ตั้งใจ ตาม FR-2.6 / กติกา LLM ไม่ apply เอง
+
 ## รอบนี้ — **ข้อ CA: ประวัติ policy — History · diff · rollback (M17 · FR-9.2 · FR-8.1)**
 
 ปิดทั้ง 5 ข้อของ AP.5 — ประวัติที่เก็บอยู่ใน `policy_version` ตั้งแต่ V3 ถูกอ่านกลับขึ้นจอได้แล้ว และ `audit_policy_change` มีคนเขียนจริงเป็นครั้งแรก
@@ -644,6 +667,7 @@ M25 ทำแยกได้ (profile ผ่าน proxy ที่มีแล�
 - **หัวหน้า policy บอกว่าเวอร์ชันนี้แก้ล่าสุดเมื่อไหร่ โดยใคร** (ผู้ใช้ขอ): ช่อง Version อ่าน `v3 · active` + บรรทัด `edited <วัน เวลา> by <ใคร>` · หน้า **Edit** ข้างป้าย `v3 · ACTIVE` มี `edited … by … · History` (ลิงก์ไป `?tab=history`) — ใช้ `updatedAt` / `updatedBy` ที่มากับ policy อยู่แล้ว ไม่มี API ใหม่
 - `policyDiff.test.ts` 9 · `PolicyDetailPage.test.tsx` +7 · `PolicyBuilderPage.test.tsx` +1 (หน้า edit ของ policy ที่มีอยู่ — test แรกของ route นี้ · mock `fetchVocabulary` แก้ให้ตรง shape จริง `classifications/glossaries/customProperties` และ governance mock ใช้ helper ตัวจริง) · jest รวม 673 ผ่าน
 - E2E local (`history_e2e`): create 201 → update v2 → stale 409 → impact 200 → rollback ไม่มีเหตุผล 400 · stale 409 · ไม่มีเวอร์ชัน 404 → rollback 200 = v3 DRAFT ที่ document เท่ากับ v1 ทุกตัวอักษร · versions: ROLLBACK from=1 · ไม่มี client ip ในคำตอบ · ไม่ login = 401
+- **prod** (commit 5576560): V39 ลงแล้ว · bundle มีข้อความ History / Restore · E2E ชุดเดียวกันผ่านหมดบน prod · policy ทดสอบ DRAFT ทิ้งไว้บน prod (ไม่ disable / archive / ลบ ตามกติกา demo)
 
 ### CA.4 ที่ยังไม่ทำ (ตั้งใจ)
 - เทียบสองเวอร์ชันเก่าด้วยกันเอง (ตอนนี้เทียบกับ *ปัจจุบัน* เท่านั้น ซึ่งเป็นคำถามก่อน restore)

@@ -354,3 +354,180 @@ describe('NokRak, help me', () => {
     expect(screen.queryByRole('button', { name: /NokRak/ })).not.toBeInTheDocument();
   });
 });
+
+/*
+ * NokRak on a stored policy. It is sent the form as it stands and answers with
+ * it changed; the page shows what changed, with a way back, and the policy is
+ * saved only when somebody presses Save -- the same review as a new draft.
+ */
+describe('NokRak, help me, on a policy that exists', () => {
+  const id = '44444444-4444-4444-4444-444444444444';
+  const stored = (lifecycleState = 'ACTIVE') => ({
+    id,
+    document: {
+      name: 'finance-reads-customer',
+      description: 'Finance reads the customer table',
+      policyType: 'SUBSCRIPTION',
+      scopeLevel: 'TABLE',
+      scopeFqn: 'demo-pg.salesdb.sales.customer',
+      selector: {
+        condition: { facet: 'table', operator: 'eq', value: 'demo-pg.salesdb.sales.customer' },
+      },
+      subject: { anyOf: [{ team: 'Finance' }] },
+      effect: 'ALLOW',
+    },
+    lifecycleState,
+    environment: 'prod',
+    version: 3,
+    createdBy: 'author@example.com',
+    updatedBy: 'editor@example.com',
+    updatedAt: '2026-09-20T09:00:00Z',
+  });
+
+  function withAssistant() {
+    fetchMyLlmSetting.mockResolvedValue({ available: true });
+    fetchOfferedFeatures.mockResolvedValue(['DRAFT_POLICY']);
+  }
+
+  function renderEdit() {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    return render(
+      <QueryClientProvider client={client}>
+        <MemoryRouter initialEntries={[`/policies/${id}/edit`]}>
+          <Routes>
+            <Route element={<PolicyBuilderPage />} path="/policies/:id/edit" />
+          </Routes>
+        </MemoryRouter>
+      </QueryClientProvider>
+    );
+  }
+
+  async function askFor(change: string) {
+    await screen.findByDisplayValue('Finance reads the customer table');
+    fireEvent.click(await screen.findByRole('button', { name: /NokRak, help me/ }));
+    const prompt = screen.getByRole('region', { name: 'Tell NokRak what to change' });
+    fireEvent.change(within(prompt).getByRole('textbox'), { target: { value: change } });
+    fireEvent.click(within(prompt).getByRole('button', { name: 'Suggest it' }));
+    return prompt;
+  }
+
+  const answer = (document: Record<string, unknown>) => ({
+    model: 'test-model',
+    personal: false,
+    document: JSON.stringify(document),
+  });
+
+  test('sends the form as it stands, shows what changed, and saves only on Save', async () => {
+    withAssistant();
+    fetchPolicy.mockResolvedValue(stored());
+    updatePolicy.mockImplementation((_id: string, document: unknown) =>
+      Promise.resolve({ ...stored(), document, version: 4 })
+    );
+    assistPolicy.mockResolvedValue(
+      answer({
+        ...stored().document,
+        effect: 'DENY',
+        description: 'Finance may not read the customer table',
+        // Neither is the model's to write, and neither reaches the save.
+        lifecycleState: 'DRAFT',
+        version: 99,
+      })
+    );
+    renderEdit();
+
+    const prompt = await askFor('make it a deny');
+    // Said before anybody asks: on an active policy, Save is the moment it applies.
+    expect(prompt).toHaveTextContent('this policy is active, so Save puts the change in force');
+
+    await waitFor(() => expect(assistPolicy).toHaveBeenCalledTimes(1));
+    const ask = assistPolicy.mock.calls[0][0];
+    expect(ask.intent).toBe('make it a deny');
+    expect(JSON.parse(ask.current)).toMatchObject({
+      name: 'finance-reads-customer',
+      effect: 'ALLOW',
+    });
+
+    const review = await screen.findByRole('region', { name: "NokRak's suggestion" });
+    expect(within(review).getByText('NokRak suggests 2 changes')).toBeInTheDocument();
+    expect(within(review).getByText('Effect')).toBeInTheDocument();
+    expect(within(review).getByText('DENY')).toBeInTheDocument();
+    expect(within(review).getByText('Description')).toBeInTheDocument();
+    expect(within(review).getByText(/This policy is active/)).toBeInTheDocument();
+    expect(screen.getByDisplayValue('Finance may not read the customer table')).toBeInTheDocument();
+    // The prompt closes once the form holds the change; nothing is stored yet.
+    expect(
+      screen.queryByRole('region', { name: 'Tell NokRak what to change' })
+    ).not.toBeInTheDocument();
+    expect(updatePolicy).not.toHaveBeenCalled();
+    expect(transitionPolicy).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(updatePolicy).toHaveBeenCalledTimes(1));
+    const [savedId, saved, expected] = updatePolicy.mock.calls[0];
+    expect(savedId).toBe(id);
+    expect(saved).toMatchObject({ effect: 'DENY', name: 'finance-reads-customer' });
+    expect(saved).not.toHaveProperty('lifecycleState');
+    expect(saved).not.toHaveProperty('version');
+    // Saved against the version the form was opened on, as any edit is.
+    expect(expected).toBe(3);
+    expect(transitionPolicy).not.toHaveBeenCalled();
+    await waitFor(() =>
+      expect(screen.queryByRole('region', { name: "NokRak's suggestion" })).not.toBeInTheDocument()
+    );
+  });
+
+  test('Undo puts the form back as it was before the suggestion', async () => {
+    withAssistant();
+    fetchPolicy.mockResolvedValue(stored('DRAFT'));
+    assistPolicy
+      .mockResolvedValueOnce(answer({ ...stored().document, description: 'First try' }))
+      .mockResolvedValueOnce(answer({ ...stored().document, description: 'Second try' }));
+    renderEdit();
+
+    await askFor('reword it');
+    expect(await screen.findByDisplayValue('First try')).toBeInTheDocument();
+    // Asked again: the second answer is compared with the policy, not the first try.
+    fireEvent.click(screen.getByRole('button', { name: /NokRak, help me/ }));
+    const again = screen.getByRole('region', { name: 'Tell NokRak what to change' });
+    fireEvent.change(within(again).getByRole('textbox'), { target: { value: 'try again' } });
+    fireEvent.click(within(again).getByRole('button', { name: 'Suggest it' }));
+    expect(await screen.findByDisplayValue('Second try')).toBeInTheDocument();
+
+    const review = screen.getByRole('region', { name: "NokRak's suggestion" });
+    expect(within(review).getByText('Finance reads the customer table')).toBeInTheDocument();
+    // Not active, so no warning that Save applies it.
+    expect(within(review).queryByText(/This policy is active/)).not.toBeInTheDocument();
+
+    fireEvent.click(within(review).getByRole('button', { name: 'Undo the suggestion' }));
+    expect(await screen.findByDisplayValue('Finance reads the customer table')).toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: "NokRak's suggestion" })).not.toBeInTheDocument();
+    expect(updatePolicy).not.toHaveBeenCalled();
+  });
+
+  test('an answer that changes nothing says so', async () => {
+    withAssistant();
+    fetchPolicy.mockResolvedValue(stored());
+    assistPolicy.mockResolvedValue(answer(stored().document));
+    renderEdit();
+
+    await askFor('keep it as it is');
+
+    const review = await screen.findByRole('region', { name: "NokRak's suggestion" });
+    expect(within(review).getByText('NokRak’s answer changes nothing')).toBeInTheDocument();
+    expect(
+      within(review).queryByRole('button', { name: 'Undo the suggestion' })
+    ).not.toBeInTheDocument();
+    fireEvent.click(within(review).getByRole('button', { name: 'Close' }));
+    expect(screen.queryByRole('region', { name: "NokRak's suggestion" })).not.toBeInTheDocument();
+  });
+
+  test('is not offered on an archived policy', async () => {
+    withAssistant();
+    fetchPolicy.mockResolvedValue(stored('ARCHIVED'));
+    renderEdit();
+
+    await screen.findByDisplayValue('Finance reads the customer table');
+    await waitFor(() => expect(fetchOfferedFeatures).toHaveBeenCalled());
+    expect(screen.queryByRole('button', { name: /NokRak/ })).not.toBeInTheDocument();
+  });
+});

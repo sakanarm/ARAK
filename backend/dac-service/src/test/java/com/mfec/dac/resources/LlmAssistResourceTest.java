@@ -417,7 +417,7 @@ class LlmAssistResourceTest {
 
       LlmAssistResource.PolicyDraft draft =
           resource.policy(
-              new LlmAssistResource.PolicyAsk("mask PII below L2", null, null), as(analyst));
+              new LlmAssistResource.PolicyAsk("mask PII below L2", null, null, null), as(analyst));
 
       assertThat(draft.document()).contains("\"lifecycleState\":\"DRAFT\"");
       // The selector and the operators live in type/facet.json. Left out, the
@@ -427,6 +427,87 @@ class LlmAssistResourceTest {
           .contains("// type/facet.json")
           .contains("assetSelector")
           .contains("facetOperator");
+    }
+  }
+
+  @Nested
+  @DisplayName("a change to a policy")
+  class PolicyEdit {
+
+    private static final String STORED =
+        "{\"id\":\"3f1c2e4a-0000-4000-8000-000000000001\",\"name\":\"mask-pii\","
+            + "\"effect\":\"ALLOW\",\"version\":3,\"lifecycleState\":\"ACTIVE\","
+            + "\"updatedAt\":\"2026-09-20T10:00:00Z\",\"updatedBy\":\"author@example.com\"}";
+
+    @Test
+    @DisplayName("sends the policy as it is, without what the store owns, and asks for it changed")
+    void sendsTheCurrentPolicy() throws Exception {
+      answers("{\"name\":\"mask-pii\",\"effect\":\"DENY\"}");
+
+      LlmAssistResource.PolicyDraft draft =
+          resource.policy(
+              new LlmAssistResource.PolicyAsk("make it a deny", null, null, STORED), as(analyst));
+
+      assertThat(draft.document()).isEqualTo("{\"name\":\"mask-pii\",\"effect\":\"DENY\"}");
+      assertThat(system.getValue())
+          .contains("You change an existing access policy")
+          .contains("Change only what the sentence asks for")
+          .contains("// entity/policy/policy.json");
+      assertThat(user.getValue())
+          .startsWith("Change this policy: make it a deny")
+          .contains("{\"name\":\"mask-pii\",\"effect\":\"ALLOW\"}")
+          // Which policy, which version, whether it is in force and who
+          // touched it last are the store's to decide on save, not the model's.
+          .doesNotContain("3f1c2e4a")
+          .doesNotContain("ACTIVE")
+          .doesNotContain("lifecycleState")
+          .doesNotContain("author@example.com")
+          .doesNotContain("\"version\"");
+    }
+
+    @Test
+    @DisplayName("is refused before anything is asked when the policy is not a JSON object")
+    void notAnObject() throws Exception {
+      for (String bad : List.of("not json", "[1,2]", "\"a string\"", "  ")) {
+        assertThatThrownBy(
+                () ->
+                    resource.policy(
+                        new LlmAssistResource.PolicyAsk("make it a deny", null, null, bad),
+                        as(analyst)))
+            .as(bad)
+            .isInstanceOf(BadRequestException.class);
+      }
+      verifyNoInteractions(client);
+    }
+
+    @Test
+    @DisplayName("is refused before anything is asked when the policy is too long to send")
+    void tooLong() throws Exception {
+      String huge =
+          "{\"description\":\"" + "x".repeat(AssistPrompts.MAX_POLICY) + "\"}";
+
+      assertThatThrownBy(
+              () ->
+                  resource.policy(
+                      new LlmAssistResource.PolicyAsk("make it a deny", null, null, huge),
+                      as(analyst)))
+          .isInstanceOf(BadRequestException.class)
+          .hasMessageContaining(String.valueOf(AssistPrompts.MAX_POLICY));
+      verifyNoInteractions(client);
+    }
+
+    @Test
+    @DisplayName("still says so when the answer is not a document")
+    void notADocument() throws Exception {
+      answers("Sorry, I can't do that.");
+
+      assertThatThrownBy(
+              () ->
+                  resource.policy(
+                      new LlmAssistResource.PolicyAsk("make it a deny", null, null, STORED),
+                      as(analyst)))
+          .isInstanceOf(ServiceUnavailableException.class)
+          .hasMessageContaining("changed policy");
     }
   }
 }

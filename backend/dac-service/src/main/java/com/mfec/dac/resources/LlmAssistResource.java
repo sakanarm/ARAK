@@ -161,8 +161,13 @@ public class LlmAssistResource {
   /** What the statement does, in words. Plain text. */
   public record Explanation(String text, String model, List<String> tables, boolean personal) {}
 
-  /** A sentence describing the policy somebody wants. */
-  public record PolicyAsk(String intent, UUID sourceId, String model) {}
+  /**
+   * A sentence describing the policy somebody wants.
+   *
+   * @param current the policy as it is in the builder, as JSON, when the
+   *     sentence is a change to it rather than a new policy; null for a draft
+   */
+  public record PolicyAsk(String intent, UUID sourceId, String model, String current) {}
 
   /** A policy document, as text, for the builder to load and a human to save. */
   public record PolicyDraft(String document, String model, boolean personal) {}
@@ -379,11 +384,16 @@ public class LlmAssistResource {
   // ---------------------------------------------------------- policy drafts
 
   /**
-   * Turns a sentence into a draft policy document.
+   * Turns a sentence into a draft policy document, or into a change to one.
    *
    * <p>Returned, never stored. The builder loads it as an unsaved form for
    * somebody to correct, and saving it is their act under their name — which is
    * the whole point of drafting rather than applying (FR-9.1).
+   *
+   * <p>With {@code current}, the sentence is a change to a policy that already
+   * exists and the answer is that whole policy, changed. It is still only text:
+   * the builder shows what changed and the policy stays as it is until somebody
+   * saves it — which, for an active policy, is the moment it takes effect.
    */
   @POST
   @Path("/policy")
@@ -391,9 +401,20 @@ public class LlmAssistResource {
     if (ask == null || ask.intent() == null || ask.intent().isBlank()) {
       throw new BadRequestException("Say what the policy should do");
     }
+    String current = null;
+    if (ask.current() != null) {
+      try {
+        current = AssistPrompts.policyForEdit(ask.current());
+      } catch (IllegalArgumentException e) {
+        throw new BadRequestException(e.getMessage());
+      }
+    }
     AuthenticatedUser actor = caller(security);
     EffectiveSetting mine = ready(actor, Feature.DRAFT_POLICY);
-    String document = draftDocument(actor, mine, ask.model(), ask.intent(), ask.sourceId());
+    String document =
+        current == null
+            ? draftDocument(actor, mine, ask.model(), ask.intent(), ask.sourceId())
+            : editDocument(actor, mine, ask.model(), ask.intent(), current, ask.sourceId());
     return new PolicyDraft(document, chosenModel(ask.model(), mine), mine.usingOwnGateway());
   }
 
@@ -419,6 +440,33 @@ public class LlmAssistResource {
     if (document.isEmpty()) {
       throw new ServiceUnavailableException(
           "The assistant did not answer with a policy document. Try saying it a different way.");
+    }
+    return document;
+  }
+
+  /** The policy with the change made, or the reason there is none. Never stored. */
+  private String editDocument(
+      AuthenticatedUser actor,
+      EffectiveSetting mine,
+      String model,
+      String intent,
+      String current,
+      UUID sourceId) {
+    String brief =
+        sourceId == null ? "" : AssistPrompts.schemaBrief(tablesFor(sourceId, intent));
+
+    String answer =
+        ask(
+            actor,
+            mine,
+            model,
+            AssistPrompts.policyEditSystem(policySchemas()),
+            AssistPrompts.policyEditUser(intent, current, brief));
+
+    String document = AssistPrompts.extractJson(answer);
+    if (document.isEmpty()) {
+      throw new ServiceUnavailableException(
+          "The assistant did not answer with the changed policy. Try saying it a different way.");
     }
     return document;
   }

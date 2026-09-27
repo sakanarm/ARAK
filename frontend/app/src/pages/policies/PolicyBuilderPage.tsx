@@ -49,6 +49,7 @@ import SubjectBuilder from './SubjectBuilder';
 import { capabilities, MODES, type Engine } from './enforcement';
 import { engineOptions, useSourceEngines } from '../../engines';
 import { describePolicy } from './policyLanguage';
+import { diffPolicies, type PolicyFieldChange } from './policyDiff';
 
 /**
  * The policy builder (FR-3, FR-4, M4).
@@ -186,6 +187,13 @@ export default function PolicyBuilderPage() {
     return () => withdraw('policy');
   }, [offer, withdraw]);
 
+  // A change NokRak made to a stored policy, until somebody saves it, undoes
+  // it or puts it away: the form as it was before, and what the answer changed.
+  const [suggestion, setSuggestion] = useState<{
+    before: Policy;
+    changes: PolicyFieldChange[];
+  } | null>(null);
+
   // One way in for a drafted document, whether it came from the dock or from
   // the button on this page, so the two cannot load it differently.
   const loadDrafted = (text: string): boolean => {
@@ -195,20 +203,42 @@ export default function PolicyBuilderPage() {
         throw new Error('not a document');
       }
       // Stripped as a suggestion from a request is: an id or a lifecycle
-      // state would make the form pass for a stored, perhaps active, policy.
-      const { id: _id, lifecycleState: _state, ...parsed } = document as Partial<Policy> & {
+      // state would make the form pass for a stored, perhaps active, policy,
+      // and the version and the stamp are the store's to write on save.
+      const {
+        id: _id,
+        lifecycleState: _state,
+        version: _version,
+        updatedAt: _at,
+        updatedBy: _by,
+        ...parsed
+      } = document as Partial<Policy> & {
         id?: unknown;
         lifecycleState?: unknown;
+        version?: unknown;
+        updatedAt?: unknown;
+        updatedBy?: unknown;
       };
       // Merged over the empty document rather than used as-is. A model that
       // leaves a field out would otherwise hand the form an undefined where
       // it expects a value, and the control bound to it would go uncontrolled
-      // mid-edit -- which looks like the form losing your typing.
-      setDraft((current) => ({ ...EMPTY, ...current, ...parsed }));
-      setAssistNote(
-        'Loaded a draft from NokRak. Read every step before you save it'
-          + ' — it is a suggestion, and it is your name on the policy.'
-      );
+      // mid-edit -- which looks like the form losing your typing. Over a
+      // stored policy the same merge means a field the answer forgot keeps
+      // what it had, rather than being quietly cleared.
+      const next = { ...EMPTY, ...draft, ...parsed };
+      setDraft(next);
+      if (isNew) {
+        setAssistNote(
+          'Loaded a draft from NokRak. Read every step before you save it'
+            + ' — it is a suggestion, and it is your name on the policy.'
+        );
+      } else {
+        // Kept from the first suggestion when a second one follows it, so
+        // Undo goes back to the policy as it was, not to NokRak's last try.
+        const before = suggestion?.before ?? draft;
+        setSuggestion({ before, changes: diffPolicies(before, next) });
+        setAssistNote(null);
+      }
       return true;
     } catch {
       setAssistNote(
@@ -229,14 +259,17 @@ export default function PolicyBuilderPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [drafted, takePolicy]);
 
-  // The same drafting on the page, for a new policy only: over a stored one
-  // it would overwrite a document somebody already signed, field by field.
-  // It returns a document and stores nothing; "Create draft" is still the
-  // only save, and the lifecycle the only way to switch it on.
+  // The same drafting on the page. For a new policy it fills the form; for a
+  // stored one it is sent the form as it stands and answers with it changed,
+  // which is shown as a list of what changed with a way back. Either way it
+  // returns a document and stores nothing: "Create draft" or "Save" is still
+  // the only save, under the name of whoever presses it, and the lifecycle the
+  // only way to switch a policy on (FR-2.6).
   const draftReady = useAssistReady('DRAFT_POLICY');
   const [asking, setAsking] = useState(false);
   const ask = useMutation({
-    mutationFn: (intent: string) => assistPolicy({ intent }),
+    mutationFn: ({ intent, current }: { intent: string; current?: string }) =>
+      assistPolicy(current ? { intent, current } : { intent }),
     onSuccess: (answer) => {
       if (loadDrafted(answer.document)) setAsking(false);
     },
@@ -286,6 +319,7 @@ export default function PolicyBuilderPage() {
     onSuccess: (saved) => {
       setSaveError(null);
       setLoaded(saved);
+      setSuggestion(null);
       queryClient.invalidateQueries({ queryKey: ['policies'] });
       // A new policy lands on its own summary: the first thing an author
       // wants after saving is what the selector actually caught, which is
@@ -301,6 +335,7 @@ export default function PolicyBuilderPage() {
     onSuccess: (saved) => {
       setLoaded(saved);
       setDraft(saved.document);
+      setSuggestion(null);
       queryClient.invalidateQueries({ queryKey: ['policies'] });
     },
     onError: (error) =>
@@ -310,6 +345,13 @@ export default function PolicyBuilderPage() {
   });
 
   const bindings = useMutation({ mutationFn: () => resolveBindings(id!) });
+
+  // On a stored policy only once it has arrived: before that the form holds
+  // the empty document, and a change to it would be a change to nothing.
+  // Never on an archived one, which is final.
+  const canAsk =
+    draftReady && (isNew || (loaded !== null && loaded.lifecycleState !== 'ARCHIVED'));
+  const live = loaded?.lifecycleState === 'ACTIVE';
 
   const sentences = useMemo(() => describePolicy(draft), [draft]);
   const modes = useMemo(
@@ -643,7 +685,7 @@ export default function PolicyBuilderPage() {
               Done
             </Button>
           )}
-          {isNew && draftReady && (
+          {canAsk && (
             <NokRakButton
               label="NokRak, help me"
               onPress={() => setAsking((open) => !open)}
@@ -660,7 +702,7 @@ export default function PolicyBuilderPage() {
         </div>
       </header>
 
-      {isNew && draftReady && asking && (
+      {canAsk && asking && isNew && (
         <div className="tw:mt-4">
           <NokRakPrompt
             askLabel="Draft it"
@@ -670,7 +712,7 @@ export default function PolicyBuilderPage() {
                 : null
             }
             hint="Fills the form below. Nothing is saved until you press Create draft, and it stays a draft until it is activated."
-            onAsk={(intent) => ask.mutate(intent)}
+            onAsk={(intent) => ask.mutate({ intent })}
             onClose={() => setAsking(false)}
             pending={ask.isPending}
             pendingLabel="Drafting…"
@@ -678,6 +720,43 @@ export default function PolicyBuilderPage() {
             title="Tell NokRak the rule"
           />
         </div>
+      )}
+
+      {canAsk && asking && !isNew && (
+        <div className="tw:mt-4">
+          <NokRakPrompt
+            askLabel="Suggest it"
+            error={
+              ask.isError
+                ? apiErrorMessage(ask.error, 'NokRak could not suggest a change.')
+                : null
+            }
+            hint={
+              'Changes the form below and lists what changed, with a way back. Nothing is saved until you press Save'
+              + (live
+                ? ' — and this policy is active, so Save puts the change in force straight away.'
+                : '.')
+            }
+            onAsk={(intent) => ask.mutate({ intent, current: JSON.stringify(draft) })}
+            onClose={() => setAsking(false)}
+            pending={ask.isPending}
+            pendingLabel="Thinking…"
+            placeholder="e.g. Also mask the phone column, and let the audit team read it until the end of the year."
+            title="Tell NokRak what to change"
+          />
+        </div>
+      )}
+
+      {suggestion && (
+        <SuggestionReview
+          changes={suggestion.changes}
+          live={live}
+          onKeep={() => setSuggestion(null)}
+          onUndo={() => {
+            setDraft(suggestion.before);
+            setSuggestion(null);
+          }}
+        />
       )}
 
       {assistNote && (
@@ -998,6 +1077,100 @@ function hasCondition(policy: Policy): boolean {
       selector.or?.length ||
       selector.not
   );
+}
+
+/**
+ * What NokRak changed in a stored policy, before anybody saves it.
+ *
+ * Read as a diff because that is how a change to a policy somebody already
+ * signed gets reviewed: the reader should not have to reread every step to
+ * find the two lines that moved. The same sentences as the History tab, so a
+ * suggestion and a past version read alike.
+ */
+function SuggestionReview({
+  changes,
+  live,
+  onUndo,
+  onKeep,
+}: {
+  changes: PolicyFieldChange[];
+  live: boolean;
+  onUndo: () => void;
+  onKeep: () => void;
+}) {
+  return (
+    <section
+      aria-label="NokRak's suggestion"
+      className="tw:mt-4 tw:flex tw:flex-col tw:gap-3 tw:rounded-lg tw:border tw:border-secondary tw:bg-secondary tw:p-4">
+      <div>
+        <h2 className="tw:text-sm tw:font-semibold tw:text-primary">
+          {changes.length === 0
+            ? 'NokRak’s answer changes nothing'
+            : `NokRak suggests ${changes.length} ${changes.length === 1 ? 'change' : 'changes'}`}
+        </h2>
+        <p className="tw:mt-0.5 tw:text-pretty tw:text-sm tw:text-tertiary">
+          {changes.length === 0
+            ? 'It reads the same as the policy did. Try saying the change a different way.'
+            : 'The form below has them now. Nothing is saved until you press Save — read'
+              + ' them, change what you need, or undo. It is your name on the policy.'}
+        </p>
+      </div>
+
+      {live && changes.length > 0 && (
+        <p className="tw:flex tw:items-start tw:gap-2 tw:text-pretty tw:text-sm tw:text-warning-primary">
+          <AlertTriangle aria-hidden className="tw:mt-0.5 tw:size-4 tw:shrink-0" />
+          This policy is active. Saving puts these rules in force straight away.
+        </p>
+      )}
+
+      {changes.length > 0 && (
+        <dl className="tw:flex tw:flex-col tw:text-sm">
+          <div className="tw:hidden tw:gap-3 tw:pb-1 tw:text-xs tw:font-medium tw:text-tertiary tw:md:grid tw:md:grid-cols-[9rem_1fr_1fr]">
+            <span />
+            <span>Before</span>
+            <span>Suggested</span>
+          </div>
+          {changes.map((change) => (
+            <div
+              className="tw:grid tw:gap-1 tw:border-t tw:border-secondary tw:py-2 tw:md:grid-cols-[9rem_1fr_1fr] tw:md:gap-3"
+              key={change.field}>
+              <dt className="tw:text-xs tw:font-medium tw:text-tertiary">{change.field}</dt>
+              <dd className="tw:min-w-0 tw:break-words tw:text-secondary">
+                <span className="tw:text-xs tw:text-quaternary tw:md:hidden">Before: </span>
+                {changeLines(change.before)}
+              </dd>
+              <dd className="tw:min-w-0 tw:break-words tw:text-primary">
+                <span className="tw:text-xs tw:text-quaternary tw:md:hidden">Suggested: </span>
+                {changeLines(change.after)}
+              </dd>
+            </div>
+          ))}
+        </dl>
+      )}
+
+      <div className="tw:flex tw:flex-wrap tw:gap-2">
+        {changes.length > 0 && (
+          <Button color="secondary" onPress={onUndo} size="sm">
+            Undo the suggestion
+          </Button>
+        )}
+        <Button color="tertiary" onPress={onKeep} size="sm">
+          {changes.length > 0 ? 'Keep editing' : 'Close'}
+        </Button>
+      </div>
+    </section>
+  );
+}
+
+function changeLines(values: string[]) {
+  if (!values.length) {
+    return <span className="tw:text-quaternary">&mdash;</span>;
+  }
+  return values.map((value, index) => (
+    <p className="tw:text-pretty" key={index}>
+      {value}
+    </p>
+  ));
 }
 
 /** When a version was saved, to the minute, in the reader's own zone. */

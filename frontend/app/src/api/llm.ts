@@ -223,6 +223,12 @@ export interface PolicyAsk {
   intent: string;
   sourceId?: string | null;
   model?: string;
+  /**
+   * The policy as it is in the builder, as JSON, when the intent is a change
+   * to it. The answer is then that whole policy, changed. Still only text:
+   * nothing is saved until somebody presses Save.
+   */
+  current?: string;
 }
 
 export interface PolicyDraft {
