@@ -124,6 +124,28 @@ describe('Find data', () => {
 
     expect(await screen.findByText(/found no table you can query or request/)).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'browse the catalogue' })).toHaveAttribute('href', '/catalog');
+    expect(screen.queryByText(/you cannot query or request/)).not.toBeInTheDocument();
+  });
+
+  it('says a table matched that is out of reach, rather than that nothing did', async () => {
+    assistFindData.mockResolvedValue({ ...answer([], ['orders']), outOfReach: 1 });
+    renderFind();
+
+    ask('purchase orders');
+
+    const said = await screen.findByText(/found no table you can query or request/);
+    expect(said).toHaveTextContent(/One table matched, but you cannot query or request it now/);
+    expect(said).toHaveTextContent(/The catalogue says why on each table's page/);
+  });
+
+  it('counts the ones out of reach under those it found', async () => {
+    assistFindData.mockResolvedValue({ ...answer([table()]), outOfReach: 2 });
+    renderFind();
+
+    ask('customer emails');
+
+    await screen.findByRole('list', { name: 'Tables NokRak found' });
+    expect(screen.getByText(/2 more tables matched, but you cannot query or request them now/)).toBeInTheDocument();
   });
 
   it('shows what the server said when it could not answer', async () => {

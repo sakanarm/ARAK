@@ -438,6 +438,8 @@ export interface FoundData {
   tables: FoundTable[];
   /** The words the catalogue was searched for. */
   keywords: string[];
+  /** Tables that matched but this person may neither read nor request; counted, never named. */
+  outOfReach?: number;
   model: string;
   personal: boolean;
 }

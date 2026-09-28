@@ -1,6 +1,6 @@
 # HANDOFF — ARAK (Data Access Control Platform)
 
-> อัปเดต: 2026-09-28 · ข้อ CL (**All rows** — ดาวน์โหลดทุกแถวเป็น CSV ผ่าน policy เดิม · audit บอกว่าเป็นการดาวน์โหลด · hover column บอก description · คลิกขวาไป Data Catalog · ลากขนาด editor ขึ้นลง / explanation ซ้ายขวา · FR-6.3) · ข้อ CK (**Find data** — NokRak หาตารางจากประโยคในหน้า Query · ตรวจสิทธิ์ก่อนโมเดลเห็นตาราง · อ่านได้ → เติม SQL · ขอได้ → ฟอร์มขอสิทธิ์ · M16) · ข้อ CJ.1 (ยิง explain-dashboard กับ LLM จริงแล้วผ่าน · ภาษาไทยแยก query กับ คำขอสิทธิ์) · ข้อ CJ (NokRak อธิบาย dashboard — panel **Ask NokRak** ใต้ key figures เลือกหัวข้อได้ · ชื่อคนเป็น `[P1]` ก่อนส่ง · M15 (ข) · M15 ครบ) · ข้อ CI (NokRak อธิบาย policy — ปุ่ม **Explain with NokRak** ในหน้า policy · M15 (ก)) · ข้อ CH (ปุ่ม **Query** ที่หัวหน้าตาราง สำหรับคนที่อ่านได้แล้ว — เปิดหน้า Query บน source ของตารางพร้อม SQL · FR-1.6d) · ข้อ CG (เปลี่ยนรหัสผ่านเอง — Profile → Password · หน้าบังคับเปลี่ยนเมื่อรหัสถูก admin ตั้ง · M2 / FR-2.2) · ข้อ CF (NokRak ตอบคำถามวิธีใช้ ARAK จากคู่มือที่แพ็กเข้า jar — `search_docs`) · ข้อ CE (สร้าง classification / tag ของ ARAK เองในหน้า Governance — provenance local · sync ไม่ทับ · ไม่เขียนกลับ OM) · ข้อ CD (Column description เขียนใน ARAK · NokRak ร่าง · แสดงใน ticket) · ข้อ CC (tab Access รับ list ยาว — แถบสรุป · chip · ค้น · แบ่งหน้า · กดดูรายละเอียดเต็ม) · ข้อ CB (NokRak ช่วยแก้ policy ที่มีอยู่ — คน review แล้วกด Save เอง) · ข้อ CA (ประวัติ policy · diff · rollback) · ข้อ BW (tag จาก OM ผ่าน webhook/poller ย้าย policy binding ทันที) · ข้อ BV (tab Access เฉพาะผู้ดูแล + Diagram แบบ canvas) · ข้อ BU (FR-1.7 local tag + demo group บน prod) · push ขึ้น origin/main แล้ว · repo https://github.com/sakanarm/ARAK (**public**)
+> อัปเดต: 2026-09-28 · ข้อ CM (**เลือก column ให้ NokRak ร่าง description ได้** — ติ๊กทีละ column หรือทั้งหมดที่เห็น · ร่างใหม่ทับ column ที่มีคำอธิบายแล้วได้ในฟอร์ม · **roadmap M31–M36: object ที่ ARAK ควรเก็บเพิ่มนอกจาก policy** · **NokRak ไม่ตอบ "ไม่พบ" เมื่อตารางที่ตรงถูกกันสิทธิ์ — บอกจำนวนแทน** · คำอธิบายตัวอย่าง PO 49 column ขึ้น prod แล้ว) · ข้อ CL (**All rows** — ดาวน์โหลดทุกแถวเป็น CSV ผ่าน policy เดิม · audit บอกว่าเป็นการดาวน์โหลด · hover column บอก description · คลิกขวาไป Data Catalog · ลากขนาด editor ขึ้นลง / explanation ซ้ายขวา · FR-6.3) · ข้อ CK (**Find data** — NokRak หาตารางจากประโยคในหน้า Query · ตรวจสิทธิ์ก่อนโมเดลเห็นตาราง · อ่านได้ → เติม SQL · ขอได้ → ฟอร์มขอสิทธิ์ · M16) · ข้อ CJ.1 (ยิง explain-dashboard กับ LLM จริงแล้วผ่าน · ภาษาไทยแยก query กับ คำขอสิทธิ์) · ข้อ CJ (NokRak อธิบาย dashboard — panel **Ask NokRak** ใต้ key figures เลือกหัวข้อได้ · ชื่อคนเป็น `[P1]` ก่อนส่ง · M15 (ข) · M15 ครบ) · ข้อ CI (NokRak อธิบาย policy — ปุ่ม **Explain with NokRak** ในหน้า policy · M15 (ก)) · ข้อ CH (ปุ่ม **Query** ที่หัวหน้าตาราง สำหรับคนที่อ่านได้แล้ว — เปิดหน้า Query บน source ของตารางพร้อม SQL · FR-1.6d) · ข้อ CG (เปลี่ยนรหัสผ่านเอง — Profile → Password · หน้าบังคับเปลี่ยนเมื่อรหัสถูก admin ตั้ง · M2 / FR-2.2) · ข้อ CF (NokRak ตอบคำถามวิธีใช้ ARAK จากคู่มือที่แพ็กเข้า jar — `search_docs`) · ข้อ CE (สร้าง classification / tag ของ ARAK เองในหน้า Governance — provenance local · sync ไม่ทับ · ไม่เขียนกลับ OM) · ข้อ CD (Column description เขียนใน ARAK · NokRak ร่าง · แสดงใน ticket) · ข้อ CC (tab Access รับ list ยาว — แถบสรุป · chip · ค้น · แบ่งหน้า · กดดูรายละเอียดเต็ม) · ข้อ CB (NokRak ช่วยแก้ policy ที่มีอยู่ — คน review แล้วกด Save เอง) · ข้อ CA (ประวัติ policy · diff · rollback) · ข้อ BW (tag จาก OM ผ่าน webhook/poller ย้าย policy binding ทันที) · ข้อ BV (tab Access เฉพาะผู้ดูแล + Diagram แบบ canvas) · ข้อ BU (FR-1.7 local tag + demo group บน prod) · push ขึ้น origin/main แล้ว · repo https://github.com/sakanarm/ARAK (**public**)
 >
 > อ่านคู่กับ **[docs/DESIGN.md](docs/DESIGN.md)** — ไฟล์นั้นคือ requirement + feature catalogue + สถานะครบทุกข้อ
 > ไฟล์นี้บอกเฉพาะ "ทำถึงไหน จะไปต่อยังไง อะไรที่ลองแล้วไม่เวิร์ค"
@@ -80,7 +80,7 @@ Phase 1 รองรับ SQL Server + PostgreSQL · identity หลักค�
 
 ---
 
-## Roadmap ที่เพิ่มรอบนี้ — **M13 · M14 · M15 · M16 · M17 · M18 · M19 · M20 · M21 · M22 · M23 · M24 · M25** (ผู้ใช้ขอ 2026-09-24 · M19–M25 / ไฟล์แนบของ M9 ขอ 2026-09-25)
+## Roadmap ที่เพิ่มรอบนี้ — **M13 · M14 · M15 · M16 · M17 · M18 · M19 · M20 · M21 · M22 · M23 · M24 · M25 · M31–M36** (ผู้ใช้ขอ 2026-09-24 · M19–M25 / ไฟล์แนบของ M9 ขอ 2026-09-25 · M31–M36 ขอ 2026-09-28)
 
 ผู้ใช้สั่งว่า *"ช่วยเพิ่ม Roadmap เพิ่ม Access Control ให้เรามีความพิเศษ"* แล้วให้มาสามข้อ
 แล้วขอเพิ่มข้อที่สี่ ห้า และหกตามมาในวันเดียวกัน (M16, M17, M18)
@@ -591,6 +591,23 @@ agent ขยายสิทธิ์ตัวเองไม่ได้ · ค�
 4. **ส่งมอบ** — ดาวน์โหลด CSV / Parquet หรือเขียนลง **sandbox database ที่ลงทะเบียนไว้เป็นปลายทางของ synthetic data และ ARAK เป็นเจ้าของ object** (ตามข้อตัดสินใจที่ 8 — ไม่เขียนลง table ของลูกค้า)
 5. **คุมสิทธิ์** — ต้องมีสิทธิ์อ่าน table ต้นทางก่อน (ขอผ่าน M9 ได้) · ชุดข้อมูลติด label `synthetic` + ε + ที่มา · ทุกครั้งที่สร้างลง audit
 
+### AP.17 M31–M36 — Object ที่ ARAK ควรเก็บเพิ่ม นอกจาก Data Access Policy (ผู้ใช้ขอ 2026-09-28)
+
+ผู้ใช้ถาม *"นอกจาก Data Access Policy แล้ว ควรมี Object อื่นอีกไหมที่เก็บ"* แล้วสั่ง *"ใส่ใน Roadmap"* · spec เต็มอยู่ที่ DESIGN **FR-21 – FR-26**
+
+**เส้นแบ่ง** — OpenMetadata เก็บว่าข้อมูลคืออะไร (glossary · domain · data product · lineage) · ARAK เก็บว่า**ใครใช้ได้ ใช้เพื่ออะไร และมีหลักฐานอะไรยืนยัน** · ของที่ OM มีแล้วไม่เก็บซ้ำ
+
+| # | Object | ทำไม | ต่อกับของที่มี |
+|---|---|---|---|
+| **M31** | **Purpose** | purpose วันนี้เป็นข้อความพิมพ์เอง 4 ที่ (`context.purpose` ใน policy · คำขอ · `purposes` ของ template · `audit_query.purpose`) — นับและเทียบกันไม่ได้ · ทำเป็น object ที่มีฐานกฎหมาย PDPA · เจ้าของ · ระยะสิทธิ์สูงสุด แล้วตอบ auditor ได้ว่า "PII ถูกใช้เพื่ออะไร" | policy · access request · template · grant · query / export · Dashboard |
+| **M32** | **Access Review** | grant มีวันหมดอายุ แต่ไม่มีใครทบทวนว่ายังควรมีไหม · campaign + รายการต่อ grant (keep / revoke / shorten + เหตุผล) · ห้ามทบทวนสิทธิ์ตัวเอง · เห็นวันที่ใช้ล่าสุด | grant (revoke เดิม = tombstone + audit) · query log M10 · inbox |
+| **M33** | **Project / Workspace** | ทีม + purpose + table + วันจบ · project เป็น principal แบบ group · ออกจาก project สิทธิ์หายทันที | local group (V35) · M27 ขอสิทธิ์ในนามกลุ่ม · ต้องมี M31 |
+| **M34** | **Rule ที่ใช้ซ้ำได้** | mask / row filter ตั้งชื่อครั้งเดียว หลาย policy อ้าง · วันนี้เขียนซ้ำในแต่ละ policy · แก้ rule แล้วโชว์ impact + เข้าประวัติ M17 | Policy IR · impact analysis (FR-5.3) · M17 |
+| **M35** | **Policy test case** | "คน X เปิด table Y ต้องเห็น column Z ถูก mask" รันผ่าน Simulator ทุก save / activate และทุกคืน · activate ไม่ได้ถ้า test พัง (เว้นแต่ใส่เหตุผล) | Simulator (FR-5.2) · M30b ใช้ไฟล์ชุดเดียวกัน |
+| **M36** | **Service account / API client** | principal ที่ไม่ใช่คน · เจ้าของต้องเป็นคน · scope · token เก็บแค่ hash + วันหมดอายุ · อนุมัติคำขอไม่ได้ | ฐานของ M14 (Org Key) · M21 · M29 · M30 |
+
+**ไม่เก็บใน ARAK** — glossary / domain / lineage / data quality (ของ OM) · consent / retention (ของระบบต้นทาง)
+
 ### AP.8 ลำดับที่แนะนำ
 
 ```
@@ -613,6 +630,9 @@ M22 ข้อ 1 (key management) ก่อนข้ออื่น · ข้อ 
 M10 → M23 (ใช้ query log ของ M10 · ส่วน "ปลอดภัยไหม" เต็มรูปแบบต้องมี M19)
 M10 → M24 (ข้อ 1–3 ทำได้เลยหลัง query log · ข้อ 4 ต้องมี M11 · ข้อ 5 ต้องมี M19)
 M25 ทำแยกได้ (profile ผ่าน proxy ที่มีแล้ว · sandbox ใช้ source registry ของ M18)
+M31 → M32 → M33  (Purpose ก่อน: รอบทบทวนและ project อ้าง purpose · M33 รวม M27)
+M34 · M35 ทำแยกได้ (M35 ก่อน M30b — `arak test` ใช้ไฟล์ชุดเดียวกัน)
+M36 → M14 · M21 · M29 · M30 (ทุกตัวต้องมี principal ที่ไม่ใช่คนก่อน)
 
 2026-09-24 ผู้ใช้สั่งสลับลำดับ: **M18 ขึ้นก่อนทุกอย่าง และเริ่มที่ฝั่ง proxy**
   (`ปรับมาทำส่วนนี้ก่อนเลย เพื่อสร้างฐานให้แข็งแรง`) → เหตุผลอยู่ที่ AP.7a
@@ -620,7 +640,32 @@ M25 ทำแยกได้ (profile ผ่าน proxy ที่มีแล�
 
 ---
 
-## รอบนี้ — **ข้อ CL: All rows (ดาวน์โหลดทุกแถว) · explorer hover / คลิกขวา · ลากขนาดแผงในหน้า Query (FR-6.3)**
+## รอบนี้ — **ข้อ CM: เลือก column ให้ NokRak ร่าง description · roadmap M31–M36 · Find data บอกจำนวนตารางที่เข้าไม่ถึง**
+
+ผู้ใช้ขอ *"อยากให้สามารถเลือก gen Column description ได้เฉพาะบาง Column"* · ระหว่างทำขอให้ใส่ object ที่ควรเก็บเพิ่มลง roadmap (AP.17 · DESIGN FR-21 – FR-26 · M31–M36)
+
+**ทำไมเป็นงานฝั่งหน้าจออย่างเดียว** — `POST /v1/llm/assist/describe-columns` รับรายชื่อ column อะไรก็ได้อยู่แล้ว (ไม่เกิน 40 ต่อครั้ง · ต้อง govern table · feature `DESCRIBE_COLUMNS`) และส่งคำอธิบายเดิมให้โมเดลเป็นบริบท · ที่ล็อกไว้ให้ร่างแต่ column ว่างคือหน้าจอเอง
+
+**หน้าจอ (`ColumnsTab.tsx`)**
+- ตอนกด **Describe columns** และมี NokRak: ทุกแถวมีช่องติ๊ก `Pick <column> for NokRak` · หัวตารางมีช่อง `Pick every column shown` ติ๊กเฉพาะแถวที่เห็นอยู่ (ใช้ร่วมกับช่องค้นหาหรือ *Only columns nobody has described*) และขึ้นขีดครึ่งเมื่อเลือกบางแถว
+- ติ๊กแล้วปุ่มเป็น **Draft N picked with NokRak** + ลิงก์ **Clear picks** · ไม่ติ๊กเลย = ร่างเฉพาะ column ว่างเหมือนเดิม · ส่งตามลำดับของ table ไม่ใช่ลำดับที่คลิก · ยังแบ่งทีละ 40
+- column ที่มีคำอธิบายแล้วก็ติ๊กได้ (เช่น เขียนใหม่เป็นภาษาไทย) — ร่างใหม่ลงฟอร์ม ของที่ save ไว้ยังอยู่จนกด Save · Save ลง `assisted: true`
+- **กติกาใหม่ของการเติม**: ร่างเข้าช่องได้ก็ต่อเมื่อช่องยังเป็นค่าเดียวกับตอนกด Draft — พิมพ์อะไรระหว่างรอ ของคนชนะเสมอ (แทนกติกาเดิม "ช่องยังว่าง" ซึ่งใช้กับ column ที่มีคำอธิบายไม่ได้) · ร่างที่ว่าง (โมเดลบอกไม่รู้) **ไม่ลบ**ของเดิม · ข้อความแจ้งบอกจำนวนช่องที่เก็บของที่คนพิมพ์ไว้ (`N you had typed in meanwhile kept what you wrote`)
+- ติ๊กไม่ได้ระหว่างร่างหรือระหว่าง save · Cancel / Save / เริ่มแก้ใหม่ ล้างที่ติ๊กไว้
+
+**Test** — `ColumnsTab.test.tsx` +3 (ร่างเฉพาะที่ติ๊กรวม column ที่มีคำอธิบาย และ save เป็น assisted · ของที่พิมพ์ระหว่างรอชนะ + ร่างว่างไม่ลบ · ติ๊กทั้งหมดที่เห็น / indeterminate / Clear picks) + test เดิมเช็คว่าไม่มีช่องติ๊กเมื่อ NokRak ไม่พร้อม · ส่วนนี้ backend ไม่เปลี่ยน
+
+**NokRak ตอบ "ไม่พบตาราง" ทั้งที่ตารางมีอยู่** — ผู้ใช้ถามแชทบน prod ว่ามีตารางเรื่องการจัดซื้อ / *"purchase order"* ไหม แล้วได้ "ไม่พบตารางที่อ่านได้หรือขอสิทธิ์ได้"
+- **สาเหตุ (จำลองผ่าน tunnel ด้วยบัญชี admin)**: การค้นหาเจอตารางจริง (คำค้นที่โมเดลแตกให้ตรงชื่อ schema และชื่อตาราง) แต่ eligibility ของบัญชีนี้คือ `readable=false · requestable=false · blockedKind=DENIED` — policy DENY ของ demo กันทุกคนนอก tenant ของ demo ออกจาก schema นั้น · อนุมัติคำขออย่างเดียวผ่าน DENY ไม่ได้ ตารางจึงเป็น "neither" และถูกทิ้งก่อนถึงโมเดลตามกติกา M16 · ถามด้วยบัญชีใน tenant ของ demo จะเจอ
+- **ที่ผิดคือคำตอบ ไม่ใช่การกรอง**: หน้า Catalog แสดงตารางเดียวกันให้ทุกคนพร้อม "You have no access … you can still request access" แต่ NokRak บอกว่าไม่มี
+- **แก้**: นับตารางที่ค้นเจอแต่เข้าไม่ถึง **ไม่เอ่ยชื่อ ไม่ส่ง column** — `DataFinder.Result.outOfReach` → `FoundData.outOfReach` · tool `search_catalog` ของแชทใส่ `outOfReach` + note (`AssistToolbox.searchNote`) ให้โมเดลบอกว่ามีตารางแบบนี้อยู่และชี้ไป Catalog แทนการบอกว่าไม่พบ · หน้า Find data: ไม่มีการ์ดเลย → ต่อท้ายข้อความเดิมด้วย "One table matched, but you cannot query or request it now: …" · มีการ์ดแล้ว → บรรทัดเล็กใต้รายการ "N more tables matched …"
+- test: `AssistToolboxTest` +2 (นับไม่เอ่ยชื่อ · ไม่มีอะไรเลยยังบอก "nothing was found") + assert ในเคสเดิม · `LlmFindDataTest` assert `outOfReach` 2 เคส · `FindData.test.tsx` +2
+
+**รวมรอบนี้** — frontend 777 / 79 suites ผ่าน · backend 778 ผ่าน · bundle `index-C9Gasks4.js`
+
+**คำอธิบายตัวอย่างของตาราง PO บน prod** — ใส่แล้ว 49 column (`set 49 · cleared 0 · unchanged 0` · หน้าตารางแสดงทั้ง 49 เป็นของ ARAK) · รหัสแรกที่ได้มาเป็นของ local (prod ตอบ 401) · รหัสที่สองผู้ใช้ส่งมาใช้ได้ · ส่งผ่าน env inline ครั้งเดียวผ่าน SSH tunnel · **ไม่ได้เก็บรหัสไว้ที่ไหน**
+
+## รอบก่อนหน้า — **ข้อ CL: All rows (ดาวน์โหลดทุกแถว) · explorer hover / คลิกขวา · ลากขนาดแผงในหน้า Query (FR-6.3)**
 
 ผู้ใช้ถาม "ทำไมมีจำกัด Row" → "ต้อง Query ได้ทั้งหมดสิ" · ขอ hover column ให้บอก description + คลิกขวาไป Data Catalog · ขอให้ลาก editor ขึ้นลงได้ "เยอะกว่านี้" · ขอให้ลากเส้นระหว่าง editor กับ explanation ซ้ายขวาได้
 

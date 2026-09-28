@@ -257,10 +257,94 @@ describe('ColumnsTab, NokRak', () => {
     expect(screen.getByRole('textbox', { name: 'Description of c44' })).toHaveValue('About c44');
   });
 
+  it('drafts only the columns somebody ticked, a described one included', async () => {
+    assistDescribeColumns.mockResolvedValue({
+      drafts: [
+        { name: 'branch_code', description: 'สาขาที่ถือบัญชี' },
+        { name: 'email', description: "The customer's email address" },
+      ],
+      model: 'm',
+      personal: false,
+    });
+    saveColumnDescriptions.mockResolvedValue({ set: 2, cleared: 0, unchanged: 0, descriptions: [] });
+    renderTab();
+    fireEvent.click(await screen.findByRole('button', { name: 'Describe columns' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Pick branch_code for NokRak' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Pick email for NokRak' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Draft 2 picked with NokRak' }));
+
+    await waitFor(() =>
+      expect(screen.getByRole('textbox', { name: 'Description of branch_code' })).toHaveValue('สาขาที่ถือบัญชี')
+    );
+    // In the table's order, and nothing that was not ticked.
+    expect(assistDescribeColumns.mock.calls[0][0].columns).toEqual(['email', 'branch_code']);
+    expect(screen.getByRole('textbox', { name: 'Description of id' })).toHaveValue('');
+    expect(within(row('branch_code')).getByText(/NokRak draft/)).toBeInTheDocument();
+    expect(await screen.findByText(/NokRak drafted 2 of 2/)).toBeInTheDocument();
+    expect(saveColumnDescriptions).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save 2 changes' }));
+    await waitFor(() => expect(saveColumnDescriptions).toHaveBeenCalled());
+    expect(saveColumnDescriptions.mock.calls[0][0].entries).toEqual([
+      { columnFqn: `${TABLE}.email`, description: "The customer's email address", assisted: true },
+      { columnFqn: `${TABLE}.branch_code`, description: 'สาขาที่ถือบัญชี', assisted: true },
+    ]);
+  });
+
+  it('keeps what somebody typed while NokRak was drafting, and never blanks a field', async () => {
+    let answer: (value: unknown) => void = () => undefined;
+    assistDescribeColumns.mockReturnValue(new Promise((resolve) => (answer = resolve)));
+    renderTab();
+    fireEvent.click(await screen.findByRole('button', { name: 'Describe columns' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Pick email for NokRak' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Pick branch_code for NokRak' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Draft 2 picked with NokRak' }));
+    fireEvent.change(screen.getByRole('textbox', { name: 'Description of email' }), {
+      target: { value: 'Mine' },
+    });
+    answer({
+      drafts: [
+        { name: 'email', description: 'From NokRak' },
+        { name: 'branch_code', description: '' },
+      ],
+      model: 'm',
+      personal: false,
+    });
+
+    expect(await screen.findByText(/NokRak drafted 0 of 2\. 1 you had typed in meanwhile kept what you wrote/)).toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: 'Description of email' })).toHaveValue('Mine');
+    expect(screen.getByRole('textbox', { name: 'Description of branch_code' })).toHaveValue(
+      'The branch that holds the account'
+    );
+  });
+
+  it('picks every column shown at once, and goes back to the empty ones when cleared', async () => {
+    renderTab();
+    fireEvent.click(await screen.findByRole('button', { name: 'Describe columns' }));
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Find a column' }), {
+      target: { value: 'co' },
+    });
+    // branch_code and country: one described here, one by OpenMetadata.
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Pick every column shown' }));
+    expect(screen.getByRole('button', { name: 'Draft 2 picked with NokRak' })).toBeEnabled();
+
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Find a column' }), {
+      target: { value: '' },
+    });
+    const all = screen.getByRole('checkbox', { name: 'Pick every column shown' }) as HTMLInputElement;
+    expect(all.checked).toBe(false);
+    expect(all.indeterminate).toBe(true);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Clear picks' }));
+    expect(screen.getByRole('button', { name: 'Draft 2 empty with NokRak' })).toBeInTheDocument();
+    expect(screen.getByRole('checkbox', { name: 'Pick email for NokRak' })).not.toBeChecked();
+  });
+
   it('is not offered to somebody the assistant is not set up for', async () => {
     assistReady = false;
     renderTab();
     fireEvent.click(await screen.findByRole('button', { name: 'Describe columns' }));
     expect(screen.queryByRole('button', { name: /with NokRak/ })).toBeNull();
+    expect(screen.queryByRole('checkbox', { name: /^Pick/ })).toBeNull();
   });
 });

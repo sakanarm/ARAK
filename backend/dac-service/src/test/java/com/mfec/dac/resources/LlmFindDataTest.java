@@ -234,6 +234,8 @@ class LlmFindDataTest {
         .containsExactly("READABLE", "REQUESTABLE");
     assertThat(found.keywords()).containsExactly("customer", "email");
     assertThat(found.model()).isEqualTo("gpt-test");
+    // The hidden table is counted, never named.
+    assertThat(found.outOfReach()).isEqualTo(1);
   }
 
   @Test
@@ -302,6 +304,8 @@ class LlmFindDataTest {
 
     assertThat(found.tables()).isEmpty();
     assertThat(asked).hasSize(1);
+    // "Nothing found" would read as no such data; the page says one matched out of reach.
+    assertThat(found.outOfReach()).isEqualTo(1);
   }
 
   @Test

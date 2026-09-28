@@ -54,8 +54,15 @@ final class DataFinder {
       String sourceId,
       String engine) {}
 
-  /** The words searched for, and the tables found with them. */
-  public record Result(List<String> keywords, List<Found> tables) {}
+  /**
+   * The words searched for, and the tables found with them.
+   *
+   * @param outOfReach tables the search reached that this person may neither read
+   *     nor request, counted and never named: the catalogue lists them with the
+   *     reason, and without the count "nothing matched" would read as the data
+   *     not existing
+   */
+  public record Result(List<String> keywords, List<Found> tables, int outOfReach) {}
 
   /** Search hits read for one keyword. */
   static final int HITS_PER_KEYWORD = 30;
@@ -87,14 +94,20 @@ final class DataFinder {
 
     List<AssistToolbox.Seen> seen = new ArrayList<>();
     int checked = 0;
+    int outOfReach = 0;
     for (String fqn : candidates(keywords)) {
       if (checked++ >= AssistToolbox.MAX_CHECKED || seen.size() >= MAX_BRIEFED) {
         break;
       }
-      toolbox.seen(fqn).ifPresent(seen::add);
+      Optional<AssistToolbox.Seen> table = toolbox.seen(fqn);
+      if (table.isPresent()) {
+        seen.add(table.get());
+      } else {
+        outOfReach++;
+      }
     }
     if (seen.isEmpty()) {
-      return new Result(keywords, List.of());
+      return new Result(keywords, List.of(), outOfReach);
     }
 
     List<AssistPrompts.Table> shown = new ArrayList<>();
@@ -134,7 +147,7 @@ final class DataFinder {
               source.map(s -> s.id().toString()).orElse(null),
               source.map(s -> s.engine().name()).orElse(null)));
     }
-    return new Result(keywords, found);
+    return new Result(keywords, found, outOfReach);
   }
 
   /**

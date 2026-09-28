@@ -25,8 +25,9 @@ import { Panel } from './panels';
  * give -- and a description is what a requester and an approver read to decide
  * what a column holds. So whoever governs the table can write them here, and
  * those survive every sync. NokRak can draft the empty ones from the names,
- * types and tags; a draft is put in the form and nothing is saved until the
- * person has read it and pressed Save.
+ * types and tags -- or only the columns somebody ticks, described ones too;
+ * a draft is put in the form and nothing is saved until the person has read it
+ * and pressed Save.
  */
 export function ColumnsTab({ assetFqn, columns }: { assetFqn: string; columns: ColumnDetail[] }) {
   const client = useQueryClient();
@@ -47,6 +48,8 @@ export function ColumnsTab({ assetFqn, columns }: { assetFqn: string; columns: C
   // What the form holds, per column FQN; a column not in here shows what is saved.
   const [text, setText] = useState<Record<string, string>>({});
   const [drafted, setDrafted] = useState<Record<string, boolean>>({});
+  // Columns ticked for NokRak, by FQN. None ticked means the empty ones.
+  const [picked, setPicked] = useState<Set<string>>(() => new Set());
   const [language, setLanguage] = useState('English');
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -67,6 +70,7 @@ export function ColumnsTab({ assetFqn, columns }: { assetFqn: string; columns: C
 
   const changed = columns.filter((column) => valueOf(column).trim() !== saved(column).trim());
   const draftable = columns.filter((column) => !valueOf(column).trim() && !fromOpenMetadata(column));
+  const targets = picked.size > 0 ? columns.filter((column) => picked.has(column.fqn)) : draftable;
 
   const needle = search.trim().toLowerCase();
   const shown = columns.filter(
@@ -82,11 +86,23 @@ export function ColumnsTab({ assetFqn, columns }: { assetFqn: string; columns: C
 
   const governed = columns.filter((column) => columnFacets(column.facets).length > 0).length;
   const described = columns.filter((column) => plainText(column.description)).length;
+  const pickedShown = shown.filter((column) => picked.has(column.fqn)).length;
+
+  const pick = (fqns: string[], on: boolean) =>
+    setPicked((prev) => {
+      const next = new Set(prev);
+      for (const fqn of fqns) {
+        if (on) next.add(fqn);
+        else next.delete(fqn);
+      }
+      return next;
+    });
 
   const reset = () => {
     stopped.current = true;
     setText({});
     setDrafted({});
+    setPicked(new Set());
     setProgress(null);
     setError(null);
   };
@@ -115,19 +131,25 @@ export function ColumnsTab({ assetFqn, columns }: { assetFqn: string; columns: C
   });
 
   /**
-   * Drafts the empty ones, a batch at a time so a wide table does not wait on
-   * one enormous answer, and fills a field only if it is still empty when its
-   * draft arrives: whatever the person typed meanwhile is theirs.
+   * Drafts the ticked columns, or the empty ones when none is ticked, a batch
+   * at a time so a wide table does not wait on one enormous answer. A draft
+   * takes a field only if the field still holds what it held when Draft was
+   * pressed: whatever the person typed meanwhile is theirs. A ticked column
+   * that is already described gets a new draft in the form, and keeps its saved
+   * description until somebody presses Save.
    */
   const draft = async () => {
-    const todo = draftable.map((column) => column.name);
+    const todo = targets.map((column) => column.name);
     if (todo.length === 0) return;
+    const before = new Map(targets.map((column) => [column.fqn, valueOf(column)]));
+    const untouched = (fqn: string, now: string | undefined) => now === undefined || now === before.get(fqn);
     stopped.current = false;
     setError(null);
     setNotice(null);
     setProgress({ done: 0, total: todo.length });
-    const byName = new Map(columns.map((column) => [column.name.toLowerCase(), column]));
+    const byName = new Map(targets.map((column) => [column.name.toLowerCase(), column]));
     let filled = 0;
+    let kept = 0;
     try {
       for (let at = 0; at < todo.length && !stopped.current; at += DESCRIBE_BATCH) {
         const batch = todo.slice(at, at + DESCRIBE_BATCH);
@@ -136,15 +158,16 @@ export function ColumnsTab({ assetFqn, columns }: { assetFqn: string; columns: C
         const got: Record<string, string> = {};
         for (const d of answer.drafts) {
           const column = byName.get(d.name.toLowerCase());
-          if (column && !(textNow.current[column.fqn] ?? '').trim() && !saved(column).trim()) {
-            got[column.fqn] = d.description;
-          }
+          // An empty draft is NokRak saying it cannot tell; it never blanks a field.
+          if (!column || !d.description.trim()) continue;
+          if (untouched(column.fqn, textNow.current[column.fqn])) got[column.fqn] = d.description;
+          else kept += 1;
         }
         filled += Object.keys(got).length;
         setText((prev) => {
           const next = { ...prev };
           for (const [fqn, value] of Object.entries(got)) {
-            if (!(next[fqn] ?? '').trim()) next[fqn] = value;
+            if (untouched(fqn, next[fqn])) next[fqn] = value;
           }
           return next;
         });
@@ -152,10 +175,11 @@ export function ColumnsTab({ assetFqn, columns }: { assetFqn: string; columns: C
         setProgress({ done: Math.min(at + batch.length, todo.length), total: todo.length });
       }
       if (!stopped.current) {
+        const yours = kept > 0 ? ` ${kept} you had typed in meanwhile kept what you wrote.` : '';
         setNotice(
-          filled === 0
+          filled === 0 && kept === 0
             ? 'NokRak could not tell what any of those columns hold, so nothing was filled in.'
-            : `NokRak drafted ${filled} of ${todo.length}. Read each one before you save: they are worked out from the names and types, not from the data.`
+            : `NokRak drafted ${filled} of ${todo.length}.${yours} Read each one before you save: they are worked out from the names and types, not from the data.`
         );
       }
     } catch (e) {
@@ -171,6 +195,7 @@ export function ColumnsTab({ assetFqn, columns }: { assetFqn: string; columns: C
   };
 
   const busy = progress !== null || save.isPending;
+  const pickable = editing && canDraft;
 
   return (
     <Panel
@@ -204,6 +229,8 @@ export function ColumnsTab({ assetFqn, columns }: { assetFqn: string; columns: C
                 What you write here is what people asking for this table, and the people approving
                 them, read. It stays when OpenMetadata syncs, and takes the place of OpenMetadata&rsquo;s
                 description where both exist. Leave a field empty to keep OpenMetadata&rsquo;s.
+                {canDraft &&
+                  ' Tick columns to have NokRak draft only those (a described one too, to write it again); with none ticked, it drafts the empty ones.'}
               </p>
               <div className="tw:flex tw:flex-wrap tw:items-center tw:gap-2">
                 {canDraft && (
@@ -211,13 +238,20 @@ export function ColumnsTab({ assetFqn, columns }: { assetFqn: string; columns: C
                     <Button
                       color="secondary"
                       iconLeading={<img alt="" className="tw:size-5 tw:object-contain" src={greet} />}
-                      isDisabled={busy || draftable.length === 0}
+                      isDisabled={busy || targets.length === 0}
                       onPress={() => void draft()}
                       size="sm">
-                      {draftable.length === 0
-                        ? 'Every column has a description'
-                        : `Draft ${draftable.length} empty with NokRak`}
+                      {picked.size > 0
+                        ? `Draft ${picked.size} picked with NokRak`
+                        : draftable.length === 0
+                          ? 'Every column has a description'
+                          : `Draft ${draftable.length} empty with NokRak`}
                     </Button>
+                    {picked.size > 0 && (
+                      <Button color="link-gray" isDisabled={busy} onPress={() => setPicked(new Set())} size="sm">
+                        Clear picks
+                      </Button>
+                    )}
                     <select
                       aria-label="Write the drafts in"
                       className={`${FIELD} tw:py-1.5`}
@@ -309,6 +343,25 @@ export function ColumnsTab({ assetFqn, columns }: { assetFqn: string; columns: C
             <table className="tw:w-full tw:text-sm">
               <thead>
                 <tr className="tw:border-b tw:border-secondary tw:text-left tw:text-xs tw:text-tertiary">
+                  {pickable && (
+                    <th className="tw:w-8 tw:py-2 tw:pr-2">
+                      <input
+                        aria-label="Pick every column shown"
+                        checked={shown.length > 0 && pickedShown === shown.length}
+                        disabled={busy || shown.length === 0}
+                        onChange={(event) =>
+                          pick(
+                            shown.map((column) => column.fqn),
+                            event.target.checked
+                          )
+                        }
+                        ref={(box) => {
+                          if (box) box.indeterminate = pickedShown > 0 && pickedShown < shown.length;
+                        }}
+                        type="checkbox"
+                      />
+                    </th>
+                  )}
                   <th className="tw:py-2 tw:pr-3 tw:font-medium">Column</th>
                   <th className="tw:py-2 tw:pr-3 tw:font-medium">Type</th>
                   <th className="tw:py-2 tw:font-medium">Governance</th>
@@ -325,6 +378,9 @@ export function ColumnsTab({ assetFqn, columns }: { assetFqn: string; columns: C
                     fromOpenMetadata={fromOpenMetadata(column)}
                     key={column.id}
                     onChange={(value) => edit(column, value)}
+                    onPick={pickable ? (on) => pick([column.fqn], on) : undefined}
+                    picked={picked.has(column.fqn)}
+                    pickDisabled={busy}
                     value={valueOf(column)}
                     written={written.get(column.fqn)}
                   />
@@ -353,6 +409,9 @@ function ColumnRow({
   drafted,
   written,
   onChange,
+  onPick,
+  picked,
+  pickDisabled,
 }: {
   assetFqn: string;
   column: ColumnDetail;
@@ -363,12 +422,28 @@ function ColumnRow({
   drafted: boolean;
   written: WrittenDescription | undefined;
   onChange: (value: string) => void;
+  /** Set while NokRak may be pointed at single columns. */
+  onPick?: (on: boolean) => void;
+  picked: boolean;
+  pickDisabled: boolean;
 }) {
   const own = columnFacets(column.facets);
   const description = plainText(column.description);
 
   return (
     <tr className="tw:border-b tw:border-secondary tw:last:border-0">
+      {onPick && (
+        <td className="tw:w-8 tw:py-2 tw:pr-2 tw:align-top">
+          <input
+            aria-label={`Pick ${column.name} for NokRak`}
+            checked={picked}
+            className="tw:mt-0.5"
+            disabled={pickDisabled}
+            onChange={(event) => onPick(event.target.checked)}
+            type="checkbox"
+          />
+        </td>
+      )}
       <td className={`tw:py-2 tw:pr-3 tw:align-top ${editing ? 'tw:w-1/2 tw:min-w-72' : ''}`}>
         <span className="tw:font-medium tw:text-primary">{column.name}</span>
         {editing ? (

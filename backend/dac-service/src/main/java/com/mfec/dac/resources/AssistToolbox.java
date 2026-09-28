@@ -188,12 +188,14 @@ public final class AssistToolbox implements Toolbox {
     ArrayNode tables = deps.json().createArrayNode();
     List<Card> cards = new ArrayList<>();
     int checked = 0;
+    int outOfReach = 0;
     for (Map.Entry<String, String> candidate : candidates.entrySet()) {
       if (checked++ >= MAX_CHECKED || tables.size() >= MAX_FOUND) {
         break;
       }
       String access = access(candidate.getKey());
       if (access == null) {
+        outOfReach++;
         continue;
       }
       ObjectNode table = tables.addObject();
@@ -211,13 +213,38 @@ public final class AssistToolbox implements Toolbox {
     ObjectNode out = deps.json().createObjectNode();
     out.put("query", query);
     out.set("tables", tables);
-    out.put(
-        "note",
-        tables.isEmpty()
-            ? "No table this person can read or request matched. Try other English keywords, or"
-                + " say nothing was found."
-            : "Only tables this person can read or may request are listed.");
+    if (outOfReach > 0) {
+      out.put("outOfReach", outOfReach);
+    }
+    out.put("note", searchNote(tables.isEmpty(), outOfReach));
     return new Result(out.toString(), cards);
+  }
+
+  /**
+   * What the model is told about a search, the tables it may not name included.
+   *
+   * <p>Those are counted and never named. Without the count, a table the person
+   * is kept out of turned the answer into "nothing was found", which reads as
+   * the data not existing, while the catalogue lists that same table with the
+   * reason on its page.
+   */
+  static String searchNote(boolean noneListed, int outOfReach) {
+    String unnamed =
+        outOfReach
+            + (outOfReach == 1 ? " other table" : " other tables")
+            + " matched that this person can neither read nor request now: a rule an approval"
+            + " alone would not lift keeps them out, or no source is connected. They are left"
+            + " unnamed on purpose. Say that such tables exist, without guessing a name, and"
+            + " point to the Catalog, where each table's page says why and what can be done.";
+    if (noneListed) {
+      return outOfReach == 0
+          ? "No table this person can read or request matched. Try other English keywords, or"
+              + " say nothing was found."
+          : "No table this person can read or request matched. " + unnamed;
+    }
+    return outOfReach == 0
+        ? "Only tables this person can read or may request are listed."
+        : "Only tables this person can read or may request are listed. " + unnamed;
   }
 
   Result describeAsset(String fqn) {

@@ -183,7 +183,14 @@ presses **Describe columns** on the Columns tab. Every column is listed in one
 form: type or change a description, clear one to remove it, and **Save**. With
 the assistant switched on, **Draft with NokRak** fills in drafts from the column
 names and types (it never sees the data); read and correct them before you
-save, because nothing is saved until you press Save. Every change is kept in
+save, because nothing is saved until you press Save. To draft only some
+columns, tick the box in front of each one (the box in the header ticks every
+column shown, so a search or **Only columns nobody has described** narrows it
+first); the button then reads **Draft N picked with NokRak**. A ticked column
+that already has a description gets a new draft in the form, which is handy to
+rewrite it in Thai, and its saved description stays until you press Save. With
+nothing ticked, NokRak drafts the empty columns. Anything you type in a field
+while NokRak is working is kept. Every change is kept in
 the audit log with what it replaced. Descriptions written in ARAK are not sent
 back to OpenMetadata, and a sync does not overwrite them.
 
@@ -396,6 +403,12 @@ When the assistant is turned on for you:
   - *You can request*: **Request access** opens the same form as on the table's
     page.
   If nothing fits, NokRak says so; try other words or browse the catalogue.
+  When a table matched but you can neither query nor request it (a rule that an
+  approval alone would not lift keeps you out, or no source is connected), NokRak
+  does not name it, but says how many there were, so "nothing found" means
+  nothing matched at all. Their pages in the catalogue say why. The same
+  goes for asking NokRak in the chat ("is there a table about purchase
+  orders?"): it tells you such tables exist rather than that there are none.
 
 NokRak is sent metadata (table and column names, types, descriptions, tags) and
 your statement or error. It is never sent result rows.

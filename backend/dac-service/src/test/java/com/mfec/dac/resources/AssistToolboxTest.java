@@ -138,6 +138,33 @@ class AssistToolboxTest {
         .doesNotContain("PII.Sensitive");
     assertThat(result.cards()).extracting(Card::assetFqn).containsExactly(READABLE, REQUESTABLE);
     assertThat(result.cards()).extracting(Card::kind).containsOnly("asset");
+    assertThat(result.content()).contains("\"outOfReach\":1", "1 other table matched");
+  }
+
+  @Test
+  void aTableThePersonIsKeptOutOfIsCountedNotNamed() throws Exception {
+    when(search.search(anyString(), anyInt()))
+        .thenReturn(new SearchQuery.Results("keys", 50, List.of(table(HIDDEN, "Master keys"))));
+
+    Result result = run("search_catalog", "{\"query\":\"keys\"}");
+
+    // Without the count the model said "nothing was found", as if the data did not exist.
+    assertThat(result.content())
+        .contains("\"outOfReach\":1", "No table this person can read or request matched", "Catalog")
+        .doesNotContain(HIDDEN)
+        .doesNotContain("Master keys")
+        .doesNotContain("say nothing was found");
+    assertThat(result.cards()).isEmpty();
+  }
+
+  @Test
+  void aSearchThatReachesNothingSaysNothingWasFound() throws Exception {
+    when(search.search(anyString(), anyInt()))
+        .thenReturn(new SearchQuery.Results("x", 50, List.of()));
+
+    Result result = run("search_catalog", "{\"query\":\"nothing here\"}");
+
+    assertThat(result.content()).contains("say nothing was found").doesNotContain("outOfReach");
   }
 
   @Test

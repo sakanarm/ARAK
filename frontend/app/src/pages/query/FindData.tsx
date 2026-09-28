@@ -92,6 +92,7 @@ function Found({
   found: FoundData;
   onUse: (sql: string, sourceId: string | null) => void;
 }) {
+  const outOfReach = found.outOfReach ?? 0;
   return (
     <div className="tw:flex tw:flex-col tw:gap-2">
       {found.keywords.length > 0 && (
@@ -108,23 +109,40 @@ function Found({
       )}
       {found.tables.length === 0 ? (
         <p className="tw:rounded-lg tw:border tw:border-secondary tw:bg-secondary tw:px-3 tw:py-2 tw:text-sm tw:text-secondary">
-          NokRak found no table you can query or request that holds this. Try other words, or{' '}
+          NokRak found no table you can query or request that holds this.
+          {outOfReach > 0 && ` ${outOfReachText(outOfReach, false)}`} Try other words, or{' '}
           <Link className="tw:font-medium tw:text-brand-secondary tw:underline" to="/catalog">
             browse the catalogue
           </Link>
           .
         </p>
       ) : (
-        <ul aria-label="Tables NokRak found" className="tw:flex tw:max-h-[50vh] tw:flex-col tw:gap-2 tw:overflow-y-auto">
-          {found.tables.map((table) => (
-            <li key={table.fqn}>
-              <FoundCard onUse={onUse} table={table} />
-            </li>
-          ))}
-        </ul>
+        <>
+          <ul aria-label="Tables NokRak found" className="tw:flex tw:max-h-[50vh] tw:flex-col tw:gap-2 tw:overflow-y-auto">
+            {found.tables.map((table) => (
+              <li key={table.fqn}>
+                <FoundCard onUse={onUse} table={table} />
+              </li>
+            ))}
+          </ul>
+          {outOfReach > 0 && (
+            <p className="tw:text-xs tw:text-tertiary">{outOfReachText(outOfReach, true)}</p>
+          )}
+        </>
       )}
     </div>
   );
+}
+
+/**
+ * The tables that matched but that the person may neither read nor request.
+ * They are counted and never named; without the count, "found no table" read as
+ * the data not existing, while the catalogue lists them with the reason.
+ */
+function outOfReachText(count: number, more: boolean): string {
+  const one = count === 1;
+  const which = one ? (more ? 'One more table' : 'One table') : `${count}${more ? ' more' : ''} tables`;
+  return `${which} matched, but you cannot query or request ${one ? 'it' : 'them'} now: a rule that an approval alone would not lift keeps you out, or no source is connected. The catalogue says why on each table's page.`;
 }
 
 function FoundCard({

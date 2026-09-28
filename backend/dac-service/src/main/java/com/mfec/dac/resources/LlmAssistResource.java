@@ -877,9 +877,16 @@ public class LlmAssistResource {
   /** What somebody is looking for, in their own words, and the language to answer in. */
   public record FindAsk(String want, String language, String model) {}
 
-  /** The tables found, the words that were searched for, and whose gateway answered. */
+  /**
+   * The tables found, the words that were searched for, how many more matched
+   * that the caller may neither read nor request, and whose gateway answered.
+   */
   public record FoundData(
-      List<DataFinder.Found> tables, List<String> keywords, String model, boolean personal) {}
+      List<DataFinder.Found> tables,
+      List<String> keywords,
+      int outOfReach,
+      String model,
+      boolean personal) {}
 
   /**
    * Finds the tables that hold what a sentence describes (M16).
@@ -918,7 +925,11 @@ public class LlmAssistResource {
                 ask.language(),
                 (system, user) -> ask(actor, mine, ask.model(), system, user));
     return new FoundData(
-        found.tables(), found.keywords(), chosenModel(ask.model(), mine), mine.usingOwnGateway());
+        found.tables(),
+        found.keywords(),
+        found.outOfReach(),
+        chosenModel(ask.model(), mine),
+        mine.usingOwnGateway());
   }
 
   /** The jobs this caller is offered; every one when nobody has narrowed them. */
