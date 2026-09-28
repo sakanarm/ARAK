@@ -580,7 +580,9 @@ public class DacApplication extends Application<DacConfiguration> {
                 dashboard),
             // Explaining a policy (M15) reads what the policy page reads.
             new LlmAssistResource.PolicyReading(
-                policyStore, policyOverview, environment.getObjectMapper())));
+                policyStore, policyOverview, environment.getObjectMapper()),
+            // Explaining the dashboard (M15) reads the dashboard, as the caller.
+            dashboard));
 
     environment.jersey().register(
         new WebhookResource(

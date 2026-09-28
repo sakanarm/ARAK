@@ -50,7 +50,12 @@ public class LlmFeatureStore {
     EXPLAIN_POLICY(
         "Explain a policy",
         "Say in words what a policy does, what it lands on and how it meets the other policies"
-            + " there. A reading aid; the Simulator is what the engine decides.");
+            + " there. A reading aid; the Simulator is what the engine decides."),
+    EXPLAIN_DASHBOARD(
+        "Explain the dashboard",
+        "Say in words what stands out on the dashboard and what to look at next, from its counts"
+            + " with people numbered rather than named. A reading aid; the dashboard's own numbers"
+            + " are what count.");
 
     private final String label;
     private final String description;

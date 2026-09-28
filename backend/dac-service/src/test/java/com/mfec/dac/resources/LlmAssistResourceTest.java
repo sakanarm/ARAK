@@ -803,4 +803,114 @@ class LlmAssistResourceTest {
           .isInstanceOf(ServiceUnavailableException.class);
     }
   }
+
+  @Nested
+  @DisplayName("explain the dashboard")
+  class ExplainDashboard {
+
+    private final DashboardResource dashboards = mock(DashboardResource.class);
+    private final LlmAssistResource explaining =
+        new LlmAssistResource(store, client, catalog, null, null, null, dashboards);
+
+    private LlmAssistResource.DashboardExplainAsk asking(
+        Integer days, String label, String focus, String language) {
+      return new LlmAssistResource.DashboardExplainAsk(days, label, focus, language, null);
+    }
+
+    @Test
+    @DisplayName("sends the page's counts with people numbered, and names them again on the way back")
+    void whatLeaves() throws Exception {
+      when(dashboards.dashboard(eq(30), eq("PII"), any())).thenReturn(DashboardBriefTest.sample());
+      answers("[P2] ran the most queries, and the grant of [P1] ends first. [P7] is nobody.");
+
+      LlmAssistResource.DashboardExplanation out =
+          explaining.explainDashboard(asking(null, null, null, "Thai"), as(analyst));
+
+      assertThat(out.text())
+          .isEqualTo("analyst_a ran the most queries, and the grant of analyst_b ends first. [P7] is nobody.");
+      assertThat(out.model()).isEqualTo("gpt-test");
+      assertThat(system.getValue()).contains("Write in Thai", "[P1], [P2]", "A count is not a verdict");
+      assertThat(user.getValue())
+          .startsWith("The dashboard as it stands now:")
+          .contains("Part of the page asked about: ALL", "[P1]", "[P2]", "[P3]", CUSTOMER)
+          .doesNotContain("analyst_a", "analyst_b", "fraud-team", "owner_o", "owner_p");
+    }
+
+    @Test
+    @DisplayName("reads the window, label and part of the page the reader is looking at")
+    void readsWhatIsOnScreen() throws Exception {
+      when(dashboards.dashboard(eq(90), eq("Confidential"), any()))
+          .thenReturn(DashboardBriefTest.sample());
+      answers("Grants.");
+
+      explaining.explainDashboard(asking(90, "Confidential", "access", null), as(analyst));
+
+      verify(dashboards).dashboard(eq(90), eq("Confidential"), any());
+      assertThat(system.getValue()).contains("Write in English");
+      assertThat(user.getValue())
+          .contains("Part of the page asked about: ACCESS", "Grants in force")
+          .doesNotContain("Coverage of the labelled tables");
+    }
+
+    @Test
+    @DisplayName("refuses a missing ask or a part the page does not have, before anything is read")
+    void validates() {
+      assertThatThrownBy(() -> explaining.explainDashboard(null, as(analyst)))
+          .isInstanceOf(BadRequestException.class);
+      assertThatThrownBy(
+              () -> explaining.explainDashboard(asking(null, null, "everything", null), as(analyst)))
+          .isInstanceOf(BadRequestException.class)
+          .hasMessageContaining("COVERAGE");
+      verifyNoInteractions(client, dashboards);
+    }
+
+    @Test
+    @DisplayName("is refused when the job is not offered to the caller, before the dashboard is read")
+    void featureGate() {
+      com.mfec.dac.llm.LlmFeatureStore features = mock(com.mfec.dac.llm.LlmFeatureStore.class);
+      when(features.allowedFor(analyst))
+          .thenReturn(java.util.EnumSet.of(com.mfec.dac.llm.LlmFeatureStore.Feature.CHAT));
+      LlmAssistResource gated =
+          new LlmAssistResource(store, client, catalog, features, null, null, dashboards);
+
+      assertThatThrownBy(() -> gated.explainDashboard(asking(null, null, null, null), as(analyst)))
+          .isInstanceOf(ForbiddenException.class)
+          .hasMessageContaining("Explain the dashboard");
+      verifyNoInteractions(client, dashboards);
+    }
+
+    @Test
+    @DisplayName("is refused to anybody the dashboard itself refuses")
+    void onlyForOverseers() {
+      com.mfec.dac.dashboard.DashboardQuery query =
+          mock(com.mfec.dac.dashboard.DashboardQuery.class);
+      com.mfec.dac.audit.QueryLog log = mock(com.mfec.dac.audit.QueryLog.class);
+      LlmAssistResource real =
+          new LlmAssistResource(
+              store, client, catalog, null, null, null, new DashboardResource(query, log));
+
+      assertThatThrownBy(() -> real.explainDashboard(asking(null, null, null, null), as(analyst)))
+          .isInstanceOf(ForbiddenException.class)
+          .hasMessageContaining("administrators");
+      verifyNoInteractions(client, query, log);
+    }
+
+    @Test
+    @DisplayName("is not there on a deployment that does not wire it")
+    void notWired() {
+      assertThatThrownBy(() -> resource.explainDashboard(asking(null, null, null, null), as(analyst)))
+          .isInstanceOf(NotFoundException.class);
+      verifyNoInteractions(client);
+    }
+
+    @Test
+    @DisplayName("says so when the model answers with nothing")
+    void emptyAnswer() throws Exception {
+      when(dashboards.dashboard(anyInt(), anyString(), any())).thenReturn(DashboardBriefTest.sample());
+      answers("  ");
+
+      assertThatThrownBy(() -> explaining.explainDashboard(asking(null, null, null, null), as(analyst)))
+          .isInstanceOf(ServiceUnavailableException.class);
+    }
+  }
 }

@@ -375,6 +375,42 @@ export async function assistExplainPolicy(ask: PolicyExplainAsk): Promise<Policy
   return data;
 }
 
+// --------------------------------------------------------- explain the dashboard
+
+/** The parts of the dashboard NokRak can be asked about. */
+export type DashboardFocus = 'ALL' | 'COVERAGE' | 'ACTIVITY' | 'ACCESS' | 'REQUESTS' | 'HEALTH';
+
+export interface DashboardExplainAsk {
+  /** The window the page is reading; the server's default is 30. */
+  days?: number;
+  /** The sensitive label the page is reading; the server's default is PII. */
+  label?: string;
+  focus?: DashboardFocus;
+  /** 'English' or 'Thai'. */
+  language?: string;
+  model?: string;
+}
+
+/** Plain text with people's names put back, labelled on the page as NokRak's. */
+export interface DashboardExplanation {
+  text: string;
+  model: string;
+  personal: boolean;
+}
+
+/**
+ * What stands out on the dashboard, in words. The server reads the dashboard as
+ * the caller and sends the model its counts, with every person numbered rather
+ * than named; the names go back into the answer on the server. No row,
+ * statement or address is sent, and nothing is saved.
+ */
+export async function assistExplainDashboard(ask: DashboardExplainAsk): Promise<DashboardExplanation> {
+  const { data } = await apiClient.post<DashboardExplanation>('/v1/llm/assist/explain-dashboard', ask, {
+    timeout: 180_000,
+  });
+  return data;
+}
+
 // ------------------------------------------------------------- the agent (M28)
 
 /** The assistant's jobs, each of which an administrator can narrow by role. */
@@ -387,7 +423,8 @@ export type AssistFeature =
   | 'CATALOG_SEARCH'
   | 'INSIGHTS'
   | 'DESCRIBE_COLUMNS'
-  | 'EXPLAIN_POLICY';
+  | 'EXPLAIN_POLICY'
+  | 'EXPLAIN_DASHBOARD';
 
 /** One earlier line of the conversation, sent back so the model has context. */
 export interface ChatMessage {

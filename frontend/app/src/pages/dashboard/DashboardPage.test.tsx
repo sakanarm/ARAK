@@ -12,6 +12,9 @@ jest.mock('../../api/dashboard', () => {
   return { ...actual, fetchDashboard: (...args: unknown[]) => fetchDashboard(...args) };
 });
 
+// Asking NokRak about the page has its own tests.
+jest.mock('./DashboardExplain', () => () => null);
+
 const fetchVocabulary = jest.fn();
 
 jest.mock('../../api/governance', () => {

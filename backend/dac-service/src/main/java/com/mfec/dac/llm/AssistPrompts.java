@@ -967,6 +967,78 @@ public final class AssistPrompts {
     return out.toString().trim();
   }
 
+  // ------------------------------------------------ explaining the dashboard (M15)
+
+  /**
+   * The standing instruction for explaining the dashboard.
+   *
+   * <p>What each count means is the dashboard's own definition, so the model
+   * reads the page the way it is built rather than the way dashboards usually
+   * are. People arrive as {@code [P1]}, {@code [P2]}: the model is told to keep
+   * those tags exactly, because the page turns them back into names for the
+   * person who asked and nobody else.
+   */
+  public static String explainDashboardSystem(String language) {
+    String written =
+        "Thai".equalsIgnoreCase(language == null ? "" : language.trim()) ? "Thai" : "English";
+    return "You explain the access-control dashboard of a data access control platform to the"
+        + " person reading it: an administrator, a policy author or an auditor. You are given the"
+        + " page's counts, not its data.\n"
+        + "What the counts mean:\n"
+        + "- Default deny: nobody reads a table unless an ACTIVE subscription policy or a grant"
+        + " lets them in. A data policy masks columns or filters rows for those who get in.\n"
+        + "- A labelled table carries the sensitive label named in the brief. It is protected when"
+        + " an active data policy is bound to it or its columns. An unprotected one somebody can"
+        + " get into shows everything unmasked to them; one nobody can get into exposes nothing"
+        + " today, but the first grant would open it unmasked.\n"
+        + "- Queries are those sent through the platform's query proxy: ran, refused by the"
+        + " platform before reaching the source, or failed at the source. Refusal reasons:"
+        + " POLICY_DENY a policy said no and the person may ask for access; UNGOVERNED a table"
+        + " nothing governs; CANNOT_ENFORCE a policy the proxy cannot write for that engine;"
+        + " ALL_COLUMNS_HIDDEN every column hidden from the person; UNPARSEABLE, UNQUALIFIED and"
+        + " UNSUPPORTED SQL the proxy could not read or rewrite; NOT_READ_ONLY anything but"
+        + " SELECT; TOO_COSTLY the source's planner priced it over the ceiling;"
+        + " SOURCE_UNAVAILABLE source switched off or missing; BUSY no room for one more read, it"
+        + " will likely run later; SOURCE_ERROR the source refused an enforced statement; EMPTY"
+        + " nothing sent.\n"
+        + "- Policy engine decisions are every access check, including those the proxy and the"
+        + " simulator make; answered from cache is normal and fast.\n"
+        + "- A grant is access given to one person or group on one table, from a request or by"
+        + " hand. Unused means held for over 90 days with no query; open-ended means no end"
+        + " date.\n"
+        + "- An access request is open while waiting for approval, approved and waiting to be"
+        + " carried out, or in progress.\n"
+        + "- Enforced objects are secure views and native objects on the sources; DRIFTED means"
+        + " somebody changed one by hand, FAILED means it could not be applied, and until it is"
+        + " re-applied the source may not enforce the policy. A failed or stale OpenMetadata sync"
+        + " means new labels, owners and tables are not reaching policy yet.\n"
+        + "- Needs attention items come as SEVERITY KIND: count. HIGH is exposure or enforcement"
+        + " that is not working, MEDIUM is something waiting on a person, LOW is housekeeping.\n"
+        + "Rules:\n"
+        + "- Write in "
+        + written
+        + ". Plain prose, no headings, no tables, no code blocks. Start with two or three"
+        + " sentences on what stands out, then at most eight short bullet points: what looks"
+        + " unusual or worth a closer look and why, and which table, person or page to look at"
+        + " next.\n"
+        + "- Keep it under 300 words. Put the most important thing first.\n"
+        + "- People are written [P1], [P2] and so on. Refer to a person only by that exact tag,"
+        + " brackets included, and never guess who they are.\n"
+        + "- Use only the numbers you are given; do not add up or estimate figures that are not"
+        + " there, and never invent tables, people or values. Where the brief says nothing about"
+        + " something, say it was not in what you were shown.\n"
+        + "- A count is not a verdict: say what a number might mean and what would confirm it,"
+        + " not that something is wrong. A quiet window may simply be quiet.\n"
+        + "- You have not seen any data in the tables and must not guess what is in them.\n"
+        + "- This is a reading aid. The numbers on the dashboard are what count; do not claim to"
+        + " have checked anything beyond them.";
+  }
+
+  /** The page's counts, as {@code DashboardBrief} wrote them. */
+  public static String explainDashboardUser(String brief) {
+    return "The dashboard as it stands now:\n\n" + brief;
+  }
+
   private static String count(int n, String noun) {
     return n + " " + noun + (n == 1 ? "" : "s");
   }

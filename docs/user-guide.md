@@ -403,6 +403,27 @@ rows and how long it took.
 
 The dashboard never shows client addresses, statements or error texts.
 
+## Explain the dashboard with NokRak
+
+Under the key figures on the **Dashboard**, the **Ask NokRak** panel has
+**Explain with NokRak**. First choose what to read in **About**: *Whole
+dashboard*, *Coverage*, *Queries & refusals*, *Access & grants*, *Requests* or
+*Platform health*. Then choose *English* or *ไทย (Thai)*. NokRak says in a few
+sentences what stands out for the window and label you have on screen, what
+looks unusual and why, and which table, person or page to look at next.
+
+NokRak is sent the dashboard's counts: the key figures, the *Needs attention*
+list, up to 15 labelled tables with their counts (owners only as a number),
+queries by day, refusal reasons, grants and requests. People are numbered
+instead of named, as [P1], [P2] and so on, before anything leaves ARAK, and
+their names are put back into the answer for you. It is sent no data from any
+table, no statement and no client address. Its answer is a reading aid; the
+numbers on the dashboard are what count.
+
+The panel appears only when the assistant is on for you and your role is
+offered *Explain the dashboard* (**Settings → Assistant → Who gets which job**).
+Anybody who can open the dashboard can ask. The answer is not saved.
+
 ## Policies: the two kinds
 
 - A **subscription policy** answers "may this person read this table at all?"
@@ -603,6 +624,7 @@ in the catalogue. It can:
 - write a query as a card you put in the editor yourself;
 - draft a policy, or suggest a change to one, for you to review;
 - explain a policy in words on its page, including how it meets the others;
+- explain what stands out on the dashboard, with people numbered rather than named;
 - draft column descriptions for a table's owner to correct and save;
 - read the query log and the dashboard as your role allows;
 - open the right page for you;

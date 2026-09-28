@@ -28,6 +28,7 @@ import {
 import { countdown, hoursLabel, humanise, Loading, urgencyOf, type Urgency } from '../home/widgets';
 import { Select, type SelectOption } from '../policies/controls';
 import { fetchVocabulary, flatten } from '../../api/governance';
+import DashboardExplain from './DashboardExplain';
 
 /**
  * The access-control dashboard (M10, FR-8.5).
@@ -159,6 +160,8 @@ function Body({
   return (
     <>
       <Kpis data={data} />
+
+      <DashboardExplain days={data.days} key={`${data.days}:${data.label}`} label={data.label} />
 
       <div className="tw:grid tw:gap-4 tw:lg:grid-cols-3">
         <AttentionCard className="tw:lg:col-span-2" data={data} />

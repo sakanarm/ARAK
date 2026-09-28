@@ -653,4 +653,34 @@ class AssistPromptsTest {
       assertThat(user).contains("It lands on 1 table and 1 column now.");
     }
   }
+
+  @Nested
+  @DisplayName("explaining the dashboard")
+  class ExplainDashboard {
+
+    @Test
+    @DisplayName("tells the model what the counts mean and how to name people, in the language asked for")
+    void systemCarriesTheRules() {
+      String english = AssistPrompts.explainDashboardSystem(null);
+
+      assertThat(AssistPrompts.explainDashboardSystem("thai")).contains("Write in Thai");
+      assertThat(AssistPrompts.explainDashboardSystem("Klingon")).contains("Write in English");
+      assertThat(english)
+          .contains("Write in English", "Default deny")
+          .contains("POLICY_DENY a policy said no", "TOO_COSTLY", "BUSY no room for one more read")
+          .contains("DRIFTED means", "HIGH is exposure")
+          .contains("[P1], [P2]", "exact tag", "never guess who they are")
+          .contains("A count is not a verdict")
+          .contains("You have not seen any data")
+          .contains("never invent")
+          .contains("reading aid");
+    }
+
+    @Test
+    @DisplayName("hands the brief over as it was written")
+    void userCarriesTheBrief() {
+      assertThat(AssistPrompts.explainDashboardUser("Window: the last 7 days."))
+          .isEqualTo("The dashboard as it stands now:\n\nWindow: the last 7 days.");
+    }
+  }
 }

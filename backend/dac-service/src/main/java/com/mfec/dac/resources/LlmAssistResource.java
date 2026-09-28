@@ -125,6 +125,8 @@ public class LlmAssistResource {
   private final AssistToolbox.Deps tools;
   /** What explaining a policy reads (M15); null when this deployment does not offer it. */
   private final PolicyReading policyReading;
+  /** The dashboard explaining it reads (M15); null when this deployment does not offer it. */
+  private final DashboardResource dashboards;
 
   /**
    * The policy store and what the policy page shows beside a policy, read the
@@ -152,12 +154,24 @@ public class LlmAssistResource {
       LlmFeatureStore features,
       AssistToolbox.Deps tools,
       PolicyReading policyReading) {
+    this(store, client, catalog, features, tools, policyReading, null);
+  }
+
+  public LlmAssistResource(
+      LlmSettingStore store,
+      LlmClient client,
+      CatalogQuery catalog,
+      LlmFeatureStore features,
+      AssistToolbox.Deps tools,
+      PolicyReading policyReading,
+      DashboardResource dashboards) {
     this.store = store;
     this.client = client;
     this.catalog = catalog;
     this.features = features;
     this.tools = tools;
     this.policyReading = policyReading;
+    this.dashboards = dashboards;
   }
 
   // ---------------------------------------------------------------- requests
@@ -209,6 +223,23 @@ public class LlmAssistResource {
 
   /** What the policy does, in the model's words. Plain text, and not the engine's verdict. */
   public record PolicyExplanation(String text, String model, boolean personal) {}
+
+  /**
+   * The dashboard somebody wants explained (M15).
+   *
+   * @param days the window, as the page reads it; null for the page's default of 30
+   * @param label the sensitive label, as the page reads it; null for PII
+   * @param focus ALL, COVERAGE, ACTIVITY, ACCESS, REQUESTS or HEALTH; null for ALL
+   * @param language {@code Thai}, or anything else for English
+   */
+  public record DashboardExplainAsk(
+      Integer days, String label, String focus, String language, String model) {}
+
+  /**
+   * What stands out on the dashboard, in the model's words, with people's names
+   * put back. Plain text; the dashboard's own numbers are what count.
+   */
+  public record DashboardExplanation(String text, String model, boolean personal) {}
 
   /**
    * One message to the chat (M28).
@@ -413,6 +444,61 @@ public class LlmAssistResource {
           "The assistant did not answer with an explanation. Try again in a moment.");
     }
     return new PolicyExplanation(text, chosenModel(ask.model(), mine), mine.usingOwnGateway());
+  }
+
+  /**
+   * Explain the dashboard (M15): what stands out, what is unusual, and what to
+   * look at next.
+   *
+   * <p>The dashboard is read the way its page reads it, as the caller, so it is
+   * refused to anybody the page refuses. The model is sent its counts with
+   * every person the page names numbered instead ({@link DashboardBrief}); the
+   * names go back into the answer here, for the person who asked, who could
+   * already see them. No row, statement or client address is sent, and
+   * nothing here writes.
+   */
+  @POST
+  @Path("/explain-dashboard")
+  public DashboardExplanation explainDashboard(
+      DashboardExplainAsk ask, @Context SecurityContext security) {
+    if (ask == null) {
+      throw new BadRequestException("Say what to explain");
+    }
+    DashboardBrief.Focus focus;
+    try {
+      focus = DashboardBrief.Focus.parse(ask.focus());
+    } catch (IllegalArgumentException e) {
+      throw new BadRequestException(e.getMessage());
+    }
+    AuthenticatedUser actor = caller(security);
+    if (dashboards == null) {
+      throw new NotFoundException("Explaining the dashboard is not available on this deployment");
+    }
+    EffectiveSetting mine = ready(actor, Feature.EXPLAIN_DASHBOARD);
+
+    DashboardResource.Dashboard dashboard =
+        dashboards.dashboard(
+            ask.days() == null ? 30 : ask.days(),
+            ask.label() == null ? "PII" : ask.label(),
+            security);
+    DashboardBrief.Brief brief = DashboardBrief.of(dashboard, focus);
+
+    String answer =
+        ask(
+            actor,
+            mine,
+            ask.model(),
+            AssistPrompts.explainDashboardSystem(ask.language()),
+            AssistPrompts.explainDashboardUser(brief.text()));
+    String text = AssistPrompts.extractExplanation(answer);
+    if (text.isEmpty()) {
+      throw new ServiceUnavailableException(
+          "The assistant did not answer with an explanation. Try again in a moment.");
+    }
+    return new DashboardExplanation(
+        DashboardBrief.restorePeople(text, brief.people()),
+        chosenModel(ask.model(), mine),
+        mine.usingOwnGateway());
   }
 
   /** The policy as the model is told it: see {@link AssistPrompts#policyForExplaining}. */
