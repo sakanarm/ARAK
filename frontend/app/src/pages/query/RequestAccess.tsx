@@ -24,6 +24,7 @@ import {
   type RequestTemplate,
 } from '../../api/requestTemplates';
 import { usablePurpose, usePurposes } from '../../api/purposes';
+import { usePurposeConcerns } from '../../api/sensitiveData';
 import { FIELD, TextField } from '../policies/controls';
 import {
   cappedBy,
@@ -32,6 +33,7 @@ import {
   RequestPurpose,
   startingPurpose,
 } from '../policies/purposePickers';
+import PurposeConcerns, { refusedBy } from '../requests/PurposeConcerns';
 
 /**
  * What to do about a refusal, under the refusal itself.
@@ -218,13 +220,16 @@ export function RequestAccessForm({
   const ceiling = shown.maxDays ?? MAX_DAYS;
   const daysValid =
     parsedDays === null ? shown.allowUntilRevoked : parsedDays >= 1 && parsedDays <= ceiling;
+  const concerns = usePurposeConcerns([refusal.assetFqn], sentPurpose);
   const problem =
     checkAnswers(form, {
       reason,
       purpose: sentPurpose,
       days: parsedDays,
       reference: form.referenceLabel ? reference : '',
-    }) ?? purposeDaysProblem(limiting, parsedDays);
+    }) ??
+    purposeDaysProblem(limiting, parsedDays) ??
+    refusedBy(concerns);
 
   const send = useMutation({
     mutationFn: () =>
@@ -298,6 +303,7 @@ export function RequestAccessForm({
           placeholder={purpose ?? undefined}
           value={chosen}
         />
+        <PurposeConcerns concerns={concerns} />
 
         <label className="tw:flex tw:flex-col tw:gap-1.5">
           <span className="tw:text-sm tw:font-medium tw:text-secondary">

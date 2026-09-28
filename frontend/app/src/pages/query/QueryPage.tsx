@@ -982,6 +982,23 @@ function ResultPanel({
         </div>
       )}
 
+      {(result.warnings ?? []).length > 0 && (
+        <div
+          aria-label="Sensitive data"
+          className="tw:shrink-0 tw:border-b tw:border-secondary tw:bg-warning-primary tw:px-3 tw:py-2"
+          role="status">
+          {(result.warnings ?? []).map((concern) => (
+            <p
+              className="tw:flex tw:items-start tw:gap-2 tw:text-xs tw:text-warning-primary"
+              key={concern.table}>
+              <AlertTriangle className="tw:mt-0.5 tw:size-3.5 tw:shrink-0" />
+              {/* The rule only warns: the query ran, and the record is marked. */}
+              <span>{concern.message}</span>
+            </p>
+          ))}
+        </div>
+      )}
+
       {tab === 'results' && <AppliedPolicies result={result} />}
 
       <div className="tw:min-h-0 tw:flex-1 tw:overflow-auto">

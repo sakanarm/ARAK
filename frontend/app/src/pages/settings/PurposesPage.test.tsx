@@ -23,6 +23,8 @@ jest.mock('../../api/purposes', () => ({
   reinstatePurpose: (...args: unknown[]) => reinstatePurpose(...args),
 }));
 
+jest.mock('./SensitiveDataSection', () => () => null);
+
 jest.mock('../../api/client', () => ({
   apiErrorMessage: (error: { message?: string }, fallback: string) => error?.message ?? fallback,
 }));

@@ -5,6 +5,7 @@ import NewRequestPage, { standingOf } from './NewRequestPage';
 import type { Eligibility } from '../../api/accessRequests';
 import type { Purpose, PurposeListing } from '../../api/purposes';
 import type { RequestTemplate } from '../../api/requestTemplates';
+import type { Concern } from '../../api/sensitiveData';
 
 const requestAccess = jest.fn();
 const fetchEligibility = jest.fn();
@@ -61,6 +62,27 @@ jest.mock('../../api/purposes', () => ({
   ...jest.requireActual('../../api/purposes'),
   usePurposes: () => ({ data: register, isLoading: false, isError: false }),
 }));
+
+// What the sensitive data rule says of the tables and the purpose named (M31b).
+let concernsFor: (assets: (string | null | undefined)[], purpose: string | null | undefined) => Concern[] =
+  () => [];
+
+jest.mock('../../api/sensitiveData', () => ({
+  ...jest.requireActual('../../api/sensitiveData'),
+  usePurposeConcerns: (assets: (string | null | undefined)[], purpose: string | null | undefined) =>
+    concernsFor(assets, purpose),
+}));
+
+function concern(table: string, purposeKey: string | null, mode: 'WARN' | 'ENFORCE'): Concern {
+  return {
+    table,
+    labels: ['PII.Sensitive'],
+    purpose: purposeKey,
+    purposeName: purposeKey,
+    mode,
+    message: `${table} holds sensitive data (PII.Sensitive), and ${purposeKey ?? 'nothing'} is not a purpose sensitive data may be used for`,
+  };
+}
 
 const BUILT_IN: RequestTemplate = {
   id: null,
@@ -140,6 +162,7 @@ function renderPage() {
 beforeEach(() => {
   jest.clearAllMocks();
   register = undefined;
+  concernsFor = () => [];
   fetchAssets.mockResolvedValue({ items: TABLES, total: TABLES.length, limit: 50, offset: 0 });
   fetchTemplate.mockImplementation((f: string) => Promise.resolve(f === fqn('customers') ? DPIA : BUILT_IN));
   fetchEligibility.mockImplementation((f: string) =>
@@ -275,6 +298,40 @@ describe('NewRequestPage', () => {
     fireEvent.click(send);
     await waitFor(() => expect(requestAccess).toHaveBeenCalledTimes(1));
     expect(requestAccess.mock.calls[0][0]).toMatchObject({ purpose: 'fraud-analysis', days: 7 });
+  });
+
+  it('checks every table going against the purpose, and sends nothing a table would refuse', async () => {
+    register = { purposes: REGISTER, canEdit: false };
+    const checked: (string | null | undefined)[][] = [];
+    concernsFor = (assets, key) => {
+      checked.push(assets);
+      if (key === 'fraud-analysis') return [];
+      return assets
+        .filter((asset) => asset === fqn('invoices') || asset === fqn('orders'))
+        .map((asset) => concern(asset!, key ?? null, asset === fqn('invoices') ? 'ENFORCE' : 'WARN'));
+    };
+    requestAccess.mockResolvedValue({ ticket: 'AR-104' });
+    renderPage();
+    await choose('orders', 'invoices');
+    fireEvent.change(screen.getByLabelText('Why you need them'), { target: { value: 'Case 4411' } });
+
+    await waitFor(() => expect(screen.getByRole('alert', { name: 'Refused for this purpose' })).toBeInTheDocument());
+    expect(screen.getByRole('alert', { name: 'Refused for this purpose' })).toHaveTextContent(fqn('invoices'));
+    expect(screen.getByRole('note', { name: 'Sensitive data' })).toHaveTextContent(fqn('orders'));
+    expect(checked.at(-1)).toEqual(expect.arrayContaining([fqn('orders'), fqn('invoices')]));
+    const send = screen.getByRole('button', { name: 'Send 2 requests' });
+    expect(send).toBeDisabled();
+    expect(screen.getByRole('status')).toHaveTextContent('Choose a purpose sensitive data may be used for');
+
+    fireEvent.click(screen.getByRole('button', { name: /Purpose/ }));
+    fireEvent.click(await screen.findByRole('option', { name: /^Fraud analysis/ }));
+
+    expect(screen.queryByRole('alert', { name: 'Refused for this purpose' })).toBeNull();
+    expect(screen.queryByRole('note', { name: 'Sensitive data' })).toBeNull();
+    await waitFor(() => expect(send).toBeEnabled());
+    fireEvent.click(send);
+    await waitFor(() => expect(requestAccess).toHaveBeenCalledTimes(2));
+    expect(requestAccess.mock.calls[0][0]).toMatchObject({ purpose: 'fraud-analysis' });
   });
 
   it('removes a table from the tray and sends nothing when none can be asked for', async () => {

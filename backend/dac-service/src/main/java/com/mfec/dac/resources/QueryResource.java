@@ -146,6 +146,9 @@ public class QueryResource {
       // The planner's price for it, in the source's own units (FR-6.3 cost
       // guard); null when the engine was not asked.
       body.put("estimatedCost", result.estimatedCost());
+      // Tables holding sensitive data the purpose does not allow, read anyway
+      // because the rule only warns (FR-21); the refusal under Enforce is a 403.
+      body.put("warnings", result.warnings());
       return body;
     } catch (QueryService.BusyException e) {
       throw busy(e);

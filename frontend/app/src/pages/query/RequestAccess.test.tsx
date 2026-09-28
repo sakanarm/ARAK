@@ -5,6 +5,7 @@ import RequestAccess from './RequestAccess';
 import type { AccessRequest, Refusal, Route } from '../../api/accessRequests';
 import type { Purpose, PurposeListing } from '../../api/purposes';
 import type { RequestTemplate } from '../../api/requestTemplates';
+import type { Concern } from '../../api/sensitiveData';
 
 const requestAccess = jest.fn();
 const fetchEffectiveTemplate = jest.fn();
@@ -60,6 +61,27 @@ jest.mock('../../api/purposes', () => ({
   ...jest.requireActual('../../api/purposes'),
   usePurposes: () => ({ data: register, isLoading: false, isError: false }),
 }));
+
+// What the sensitive data rule says of the tables and the purpose named (M31b).
+let concernsFor: (assets: (string | null | undefined)[], purpose: string | null | undefined) => Concern[] =
+  () => [];
+
+jest.mock('../../api/sensitiveData', () => ({
+  ...jest.requireActual('../../api/sensitiveData'),
+  usePurposeConcerns: (assets: (string | null | undefined)[], purpose: string | null | undefined) =>
+    concernsFor(assets, purpose),
+}));
+
+function concern(table: string, purposeKey: string | null, mode: 'WARN' | 'ENFORCE'): Concern {
+  return {
+    table,
+    labels: ['PII.Sensitive'],
+    purpose: purposeKey,
+    purposeName: purposeKey,
+    mode,
+    message: `${table} holds sensitive data (PII.Sensitive), and ${purposeKey ?? 'nothing'} is not a purpose sensitive data may be used for`,
+  };
+}
 
 const FQN = 'demo-pg.salesdb.sales.customer';
 const OWNER = { type: 'user', name: 'owner_o', direct: true, inheritedFrom: null };
@@ -166,6 +188,7 @@ const PII: RequestTemplate = {
 
 beforeEach(() => {
   register = undefined;
+  concernsFor = () => [];
   requestAccess.mockReset();
   fetchEffectiveTemplate.mockReset();
   // No template configured: the built-in form, as before templates.
@@ -295,6 +318,48 @@ describe('RequestAccess with the register of purposes', () => {
 
     await screen.findByText(/Request sent/);
     expect(requestAccess.mock.calls[0][0]).toMatchObject({ purpose: 'fraud-analysis', days: 7 });
+  });
+
+  it('warns before sending when the rule only warns, and still sends', async () => {
+    concernsFor = (assets, key) => (key === 'reporting' ? [concern(assets[0]!, key, 'WARN')] : []);
+    requestAccess.mockResolvedValue(sent());
+    renderBox(refusal());
+    const { reason, send } = openForm();
+    fireEvent.change(reason, { target: { value: 'Audit' } });
+    expect(screen.queryByRole('note', { name: 'Sensitive data' })).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: /Purpose/ }));
+    fireEvent.click(await screen.findByRole('option', { name: /^Reporting/ }));
+
+    const note = screen.getByRole('note', { name: 'Sensitive data' });
+    expect(note).toHaveTextContent(`${FQN} holds sensitive data (PII.Sensitive), and reporting`);
+    expect(note).toHaveTextContent('You can still ask; whoever decides is told.');
+    expect(send).toBeEnabled();
+    fireEvent.click(send);
+
+    await screen.findByText(/Request sent/);
+    expect(requestAccess.mock.calls[0][0]).toMatchObject({ purpose: 'reporting' });
+  });
+
+  it('holds the request back when the rule is enforced, until a purpose it allows is chosen', async () => {
+    concernsFor = (assets, key) => (key === 'fraud-analysis' ? [] : [concern(assets[0]!, key ?? null, 'ENFORCE')]);
+    requestAccess.mockResolvedValue(sent());
+    renderBox(refusal());
+    const { reason, send } = openForm();
+    fireEvent.change(reason, { target: { value: 'Audit' } });
+
+    const alert = screen.getByRole('alert', { name: 'Refused for this purpose' });
+    expect(alert).toHaveTextContent('A request for it would be refused.');
+    expect(send).toBeDisabled();
+
+    fireEvent.click(screen.getByRole('button', { name: /Purpose/ }));
+    fireEvent.click(await screen.findByRole('option', { name: /^Fraud analysis/ }));
+
+    expect(screen.queryByRole('alert', { name: 'Refused for this purpose' })).toBeNull();
+    await waitFor(() => expect(send).toBeEnabled());
+    fireEvent.click(send);
+    await screen.findByText(/Request sent/);
+    expect(requestAccess.mock.calls[0][0]).toMatchObject({ purpose: 'fraud-analysis' });
   });
 
   it('gives the days back when a purpose without a limit is chosen instead', async () => {

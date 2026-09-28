@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { apiClient } from './client';
+import type { Concern } from './sensitiveData';
 
 /**
  * Enforcement mode 5.2, from the browser (FR-6.3, 5.2a).
@@ -73,6 +74,11 @@ export interface QueryResult {
    * guard is off for the engine, or the planner could not be asked.
    */
   estimatedCost?: number | null;
+  /**
+   * Tables holding sensitive data the purpose named does not allow, when the
+   * rule only warns (M31b): the query ran, and the record is marked.
+   */
+  warnings?: Concern[];
 }
 
 /** The service had no room for one more read; nothing was sent (FR-6.3). */

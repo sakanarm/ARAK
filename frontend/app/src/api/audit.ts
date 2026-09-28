@@ -21,6 +21,7 @@ export type RefusalCategory =
   | 'UNGOVERNED'
   | 'CANNOT_ENFORCE'
   | 'ALL_COLUMNS_HIDDEN'
+  | 'PURPOSE_NOT_ALLOWED'
   | 'UNPARSEABLE'
   | 'NOT_READ_ONLY'
   | 'UNQUALIFIED'
@@ -37,6 +38,7 @@ export const CATEGORY_LABELS: Record<RefusalCategory, string> = {
   UNGOVERNED: 'Table not governed',
   CANNOT_ENFORCE: 'Policy cannot be enforced here',
   ALL_COLUMNS_HIDDEN: 'Every column hidden',
+  PURPOSE_NOT_ALLOWED: 'Purpose not for sensitive data',
   UNPARSEABLE: 'Could not be parsed',
   NOT_READ_ONLY: 'Not a SELECT',
   UNQUALIFIED: 'Table name ambiguous',

@@ -26,6 +26,8 @@ public final class QueryRefusals {
     CANNOT_ENFORCE,
     /** Every column of a table is hidden from this person. */
     ALL_COLUMNS_HIDDEN,
+    /** The table holds sensitive data the purpose named does not allow (FR-21). */
+    PURPOSE_NOT_ALLOWED,
     /** Not SQL the proxy could read. */
     UNPARSEABLE,
     /** Anything other than SELECT. */
@@ -70,6 +72,11 @@ public final class QueryRefusals {
     }
     if (text.startsWith("Every column of ") && text.endsWith(" is hidden from this principal")) {
       return Category.ALL_COLUMNS_HIDDEN;
+    }
+    if (text.contains(" holds sensitive data (")
+        && (text.contains(" is not a purpose sensitive data may be used for")
+            || text.contains(", and no purpose was named"))) {
+      return Category.PURPOSE_NOT_ALLOWED;
     }
     if (text.startsWith("This statement could not be parsed")) {
       return Category.UNPARSEABLE;

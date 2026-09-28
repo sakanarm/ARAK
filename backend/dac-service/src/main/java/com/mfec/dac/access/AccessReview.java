@@ -4,6 +4,7 @@ import com.mfec.dac.catalog.ColumnDescriptionStore;
 import com.mfec.dac.engine.AssetContext;
 import com.mfec.dac.engine.ColumnContext;
 import com.mfec.dac.engine.FacetValue;
+import com.mfec.dac.purpose.SensitiveData;
 import com.mfec.dac.identity.PrincipalQuery;
 import com.mfec.dac.policy.AssetContextLoader;
 import com.mfec.dac.policy.DecisionService;
@@ -84,6 +85,7 @@ public class AccessReview {
   private final AssetContextLoader contexts;
   private final GrantStore grants;
   private final Preauthorization preauthorizations;
+  private final SensitiveData sensitive;
 
   public AccessReview(
       Jdbi jdbi,
@@ -93,6 +95,24 @@ public class AccessReview {
       PrincipalQuery people,
       AssetContextLoader contexts,
       GrantStore grants) {
+    this(jdbi, decisions, requests, policies, people, contexts, grants, null);
+  }
+
+  /**
+   * @param sensitive what counts as sensitive data (FR-21): which columns a
+   *     review calls sensitive, and whether the purpose asked for allows them;
+   *     null = the built-in rule, with no purpose check
+   */
+  public AccessReview(
+      Jdbi jdbi,
+      DecisionService decisions,
+      AccessRequestStore requests,
+      PolicyStore policies,
+      PrincipalQuery people,
+      AssetContextLoader contexts,
+      GrantStore grants,
+      SensitiveData sensitive) {
+    this.sensitive = sensitive == null ? SensitiveData.off() : sensitive;
     this.jdbi = jdbi;
     this.decisions = decisions;
     this.requests = requests;
@@ -362,8 +382,11 @@ public class AccessReview {
             ? Map.of()
             : jdbi.withHandle(handle -> ColumnDescriptionStore.effectiveByName(handle, fqn));
 
-    Access now = access(decisions.decide(ask), columns, described);
-    Access ifGranted = access(decisions.decideAsIfGranted(ask), columns, described);
+    // One reading of the rule for the whole review, so the columns it calls
+    // sensitive and the purpose check below cannot disagree.
+    SensitiveData.Rule rule = sensitive.current();
+    Access now = access(decisions.decide(ask), columns, described, rule);
+    Access ifGranted = access(decisions.decideAsIfGranted(ask), columns, described, rule);
 
     PolicyCheck policy = null;
     Access ifPolicy = null;
@@ -381,15 +404,17 @@ public class AccessReview {
                 one.environment(),
                 one.version(),
                 candidate.bound());
-        ifPolicy = access(candidate.decision(), columns, described);
+        ifPolicy = access(candidate.decision(), columns, described, rule);
       } else {
         policy = new PolicyCheck(policyId, null, null, null, null, 0, false);
       }
     }
 
     Requester requester = requester(request, at);
-    TableFacts table = table(fqn, asset, request.approvers());
+    TableFacts table = table(fqn, asset, request.approvers(), rule);
     List<Peers> peers = peers(who, fqn);
+    SensitiveData.Judgement purposeCheck =
+        jdbi.withHandle(handle -> sensitive.judge(handle, fqn, request.purpose()));
 
     Judgement judged =
         judge(
@@ -401,7 +426,8 @@ public class AccessReview {
             ifGranted,
             ifPolicy,
             policy,
-            peers);
+            peers,
+            purposeCheck == null ? null : purposeCheck.concern());
     return new Review(
         request.id(),
         fqn,
@@ -701,13 +727,16 @@ public class AccessReview {
   }
 
   private static TableFacts table(
-      String fqn, AssetContext asset, List<AccessRequestStore.Approver> owners) {
+      String fqn,
+      AssetContext asset,
+      List<AccessRequestStore.Approver> owners,
+      SensitiveData.Rule rule) {
     if (asset == null) {
       return new TableFacts(fqn, false, List.of(), List.of(), owners, 0, 0);
     }
     int sensitive = 0;
     for (ColumnContext column : asset.columns()) {
-      if (!sensitiveTags(column).isEmpty()) {
+      if (!rule.labels(column).isEmpty()) {
         sensitive++;
       }
     }
@@ -773,6 +802,15 @@ public class AccessReview {
   /** One decision, read column by column, each with what it holds (keyed by lower-case name). */
   static Access access(
       PolicyDecision decision, List<ColumnContext> columns, Map<String, String> described) {
+    return access(decision, columns, described, SensitiveData.Rule.BUILT_IN);
+  }
+
+  /** As above, with sensitive columns found by this rule. */
+  static Access access(
+      PolicyDecision decision,
+      List<ColumnContext> columns,
+      Map<String, String> described,
+      SensitiveData.Rule rule) {
     Map<UUID, String> names = new HashMap<>();
     List<Reason> reasons = new ArrayList<>();
     for (DecisionReason reason : safe(decision.getReasons())) {
@@ -800,7 +838,7 @@ public class AccessReview {
     List<ColumnFate> fates = new ArrayList<>(columns.size());
     for (ColumnContext column : columns) {
       String key = lower(column.name());
-      List<String> tags = sensitiveTags(column);
+      List<String> tags = rule.labels(column);
       String description = described.get(key);
       if (hidden.contains(key)) {
         fates.add(
@@ -881,54 +919,17 @@ public class AccessReview {
   // --------------------------------------------------------------- sensitivity
 
   /**
-   * The tags that make a column sensitive, most specific only.
-   *
-   * <p>Anything under the PII or PersonalData classifications, or a tag that
-   * calls itself sensitive, confidential, restricted or secret -- except one
-   * that says it is not ({@code PII.NonSensitive}). Only the most specific
-   * tags count, because the cache spreads every tag's ancestors beside it: the
-   * {@code PII} that sits next to {@code PII.NonSensitive} is that tag's
-   * parent, not a second label.
+   * The labels that make a column sensitive under the built-in rule, most
+   * specific only. What counts is a setting now (Settings, Purposes, FR-21);
+   * see {@link SensitiveData} for the rule and why only the most specific
+   * label is read.
    */
   static List<String> sensitiveTags(ColumnContext column) {
-    List<String> tags = values(column.facets().get(FacetCondition.FacetType.TAGS));
-    List<String> out = new ArrayList<>();
-    for (String tag : tags) {
-      if (isAncestorOfAnother(tag, tags)) {
-        continue;
-      }
-      if (sensitive(tag)) {
-        out.add(tag);
-      }
-    }
-    return List.copyOf(out);
+    return SensitiveData.Rule.BUILT_IN.labels(column);
   }
 
   static boolean sensitive(String tag) {
-    String t = tag.toLowerCase(Locale.ROOT);
-    if (t.contains("nonsensitive") || t.contains("non-sensitive") || t.contains("public")) {
-      return false;
-    }
-    if (t.equals("pii") || t.startsWith("pii.") || t.equals("personaldata")
-        || t.startsWith("personaldata.")) {
-      return true;
-    }
-    for (String word : List.of("sensitive", "confidential", "restricted", "secret")) {
-      if (t.contains(word)) {
-        return true;
-      }
-    }
-    return false;
-  }
-
-  private static boolean isAncestorOfAnother(String tag, List<String> tags) {
-    String prefix = tag + ".";
-    for (String other : tags) {
-      if (other.length() > prefix.length() && other.startsWith(prefix)) {
-        return true;
-      }
-    }
-    return false;
+    return SensitiveData.builtInSensitive(tag);
   }
 
   // --------------------------------------------------------------- judging
@@ -953,6 +954,24 @@ public class AccessReview {
       Access ifPolicy,
       PolicyCheck policy,
       List<Peers> peers) {
+    return judge(days, purpose, requester, table, now, ifGranted, ifPolicy, policy, peers, null);
+  }
+
+  /**
+   * @param purposeConcern the table holds sensitive data the purpose asked for
+   *     does not allow (FR-21); null when it does, or nothing there is sensitive
+   */
+  static Judgement judge(
+      Integer days,
+      String purpose,
+      Requester requester,
+      TableFacts table,
+      Access now,
+      Access ifGranted,
+      Access ifPolicy,
+      PolicyCheck policy,
+      List<Peers> peers,
+      SensitiveData.Concern purposeConcern) {
     List<Factor> factors = new ArrayList<>();
     List<Conflict> conflicts = new ArrayList<>();
     List<Suggestion> suggestions = new ArrayList<>();
@@ -1008,7 +1027,20 @@ public class AccessReview {
                   + (rejectedHere == 1 ? " time" : " times")
                   + " before"));
     }
-    if (purpose == null || purpose.isBlank()) {
+    if (purposeConcern != null) {
+      // Under Enforce the form would refuse it now; one asked before the
+      // switch still reaches a reviewer, who should see why it would not pass.
+      factors.add(
+          new Factor(
+              purposeConcern.refuses() ? "HIGH" : "MEDIUM",
+              "PURPOSE_NOT_FOR_SENSITIVE",
+              (purposeConcern.purposeName() == null
+                      ? "No purpose was given"
+                      : purposeConcern.purposeName()
+                          + " is not a purpose sensitive data may be used for")
+                  + ", and the table holds "
+                  + String.join(", ", purposeConcern.labels())));
+    } else if (purpose == null || purpose.isBlank()) {
       factors.add(new Factor("LOW", "NO_PURPOSE", "No purpose was given"));
     }
     if (!table.known()) {
@@ -1195,7 +1227,7 @@ public class AccessReview {
         new Risk(level, List.copyOf(factors)),
         List.copyOf(conflicts),
         List.copyOf(suggestions),
-        recommend(days, purpose, requester, table, now, ifGranted, peers));
+        recommend(days, purpose, requester, table, now, ifGranted, peers, purposeConcern));
   }
 
   // --------------------------------------------------------------- recommending
@@ -1226,7 +1258,8 @@ public class AccessReview {
       TableFacts table,
       Access now,
       Access ifGranted,
-      List<Peers> peers) {
+      List<Peers> peers,
+      SensitiveData.Concern purposeConcern) {
     if (!requester.known() || !requester.enabled()) {
       String why =
           requester.username()
@@ -1251,6 +1284,12 @@ public class AccessReview {
 
     if (purpose == null || purpose.isBlank()) {
       signals.add(new Signal("NO_PURPOSE", -10, "No purpose was given"));
+    } else if (purposeConcern != null) {
+      // Giving a purpose earns nothing when it is one sensitive data may not be used for.
+      signals.add(
+          new Signal(
+              "PURPOSE_NOT_FOR_SENSITIVE", -15,
+              purposeConcern.purposeName() + " is not a purpose sensitive data may be used for"));
     } else {
       signals.add(new Signal("PURPOSE", 10, "A purpose was given"));
     }

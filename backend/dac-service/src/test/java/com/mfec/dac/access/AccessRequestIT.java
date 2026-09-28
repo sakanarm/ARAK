@@ -2823,6 +2823,93 @@ class AccessRequestIT {
     }
   }
 
+  @Nested
+  @DisplayName("sensitive data")
+  class Sensitive {
+
+    private com.mfec.dac.purpose.PurposeStore register;
+    private com.mfec.dac.purpose.SensitiveData sensitive;
+    private AccessRequestStore guarded;
+
+    @BeforeEach
+    void builtInWarning() {
+      jdbi.useHandle(
+          handle -> {
+            handle.execute("DELETE FROM purpose WHERE created_by <> 'system'");
+            handle.execute("UPDATE purpose SET status = 'ACTIVE', max_days = NULL");
+            handle.execute(
+                "UPDATE sensitive_data_rule SET built_in = true, include = '[]', exclude = '[]',"
+                    + " mode = 'WARN', updated_by = 'system'");
+            handle.execute("DELETE FROM audit_sensitive_data_rule WHERE actor <> 'system'");
+          });
+      register = new com.mfec.dac.purpose.PurposeStore(jdbi);
+      sensitive = new com.mfec.dac.purpose.SensitiveData(jdbi, json);
+      guarded =
+          new AccessRequestStore(jdbi, json, grants, workflows, templates, register, sensitive);
+    }
+
+    private void mode(com.mfec.dac.purpose.SensitiveData.Mode mode) {
+      sensitive.update(
+          new com.mfec.dac.purpose.SensitiveData.Settings(true, List.of(), List.of(), mode),
+          "Test " + mode,
+          "admin");
+    }
+
+    private AccessRequestStore.StoredRequest askFor(String purpose) {
+      return guarded.create(
+          new AccessRequestStore.NewRequest(
+              CUSTOMER, idOf("analyst_a"), "analyst_a", null, "Quarter-end reconciliation",
+              purpose, 7, null, null, null, null),
+          ANALYST_A);
+    }
+
+    private int stored() {
+      return jdbi.withHandle(
+          h -> h.createQuery("SELECT count(*) FROM access_request").mapTo(Integer.class).one());
+    }
+
+    @Test
+    @DisplayName("under warn, a purpose that does not allow it is still asked for; the reviewer is told")
+    void warnAsks() {
+      assertThat(askFor("reporting").purpose()).isEqualTo("reporting");
+    }
+
+    @Test
+    @DisplayName("under enforce, it is refused before anything is stored, and the refusal names the purpose")
+    void enforceRefuses() {
+      mode(com.mfec.dac.purpose.SensitiveData.Mode.ENFORCE);
+
+      assertThatThrownBy(() -> askFor("reporting"))
+          .isInstanceOf(AccessRequestStore.RequestException.class)
+          .hasMessageContaining(CUSTOMER)
+          .hasMessageContaining("Reporting is not a purpose sensitive data may be used for");
+      assertThatThrownBy(() -> askFor(null))
+          .isInstanceOf(AccessRequestStore.RequestException.class)
+          .hasMessageContaining("no purpose was named");
+      assertThat(stored()).isZero();
+    }
+
+    @Test
+    @DisplayName("under enforce, a purpose that allows sensitive data is asked for as ever")
+    void enforceAllows() {
+      register.create(
+          "fraud-review",
+          new com.mfec.dac.purpose.PurposeStore.Details("Fraud review", null, null, true, null, null),
+          "admin");
+      mode(com.mfec.dac.purpose.SensitiveData.Mode.ENFORCE);
+
+      assertThat(askFor("fraud-review").purpose()).isEqualTo("fraud-review");
+    }
+
+    @Test
+    @DisplayName("off asks nothing of the rule")
+    void offAsksNothing() {
+      mode(com.mfec.dac.purpose.SensitiveData.Mode.OFF);
+
+      assertThat(askFor("reporting").purpose()).isEqualTo("reporting");
+    }
+  }
+
   // ------------------------------------------------------------------ fixture
 
   private AccessRequestStore.StoredRequest ask(String who, String fqn, Integer days) {

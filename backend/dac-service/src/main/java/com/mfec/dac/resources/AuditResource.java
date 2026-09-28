@@ -59,7 +59,8 @@ public class AuditResource {
       Set.of(
           QueryRefusals.Category.POLICY_DENY,
           QueryRefusals.Category.CANNOT_ENFORCE,
-          QueryRefusals.Category.ALL_COLUMNS_HIDDEN);
+          QueryRefusals.Category.ALL_COLUMNS_HIDDEN,
+          QueryRefusals.Category.PURPOSE_NOT_ALLOWED);
 
   private final QueryLog log;
   private final Clock clock;

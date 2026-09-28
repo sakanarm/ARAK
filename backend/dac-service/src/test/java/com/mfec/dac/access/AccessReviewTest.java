@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.mfec.dac.engine.ColumnContext;
 import com.mfec.dac.engine.FacetValue;
+import com.mfec.dac.purpose.SensitiveData;
 import com.mfec.dac.schema.api.DecisionReason;
 import com.mfec.dac.schema.api.MaskingSpec;
 import com.mfec.dac.schema.api.PolicyDecision;
@@ -419,6 +420,63 @@ class AccessReviewTest {
       assertThat(r.score()).isEqualTo(100);
       assertThat(r.suggestedDays()).isNull();
       assertThat(r.signals().get(4).detail()).contains("department", "FINANCE", "Finance.Risk");
+    }
+
+    @Test
+    void aPurposeSensitiveDataMayNotBeUsedForEarnsNothingAndIsNamed() {
+      AccessReview.Access masked = AccessReview.access(maskingEmail(), COLUMNS);
+      SensitiveData.Concern warned =
+          new SensitiveData.Concern(
+              SensitiveData.Mode.WARN, FQN, List.of("PII.Sensitive"), "reporting", "Reporting", "m");
+
+      AccessReview.Judgement judged =
+          AccessReview.judge(
+              5, "reporting", finance(), financeTable(), none(), masked, null, null, List.of(),
+              warned);
+      assertThat(signals(judged.recommendation())).startsWith("PURPOSE_NOT_FOR_SENSITIVE");
+      assertThat(judged.recommendation().signals().get(0).points()).isNegative();
+      AccessReview.Factor factor =
+          judged.risk().factors().stream()
+              .filter(f -> f.code().equals("PURPOSE_NOT_FOR_SENSITIVE"))
+              .findFirst()
+              .orElseThrow();
+      assertThat(factor.level()).isEqualTo("MEDIUM");
+      assertThat(factor.detail())
+          .isEqualTo("Reporting is not a purpose sensitive data may be used for, and the table holds PII.Sensitive");
+
+      SensitiveData.Concern refused =
+          new SensitiveData.Concern(
+              SensitiveData.Mode.ENFORCE, FQN, List.of("PII.Sensitive"), null, null, "m");
+      AccessReview.Judgement unnamed =
+          AccessReview.judge(
+              5, null, finance(), financeTable(), none(), masked, null, null, List.of(), refused);
+      assertThat(factors(unnamed)).contains("PURPOSE_NOT_FOR_SENSITIVE").doesNotContain("NO_PURPOSE");
+      assertThat(unnamed.risk().level()).isEqualTo("HIGH");
+      assertThat(signals(unnamed.recommendation())).contains("NO_PURPOSE");
+    }
+
+    @Test
+    void theConfiguredRuleDecidesWhichColumnsAreSensitive() {
+      ColumnContext salary =
+          ColumnContext.named("salary").facet(FacetType.TAGS, "Finance", "Finance.Salary").build();
+      SensitiveData.Rule finance =
+          new SensitiveData.Rule(
+              false,
+              List.of(new SensitiveData.Label(SensitiveData.Kind.CLASSIFICATION, "Finance")),
+              List.of(),
+              SensitiveData.Mode.WARN,
+              "author_a",
+              null);
+
+      assertThat(AccessReview.access(allowed(), List.of(salary)).sensitiveInClear()).isEmpty();
+      assertThat(
+              AccessReview.access(allowed(), List.of(salary), java.util.Map.of(), finance)
+                  .sensitiveInClear())
+          .extracting(AccessReview.ColumnFate::name)
+          .containsExactly("salary");
+      // With the built-in rule off, the PII columns are no longer counted.
+      assertThat(AccessReview.access(allowed(), COLUMNS, java.util.Map.of(), finance).sensitiveInClear())
+          .isEmpty();
     }
 
     @Test

@@ -101,9 +101,11 @@ import com.mfec.dac.resources.GovernanceResource;
 import com.mfec.dac.resources.SearchResource;
 import com.mfec.dac.resources.OpenMetadataSettingsResource;
 import com.mfec.dac.purpose.PurposeStore;
+import com.mfec.dac.purpose.SensitiveData;
 import com.mfec.dac.resources.PolicyResource;
 import com.mfec.dac.resources.PurposeResource;
 import com.mfec.dac.resources.PrincipalResource;
+import com.mfec.dac.resources.SensitiveDataResource;
 import com.mfec.dac.resources.SourceResource;
 import com.mfec.dac.source.DataSourceStore;
 import com.mfec.dac.source.jdbc.CredentialResolver;
@@ -353,6 +355,11 @@ public class DacApplication extends Application<DacConfiguration> {
     // everywhere rather than a word typed four ways.
     PurposeStore purposes = new PurposeStore(jdbi);
     environment.jersey().register(new PurposeResource(purposes));
+    // What counts as sensitive data, and what happens when a purpose that does
+    // not allow it reaches a table holding some: one rule for the query proxy,
+    // the request form and a reviewer's reading of a request.
+    SensitiveData sensitiveData = new SensitiveData(jdbi, environment.getObjectMapper());
+    environment.jersey().register(new SensitiveDataResource(sensitiveData));
     environment
         .jersey()
         .register(
@@ -471,11 +478,12 @@ public class DacApplication extends Application<DacConfiguration> {
     AccessRequestStore accessRequests =
         new AccessRequestStore(
             jdbi, environment.getObjectMapper(), grants, accessWorkflows, requestTemplates,
-            purposes);
+            purposes, sensitiveData);
     AccessEligibility eligibility = new AccessEligibility(decisionService, accessRequests);
     AccessReview accessReview =
         new AccessReview(
-            jdbi, decisionService, accessRequests, policyStore, principalQuery, contexts, grants);
+            jdbi, decisionService, accessRequests, policyStore, principalQuery, contexts, grants,
+            sensitiveData);
     environment
         .jersey()
         .register(
@@ -498,7 +506,8 @@ public class DacApplication extends Application<DacConfiguration> {
                 resultCache,
                 queryAdmission,
                 queryCosts,
-                java.time.Clock.systemUTC()),
+                java.time.Clock.systemUTC(),
+                sensitiveData),
             eligibility,
             config.getQueryLimits().getExportTimeoutSeconds(),
             purposes));

@@ -1,6 +1,6 @@
 # HANDOFF — ARAK (Data Access Control Platform)
 
-> อัปเดต: 2026-09-28 · ข้อ CN (**ทะเบียน Purpose (M31a · FR-21)** — Settings → Purposes · ฐานกฎหมาย PDPA · ข้อมูลอ่อนไหว · ระยะสิทธิ์สูงสุด · ปลดแทนลบ + ประวัติ · picker ใน policy / template / ฟอร์มขอ / Pre-authorize / Query / Simulator · server ตรวจทุกที่ · เหลือ M31b) · ข้อ CM (**เลือก column ให้ NokRak ร่าง description ได้** — ติ๊กทีละ column หรือทั้งหมดที่เห็น · ร่างใหม่ทับ column ที่มีคำอธิบายแล้วได้ในฟอร์ม · **roadmap M31–M36: object ที่ ARAK ควรเก็บเพิ่มนอกจาก policy** · **NokRak ไม่ตอบ "ไม่พบ" เมื่อตารางที่ตรงถูกกันสิทธิ์ — บอกจำนวนแทน** · คำอธิบายตัวอย่าง PO 49 column ขึ้น prod แล้ว) · ข้อ CL (**All rows** — ดาวน์โหลดทุกแถวเป็น CSV ผ่าน policy เดิม · audit บอกว่าเป็นการดาวน์โหลด · hover column บอก description · คลิกขวาไป Data Catalog · ลากขนาด editor ขึ้นลง / explanation ซ้ายขวา · FR-6.3) · ข้อ CK (**Find data** — NokRak หาตารางจากประโยคในหน้า Query · ตรวจสิทธิ์ก่อนโมเดลเห็นตาราง · อ่านได้ → เติม SQL · ขอได้ → ฟอร์มขอสิทธิ์ · M16) · ข้อ CJ.1 (ยิง explain-dashboard กับ LLM จริงแล้วผ่าน · ภาษาไทยแยก query กับ คำขอสิทธิ์) · ข้อ CJ (NokRak อธิบาย dashboard — panel **Ask NokRak** ใต้ key figures เลือกหัวข้อได้ · ชื่อคนเป็น `[P1]` ก่อนส่ง · M15 (ข) · M15 ครบ) · ข้อ CI (NokRak อธิบาย policy — ปุ่ม **Explain with NokRak** ในหน้า policy · M15 (ก)) · ข้อ CH (ปุ่ม **Query** ที่หัวหน้าตาราง สำหรับคนที่อ่านได้แล้ว — เปิดหน้า Query บน source ของตารางพร้อม SQL · FR-1.6d) · ข้อ CG (เปลี่ยนรหัสผ่านเอง — Profile → Password · หน้าบังคับเปลี่ยนเมื่อรหัสถูก admin ตั้ง · M2 / FR-2.2) · ข้อ CF (NokRak ตอบคำถามวิธีใช้ ARAK จากคู่มือที่แพ็กเข้า jar — `search_docs`) · ข้อ CE (สร้าง classification / tag ของ ARAK เองในหน้า Governance — provenance local · sync ไม่ทับ · ไม่เขียนกลับ OM) · ข้อ CD (Column description เขียนใน ARAK · NokRak ร่าง · แสดงใน ticket) · ข้อ CC (tab Access รับ list ยาว — แถบสรุป · chip · ค้น · แบ่งหน้า · กดดูรายละเอียดเต็ม) · ข้อ CB (NokRak ช่วยแก้ policy ที่มีอยู่ — คน review แล้วกด Save เอง) · ข้อ CA (ประวัติ policy · diff · rollback) · ข้อ BW (tag จาก OM ผ่าน webhook/poller ย้าย policy binding ทันที) · ข้อ BV (tab Access เฉพาะผู้ดูแล + Diagram แบบ canvas) · ข้อ BU (FR-1.7 local tag + demo group บน prod) · push ขึ้น origin/main แล้ว · repo https://github.com/sakanarm/ARAK (**public**)
+> อัปเดต: 2026-09-29 · ข้อ CO (**อะไรนับเป็นข้อมูลอ่อนไหว (M31b slice 1)** — Settings → Purposes · รายการรวม / ยกเว้น · กติกา built-in · วัด coverage · ประวัติ · Off / **Warn** / Enforce ที่ Query และคำขอสิทธิ์ · review บอก purpose ที่ไม่อนุญาต) · ข้อ CN (**ทะเบียน Purpose (M31a · FR-21)** — Settings → Purposes · ฐานกฎหมาย PDPA · ข้อมูลอ่อนไหว · ระยะสิทธิ์สูงสุด · ปลดแทนลบ + ประวัติ · picker ใน policy / template / ฟอร์มขอ / Pre-authorize / Query / Simulator · server ตรวจทุกที่ · เหลือ M31b) · ข้อ CM (**เลือก column ให้ NokRak ร่าง description ได้** — ติ๊กทีละ column หรือทั้งหมดที่เห็น · ร่างใหม่ทับ column ที่มีคำอธิบายแล้วได้ในฟอร์ม · **roadmap M31–M36: object ที่ ARAK ควรเก็บเพิ่มนอกจาก policy** · **NokRak ไม่ตอบ "ไม่พบ" เมื่อตารางที่ตรงถูกกันสิทธิ์ — บอกจำนวนแทน** · คำอธิบายตัวอย่าง PO 49 column ขึ้น prod แล้ว) · ข้อ CL (**All rows** — ดาวน์โหลดทุกแถวเป็น CSV ผ่าน policy เดิม · audit บอกว่าเป็นการดาวน์โหลด · hover column บอก description · คลิกขวาไป Data Catalog · ลากขนาด editor ขึ้นลง / explanation ซ้ายขวา · FR-6.3) · ข้อ CK (**Find data** — NokRak หาตารางจากประโยคในหน้า Query · ตรวจสิทธิ์ก่อนโมเดลเห็นตาราง · อ่านได้ → เติม SQL · ขอได้ → ฟอร์มขอสิทธิ์ · M16) · ข้อ CJ.1 (ยิง explain-dashboard กับ LLM จริงแล้วผ่าน · ภาษาไทยแยก query กับ คำขอสิทธิ์) · ข้อ CJ (NokRak อธิบาย dashboard — panel **Ask NokRak** ใต้ key figures เลือกหัวข้อได้ · ชื่อคนเป็น `[P1]` ก่อนส่ง · M15 (ข) · M15 ครบ) · ข้อ CI (NokRak อธิบาย policy — ปุ่ม **Explain with NokRak** ในหน้า policy · M15 (ก)) · ข้อ CH (ปุ่ม **Query** ที่หัวหน้าตาราง สำหรับคนที่อ่านได้แล้ว — เปิดหน้า Query บน source ของตารางพร้อม SQL · FR-1.6d) · ข้อ CG (เปลี่ยนรหัสผ่านเอง — Profile → Password · หน้าบังคับเปลี่ยนเมื่อรหัสถูก admin ตั้ง · M2 / FR-2.2) · ข้อ CF (NokRak ตอบคำถามวิธีใช้ ARAK จากคู่มือที่แพ็กเข้า jar — `search_docs`) · ข้อ CE (สร้าง classification / tag ของ ARAK เองในหน้า Governance — provenance local · sync ไม่ทับ · ไม่เขียนกลับ OM) · ข้อ CD (Column description เขียนใน ARAK · NokRak ร่าง · แสดงใน ticket) · ข้อ CC (tab Access รับ list ยาว — แถบสรุป · chip · ค้น · แบ่งหน้า · กดดูรายละเอียดเต็ม) · ข้อ CB (NokRak ช่วยแก้ policy ที่มีอยู่ — คน review แล้วกด Save เอง) · ข้อ CA (ประวัติ policy · diff · rollback) · ข้อ BW (tag จาก OM ผ่าน webhook/poller ย้าย policy binding ทันที) · ข้อ BV (tab Access เฉพาะผู้ดูแล + Diagram แบบ canvas) · ข้อ BU (FR-1.7 local tag + demo group บน prod) · push ขึ้น origin/main แล้ว · repo https://github.com/sakanarm/ARAK (**public**)
 >
 > อ่านคู่กับ **[docs/DESIGN.md](docs/DESIGN.md)** — ไฟล์นั้นคือ requirement + feature catalogue + สถานะครบทุกข้อ
 > ไฟล์นี้บอกเฉพาะ "ทำถึงไหน จะไปต่อยังไง อะไรที่ลองแล้วไม่เวิร์ค"
@@ -631,7 +631,7 @@ M10 → M23 (ใช้ query log ของ M10 · ส่วน "ปลอดภ�
 M10 → M24 (ข้อ 1–3 ทำได้เลยหลัง query log · ข้อ 4 ต้องมี M11 · ข้อ 5 ต้องมี M19)
 M25 ทำแยกได้ (profile ผ่าน proxy ที่มีแล้ว · sandbox ใช้ source registry ของ M18)
 M31 → M32 → M33  (Purpose ก่อน: รอบทบทวนและ project อ้าง purpose · M33 รวม M27)
-                  M31a ✅ (ข้อ CN) · M31b (grant purpose · รายงาน PII · ม.26) ต่อได้เลย
+                  M31a ✅ (ข้อ CN) · M31b slice 1 ✅ (ข้อ CO · ม.26) · slice 2 (grant purpose · รายงาน PII) ต่อได้เลย
 M34 · M35 ทำแยกได้ (M35 ก่อน M30b — `arak test` ใช้ไฟล์ชุดเดียวกัน)
 M36 → M14 · M21 · M29 · M30 (ทุกตัวต้องมี principal ที่ไม่ใช่คนก่อน)
 
@@ -641,7 +641,39 @@ M36 → M14 · M21 · M29 · M30 (ทุกตัวต้องมี principal
 
 ---
 
-## รอบนี้ — **ข้อ CN: Purpose register (M31a · FR-21)**
+## รอบนี้ — **ข้อ CO: อะไรนับเป็นข้อมูลอ่อนไหว + Off / Warn / Enforce (M31b slice 1 · FR-21 · PDPA ม.26)**
+
+ผู้ใช้ถาม *"ต้องมี ที่ Configure ไหม"* หลัง M31a → เสนอให้ตั้งได้ใน Settings → Purposes (รายการรวม / ยกเว้น · กติกา built-in เปิดไว้ · วัดก่อน save · แก้ได้ admin + POLICY_AUTHOR พร้อมประวัติ · mode Off / **Warn (default)** / Enforce) → ผู้ใช้ตอบ "ต่อ"
+
+**ทำไม** — "sensitive" เคยเป็นกติกาที่เขียนใน code ที่ AccessReview (ชื่อ PII / PersonalData / tag ที่ชื่อบอก sensitive …) · `sensitiveAllowed` ของ purpose บันทึกไว้เฉยๆ ไม่มีผล · องค์กรที่ใช้ชื่อ classification อื่น (เช่น `Confidential.Customer`) หรือใช้ glossary term ตั้งไม่ได้เลย
+
+**backend**
+- **Flyway V44** `sensitive_data_rule` (แถวเดียว `id = 1`) — `built_in` true · `include` / `exclude` jsonb `[{kind, fqn}]` (CLASSIFICATION · TAG · GLOSSARY · TERM) · `mode` OFF / WARN / ENFORCE (default **WARN**) · `updated_by` / `updated_at` · `audit_sensitive_data_rule` append-only (actor · reason · before / after · แถวแรกเป็น system) · `audit_decision` เพิ่ม `sensitive boolean` + `purpose_check` (`WARNED` / `REFUSED`) + partial index
+- `purpose/SensitiveData` — `Rule.labels(...)` (label ที่ specific สุด · exclude ชนะ include · built-in ใช้กับ classification / tag เท่านั้น · นับเฉพาะ `Confirmed`) · `current()` cache 10 วินาที (แก้ในเครื่องนี้เห็นทันที) · `update(settings, reason, actor)` เขียน audit ใน transaction เดียวกัน · `coverage(rule)` (ตาราง / column ที่ครอบ · ตัวอย่าง ≤ 50 · ต่อ label ≤ 30) · `concern(handle, table, purpose)` / `judge(...)` — purpose ไม่ได้ `sensitive_allowed` · ไม่อยู่ในทะเบียน · หรือไม่ได้ระบุ บนตาราง sensitive → `Concern{mode, table, labels, purpose, purposeName, message}`
+- ข้อความ: *"{table} holds sensitive data ({labels}), and {Purpose} is not a purpose sensitive data may be used for. Choose one that is, or ask a policy author to allow it under Settings, Purposes"* · ไม่ระบุ purpose: *"…, and no purpose was named. Name one that sensitive data may be used for"*
+- `QueryService` — ตัดสินหลัง policy เท่านั้น (ตารางที่ policy ปฏิเสธไม่ถูกตัดสินเรื่อง purpose) · WARN → รัน · `warnings[]` ในผล (`QueryResource` ส่งออก) · ENFORCE → ปฏิเสธ · `deniedAsset` null (ไม่เปิดฟอร์มขอสิทธิ์ เพราะไม่ใช่เรื่องสิทธิ์) · `audit_decision.sensitive` (OFF = null) + `purpose_check`
+- `QueryRefusals` หมวดใหม่ `PURPOSE_NOT_ALLOWED` (Query log · Dashboard *Purpose not for sensitive data*) · `AuditResource` ให้ owner เห็นเหตุผลของหมวดนี้เมื่อพูดถึงตารางของตัวเอง (เหมือน POLICY_DENY)
+- `AccessRequestStore` — ENFORCE → ปฏิเสธคำขอก่อนเก็บ (ข้อความเดียวกับ proxy) · Pre-authorize ไม่ตรวจ · `AccessReview` — ใช้กติกาเดียวกันบอกว่า column ไหน sensitive + factor `PURPOSE_NOT_FOR_SENSITIVE` (WARN = MEDIUM · ENFORCE = HIGH) · `AssistPrompts` (คำอธิบายหมวด refusal ให้ NokRak ตอนอธิบาย dashboard) รู้จักหมวดใหม่
+- `resources/SensitiveDataResource` `/v1/sensitive-data`: `GET` (ทุกคนที่ login + `canEdit`) · `PUT` (admin / POLICY_AUTHOR · เหตุผลบังคับ ≤ ความยาวเดียวกับ purpose · label ไม่มีชนิด / ไม่มีชื่อ / อยู่ทั้งสองรายการ / เกิน 100 ต่อรายการ / ชื่อเกิน 256 หรือมี control char / ไม่มีอะไรเปลี่ยน → 400 · ตัดช่องว่างและตัดตัวซ้ำให้) · `POST /preview` (null = กติกาที่ใช้อยู่ · หรือร่าง) + `GET /history` (admin / author / DATA_OWNER / AUDITOR) · `GET /check?asset=&purpose=` (ทุกคนที่ login)
+- **ยังไม่ครอบ**: Decision API (`POST /v1/decisions`) และ Simulator ยังไม่ตรวจเรื่องนี้
+
+**frontend**
+- `api/sensitiveData.ts` — type · `useSensitiveData` · `usePurposeConcerns(assets, purpose)` (หน่วง 300 ms · ถามทีละตาราง · cache 30 วินาที) · `ruleProblem` / `sameSettings` / `describeChange`
+- `pages/settings/SensitiveDataSection.tsx` ใต้ Settings → Purposes — *What counts as sensitive data*: badge mode · built-in · Also counts / Never counts · เตือน *Nothing counts as sensitive* · **Measure coverage** · **History** (ประโยค เช่น *enforce instead of warn; Finance (classification) counted*) · **Edit** (ชนิด + ชื่อจาก vocabulary · radio mode · เตือนก่อน Enforce · **Measure what it covers** กับร่าง · Why บังคับ · *Nothing has changed yet*)
+- `pages/requests/PurposeConcerns.tsx` — WARN = note สีเหลือง *You can still ask; whoever decides is told.* · ENFORCE = alert สีแดง *A request for it would be refused.* · `refusedBy` → ปุ่มส่งปิด *Choose a purpose sensitive data may be used for*
+- `RequestAccess` (จากหน้า Query) + `NewRequestPage` (หลายตาราง — ถามทุกตารางที่จะส่ง) ใช้ `PurposeConcerns` ใต้ purpose · หน้า Query แสดง `warnings` เหนือผล (`role=status` *Sensitive data*) · `api/audit.ts` label หมวดใหม่
+
+**test**
+- backend: `SensitiveDataTest` 10 · `SensitiveDataResourceTest` 8 · `QueryRefusalsTest` · `AccessReviewTest` เพิ่ม → unit **1353 ผ่าน** · IT ใหม่ `SensitiveDataIT` 7 · `SensitiveQueryIT` 7 (Postgres จริง: WARN รันพร้อม warning + audit · ไม่ระบุ purpose บอกว่าไม่ได้ระบุ · ENFORCE ปฏิเสธก่อนอ่าน source บอกชื่อ purpose ไม่เสนอฟอร์มขอ · purpose ที่อนุญาตผ่านแม้ ENFORCE · ตารางไม่ sensitive ไม่ถูกเตือน · OFF = sensitive null · policy-denied ไม่ถูกถามเรื่อง purpose) · `AccessRequestIT.Sensitive` 4 · regression `AccessRequestIT` ทั้งหมด · `QueryLogIT` · `QueryLimitsIT` · `QueryResultCacheIT` · `PurposeStoreIT` · `DashboardIT` ผ่าน
+- jest: `SensitiveDataSection.test` 8 · `RequestAccess.test` +2 (warn ยังส่งได้ · enforce ปิดปุ่มจนเลือก purpose ที่อนุญาต) · `NewRequestPage.test` +1 (ถามทุกตาราง · enforce ตัวเดียวก็ไม่ส่ง) · `PurposesPage.test` mock section → **820 ผ่าน / 82 suites** · tsc · vite build ผ่าน
+
+**พฤติกรรมที่ตั้งใจเปลี่ยน** — AccessReview เคยนับ label ที่ specific สุดด้วยกติกาใน code อย่างเดียว · ตอนนี้นับตาม setting (default = กติกาเดิม ผลเท่าเดิม) และอ่าน classification / glossary ด้วย · `Suggested` ยังไม่นับ
+
+**prod** — V44 ขึ้นพร้อม default = built-in + WARN (ไม่มีใครถูกปฏิเสธเพิ่ม) · smoke test อ่านอย่างเดียว (GET rule · preview · check) · **ไม่เปลี่ยน mode หรือรายการบน prod** — ให้ admin / policy author วัด coverage แล้วตัดสินเอง
+
+**ต่อไป (M31b slice 2)** — grant เก็บ `purpose` + อายุไม่เกิน `max_days` · Dashboard *"ข้อมูล PII ถูกใช้เพื่ออะไร"* จาก `audit_decision.sensitive` + purpose · Decision API / Simulator ตรวจเรื่องเดียวกัน · ปลด purpose → grant เข้ารอบทบทวน (ต้องมี M32)
+
+## รอบก่อนหน้า — **ข้อ CN: Purpose register (M31a · FR-21)**
 
 ผู้ใช้สั่ง "ทำต่อ" หลังแนะนำ M31 เป็นตัวแรกของชุด M31–M36 · แบ่งเป็น **M31a** (ทะเบียน + picker + ตรวจที่ server — รอบนี้) และ **M31b** (grant · รายงาน · บังคับข้อมูลอ่อนไหว)
 
@@ -671,7 +703,7 @@ M36 → M14 · M21 · M29 · M30 (ทุกตัวต้องมี principal
 **ยังไม่ทำ (M31b)**
 - grant เก็บ purpose และอายุไม่เกิน `max_days` ของ purpose (วันนี้บังคับที่คำขอ ไม่ใช่ที่ grant ที่ owner ให้ตรงๆ)
 - รายงาน *"ข้อมูล PII ถูกใช้เพื่ออะไรบ้าง"* บน Dashboard
-- บังคับ `sensitive_allowed` (ม.26) กับตารางที่ติดป้ายข้อมูลอ่อนไหว — วันนี้บันทึกและแสดงอย่างเดียว
+- บังคับ `sensitive_allowed` (ม.26) กับตารางที่ติดป้ายข้อมูลอ่อนไหว — ✅ ข้อ CO
 - ปลด purpose → grant ที่อ้างอยู่เข้ารอบทบทวน (ต้องมี M32)
 - บน prod **ไม่ได้สร้างหรือปลด purpose ทดสอบ** — ทะเบียนมีแค่ 3 ตัวจาก seed · ฐานกฎหมายให้เจ้าของข้อมูลใส่เอง
 

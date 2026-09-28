@@ -25,6 +25,7 @@ import {
 } from '../../api/purposes';
 import { useAuthStore } from '../../auth/authStore';
 import { FIELD, Field, Select } from '../policies/controls';
+import SensitiveDataSection from './SensitiveDataSection';
 
 /**
  * The register of purposes (FR-21).
@@ -139,6 +140,8 @@ export default function PurposesPage() {
               ))
             )}
           </Section>
+
+          <SensitiveDataSection mayReview={mayReview} />
 
           {mayReview && unlisted.length > 0 && (
             <Section

@@ -225,6 +225,12 @@ purposes are not offered. A purpose can limit how long access for it lasts: when
 it does, the longer durations and *Until revoked* disappear and the days are
 brought within the limit.
 
+When a table holds sensitive data and the purpose chosen may not be used for it,
+the form says so under the purpose (see *What counts as sensitive data*). If
+the rule only warns, you can still send, and whoever decides is told. If it is
+enforced, the form will not send until you choose a purpose that allows
+sensitive data.
+
 After you send it, the request has a ticket number and its own page
 (`/requests/<ticket>`), which you can share. You can withdraw an open request.
 
@@ -269,7 +275,9 @@ Open one to see its review:
 - **What a grant would open**: each column as visible, masked or hidden, with
   its description and sensitive columns marked, and any row filter that would
   still apply.
-- **Risk**: LOW, MEDIUM or HIGH, with the reasons.
+- **Risk**: LOW, MEDIUM or HIGH, with the reasons. A purpose that may not be
+  used for the sensitive data in the table is one of them (see *What counts as
+  sensitive data*).
 - **Conflicts**: BLOCKER, WARNING or INFO, such as a policy that would still
   refuse them.
 - **Suggestion**: decline, grant, update a policy, or create a policy draft.
@@ -325,8 +333,9 @@ Each purpose has:
 - the **legal basis** under the PDPA: consent, contract, legal obligation,
   vital interest, public task, legitimate interest, or research or statistics.
   It can be left unrecorded until somebody who knows records it;
-- whether **sensitive data** (PDPA section 26) may be used for it. Today this is
-  recorded and shown, not yet enforced;
+- whether **sensitive data** (PDPA section 26) may be used for it. ARAK checks
+  this on every table that holds sensitive data (see *What counts as sensitive
+  data* below);
 - who **answers for** it (for example the DPO or a steward);
 - the **longest access** a request for it may ask for, from 1 to 365 days.
   A request for the purpose cannot ask for longer, or until revoked.
@@ -349,6 +358,50 @@ and the reason given for retiring or reinstating.
 
 Platform administrators and policy authors can add, edit, retire and reinstate
 purposes. Everybody else can read them.
+
+### What counts as sensitive data
+
+The bottom of **Settings → Purposes** says which tables hold sensitive data, and
+what happens when a purpose that may not be used for sensitive data is named on
+one of them. The same answer marks sensitive columns in the review of a request.
+
+- **Count the built-in names** (on as installed): `PII` and `PersonalData`, and
+  any classification or tag whose name says sensitive, confidential, restricted
+  or secret, but not one saying non-sensitive or public.
+- **Also counts**: classifications, tags, glossaries or glossary terms that
+  count as well. A classification or a glossary covers everything in it; a tag
+  or a term covers itself and everything beneath it.
+- **Never counts**: labels that never count, even when the built-in names would
+  (for example `PII.Public`). A label cannot be in both lists.
+
+Only confirmed labels count; a label OpenMetadata merely suggested does not. A
+table counts when it, or one of its columns, carries a label that counts.
+
+The **mode** says what happens when a query or a request names a purpose that
+may not be used for sensitive data (or names none) on a table that holds some:
+
+- **Off**: nothing is checked; the purpose is recorded as it always was.
+- **Warn** (as installed): it goes ahead. The Query page shows the warning above
+  the results, the query log entry is marked, the request form says so before
+  sending, and whoever decides the request is told.
+- **Enforce**: the query is refused and the refusal names the purpose; in the
+  Query log it reads *Purpose not for sensitive data*. The request forms say so
+  before anything is sent, and do not send until a purpose that allows
+  sensitive data is chosen.
+
+A purpose missing from the register allows nothing sensitive. A table a policy
+already refuses you is refused for that, not for the purpose. Pre-authorize is
+not checked. The Simulator and the Decision API do not apply this check yet.
+
+**Measure coverage** shows how many tables and views the rule covers now, how
+many sensitive columns are in them, some examples, and how far each label
+reaches. While editing, **Measure what it covers** does the same for the draft
+before you save it: measure before you choose Enforce. Every change asks for a
+reason and is kept in **History**.
+
+Platform administrators and policy authors can change the rule. Data owners and
+auditors can also measure it and read its history. Everybody signed in can read
+it.
 
 ## Grants: giving access directly
 
@@ -429,6 +482,9 @@ the statement before it reaches the database.
   the policy was still applied, and the database was not asked again.
 - **Purpose** records why you are reading, and some policies depend on it.
   It is chosen from the register; a retired or unlisted purpose is refused.
+  On a table holding sensitive data, a purpose that may not be used for it is
+  warned about above the results, or refused, depending on the rule (see *What
+  counts as sensitive data*).
 - **Ran as** lets an administrator see a query as another person would, for
   checking a policy.
 

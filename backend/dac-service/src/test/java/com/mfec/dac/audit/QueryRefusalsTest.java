@@ -26,6 +26,8 @@ class QueryRefusalsTest {
         "UNGOVERNED|sales.audit_trail is not a governed asset on this source, so no policy could be applied to it",
         "CANNOT_ENFORCE|Policy on demo-pg.salesdb.sales.customer needs a HASH mask, which the query proxy cannot express on PostgreSQL. Enforce this asset through a secure view instead.",
         "ALL_COLUMNS_HIDDEN|Every column of demo-pg.salesdb.sales.customer is hidden from this principal",
+        "PURPOSE_NOT_ALLOWED|demo-pg.salesdb.sales.customer holds sensitive data (PII.Sensitive), and Reporting is not a purpose sensitive data may be used for. Choose one that is, or ask a policy author to allow it under Settings, Purposes",
+        "PURPOSE_NOT_ALLOWED|demo-pg.salesdb.sales.customer holds sensitive data (PII.Sensitive), and no purpose was named. Name one that sensitive data may be used for",
         "UNPARSEABLE|This statement could not be parsed, so it cannot be enforced and will not be run",
         "NOT_READ_ONLY|Only SELECT is allowed through the query proxy; this deployment is read-only (FR-6.3)",
         "UNQUALIFIED|Qualify customer with its schema: the proxy resolves a table to an asset by name, and an unqualified one could be either of two tables",

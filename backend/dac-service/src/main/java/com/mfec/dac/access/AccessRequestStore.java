@@ -14,6 +14,7 @@ import com.mfec.dac.access.ApproverDirectory.Member;
 import com.mfec.dac.access.ApproverDirectory.Pool;
 import com.mfec.dac.catalog.CatalogQuery;
 import com.mfec.dac.purpose.PurposeStore;
+import com.mfec.dac.purpose.SensitiveData;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.Duration;
@@ -102,6 +103,7 @@ public class AccessRequestStore {
   private final ApproverDirectory directory;
   private final RequestTemplateStore templates;
   private final PurposeStore purposes;
+  private final SensitiveData sensitive;
 
   /** Requests asked on the built-in template only, as before templates existed. */
   public AccessRequestStore(
@@ -133,6 +135,21 @@ public class AccessRequestStore {
       WorkflowStore workflows,
       RequestTemplateStore templates,
       PurposeStore purposes) {
+    this(jdbi, json, grants, workflows, templates, purposes, null);
+  }
+
+  /**
+   * @param sensitive what counts as sensitive data, and whether a purpose that
+   *     does not allow it may be asked for on a table that holds it; null = no check
+   */
+  public AccessRequestStore(
+      Jdbi jdbi,
+      ObjectMapper json,
+      GrantStore grants,
+      WorkflowStore workflows,
+      RequestTemplateStore templates,
+      PurposeStore purposes,
+      SensitiveData sensitive) {
     this.jdbi = jdbi;
     this.json = json;
     this.grants = grants;
@@ -140,6 +157,7 @@ public class AccessRequestStore {
     this.directory = new ApproverDirectory(json);
     this.templates = templates;
     this.purposes = purposes;
+    this.sensitive = sensitive;
   }
 
   /** Why a request could not be made or moved, and which HTTP answer that is. */
@@ -850,6 +868,15 @@ public class AccessRequestStore {
             throw new RequestException(RequestException.Kind.INVALID, problem);
           }
           String purpose = listedPurpose(handle, template.form(), request);
+          // The same answer the query proxy gives: under Enforce a purpose that
+          // does not allow sensitive data is not asked for on a table holding
+          // some; under Warn the form said so and the reviewer sees it.
+          if (!preauth && sensitive != null) {
+            Optional<SensitiveData.Concern> concern = sensitive.concern(handle, fqn, purpose);
+            if (concern.isPresent() && concern.get().refuses()) {
+              throw new RequestException(RequestException.Kind.INVALID, concern.get().message());
+            }
+          }
 
           Workflow workflow = workflows.effective(handle, fqn);
           UUID id =

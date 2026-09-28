@@ -31,6 +31,7 @@ import {
   type RequestTemplate,
 } from '../../api/requestTemplates';
 import { usablePurpose, usePurposes } from '../../api/purposes';
+import { usePurposeConcerns } from '../../api/sensitiveData';
 import { FIELD, Step, TextField } from '../policies/controls';
 import {
   cappedBy,
@@ -40,6 +41,7 @@ import {
   startingPurpose,
 } from '../policies/purposePickers';
 import { BUILT_IN_TEMPLATE } from '../query/RequestAccess';
+import PurposeConcerns, { refusedBy } from './PurposeConcerns';
 
 /**
  * Asking for several tables at once, from the Requests page.
@@ -173,6 +175,10 @@ export default function NewRequestPage() {
     days: parsedDays,
     reference: form.referenceLabel ? reference : '',
   };
+  const concerns = usePurposeConcerns(
+    going.map((row) => row.asset.fqn),
+    answers.purpose
+  );
   const problem = problemWith();
 
   function problemWith(): string | null {
@@ -187,7 +193,7 @@ export default function NewRequestPage() {
       const answer = checkAnswers(own, { ...answers, reference: own.referenceLabel ? reference : '' });
       if (answer) return `${row.asset.name}: ${answer}`;
     }
-    return null;
+    return refusedBy(concerns);
   }
 
   const send = useMutation({
@@ -396,6 +402,7 @@ export default function NewRequestPage() {
               )}
 
               <RequestPurpose form={form} onChange={choosePurpose} value={purpose} />
+              <PurposeConcerns concerns={concerns} />
 
               <label className="tw:flex tw:flex-col tw:gap-1.5">
                 <span className="tw:text-sm tw:font-medium tw:text-secondary">

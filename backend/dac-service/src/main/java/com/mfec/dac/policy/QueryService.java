@@ -7,6 +7,7 @@ import com.mfec.dac.compiler.sql.SqlDialect;
 import com.mfec.dac.compiler.sql.SqlDialects;
 import com.mfec.dac.proxy.ProxyCapabilities;
 import com.mfec.dac.proxy.QueryRewriter;
+import com.mfec.dac.purpose.SensitiveData;
 import com.mfec.dac.schema.api.DecisionReason;
 import com.mfec.dac.schema.api.MaskingSpec;
 import com.mfec.dac.schema.api.PolicyDecision;
@@ -82,6 +83,8 @@ public class QueryService {
    *     cached read was made
    * @param estimatedCost what the source's planner priced the statement at
    *     before it ran (FR-6.3 cost guard); null when it was not priced
+   * @param warnings tables holding sensitive data the purpose does not allow,
+   *     read anyway because the rule only warns (FR-21); empty when none
    */
   public record Result(
       List<String> columns,
@@ -95,7 +98,8 @@ public class QueryService {
       List<Unenforceable> unenforceable,
       boolean cached,
       Instant readAt,
-      Double estimatedCost) {}
+      Double estimatedCost,
+      List<SensitiveData.Concern> warnings) {}
 
   /**
    * Why this result looks the way it does, for one asset.
@@ -176,6 +180,7 @@ public class QueryService {
   private final QueryAdmission admission;
   private final QueryCostGuard costs;
   private final Clock clock;
+  private final SensitiveData sensitive;
 
   public QueryService(
       Jdbi jdbi,
@@ -226,6 +231,24 @@ public class QueryService {
       QueryAdmission admission,
       QueryCostGuard costs,
       Clock clock) {
+    this(jdbi, json, sources, decisions, executor, results, admission, costs, clock, null);
+  }
+
+  /**
+   * @param sensitive what counts as sensitive data, and what happens when a
+   *     purpose that does not allow it reads a table holding some; null checks nothing
+   */
+  public QueryService(
+      Jdbi jdbi,
+      ObjectMapper json,
+      DataSourceStore sources,
+      DecisionService decisions,
+      QueryExecutor executor,
+      QueryResultCache results,
+      QueryAdmission admission,
+      QueryCostGuard costs,
+      Clock clock,
+      SensitiveData sensitive) {
     this.jdbi = jdbi;
     this.json = json;
     this.sources = sources;
@@ -235,6 +258,7 @@ public class QueryService {
     this.admission = admission == null ? QueryAdmission.unlimited() : admission;
     this.costs = costs == null ? QueryCostGuard.off() : costs;
     this.clock = clock == null ? Clock.systemUTC() : clock;
+    this.sensitive = sensitive == null ? SensitiveData.off() : sensitive;
   }
 
   /** As the eight-argument form, with a held result allowed. */
@@ -323,7 +347,8 @@ public class QueryService {
             rewritten.unenforceable(),
             true,
             hit.get().storedAt(),
-            held.estimatedCost());
+            held.estimatedCost(),
+            enforced.warnings());
       }
     }
 
@@ -387,7 +412,8 @@ public class QueryService {
         rewritten.unenforceable(),
         false,
         readAt,
-        page.estimatedCost());
+        page.estimatedCost(),
+        enforced.warnings());
   }
 
   // -------------------------------------------------------------- download
@@ -576,7 +602,10 @@ public class QueryService {
 
   /** A statement the policy has been compiled into, not yet sent anywhere. */
   private record Enforced(
-      DataSourceStore.Source source, QueryRewriter.Rewritten rewritten, Set<String> touched) {}
+      DataSourceStore.Source source,
+      QueryRewriter.Rewritten rewritten,
+      Set<String> touched,
+      List<SensitiveData.Concern> warnings) {}
 
   /**
    * Finds the source, governs every table the statement names and rewrites it,
@@ -621,11 +650,15 @@ public class QueryService {
     // including the one a refusal names: the query log files each row under
     // the tables it touched so an owner can be shown the reads of theirs.
     Set<String> touched = new LinkedHashSet<>();
+    // One per table, however many times the statement names it.
+    Map<String, SensitiveData.Concern> warnings = new LinkedHashMap<>();
     QueryRewriter.Rewritten rewritten;
     try {
       rewritten =
           rewriter.rewrite(
-              sql, (schema, table) -> govern(source, schema, table, principal, clientIp, purpose, touched));
+              sql,
+              (schema, table) ->
+                  govern(source, schema, table, principal, clientIp, purpose, touched, warnings));
     } catch (QueryRewriter.RefusedException e) {
       if (e instanceof QueryRewriter.DeniedException denied && denied.assetFqn() != null) {
         touched.add(denied.assetFqn());
@@ -656,7 +689,7 @@ public class QueryService {
           exported);
       throw e;
     }
-    return new Enforced(source, rewritten, touched);
+    return new Enforced(source, rewritten, touched, List.copyOf(warnings.values()));
   }
 
   /**
@@ -879,7 +912,8 @@ public class QueryService {
       String principal,
       String clientIp,
       String purpose,
-      Set<String> touched) {
+      Set<String> touched,
+      Map<String, SensitiveData.Concern> warnings) {
 
     Optional<String> fqn =
         jdbi.withHandle(
@@ -937,7 +971,30 @@ public class QueryService {
     // equally useless for answering whether p95 is under 50ms.
     int evaluationMs = (int) Math.min(Integer.MAX_VALUE,
         (System.nanoTime() - startedAt + 999_999L) / 1_000_000L);
-    recordDecision(decision, clientIp, purpose, evaluationMs);
+    // Whether the purpose may be used on what this table holds (FR-21), asked
+    // only of a table the person may read: a refusal by policy says enough.
+    // Kept on the decision row either way, so a report of what sensitive data
+    // was used for reads what was true when it was read.
+    SensitiveData.Judgement judged =
+        Boolean.TRUE.equals(decision.getAllowed())
+            ? jdbi.withHandle(handle -> sensitive.judge(handle, fqn.get(), purpose))
+            : null;
+    SensitiveData.Concern concern = judged == null ? null : judged.concern();
+    recordDecision(
+        decision,
+        clientIp,
+        purpose,
+        evaluationMs,
+        judged == null ? null : judged.sensitive(),
+        concern == null ? null : concern.refuses() ? "REFUSED" : "WARNED");
+    if (concern != null && concern.refuses()) {
+      // Not offered as a request for access: the person may read the table,
+      // and what is refused is the purpose they named for it.
+      throw new RejectedException(concern.message(), null, false);
+    }
+    if (concern != null) {
+      warnings.putIfAbsent(fqn.get(), concern);
+    }
 
     // Recorded first, refused second. A query that is about to be turned away
     // because this engine cannot express the mask is still a decision that was
@@ -961,8 +1018,18 @@ public class QueryService {
 
   // ----------------------------------------------------------------- audit
 
+  /**
+   * @param sensitive whether the table held sensitive data under the rule;
+   *     null when nobody looked -- the rule was off, or the answer was no anyway
+   * @param purposeCheck WARNED or REFUSED when the purpose did not allow it
+   */
   private void recordDecision(
-      PolicyDecision decision, String clientIp, String purpose, int evaluationMs) {
+      PolicyDecision decision,
+      String clientIp,
+      String purpose,
+      int evaluationMs,
+      Boolean sensitive,
+      String purposeCheck) {
     try {
       List<UUID> matched = new ArrayList<>();
       if (decision.getReasons() != null) {
@@ -980,10 +1047,11 @@ public class QueryService {
                       """
                       INSERT INTO audit_decision (principal_name, target_fqn, allowed, mode,
                                                   decision, matched_policy_ids, evaluation_ms,
-                                                  from_cache, purpose, client_ip)
+                                                  from_cache, purpose, client_ip, sensitive,
+                                                  purpose_check)
                       VALUES (:principal, :fqn, :allowed, 'PROXY', CAST(:document AS jsonb),
                               :policyIds, :evaluationMs, :fromCache, :purpose,
-                              CAST(:ip AS inet))
+                              CAST(:ip AS inet), :sensitive, :purposeCheck)
                       """)
                   .bind("principal", decision.getPrincipal())
                   .bind("fqn", decision.getAssetFqn())
@@ -994,6 +1062,8 @@ public class QueryService {
                   .bind("fromCache", Boolean.TRUE.equals(decision.getFromCache()))
                   .bind("purpose", purpose)
                   .bind("ip", inet(clientIp))
+                  .bind("sensitive", sensitive)
+                  .bind("purposeCheck", purposeCheck)
                   .execute());
     } catch (Exception e) {
       // An audit row that cannot be written must not stop a query that policy
