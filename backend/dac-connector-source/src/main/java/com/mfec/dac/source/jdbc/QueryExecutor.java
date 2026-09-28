@@ -81,6 +81,102 @@ public final class QueryExecutor {
     }
   }
 
+  /**
+   * A read that hands its rows over one at a time, for a caller that writes
+   * each out before asking for the next: a download of every row, where a
+   * {@link Page} would hold the whole table in heap.
+   *
+   * <p>It holds a source connection until it is closed, so whoever opens one
+   * closes it, on every path.
+   */
+  public static final class Cursor implements AutoCloseable {
+    private final Connection connection;
+    private final PreparedStatement statement;
+    private final ResultSet rows;
+    private final List<String> columns;
+    private final List<String> columnTypes;
+    private final CostEstimate.Price price;
+    private boolean finished;
+
+    private Cursor(
+        Connection connection,
+        PreparedStatement statement,
+        ResultSet rows,
+        CostEstimate.Price price)
+        throws SQLException {
+      this.connection = connection;
+      this.statement = statement;
+      this.rows = rows;
+      this.price = price;
+      ResultSetMetaData meta = rows.getMetaData();
+      int width = meta.getColumnCount();
+      List<String> names = new ArrayList<>(width);
+      List<String> types = new ArrayList<>(width);
+      for (int i = 1; i <= width; i++) {
+        String label = meta.getColumnLabel(i);
+        names.add(label == null || label.isBlank() ? meta.getColumnName(i) : label);
+        types.add(meta.getColumnTypeName(i));
+      }
+      this.columns = List.copyOf(names);
+      this.columnTypes = List.copyOf(types);
+    }
+
+    public List<String> columns() {
+      return columns;
+    }
+
+    public List<String> columnTypes() {
+      return columnTypes;
+    }
+
+    /** What the planner priced the whole read at; null when it was not asked. */
+    public Double estimatedCost() {
+      return price.cost();
+    }
+
+    public String unpricedBecause() {
+      return price.unpricedBecause();
+    }
+
+    /** The next row, rendered as a {@link Page} renders it; null after the last. */
+    public List<Object> next() throws SQLException {
+      if (finished || !rows.next()) {
+        finished = true;
+        return null;
+      }
+      List<Object> row = new ArrayList<>(columns.size());
+      for (int i = 1; i <= columns.size(); i++) {
+        row.add(portable(rows.getObject(i)));
+      }
+      return row;
+    }
+
+    /**
+     * Gives the connection back. A read stopped part-way is cancelled first, so
+     * the source stops producing rows nobody will take.
+     */
+    @Override
+    public void close() {
+      try {
+        if (!finished) {
+          statement.cancel();
+        }
+      } catch (SQLException | RuntimeException e) {
+        // Closing below still frees the connection.
+      }
+      quietly(rows);
+      quietly(statement);
+      try {
+        if (!connection.getAutoCommit()) {
+          connection.rollback();
+        }
+      } catch (SQLException | RuntimeException e) {
+        // Nothing was written; the close below ends the transaction anyway.
+      }
+      quietly(connection);
+    }
+  }
+
   private final CredentialResolver credentials;
   private final int loginTimeoutSeconds;
 
@@ -139,6 +235,66 @@ public final class QueryExecutor {
         throw new CostExceededException(price.cost(), maxCost);
       }
       return read(connection, sql, maxRows, timeoutSeconds, started, price);
+    }
+  }
+
+  /**
+   * Starts a read of every row the statement returns, for {@link Cursor}.
+   *
+   * <p>Priced without a row cap, because there is none. The source is asked to
+   * send rows in batches of {@code fetchSize} rather than all at once: on
+   * PostgreSQL that takes a transaction, since the driver only reads through
+   * a cursor inside one, so autocommit is turned off after the price is taken
+   * (a failed {@code EXPLAIN} inside a transaction would abort it). The
+   * connection is still read-only, and the transaction is rolled back on close.
+   *
+   * @param timeoutSeconds how long the source may take to start answering
+   * @throws CostExceededException when the planner priced it over {@code maxCost}
+   */
+  public Cursor open(
+      SourceProbe.Target target,
+      String credentialRef,
+      String sql,
+      int timeoutSeconds,
+      double maxCost,
+      int fetchSize)
+      throws SQLException, CredentialResolver.UnresolvableCredentialException,
+          CostExceededException {
+
+    CredentialResolver.Credential credential = credentials.resolve(credentialRef);
+    Connection connection = JdbcTargets.open(target, credential, loginTimeoutSeconds);
+    PreparedStatement statement = null;
+    try {
+      CostEstimate.Price price =
+          maxCost > 0
+              ? CostEstimate.price(connection, target.engine(), sql, 0, timeoutSeconds)
+              : new CostEstimate.Price(null, null);
+      if (price.cost() != null && price.cost() > maxCost) {
+        throw new CostExceededException(price.cost(), maxCost);
+      }
+      if ("POSTGRES".equals(target.engine())) {
+        connection.setAutoCommit(false);
+      }
+      statement =
+          connection.prepareStatement(sql, ResultSet.TYPE_FORWARD_ONLY, ResultSet.CONCUR_READ_ONLY);
+      statement.setFetchSize(fetchSize);
+      statement.setQueryTimeout(timeoutSeconds);
+      return new Cursor(connection, statement, statement.executeQuery(), price);
+    } catch (SQLException | CostExceededException | RuntimeException e) {
+      quietly(statement);
+      quietly(connection);
+      throw e;
+    }
+  }
+
+  private static void quietly(AutoCloseable closeable) {
+    if (closeable == null) {
+      return;
+    }
+    try {
+      closeable.close();
+    } catch (Exception e) {
+      // Freeing a connection that has already failed has nothing left to report.
     }
   }
 

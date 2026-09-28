@@ -337,6 +337,17 @@ the statement before it reaches the database.
 - Pick the source, write a statement, and run it. The explorer on the left lists
   the tables you can see; as you type, the editor suggests table and column
   names (this completion is built in, not the assistant).
+- In the explorer, rest the pointer on a column (or move to it with the keyboard)
+  to see its type and description. A column with no description says so, and
+  where to add one: the **Columns** tab of the table's catalog page.
+- Right-click a table or a column for **Open in the Data Catalog** (a new tab;
+  for a column it opens at the table's columns), **Insert into the editor** and
+  **Copy the full name**. The arrow keys move through the menu and Esc closes it.
+- The panels can be resized: drag the edge between the explorer and the editor,
+  the edge between the editor and the results (up to about one line of SQL, or
+  down until the results keep a couple of rows), and the edge between the editor
+  and an explanation. Each edge also moves with the arrow keys when it has the
+  focus (hold Shift for bigger steps). The sizes are remembered in your browser.
 - Only one read-only statement (SELECT, or WITH ... SELECT) is accepted. Anything
   else is refused.
 - Masked columns come back masked, hidden columns are left out, and row filters
@@ -345,6 +356,14 @@ the statement before it reaches the database.
 - Limits: a row limit (at most 5,000 rows), a time limit, a limit on how many
   queries run at once, and a cost guard that refuses a statement the database
   estimates is too expensive. The refusal says which limit it was.
+- The row limit is how many rows the screen shows. When a result has more, it is
+  marked as cut short and an **All rows** button appears beside it: it runs the
+  same statement again, with the same policy, and downloads every row as a CSV
+  file (it opens in Excel). The download is always as yourself, is never served
+  from the cache, and has a longer time limit (10 minutes by default). Because it
+  reads every row, the cost guard prices it without the row limit; if it is
+  refused as too costly, a WHERE that narrows it usually brings it under. If the
+  read fails part-way, the download fails rather than saving part of the table.
 - A repeated query can be answered from the result cache. The result is marked,
   the policy was still applied, and the database was not asked again.
 - **Purpose** records why you are reading, and some policies depend on it.
@@ -396,6 +415,9 @@ rows and how long it took.
   everyone else sees their own.
 - A query answered from the result cache is marked: the policy was applied, but
   the database has no record of that read.
+- A download of every row (**All rows** on the Query page) is marked
+  **downloaded**, whether it succeeded, was refused or failed, so a copy of a
+  table leaving ARAK is easy to find.
 
 ## Dashboard
 

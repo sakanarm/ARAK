@@ -490,7 +490,8 @@ public class DacApplication extends Application<DacConfiguration> {
                 queryAdmission,
                 queryCosts,
                 java.time.Clock.systemUTC()),
-            eligibility));
+            eligibility,
+            config.getQueryLimits().getExportTimeoutSeconds()));
     // Statements kept under a name; the text only, never what it returned.
     environment.jersey().register(new SavedQueryResource(new SavedQueryStore(jdbi)));
     // The query log (FR-8.3, M10): each reader sees the rows that are theirs

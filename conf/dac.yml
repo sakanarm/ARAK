@@ -144,6 +144,10 @@ queryLimits:
   costGuard: ${QUERY_COST_GUARD_ENABLED:-true}
   maxCostPostgres: ${QUERY_MAX_COST_POSTGRES:-10000000}
   maxCostSqlServer: ${QUERY_MAX_COST_SQLSERVER:-5000}
+  # A download of every row streams as it is read and holds a source
+  # connection until the last row; it is stopped, and audited as failed, if it
+  # runs longer than this.
+  exportTimeoutSeconds: ${QUERY_EXPORT_TIMEOUT_SECONDS:-600}
 
 secrets:
   provider: ${SECRETS_PROVIDER:-FERNET}

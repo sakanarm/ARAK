@@ -48,6 +48,7 @@ class AuditResourceTest {
         "EXECUTED".equals(outcome) ? 12L : null,
         40,
         assets,
+        false,
         false);
   }
 

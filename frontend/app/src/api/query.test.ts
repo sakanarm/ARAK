@@ -1,5 +1,6 @@
 import { AxiosError, type AxiosResponse, type InternalAxiosRequestConfig } from 'axios';
-import { busyOf, formatCost } from './query';
+import { busyOf, exportQuery, formatCost } from './query';
+import { apiClient } from './client';
 
 jest.mock('./client', () => ({ apiClient: { post: jest.fn() } }));
 
@@ -55,5 +56,55 @@ describe('formatCost', () => {
     expect(formatCost(null)).toBeNull();
     expect(formatCost(undefined)).toBeNull();
     expect(formatCost(Number.NaN)).toBeNull();
+  });
+});
+
+describe('exportQuery', () => {
+  const post = apiClient.post as jest.Mock;
+  beforeEach(() => post.mockReset());
+
+  it('asks for the file with no client timeout, as the person asking', async () => {
+    const file = new Blob(['id\r\n']);
+    post.mockResolvedValue({ data: file });
+    const progress = jest.fn();
+
+    await expect(
+      exportQuery({ sourceId: 's', sql: 'SELECT 1', purpose: null }, { onProgress: progress })
+    ).resolves.toBe(file);
+
+    const [path, body, config] = post.mock.calls[0];
+    expect(path).toBe('/v1/query/export');
+    expect(body).toEqual({ sourceId: 's', sql: 'SELECT 1', purpose: null });
+    expect(body).not.toHaveProperty('asPrincipal');
+    expect(config).toMatchObject({ responseType: 'blob', timeout: 0 });
+    config.onDownloadProgress({ loaded: 2048 });
+    expect(progress).toHaveBeenCalledWith(2048);
+  });
+
+  it('reads a refusal back out of the blob it arrived in', async () => {
+    const refusal = { message: 'Access to x is denied', fixable: false };
+    const blob = new Blob([JSON.stringify(refusal)], { type: 'application/json' });
+    // jsdom's Blob may predate text(); the browser's does not.
+    if (typeof blob.text !== 'function') {
+      Object.defineProperty(blob, 'text', { value: async () => JSON.stringify(refusal) });
+    }
+    post.mockRejectedValue(httpError(403, blob));
+
+    const error = await exportQuery({ sourceId: 's', sql: 'SELECT 1' }).catch((e) => e);
+
+    expect((error as AxiosError).response?.data).toEqual(refusal);
+  });
+
+  it('reads a busy source the same way as for a query', async () => {
+    const body = JSON.stringify({ message: 'busy', busy: true, retryAfterSeconds: 4 });
+    const blob = new Blob([body]);
+    if (typeof blob.text !== 'function') {
+      Object.defineProperty(blob, 'text', { value: async () => body });
+    }
+    post.mockRejectedValue(httpError(429, blob));
+
+    const error = await exportQuery({ sourceId: 's', sql: 'SELECT 1' }).catch((e) => e);
+
+    expect(busyOf(error)).toEqual({ message: 'busy', retryAfterSeconds: 4 });
   });
 });

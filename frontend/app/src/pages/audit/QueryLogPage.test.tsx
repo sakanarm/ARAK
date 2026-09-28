@@ -114,6 +114,21 @@ describe('QueryLogPage', () => {
     expect(screen.getAllByText('from cache')).toHaveLength(1);
   });
 
+  it('marks a statement downloaded whole, and only that one', async () => {
+    fetchLog.mockResolvedValue(
+      page({
+        rows: [
+          row({ id: 11, exported: true, originalSql: 'SELECT id FROM sales.customer' }),
+          row({ id: 10 }),
+        ],
+      })
+    );
+    renderPage();
+
+    expect(await screen.findByText('SELECT id FROM sales.customer')).toBeInTheDocument();
+    expect(screen.getAllByText('downloaded')).toHaveLength(1);
+  });
+
   it('opens a row to the statement as written and as it ran', async () => {
     fetchLog.mockResolvedValue(page());
     renderPage();

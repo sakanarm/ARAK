@@ -28,6 +28,10 @@ import java.util.regex.Pattern;
  * expensive under the cap: a sort or an aggregate over a big table, or a join
  * with nothing to join on.
  *
+ * <p>A download of every row has no cap, and is priced without one: that is
+ * the read it will be, and a ceiling that let it through on the strength of a
+ * cap it will not have would guard nothing.
+ *
  * <h2>When the planner cannot be asked</h2>
  *
  * <p>No figure, and the statement runs under its timeout as it did
@@ -68,7 +72,8 @@ public final class CostEstimate {
   /**
    * @param engine the source engine id, {@code POSTGRES} or {@code SQLSERVER};
    *     any other engine is not priced
-   * @param rowCap the most rows the statement will be read for
+   * @param rowCap the most rows the statement will be read for; zero or less
+   *     prices every row
    * @throws SQLException only when the connection has been left unsafe to use
    */
   public static Price price(
@@ -92,8 +97,8 @@ public final class CostEstimate {
     String priced =
         "EXPLAIN (FORMAT JSON) SELECT * FROM (\n"
             + trimmed(sql)
-            + "\n) AS arak_priced LIMIT "
-            + rowCap;
+            + "\n) AS arak_priced"
+            + (rowCap > 0 ? " LIMIT " + rowCap : "");
     try (Statement statement = connection.createStatement()) {
       statement.setQueryTimeout(timeoutSeconds);
       try (ResultSet rs = statement.executeQuery(priced)) {
@@ -116,7 +121,8 @@ public final class CostEstimate {
       Price estimate = Price.unpriced("the plan carried no subtree cost");
       boolean showplan = false;
       try {
-        statement.execute("SET ROWCOUNT " + rowCap);
+        // ROWCOUNT 0 is SQL Server's "no limit".
+        statement.execute("SET ROWCOUNT " + Math.max(rowCap, 0));
         statement.execute("SET SHOWPLAN_XML ON");
         showplan = true;
         // With showplan on, the statement is compiled and not executed: what

@@ -74,6 +74,11 @@ export interface QueryLogRow {
    * with the source's own.
    */
   fromCache: boolean;
+  /**
+   * A download of every row rather than a page on screen: the rows left the
+   * platform as a file, so the row count is how many went into it.
+   */
+  exported?: boolean;
   /** The tables it touched that the reader oversees. */
   assets: string[];
   /** How many more it touched that the reader does not. */

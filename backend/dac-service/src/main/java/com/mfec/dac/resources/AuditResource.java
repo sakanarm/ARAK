@@ -85,6 +85,8 @@ public class AuditResource {
    * @param hiddenAssets how many more it touched that the reader does not
    * @param fromCache answered from the result cache, so the source has no
    *     record of this read
+   * @param exported a download of every row rather than a page on screen, so
+   *     the rows left the platform as a file
    */
   public record QueryRow(
       long id,
@@ -104,7 +106,8 @@ public class AuditResource {
       List<String> assets,
       int hiddenAssets,
       boolean own,
-      boolean fromCache) {}
+      boolean fromCache,
+      boolean exported) {}
 
   /**
    * @param nextBefore pass as {@code before} for the page after this one; null
@@ -246,7 +249,8 @@ public class AuditResource {
           entry.assets(),
           0,
           own,
-          entry.fromCache());
+          entry.fromCache(),
+          entry.exported());
     }
     List<String> mine = new ArrayList<>();
     for (String fqn : entry.assets()) {
@@ -282,7 +286,8 @@ public class AuditResource {
         List.copyOf(mine),
         hidden,
         false,
-        entry.fromCache());
+        entry.fromCache(),
+        entry.exported());
   }
 
   private static Instant instant(String value, String name) {

@@ -1,6 +1,6 @@
 # HANDOFF — ARAK (Data Access Control Platform)
 
-> อัปเดต: 2026-09-28 · ข้อ CK (**Find data** — NokRak หาตารางจากประโยคในหน้า Query · ตรวจสิทธิ์ก่อนโมเดลเห็นตาราง · อ่านได้ → เติม SQL · ขอได้ → ฟอร์มขอสิทธิ์ · M16) · ข้อ CJ.1 (ยิง explain-dashboard กับ LLM จริงแล้วผ่าน · ภาษาไทยแยก query กับ คำขอสิทธิ์) · ข้อ CJ (NokRak อธิบาย dashboard — panel **Ask NokRak** ใต้ key figures เลือกหัวข้อได้ · ชื่อคนเป็น `[P1]` ก่อนส่ง · M15 (ข) · M15 ครบ) · ข้อ CI (NokRak อธิบาย policy — ปุ่ม **Explain with NokRak** ในหน้า policy · M15 (ก)) · ข้อ CH (ปุ่ม **Query** ที่หัวหน้าตาราง สำหรับคนที่อ่านได้แล้ว — เปิดหน้า Query บน source ของตารางพร้อม SQL · FR-1.6d) · ข้อ CG (เปลี่ยนรหัสผ่านเอง — Profile → Password · หน้าบังคับเปลี่ยนเมื่อรหัสถูก admin ตั้ง · M2 / FR-2.2) · ข้อ CF (NokRak ตอบคำถามวิธีใช้ ARAK จากคู่มือที่แพ็กเข้า jar — `search_docs`) · ข้อ CE (สร้าง classification / tag ของ ARAK เองในหน้า Governance — provenance local · sync ไม่ทับ · ไม่เขียนกลับ OM) · ข้อ CD (Column description เขียนใน ARAK · NokRak ร่าง · แสดงใน ticket) · ข้อ CC (tab Access รับ list ยาว — แถบสรุป · chip · ค้น · แบ่งหน้า · กดดูรายละเอียดเต็ม) · ข้อ CB (NokRak ช่วยแก้ policy ที่มีอยู่ — คน review แล้วกด Save เอง) · ข้อ CA (ประวัติ policy · diff · rollback) · ข้อ BW (tag จาก OM ผ่าน webhook/poller ย้าย policy binding ทันที) · ข้อ BV (tab Access เฉพาะผู้ดูแล + Diagram แบบ canvas) · ข้อ BU (FR-1.7 local tag + demo group บน prod) · push ขึ้น origin/main แล้ว · repo https://github.com/sakanarm/ARAK (**public**)
+> อัปเดต: 2026-09-28 · ข้อ CL (**All rows** — ดาวน์โหลดทุกแถวเป็น CSV ผ่าน policy เดิม · audit บอกว่าเป็นการดาวน์โหลด · hover column บอก description · คลิกขวาไป Data Catalog · ลากขนาด editor ขึ้นลง / explanation ซ้ายขวา · FR-6.3) · ข้อ CK (**Find data** — NokRak หาตารางจากประโยคในหน้า Query · ตรวจสิทธิ์ก่อนโมเดลเห็นตาราง · อ่านได้ → เติม SQL · ขอได้ → ฟอร์มขอสิทธิ์ · M16) · ข้อ CJ.1 (ยิง explain-dashboard กับ LLM จริงแล้วผ่าน · ภาษาไทยแยก query กับ คำขอสิทธิ์) · ข้อ CJ (NokRak อธิบาย dashboard — panel **Ask NokRak** ใต้ key figures เลือกหัวข้อได้ · ชื่อคนเป็น `[P1]` ก่อนส่ง · M15 (ข) · M15 ครบ) · ข้อ CI (NokRak อธิบาย policy — ปุ่ม **Explain with NokRak** ในหน้า policy · M15 (ก)) · ข้อ CH (ปุ่ม **Query** ที่หัวหน้าตาราง สำหรับคนที่อ่านได้แล้ว — เปิดหน้า Query บน source ของตารางพร้อม SQL · FR-1.6d) · ข้อ CG (เปลี่ยนรหัสผ่านเอง — Profile → Password · หน้าบังคับเปลี่ยนเมื่อรหัสถูก admin ตั้ง · M2 / FR-2.2) · ข้อ CF (NokRak ตอบคำถามวิธีใช้ ARAK จากคู่มือที่แพ็กเข้า jar — `search_docs`) · ข้อ CE (สร้าง classification / tag ของ ARAK เองในหน้า Governance — provenance local · sync ไม่ทับ · ไม่เขียนกลับ OM) · ข้อ CD (Column description เขียนใน ARAK · NokRak ร่าง · แสดงใน ticket) · ข้อ CC (tab Access รับ list ยาว — แถบสรุป · chip · ค้น · แบ่งหน้า · กดดูรายละเอียดเต็ม) · ข้อ CB (NokRak ช่วยแก้ policy ที่มีอยู่ — คน review แล้วกด Save เอง) · ข้อ CA (ประวัติ policy · diff · rollback) · ข้อ BW (tag จาก OM ผ่าน webhook/poller ย้าย policy binding ทันที) · ข้อ BV (tab Access เฉพาะผู้ดูแล + Diagram แบบ canvas) · ข้อ BU (FR-1.7 local tag + demo group บน prod) · push ขึ้น origin/main แล้ว · repo https://github.com/sakanarm/ARAK (**public**)
 >
 > อ่านคู่กับ **[docs/DESIGN.md](docs/DESIGN.md)** — ไฟล์นั้นคือ requirement + feature catalogue + สถานะครบทุกข้อ
 > ไฟล์นี้บอกเฉพาะ "ทำถึงไหน จะไปต่อยังไง อะไรที่ลองแล้วไม่เวิร์ค"
@@ -620,7 +620,40 @@ M25 ทำแยกได้ (profile ผ่าน proxy ที่มีแล�
 
 ---
 
-## รอบนี้ — **ข้อ CK: Find data — NokRak หาตารางจากประโยค (M16)**
+## รอบนี้ — **ข้อ CL: All rows (ดาวน์โหลดทุกแถว) · explorer hover / คลิกขวา · ลากขนาดแผงในหน้า Query (FR-6.3)**
+
+ผู้ใช้ถาม "ทำไมมีจำกัด Row" → "ต้อง Query ได้ทั้งหมดสิ" · ขอ hover column ให้บอก description + คลิกขวาไป Data Catalog · ขอให้ลาก editor ขึ้นลงได้ "เยอะกว่านี้" · ขอให้ลากเส้นระหว่าง editor กับ explanation ซ้ายขวาได้
+
+**ทำไมไม่ยกเพดาน 5,000 แถวบนจอ**
+- grid เป็นตาราง DOM ธรรมดา (ไม่ virtualize) และ JSON ถือทุกแถวไว้ในหน่วยความจำของ browser — ยกเพดานเท่ากับทำให้หน้าค้างกับตารางใหญ่ · จอจึงคงเพดานไว้ แล้วเพิ่ม **ทางที่สอง** ที่คนหมายถึงเวลาพูดว่า "ทั้งหมด" คือไฟล์
+- ปุ่ม **All rows** ขึ้นข้างผลลัพธ์ **เฉพาะตอนที่ผลถูกตัด** (`truncated`) · กดแล้วรัน statement เดิมอีกครั้งแบบไม่มีเพดาน เขียนเป็น CSV ระหว่างอ่าน — ทั้ง ARAK และ browser ไม่ถือทั้งตาราง
+
+**backend**
+- `POST /v1/query/export` body เดียวกับ `/v1/query` (`Ask`) → `text/csv; charset=UTF-8` แบบ stream · `Content-Disposition: attachment; filename="<table>-all-rows.csv"` (ไม่มีตาราง → `query-all-rows.csv`) · `X-Accel-Buffering: no` (nginx ไม่ buffer ทั้งไฟล์) · `Cache-Control: no-store`
+- **ผ่านทุกด่านเดียวกับ `run`** ก่อนไบต์แรก: policy rewrite · slot ของ admission · cost guard (**ตีราคาแบบไม่มี row limit** — ข้อความปฏิเสธบอกว่าให้ใส่ WHERE) · คำตอบแรกของ source · ถูกปฏิเสธ → 403 JSON `{message, fixable, assetFqn?}` ก่อนเริ่มไฟล์ · busy → 429 เหมือนเดิม
+- **เป็นตัวเองเท่านั้น** — `asPrincipal` ที่ไม่ใช่ตัวผู้เรียก → 403 *A download is always of your own rows; running as somebody else stays on screen* (ปฏิเสธ ไม่เงียบทิ้ง) · ไม่ใช้ result cache
+- พังกลางทาง → ตัด response (browser รายงานว่าดาวน์โหลดล้มเหลว **ไม่เซฟไฟล์ครึ่งตารางเหมือนเป็นไฟล์เต็ม**) · audit เป็น FAILED
+- เวลาสูงสุดของทั้งไฟล์ `queryLimits.exportTimeoutSeconds` (env `QUERY_EXPORT_TIMEOUT_SECONDS`, default **600**) · `QueryExecutor.open()` คืน `Cursor` (fetch size ของ export) · `CostEstimate` rowCap ≤ 0 = ไม่จำกัด
+- `policy/QueryCsv` (ใหม่) — กติกาเดียวกับปุ่ม CSV บนจอ (`lib/tabular.ts`): BOM · CRLF · RFC 4180 · null = ช่องว่าง · **กัน formula injection** (ค่าที่ขึ้นต้น `= + - @` tab CR ถูกเติม `'`) · ตัวเลขเขียนเต็ม ไม่มี `1E+3`
+- **Flyway V42** `audit_query.exported boolean NOT NULL DEFAULT false` — ตั้งทั้งตอนสำเร็จ ถูกปฏิเสธ และล้มเหลว (คนที่พยายามเอาสำเนาออกไปก็ควรหาเจอ) · `QueryLog` / `GET /v1/audit/queries` คืน `exported`
+
+**frontend**
+- `api/query.ts` `exportQuery` (blob · อ่าน JSON ของคำปฏิเสธออกจาก blob) · `pages/query/DownloadAll.tsx` ปุ่ม **All rows** (ซ่อนเมื่อ run as คนอื่น · แถบแจ้งผลใต้ผลลัพธ์) · hint ของ Row limit บอกว่า "When there are more, “All rows” beside the results downloads every one."
+- Query log: badge **downloaded** ที่แถวที่เป็นการดาวน์โหลด
+- **Explorer** (`SchemaExplorer.tsx`): hover / focus column → tooltip `ชื่อ · type` + description (ตัด HTML · ยาวเกิน 400 ตัดด้วย …) + tag / term ที่เจาะจงที่สุด · ไม่มี description → บอกว่าเพิ่มได้ที่แท็บ Columns · **คลิกขวา** ตาราง / column → เมนู *Open in the Data Catalog* (แท็บใหม่ · column เปิดที่แท็บ columns) · *Insert into the editor* · *Copy the full name* · ใช้คีย์บอร์ดได้ (ลูกศร · Esc)
+- **`pages/query/Splitters.tsx` (ใหม่)** — `WidthSplitter` / `HeightSplitter` ตัวเดียวใช้ 3 จุด (explorer | editor · editor | explanation · editor เหนือผลลัพธ์) · ลากหรือใช้ลูกศร (Shift = ก้าวใหญ่) · จำขนาดต่อ browser (`localStorage`, ห่อ try/catch)
+  - editor ขึ้นลง: ต่ำสุด **40px** (ราวบรรทัดเดียว) · ผลลัพธ์เหลืออย่างน้อย **96px** (เดิมกันไว้มากกว่านี้ ผู้ใช้ขอพื้นที่เพิ่ม)
+  - explanation ซ้ายขวา: ต่ำสุด 240px · editor เหลืออย่างน้อย 240px · กว้างที่จำไว้จากจอใหญ่ถูกตัดด้วย CSS `maxWidth` บนจอเล็ก ไม่ดัน editor ตกขอบ
+
+**test**
+- `QueryCsvTest` 6 · `QueryExportResourceTest` 7 · `AuditResourceTest` / `AssistToolboxTest` ปรับตาม `exported` → backend **776 ผ่าน**
+- jest: `DownloadAll.test` 7 · `SchemaExplorer.test` 10 · `Splitters.test` 10 · `query.test` +3 · `QueryLogPage.test` +1 → **772 ผ่าน / 79 suites**
+- **ยิงจริงบน local แล้วผ่าน** (admin · statement ไม่แตะตาราง เพราะ admin ยังอ่านตารางไหนบน local ไม่ได้): จอตัดที่ 2 แถว → ไฟล์ได้ครบ 4 แถว · BOM · header ตรง · comma / quote / null ถูกต้อง · ตารางที่ไม่มีสิทธิ์ → 403 JSON มี `assetFqn` · DELETE → 403 `fixable:false` · asPrincipal คนอื่น → 403 · ชื่อตัวเอง → 200 · query log ติด `exported:true` ทั้งที่สำเร็จและถูกปฏิเสธ · ไม่มี token → 401
+
+**ยังไม่ทำ (ตั้งใจแยก)**
+- ไฟล์รูปแบบอื่น (xlsx / parquet) · ดาวน์โหลดแบบ async ที่ส่งลิงก์ทีหลัง — CSV แบบ stream พอสำหรับวันนี้ และไม่ต้องเก็บสำเนาข้อมูลไว้ฝั่ง ARAK
+
+## รอบก่อนหน้า — **ข้อ CK: Find data — NokRak หาตารางจากประโยค (M16)**
 
 ผู้ใช้สั่ง "ทำอย่างอื่นต่อได้เลย" → ทำ M16 ตาม AP.4 · M11 (per-user gateway) กับ M13 (ปุ่มขอสิทธิ์) มีแล้วจึงไม่ติดอะไร
 

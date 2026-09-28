@@ -23,6 +23,11 @@ import lombok.Setter;
  * statement as it will run, row cap included: {@code maxCostPostgres} against
  * {@code EXPLAIN}'s total cost, {@code maxCostSqlServer} against the showplan's
  * subtree cost. Zero turns the guard off for that engine.
+ *
+ * <p>{@code exportTimeoutSeconds} bounds a download of every row, from the
+ * first byte to the last. A download holds a source connection and one of
+ * the caller's slots for as long as it runs, so it has an end like any other
+ * read; it is much longer than a query's because it is doing much more.
  */
 @Getter
 @Setter
@@ -57,6 +62,10 @@ public class QueryLimitsConfiguration {
   @Min(0)
   @JsonProperty("maxCostSqlServer")
   private double maxCostSqlServer = 5_000;
+
+  @Min(1)
+  @JsonProperty("exportTimeoutSeconds")
+  private int exportTimeoutSeconds = 600;
 
   public Duration queueWait() {
     return Duration.ofMillis(queueWaitMillis);

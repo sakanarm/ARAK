@@ -346,6 +346,7 @@ class AssistToolboxTest {
             List.of(READABLE),
             2,
             true,
+            false,
             false);
     when(audit.queries(
             eq("REJECTED"), any(), any(), any(), any(), eq(7), any(), any(), any(), eq(20),

@@ -125,3 +125,43 @@ export async function runQuery(ask: QueryAsk): Promise<QueryResult> {
   const { data } = await apiClient.post<QueryResult>('/v1/query', ask);
   return data;
 }
+
+/**
+ * Every row the statement returns, as a CSV file (FR-6.3).
+ *
+ * The screen holds at most {@link MAX_ROWS}, because the grid is drawn in the
+ * page and the whole answer sits in memory; this is the way past that. The
+ * server writes the file as the source reads it, through the same policy as
+ * {@link runQuery}, and always as the person asking -- there is no
+ * `asPrincipal` here to send.
+ *
+ * No client timeout: the server gives a download its own limit, and cutting
+ * one off here at the minute a query gets would stop a large table half-way.
+ */
+export async function exportQuery(
+  ask: Pick<QueryAsk, 'sourceId' | 'sql' | 'purpose'>,
+  options: { signal?: AbortSignal; onProgress?: (bytes: number) => void } = {}
+): Promise<Blob> {
+  try {
+    const { data } = await apiClient.post<Blob>('/v1/query/export', ask, {
+      responseType: 'blob',
+      timeout: 0,
+      headers: { Accept: 'text/csv, application/json' },
+      signal: options.signal,
+      onDownloadProgress: (event) => options.onProgress?.(event.loaded),
+    });
+    return data;
+  } catch (error) {
+    // A refusal arrives as a blob too, because the response type was chosen
+    // before the status was known. Read back into the JSON it is, so the
+    // refusal and busy helpers see what they see for a query.
+    if (axios.isAxiosError(error) && error.response?.data instanceof Blob) {
+      try {
+        error.response.data = JSON.parse(await error.response.data.text());
+      } catch {
+        error.response.data = undefined;
+      }
+    }
+    throw error;
+  }
+}

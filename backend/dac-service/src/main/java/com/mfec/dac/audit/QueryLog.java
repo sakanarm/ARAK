@@ -88,7 +88,8 @@ public class QueryLog {
       Long rowCount,
       Integer durationMs,
       List<String> assets,
-      boolean fromCache) {}
+      boolean fromCache,
+      boolean exported) {}
 
   /** How many rows in the window, before paging, by outcome. */
   public record Counts(int total, int executed, int rejected, int failed) {}
@@ -146,7 +147,7 @@ public class QueryLog {
                         SELECT q.id, q.occurred_at, q.principal_name, q.run_by, q.data_source_id,
                                d.name AS source_name, q.original_sql, q.rewritten_sql, q.outcome,
                                q.reject_reason, q.row_count, q.duration_ms, q.asset_fqns,
-                               q.served_from_cache
+                               q.served_from_cache, q.exported
                           FROM audit_query q
                           LEFT JOIN data_source d ON d.id = q.data_source_id
                         """
@@ -296,6 +297,7 @@ public class QueryLog {
         rows,
         millis,
         List.copyOf(fqns),
-        rs.getBoolean("served_from_cache"));
+        rs.getBoolean("served_from_cache"),
+        rs.getBoolean("exported"));
   }
 }

@@ -370,6 +370,13 @@ function LogRow({ row }: { row: QueryLogRow }) {
                 </Badge>
               </span>
             )}
+            {row.exported && (
+              <span title="Every row, downloaded as a file rather than shown on screen. The rows count is how many went into it.">
+                <Badge color="purple" size="sm" type="pill-color">
+                  downloaded
+                </Badge>
+              </span>
+            )}
           </div>
           <p
             className={`tw:mt-1 tw:truncate tw:text-xs ${

@@ -15,7 +15,9 @@ import jakarta.ws.rs.core.Context;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import jakarta.ws.rs.core.SecurityContext;
+import jakarta.ws.rs.core.StreamingOutput;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import jakarta.servlet.http.HttpServletRequest;
@@ -57,40 +59,33 @@ public class QueryResource {
 
   private final QueryService queries;
   private final AccessEligibility eligibility;
+  private final int exportSeconds;
 
   public QueryResource(QueryService queries) {
     this(queries, null);
   }
 
+  public QueryResource(QueryService queries, AccessEligibility eligibility) {
+    this(queries, eligibility, QueryService.DEFAULT_EXPORT_SECONDS);
+  }
+
   /**
    * @param eligibility answers "would asking the owner help" for a refusal that
    *     names a table; null leaves refusals as bare messages
+   * @param exportSeconds how long a download of every row may run
    */
-  public QueryResource(QueryService queries, AccessEligibility eligibility) {
+  public QueryResource(QueryService queries, AccessEligibility eligibility, int exportSeconds) {
     this.queries = queries;
     this.eligibility = eligibility;
+    this.exportSeconds = exportSeconds;
   }
 
   @POST
   public Map<String, Object> run(
       Ask ask, @Context SecurityContext security, @Context HttpServletRequest request) {
 
-    if (!(security.getUserPrincipal() instanceof AuthenticatedUser caller)) {
-      throw new ForbiddenException("No caller on this request");
-    }
-    if (ask == null || ask.sql() == null || ask.sql().isBlank()) {
-      throw new BadRequestException("Send {\"sourceId\": \"…\", \"sql\": \"SELECT …\"}");
-    }
-    if (ask.sourceId() == null || ask.sourceId().isBlank()) {
-      throw new BadRequestException("Say which source to run against");
-    }
-
-    UUID sourceId;
-    try {
-      sourceId = UUID.fromString(ask.sourceId().trim());
-    } catch (IllegalArgumentException e) {
-      throw new BadRequestException("sourceId must be the UUID of a registered source");
-    }
+    AuthenticatedUser caller = caller(security);
+    UUID sourceId = sourceOf(ask);
 
     String principal = caller.getName();
     if (ask.asPrincipal() != null && !ask.asPrincipal().isBlank()) {
@@ -140,18 +135,7 @@ public class QueryResource {
       body.put("estimatedCost", result.estimatedCost());
       return body;
     } catch (QueryService.BusyException e) {
-      // 429 and not 403: nothing about the caller or the statement is wrong,
-      // and the same request a few seconds from now will very likely run.
-      Map<String, Object> busy = new LinkedHashMap<>();
-      busy.put("message", e.getMessage());
-      busy.put("busy", true);
-      busy.put("retryAfterSeconds", e.retryAfterSeconds());
-      throw new WebApplicationException(
-          Response.status(Response.Status.TOO_MANY_REQUESTS)
-              .header("Retry-After", e.retryAfterSeconds())
-              .entity(busy)
-              .type(MediaType.APPLICATION_JSON)
-              .build());
+      throw busy(e);
     } catch (QueryService.RejectedException e) {
       Map<String, Object> refusal = new LinkedHashMap<>();
       refusal.put("message", e.getMessage());
@@ -195,6 +179,124 @@ public class QueryResource {
               .type(MediaType.APPLICATION_JSON)
               .build());
     }
+  }
+
+  /**
+   * Every row the statement returns, as a CSV file written while it is read
+   * (FR-6.3; the console's "Download all rows").
+   *
+   * <p>The same statement through the same policy as {@link #run}, with no row
+   * cap and nothing held in memory: see {@link QueryService#export}. Only ever
+   * as the caller -- {@code asPrincipal} naming somebody else is refused rather
+   * than ignored, so a client that sends it learns it did not do what it asked.
+   *
+   * <p>Refusals come back before the file starts, as JSON, with the same
+   * status as {@link #run}'s. A read that fails once rows are on their way
+   * cuts the response off, which the browser reports as a failed download
+   * rather than saving part of a table as if it were all of it.
+   */
+  @POST
+  @Path("/export")
+  @Produces({"text/csv", MediaType.APPLICATION_JSON})
+  public Response export(
+      Ask ask, @Context SecurityContext security, @Context HttpServletRequest request) {
+
+    AuthenticatedUser caller = caller(security);
+    UUID sourceId = sourceOf(ask);
+    if (ask.asPrincipal() != null
+        && !ask.asPrincipal().isBlank()
+        && !ask.asPrincipal().trim().equalsIgnoreCase(caller.getName())) {
+      throw new ForbiddenException(
+          "A download is always of your own rows; running as somebody else stays on screen");
+    }
+
+    QueryService.Download download;
+    try {
+      download =
+          queries.export(
+              sourceId, ask.sql(), caller.getName(), clientIp(request), ask.purpose(), exportSeconds);
+    } catch (QueryService.BusyException e) {
+      throw busy(e);
+    } catch (QueryService.RejectedException e) {
+      // The console offers a download only after the same statement has run on
+      // screen, where the request form and the fix had their chance; here the
+      // refusal is reported, not offered again.
+      Map<String, Object> refusal = new LinkedHashMap<>();
+      refusal.put("message", e.getMessage());
+      refusal.put("fixable", e.aboutStatement());
+      if (e.deniedAsset() != null) {
+        refusal.put("assetFqn", e.deniedAsset());
+      }
+      throw new WebApplicationException(
+          Response.status(Response.Status.FORBIDDEN)
+              .entity(refusal)
+              .type(MediaType.APPLICATION_JSON)
+              .build());
+    }
+
+    try {
+      StreamingOutput body = download::writeCsv;
+      return Response.ok(body, "text/csv; charset=UTF-8")
+          .header(
+              "Content-Disposition", "attachment; filename=\"" + fileName(download.assets()) + "\"")
+          // Sent as it is read: a proxy that buffered the response would hold
+          // the table in its own memory instead, and send nothing until the
+          // source had finished.
+          .header("X-Accel-Buffering", "no")
+          .header("Cache-Control", "no-store")
+          .build();
+    } catch (RuntimeException e) {
+      download.close();
+      throw e;
+    }
+  }
+
+  /** Named after the first table, as the console names its own exports. */
+  static String fileName(List<String> assets) {
+    String base = "query";
+    if (assets != null && !assets.isEmpty() && assets.get(0) != null) {
+      String fqn = assets.get(0);
+      base = fqn.substring(fqn.lastIndexOf('.') + 1).replaceAll("[^A-Za-z0-9_-]", "_");
+    }
+    return (base.isBlank() ? "query" : base) + "-all-rows.csv";
+  }
+
+  private static AuthenticatedUser caller(SecurityContext security) {
+    if (!(security.getUserPrincipal() instanceof AuthenticatedUser caller)) {
+      throw new ForbiddenException("No caller on this request");
+    }
+    return caller;
+  }
+
+  private static UUID sourceOf(Ask ask) {
+    if (ask == null || ask.sql() == null || ask.sql().isBlank()) {
+      throw new BadRequestException("Send {\"sourceId\": \"…\", \"sql\": \"SELECT …\"}");
+    }
+    if (ask.sourceId() == null || ask.sourceId().isBlank()) {
+      throw new BadRequestException("Say which source to run against");
+    }
+    try {
+      return UUID.fromString(ask.sourceId().trim());
+    } catch (IllegalArgumentException e) {
+      throw new BadRequestException("sourceId must be the UUID of a registered source");
+    }
+  }
+
+  /**
+   * 429 and not 403: nothing about the caller or the statement is wrong, and
+   * the same request a few seconds from now will very likely run.
+   */
+  private static WebApplicationException busy(QueryService.BusyException e) {
+    Map<String, Object> busy = new LinkedHashMap<>();
+    busy.put("message", e.getMessage());
+    busy.put("busy", true);
+    busy.put("retryAfterSeconds", e.retryAfterSeconds());
+    return new WebApplicationException(
+        Response.status(Response.Status.TOO_MANY_REQUESTS)
+            .header("Retry-After", e.retryAfterSeconds())
+            .entity(busy)
+            .type(MediaType.APPLICATION_JSON)
+            .build());
   }
 
   /**

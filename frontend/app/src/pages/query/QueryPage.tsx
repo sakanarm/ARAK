@@ -43,6 +43,7 @@ import { download, exportName, toCsv, toXlsx } from '../../lib/tabular';
 import { Field, Select, TextField } from '../policies/controls';
 import BusyNote from './BusyNote';
 import CachedNote from './CachedNote';
+import DownloadAll from './DownloadAll';
 import RequestAccess from './RequestAccess';
 import {
   ExplainButton,
@@ -57,6 +58,7 @@ import { FindWithNokRak } from './FindData';
 import SchemaExplorer from './SchemaExplorer';
 import { SavedQueriesPanel, SaveQueryButton } from './SavedQueries';
 import type { SavedQuery } from '../../api/savedQueries';
+import { HeightSplitter, readSize, SPLITTER_WIDTH, WidthSplitter } from './Splitters';
 import SqlEditor, { type SqlCompletionSource } from './SqlEditor';
 import { asCompletionTable, type CompletionTable } from './sqlCompletion';
 
@@ -123,12 +125,23 @@ export default function QueryPage() {
   // so this is really "how many rows do I want to see at once" -- which depends
   // on the query and the screen, and is therefore the reader's decision rather
   // than a ratio we can pick for them.
-  const [editorHeight, setEditorHeight] = useState(readEditorHeight);
+  const [editorHeight, setEditorHeight] = useState(() =>
+    readSize(EDITOR_HEIGHT_KEY, DEFAULT_EDITOR_HEIGHT, MIN_EDITOR_HEIGHT)
+  );
 
   // The same argument sideways. A schema three levels deep with long table
   // names does not fit in 256px, and the fix for that was horizontal
   // scrolling inside a panel nobody thought to scroll.
-  const [sidebarWidth, setSidebarWidth] = useState(readSidebarWidth);
+  const [sidebarWidth, setSidebarWidth] = useState(() =>
+    readSize(SIDEBAR_WIDTH_KEY, DEFAULT_SIDEBAR_WIDTH, MIN_SIDEBAR_WIDTH, MAX_SIDEBAR_WIDTH)
+  );
+
+  // And for the explanation beside the editor: a long explanation wants room
+  // to read, a long statement wants room to write, and only the reader knows
+  // which of the two they are doing.
+  const [explainWidth, setExplainWidth] = useState(() =>
+    readSize(EXPLAIN_WIDTH_KEY, DEFAULT_EXPLAIN_WIDTH, MIN_EXPLAIN_WIDTH)
+  );
 
   // A split remembered on a 27-inch monitor is taller than the whole pane on a
   // laptop. Clamped on the way out rather than on the way in, so the preference
@@ -381,7 +394,15 @@ export default function QueryPage() {
           />
         </div>
 
-        <SideSplitter onChange={setSidebarWidth} width={sidebarWidth} />
+        <WidthSplitter
+          label="Resize the explorer"
+          max={() => MAX_SIDEBAR_WIDTH}
+          min={MIN_SIDEBAR_WIDTH}
+          onChange={setSidebarWidth}
+          panel="left"
+          storageKey={SIDEBAR_WIDTH_KEY}
+          width={sidebarWidth}
+        />
 
         <div className="tw:flex tw:min-h-0 tw:min-w-0 tw:flex-1 tw:flex-col tw:gap-2">
           {/* Where the statement goes and whose access it is judged by: set
@@ -548,9 +569,7 @@ export default function QueryPage() {
           </div>
 
           <div className="tw:flex tw:min-h-0 tw:flex-1 tw:flex-col" ref={setPaneNode}>
-            <div
-              className="tw:flex tw:shrink-0 tw:gap-3"
-              style={{ height: shownEditorHeight }}>
+            <div className="tw:flex tw:shrink-0" style={{ height: shownEditorHeight }}>
               <SqlEditor
                 completion={effectiveSource ? completion : undefined}
                 disabled={run.isPending}
@@ -562,20 +581,47 @@ export default function QueryPage() {
                   beside the editor: read side by side, and the editor keeps
                   its place. */}
               {(explain.isPending || explain.data || explain.error) && (
-                <div className="tw:flex tw:min-h-0 tw:w-80 tw:shrink-0 tw:flex-col tw:*:h-full tw:*:max-h-full! tw:xl:w-96">
-                  <ExplanationCard
-                    about={explained}
-                    current={sql}
-                    error={explain.error}
-                    explanation={explain.data}
-                    onDismiss={() => explain.reset()}
-                    pending={explain.isPending}
+                <>
+                  <WidthSplitter
+                    label="Resize the explanation"
+                    max={(row) =>
+                      row ? row.clientWidth - MIN_EDITOR_WIDTH - SPLITTER_WIDTH : explainWidth
+                    }
+                    min={MIN_EXPLAIN_WIDTH}
+                    onChange={setExplainWidth}
+                    panel="right"
+                    storageKey={EXPLAIN_WIDTH_KEY}
+                    width={explainWidth}
                   />
-                </div>
+                  {/* Capped on the way out as well, so a width remembered on a
+                      wide screen never pushes the editor off a narrow one. */}
+                  <div
+                    className="tw:flex tw:min-h-0 tw:shrink-0 tw:flex-col tw:*:h-full tw:*:max-h-full!"
+                    style={{
+                      width: explainWidth,
+                      maxWidth: `calc(100% - ${MIN_EDITOR_WIDTH + SPLITTER_WIDTH}px)`,
+                    }}>
+                    <ExplanationCard
+                      about={explained}
+                      current={sql}
+                      error={explain.error}
+                      explanation={explain.data}
+                      onDismiss={() => explain.reset()}
+                      pending={explain.isPending}
+                    />
+                  </div>
+                </>
               )}
             </div>
 
-            <Splitter height={shownEditorHeight} onChange={setEditorHeight} />
+            <HeightSplitter
+              height={shownEditorHeight}
+              label="Resize the editor"
+              min={MIN_EDITOR_HEIGHT}
+              minBelow={MIN_RESULT_HEIGHT}
+              onChange={setEditorHeight}
+              storageKey={EDITOR_HEIGHT_KEY}
+            />
 
             <ResultPanel
               error={run.error}
@@ -656,7 +702,9 @@ function QuerySettings({
           {/* Typed, not picked from a list: a fixed set of four numbers is
               never the number somebody wants, and the server clamps to
               MAX_ROWS anyway, so there is nothing a free field can break. */}
-          <Field hint={`At most ${MAX_ROWS}; the server holds to that.`} label="Row limit">
+          <Field
+            hint={`How many rows the screen shows, at most ${MAX_ROWS}. When there are more, “All rows” beside the results downloads every one.`}
+            label="Row limit">
             <TextField
               ariaLabel="Row limit"
               onChange={(value) => onMaxRows(value.replace(/[^0-9]/g, ''))}
@@ -690,195 +738,23 @@ const MAX_SIDEBAR_WIDTH = 560;
 const DEFAULT_SIDEBAR_WIDTH = 256;
 
 const EDITOR_HEIGHT_KEY = 'arak.query.editorHeight';
-const MIN_EDITOR_HEIGHT = 72;
-// Tab bar, explanation strip and enough grid left over to read: a floor
-// that only fits the chrome is a floor that guarantees an empty-looking grid.
-const MIN_RESULT_HEIGHT = 240;
+// About one line of SQL: enough to see which statement is loaded while the
+// rows take the rest of the screen.
+const MIN_EDITOR_HEIGHT = 40;
+// The tab bar and a couple of rows. Lower than it once was because people
+// asked for the room: the floor only has to leave the grid findable, and the
+// grip is right there to give it back.
+const MIN_RESULT_HEIGHT = 96;
 const DEFAULT_EDITOR_HEIGHT = 200;
+
+const EXPLAIN_WIDTH_KEY = 'arak.query.explainWidth';
+const MIN_EXPLAIN_WIDTH = 240;
+const DEFAULT_EXPLAIN_WIDTH = 352;
+// What the editor keeps beside the explanation, however wide that is dragged.
+const MIN_EDITOR_WIDTH = 240;
 // Below this the console is useless anyway, so a very short window gets a
 // scrollbar rather than a console squeezed to nothing.
 const MIN_CONSOLE_HEIGHT = 420;
-
-/**
- * Remembered per browser, because the right split is a property of the screen
- * and of the work, not of the session. Wrapped because storage throws in a
- * private window and a thrown preference must not cost somebody the page.
- */
-function readEditorHeight() {
-  try {
-    const saved = Number(window.localStorage.getItem(EDITOR_HEIGHT_KEY));
-    if (Number.isFinite(saved) && saved >= MIN_EDITOR_HEIGHT) {
-      return saved;
-    }
-  } catch {
-    // No stored preference is not an error; it is the first visit.
-  }
-  return DEFAULT_EDITOR_HEIGHT;
-}
-
-/** As {@link readEditorHeight}, for the width of the explorer column. */
-function readSidebarWidth() {
-  try {
-    const saved = Number(window.localStorage.getItem(SIDEBAR_WIDTH_KEY));
-    if (Number.isFinite(saved) && saved >= MIN_SIDEBAR_WIDTH) {
-      return Math.min(saved, MAX_SIDEBAR_WIDTH);
-    }
-  } catch {
-    // No stored preference is not an error; it is the first visit.
-  }
-  return DEFAULT_SIDEBAR_WIDTH;
-}
-
-/**
- * Drag to decide how much of the row the schema tree gets.
- *
- * <p>The twin of {@link Splitter}, and deliberately drawn the same way: one
- * grip that appears where the pointer is, so the two resizable edges of this
- * screen look like one idea rather than two. It also supplies the gap between
- * the panels, which is why removing it would close it.
- */
-function SideSplitter({
-  width,
-  onChange,
-}: {
-  width: number;
-  onChange: (next: number) => void;
-}) {
-  function clamp(next: number) {
-    return Math.round(
-      Math.min(Math.max(next, MIN_SIDEBAR_WIDTH), MAX_SIDEBAR_WIDTH)
-    );
-  }
-
-  function remember(value: number) {
-    try {
-      window.localStorage.setItem(SIDEBAR_WIDTH_KEY, String(value));
-    } catch {
-      // The width still applies for this visit; only the memory of it is lost.
-    }
-  }
-
-  return (
-    <div
-      aria-label="Resize the explorer"
-      aria-orientation="vertical"
-      aria-valuenow={Math.round(width)}
-      className="tw:group tw:flex tw:w-4 tw:shrink-0 tw:cursor-col-resize tw:items-center tw:justify-center"
-      onKeyDown={(event) => {
-        const step = event.shiftKey ? 64 : 16;
-        const delta =
-          event.key === 'ArrowLeft' ? -step : event.key === 'ArrowRight' ? step : 0;
-        if (delta === 0) {
-          return;
-        }
-        event.preventDefault();
-        const next = clamp(width + delta);
-        onChange(next);
-        remember(next);
-      }}
-      onPointerDown={(event) => {
-        event.preventDefault();
-        const startX = event.clientX;
-        const startWidth = width;
-        let settled = startWidth;
-
-        const move = (moved: PointerEvent) => {
-          settled = clamp(startWidth + moved.clientX - startX);
-          onChange(settled);
-        };
-        const stop = () => {
-          window.removeEventListener('pointermove', move);
-          window.removeEventListener('pointerup', stop);
-          remember(settled);
-        };
-        window.addEventListener('pointermove', move);
-        window.addEventListener('pointerup', stop);
-      }}
-      role="separator"
-      tabIndex={0}>
-      <span className="tw:h-10 tw:w-0.5 tw:rounded-full tw:bg-border-secondary tw:transition tw:group-hover:bg-brand-solid tw:group-focus:bg-brand-solid" />
-    </div>
-  );
-}
-
-/**
- * Drag to decide how much of the screen the rows get.
- *
- * <p>A fixed ratio cannot be right: a one-line statement against a thousand
- * rows and a forty-line statement against three want opposite splits, and both
- * are ordinary. Keyboard-operable as well as draggable -- a separator that only
- * answers to a mouse takes the grid away from anybody who cannot use one.
- */
-function Splitter({
-  height,
-  onChange,
-}: {
-  height: number;
-  onChange: (next: number) => void;
-}) {
-  function clamp(next: number, handle: HTMLElement | null) {
-    // Measured against the column the handle actually sits in, so the grid
-    // keeps a floor no matter how short the window is.
-    const column = handle?.parentElement;
-    const ceiling = column
-      ? column.clientHeight - MIN_RESULT_HEIGHT
-      : Number.MAX_SAFE_INTEGER;
-    return Math.round(
-      Math.min(Math.max(next, MIN_EDITOR_HEIGHT), Math.max(ceiling, MIN_EDITOR_HEIGHT))
-    );
-  }
-
-  function remember(value: number) {
-    try {
-      window.localStorage.setItem(EDITOR_HEIGHT_KEY, String(value));
-    } catch {
-      // The split still applies for this visit; only the memory of it is lost.
-    }
-  }
-
-  return (
-    <div
-      aria-label="Resize the editor"
-      aria-orientation="horizontal"
-      aria-valuenow={Math.round(height)}
-      className="tw:group tw:-my-1.5 tw:flex tw:h-3 tw:shrink-0 tw:cursor-row-resize tw:items-center tw:justify-center"
-      onKeyDown={(event) => {
-        const step = event.shiftKey ? 64 : 16;
-        const delta =
-          event.key === 'ArrowUp' ? -step : event.key === 'ArrowDown' ? step : 0;
-        if (delta === 0) {
-          return;
-        }
-        event.preventDefault();
-        const next = clamp(height + delta, event.currentTarget);
-        onChange(next);
-        remember(next);
-      }}
-      onPointerDown={(event) => {
-        event.preventDefault();
-        const handle = event.currentTarget;
-        const startY = event.clientY;
-        const startHeight = height;
-        let settled = startHeight;
-
-        const move = (moved: PointerEvent) => {
-          settled = clamp(startHeight + moved.clientY - startY, handle);
-          onChange(settled);
-        };
-        const stop = () => {
-          window.removeEventListener('pointermove', move);
-          window.removeEventListener('pointerup', stop);
-          remember(settled);
-        };
-        window.addEventListener('pointermove', move);
-        window.addEventListener('pointerup', stop);
-      }}
-      role="separator"
-      tabIndex={0}>
-      <span className="tw:h-0.5 tw:w-10 tw:rounded-full tw:bg-border-secondary tw:transition tw:group-hover:bg-brand-solid tw:group-focus:bg-brand-solid" />
-    </div>
-  );
-}
 
 /**
  * Take the rows away as a file.
@@ -892,12 +768,13 @@ function Splitter({
  *
  * <p>A truncated result exports truncated and says so, since a file that
  * silently holds the first two hundred of nine thousand rows is the kind of
- * thing somebody later reconciles a report against.
+ * thing somebody later reconciles a report against. The rest is one button
+ * along: {@link DownloadAll}.
  */
 function Export({ result }: { result: QueryResult }) {
   const grid = { columns: result.columns, rows: result.rows };
   const caveat = result.truncated
-    ? ` Only the ${result.rows.length} rows shown, because the result was capped.`
+    ? ` Only the ${result.rows.length} rows shown, because the result was capped; “All rows” downloads every one.`
     : '';
 
   return (
@@ -950,6 +827,12 @@ function ResultPanel({
   tab: 'results' | 'sql' | 'details';
   setTab: (tab: 'results' | 'sql' | 'details') => void;
 }) {
+  // Why the last "All rows" did not end in a file. Kept here, above the early
+  // returns, so it has the width of the panel rather than of a button.
+  const [downloadNote, setDownloadNote] = useState<string | null>(null);
+  useEffect(() => setDownloadNote(null), [result]);
+  const me = useAuthStore((state) => state.user?.username ?? null);
+
   const busy = error ? busyOf(error) : null;
   if (busy) {
     return <BusyNote busy={busy} onRetry={onRetry} />;
@@ -1041,9 +924,12 @@ function ResultPanel({
 
         <div className="tw:ml-auto tw:flex tw:items-center tw:gap-2 tw:pr-2">
           {result.truncated && (
-            <Badge color="warning" size="sm" type="pill-color">
-              truncated
-            </Badge>
+            <span
+              title={`Only the first ${result.rows.length} rows are on screen. “All rows” downloads every one as CSV.`}>
+              <Badge color="warning" size="sm" type="pill-color">
+                truncated
+              </Badge>
+            </span>
           )}
           {result.cached && (
             <CachedNote onRunFresh={onRunFresh} readAt={result.readAt} />
@@ -1052,8 +938,35 @@ function ResultPanel({
             {result.millis} ms · as {result.principal}
           </span>
           <Export result={result} />
+          {result.truncated && ran?.sourceId && (
+            <DownloadAll
+              ask={ran}
+              assets={result.assets}
+              onFailure={setDownloadNote}
+              runAs={
+                me && result.principal.toLowerCase() !== me.toLowerCase()
+                  ? result.principal
+                  : null
+              }
+            />
+          )}
         </div>
       </div>
+
+      {downloadNote && (
+        <div
+          className="tw:flex tw:shrink-0 tw:items-start tw:gap-2 tw:border-b tw:border-secondary tw:bg-error-primary tw:px-3 tw:py-2 tw:text-xs tw:text-error-primary"
+          role="alert">
+          <AlertTriangle className="tw:mt-0.5 tw:size-3.5 tw:shrink-0" />
+          <span className="tw:flex-1">{downloadNote}</span>
+          <button
+            className="tw:cursor-pointer tw:font-semibold tw:hover:underline"
+            onClick={() => setDownloadNote(null)}
+            type="button">
+            Dismiss
+          </button>
+        </div>
+      )}
 
       {result.unenforceable.length > 0 && (
         <div className="tw:shrink-0 tw:border-b tw:border-secondary tw:bg-warning-primary tw:px-3 tw:py-2">
