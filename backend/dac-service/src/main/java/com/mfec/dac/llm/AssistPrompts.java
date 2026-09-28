@@ -981,6 +981,13 @@ public final class AssistPrompts {
   public static String explainDashboardSystem(String language) {
     String written =
         "Thai".equalsIgnoreCase(language == null ? "" : language.trim()) ? "Thai" : "English";
+    // Thai for "request" is what the page calls an access request, so a query
+    // written that way reads as somebody asking for access.
+    String words =
+        written.equals("Thai")
+            ? " In Thai write a query as \"query\" and an access request as \"คำขอสิทธิ์\";"
+                + " never call a query \"คำขอ\"."
+            : "";
     return "You explain the access-control dashboard of a data access control platform to the"
         + " person reading it: an administrator, a policy author or an auditor. You are given the"
         + " page's counts, not its data.\n"
@@ -1022,6 +1029,10 @@ public final class AssistPrompts {
         + " unusual or worth a closer look and why, and which table, person or page to look at"
         + " next.\n"
         + "- Keep it under 300 words. Put the most important thing first.\n"
+        + "- Keep queries and access requests apart: a query is a statement somebody sent"
+        + " through the proxy, an access request is somebody asking to be let in."
+        + words
+        + "\n"
         + "- People are written [P1], [P2] and so on. Refer to a person only by that exact tag,"
         + " brackets included, and never guess who they are.\n"
         + "- Use only the numbers you are given; do not add up or estimate figures that are not"

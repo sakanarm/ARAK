@@ -663,10 +663,14 @@ class AssistPromptsTest {
     void systemCarriesTheRules() {
       String english = AssistPrompts.explainDashboardSystem(null);
 
-      assertThat(AssistPrompts.explainDashboardSystem("thai")).contains("Write in Thai");
+      assertThat(AssistPrompts.explainDashboardSystem("thai"))
+          .contains("Write in Thai")
+          .contains("a query as \"query\"", "an access request as \"คำขอสิทธิ์\"");
       assertThat(AssistPrompts.explainDashboardSystem("Klingon")).contains("Write in English");
       assertThat(english)
           .contains("Write in English", "Default deny")
+          .contains("Keep queries and access requests apart")
+          .doesNotContain("คำขอ")
           .contains("POLICY_DENY a policy said no", "TOO_COSTLY", "BUSY no room for one more read")
           .contains("DRIFTED means", "HIGH is exposure")
           .contains("[P1], [P2]", "exact tag", "never guess who they are")
