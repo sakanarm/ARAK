@@ -443,17 +443,21 @@ login ด้วย **PAT / service account** (M14) ไม่ใช่รหั�
 
 **ต่อยอดทีหลัง** — Terraform provider (`arak_policy`, `arak_data_source`) สำหรับทีมที่ทำทุกอย่างบน Terraform อยู่แล้ว · GitOps แบบ pull (ARAK ดึงจาก repo เอง)
 
-### FR-21 – FR-26 Object ที่ ARAK เก็บเพิ่ม นอกจาก Data Access Policy — M31–M36 ⬜ (ผู้ใช้ขอ 2026-09-28)
+### FR-21 – FR-26 Object ที่ ARAK เก็บเพิ่ม นอกจาก Data Access Policy — M31–M36 🟡 M31a ✅ (ผู้ใช้ขอ 2026-09-28)
 *"นอกจาก Data Access Policy แล้ว ควรมี Object อื่นอีกไหมที่เก็บ" → "ใส่ใน Roadmap"*
 
 **เส้นแบ่ง** — OpenMetadata เก็บว่า**ข้อมูลคืออะไร** (glossary · domain · data product · lineage · quality) · ARAK เก็บว่า**ใครใช้ได้ ใช้เพื่ออะไร และมีหลักฐานอะไรยืนยัน** · ของที่ OM มีแล้วไม่เก็บซ้ำ · consent และ retention เป็นของระบบต้นทาง ไม่ใช่ของ ARAK ·
 ที่มีแล้ว: policy · grant · access request + workflow + template · local group · local tag / vocabulary · column description · saved query · audit
 
-#### FR-21 Purpose — วัตถุประสงค์การใช้ข้อมูล (M31)
+#### FR-21 Purpose — วัตถุประสงค์การใช้ข้อมูล (M31) — 🟡 M31a ✅ 2026-09-28
 - วันนี้ purpose เป็นข้อความพิมพ์เองอยู่ 4 ที่: `context.purpose` ใน subject rule · คำขอสิทธิ์ · `purposes` ของ template · `audit_query.purpose` — เทียบกันไม่ได้ นับไม่ได้
 - **object `purpose`**: key · ชื่อ · คำอธิบาย · **ฐานกฎหมายตาม PDPA** (ม.24: consent / สัญญา / หน้าที่ตามกฎหมาย / ประโยชน์สำคัญต่อชีวิต / ภารกิจสาธารณะ / ประโยชน์โดยชอบด้วยกฎหมาย) · ใช้กับข้อมูลอ่อนไหว (ม.26) ได้ไหม · เจ้าของ (DPO / steward) · ระยะสิทธิ์สูงสุด · สถานะ `ACTIVE` / `RETIRED` (ปลดแทนลบ) · ประวัติทุกครั้งที่แก้
 - ต่อเข้า: policy อ้าง purpose ด้วย key (ตรวจตอน save ว่ามีจริง) · ฟอร์มขอสิทธิ์และ template เลือกจากรายการ · grant เก็บ `purpose_id` และมีอายุไม่เกินของ purpose · query / export เลือก purpose · Dashboard ตอบ *"ข้อมูล PII ถูกใช้เพื่ออะไรบ้าง"*
 - ข้อความเดิมเก็บไว้เป็น legacy text · ปลด purpose → grant ที่อ้างอยู่เข้ารอบทบทวน (FR-22)
+- **M31a ✅ (HANDOFF ข้อ CN)** — V43 `purpose` + `audit_purpose` (append-only · CREATE / UPDATE / RETIRE / REINSTATE พร้อม before / after) · key ตัวเล็ก `^[a-z0-9][a-z0-9._-]{0,62}$` แก้ไม่ได้ · ชื่อและ key ห้ามซ้ำ (ไม่สนตัวพิมพ์) · ฐานกฎหมาย 7 แบบ (consent · ม.24(1)–(6)) หรือยังไม่ระบุ · ระยะสิทธิ์สูงสุด 1–365 วัน · seed 3 ตัวที่หน้า Query เคยมี (fraud-analysis · reporting · support — ฐานกฎหมายเว้นว่างให้คนที่รู้มาใส่) · `GET/POST /v1/purposes` · `PUT /{key}` · `POST /{key}/retire|reinstate` (ต้องมีเหตุผล) · `GET /usage` · `GET /{key}/history` · แก้ได้เฉพาะ admin / POLICY_AUTHOR · usage + history เห็นได้ admin / author / DATA_OWNER / AUDITOR · รายการเห็นได้ทุกคนที่ login
+  - **server ตรวจ**: policy (`subject.context.purpose`) และ template (`form.purposes`) ต้องอ้างตัวที่อยู่ในทะเบียนและยังใช้อยู่ — ค่าที่ของชิ้นนั้นมีอยู่แล้วผ่านได้ (แก้ของเก่าได้โดยไม่ติดสิ่งที่คนแก้ไม่ได้ก่อ) · Query / Simulator ประกาศ purpose ที่ไม่อยู่ในทะเบียนหรือถูกปลด → 400 · คำขอสิทธิ์: ปลดแล้ว = ปฏิเสธ · purpose มีระยะสูงสุด → ขอเกิน / ขอแบบ until revoked ไม่ได้ · template มีรายการ → ต้องอยู่ในรายการนั้น
+  - **หน้าจอ**: Settings → Purposes (In use · Named but not listed + List it · Retired · History) · picker ในฟอร์ม policy · template · ฟอร์มขอสิทธิ์ (3 ที่) · Pre-authorize · Query · Simulator · ระยะวันในฟอร์มขอถูกตัดตาม purpose
+  - **ยังไม่ทำ (M31b)**: grant เก็บ `purpose` และอายุไม่เกินของ purpose · รายงาน "ข้อมูล PII ถูกใช้เพื่ออะไร" · บังคับ `sensitiveAllowed` (ม.26) — วันนี้บันทึกไว้อย่างเดียว · ปลดแล้วส่ง grant เข้ารอบทบทวน (ต้องมี M32)
 
 #### FR-22 Access Review — รอบทบทวนสิทธิ์ (M32)
 - `access_review_campaign`: ขอบเขต (selector เดียวกับ policy เช่น ทุก table ที่ติด PII) · ผู้ทบทวน (owner ของ table / หัวหน้า / ระบุชื่อ) · กำหนดส่ง · รอบซ้ำ (เช่น ทุก 90 วัน)
@@ -493,7 +497,7 @@ login ด้วย **PAT / service account** (M14) ไม่ใช่รหั�
 
 ## 6. แผน Milestone และสถานะจริง
 
-สถานะ ณ 2026-09-26 · รายละเอียดทีละรอบอยู่ใน `HANDOFF.md`
+สถานะ ณ 2026-09-28 · รายละเอียดทีละรอบอยู่ใน `HANDOFF.md`
 
 | M | งาน | ประเมิน | สถานะ |
 |---|---|---|---|
@@ -530,7 +534,7 @@ login ด้วย **PAT / service account** (M14) ไม่ใช่รหั�
 | **M28** | Conversational ARAK Agent — แชทใน mascot + Catalog · ค้น catalog · ตอบ SQL syntax · เขียน query · พาไปหน้าในแอพ · metadata เท่านั้น · ไม่ apply อะไรเอง | – | ✅ 2026-09-26 — `POST /v1/llm/assist/chat` (tool calling ตามสิทธิ์คนคุย) · Ask NokRak ใน Catalog + global search · สิทธิ์ต่องานของ AI ต่อ role (V29 `llm_feature_access`, admin ตั้งใน Settings, บังคับที่ server) · **ตอบคำถามวิธีใช้ ARAK จากคู่มือ** (2026-09-27 · tool `search_docs` ให้ทุกคน · `docs/user-guide.md` + เอกสาร policy แพ็กเข้า jar ใต้ `help/` · ห้ามอธิบายแอปจากความรู้ทั่วไป · HANDOFF ข้อ CF) |
 | **M28b** | ปุ่ม NokRak บนหน้างาน — New policy "NokRak, help me" (draft เข้า form · ตัด id/lifecycleState · ไม่ save/activate) · Query "NokRak, write it" (Use this = ใส่ editor ไม่ run) · Query console จัดแบบ BigQuery (แถบ editor แถวเดียว · Query settings popover · panel ลอย · Explain ข้าง editor) · prompt `/policy` ส่ง `type/facet.json` ด้วย · **หน้า Edit ก็มี "NokRak, help me" (2026-09-27)** — ส่ง form ปัจจุบันเป็น `current` (server ตัด id / version / lifecycleState / updatedAt / updatedBy · ไม่ใช่ JSON object หรือเกิน 50,000 ตัวอักษร = 400) · form เปลี่ยน + panel Before / Suggested + Undo · ACTIVE เตือนว่า Save = มีผลทันที · **Save เท่านั้นที่ถึง store** | – | ✅ 2026-09-26 · edit 2026-09-27 |
 | **M30** | **IaC + Configuration as Code** (FR-20) — M30a YAML (`apiVersion: arak/v1`) + `validate` / `plan` / `apply` / `export` API · M30b CLI `arak` + policy test ผ่าน Simulator · M30c template GitHub Actions + GitLab CI (PR = plan + comment · main = dev · uat/prod ต้องกดอนุมัติ) · M30d Helm chart + Terraform module ติดตั้ง ARAK · M30e Terraform provider (optional) · secret เป็น reference เท่านั้น · policy ลงเป็น DRAFT เว้นแต่ PR ผ่านคนอื่น approve | 3–4 wk | ⬜ ผู้ใช้ขอ 2026-09-26 · ต้องมี M14 (PAT) · ต่อยอด FR-9 + M17 |
-| **M31** | **Purpose** — วัตถุประสงค์การใช้ข้อมูลเป็น object (FR-21) · ฐานกฎหมายตาม PDPA · policy / คำขอ / template / grant / query อ้าง key เดียวกัน · รายงาน "PII ถูกใช้เพื่ออะไร" | – | ⬜ ผู้ใช้ขอ 2026-09-28 · แนะนำเป็นตัวแรกของชุด M31–M36 |
+| **M31** | **Purpose** — วัตถุประสงค์การใช้ข้อมูลเป็น object (FR-21) · ฐานกฎหมายตาม PDPA · policy / คำขอ / template / grant / query อ้าง key เดียวกัน · รายงาน "PII ถูกใช้เพื่ออะไร" | – | 🟡 **M31a ✅ 2026-09-28** (ข้อ CN) — ทะเบียน purpose + ฐานกฎหมาย + ประวัติ · picker ใน policy / template / ฟอร์มขอ / Pre-authorize / Query / Simulator · server ตรวจทุกที่ · ระยะสิทธิ์สูงสุดบังคับที่คำขอ · **เหลือ M31b**: grant purpose + อายุตาม purpose · รายงาน PII ใช้เพื่ออะไร · บังคับข้อมูลอ่อนไหว |
 | **M32** | **Access Review** — รอบทบทวนสิทธิ์ (FR-22) · campaign + รายการต่อ grant · keep / revoke / shorten + เหตุผล · เห็นวันที่ใช้ล่าสุด · หลักฐานให้ auditor | – | ⬜ ผู้ใช้ขอ 2026-09-28 · ใช้ query log ของ M10 · ดีขึ้นเมื่อมี M31 |
 | **M33** | **Project / Workspace** (FR-23) — ทีม + purpose + table + วันจบ · project เป็น principal · ออกจาก project สิทธิ์หาย | – | ⬜ ผู้ใช้ขอ 2026-09-28 · ต้องมี M31 · รวม M27 |
 | **M34** | **Rule ที่ใช้ซ้ำได้** (FR-24) — mask / row filter ตั้งชื่อครั้งเดียว หลาย policy อ้าง · impact + ประวัติ (M17) ตอนแก้ | – | ⬜ ผู้ใช้ขอ 2026-09-28 · ทำแยกได้ |

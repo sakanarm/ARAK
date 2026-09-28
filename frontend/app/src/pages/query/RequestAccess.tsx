@@ -21,10 +21,17 @@ import {
   MAX_DAYS,
   MAX_REFERENCE,
   TEMPLATES_KEY,
-  type RequestForm,
   type RequestTemplate,
 } from '../../api/requestTemplates';
-import { FIELD, Select, TextField } from '../policies/controls';
+import { usablePurpose, usePurposes } from '../../api/purposes';
+import { FIELD, TextField } from '../policies/controls';
+import {
+  cappedBy,
+  fitDays,
+  purposeDaysProblem,
+  RequestPurpose,
+  startingPurpose,
+} from '../policies/purposePickers';
 
 /**
  * What to do about a refusal, under the refusal itself.
@@ -176,32 +183,48 @@ export function RequestAccessForm({
   });
   const template = loaded.data ?? BUILT_IN_TEMPLATE;
   const form = template.form;
+  const { data: register } = usePurposes();
+  const registered = register?.purposes;
 
   const [reason, setReason] = useState('');
-  const [days, setDays] = useState(daysText(form.defaultDays));
-  const [chosen, setChosen] = useState(pickPurpose(form, purpose));
+  const [chosen, setChosen] = useState(() => startingPurpose(form, registered, purpose));
+  const [days, setDays] = useState(() =>
+    fitDays(daysText(form.defaultDays), usablePurpose(registered, chosen))
+  );
   const [reference, setReference] = useState('');
-  // A template that arrives after the form opened starts it where it says;
-  // what was typed as the reason stays.
+  // A template that arrives after the form opened starts it where it says, and
+  // so does the register; what was typed as the reason stays.
   const [shapedBy, setShapedBy] = useState(template.id);
-  if (shapedBy !== template.id) {
+  const [hadRegister, setHadRegister] = useState(!!register);
+  if (shapedBy !== template.id || hadRegister !== !!register) {
+    const start = startingPurpose(form, registered, purpose);
+    setDays(fitDays(shapedBy !== template.id ? daysText(form.defaultDays) : days, usablePurpose(registered, start)));
     setShapedBy(template.id);
-    setDays(daysText(form.defaultDays));
-    setChosen(pickPurpose(form, purpose));
+    setHadRegister(!!register);
+    setChosen(start);
   }
+  const choosePurpose = (value: string) => {
+    setChosen(value);
+    setDays((now) => fitDays(now, usablePurpose(registered, value)));
+  };
 
   const listed = form.purposes.length > 0;
-  const sentPurpose = listed ? chosen || null : chosen.trim() || purpose;
+  // Without a register to hold a typed purpose to, the Query page's goes
+  // unless another is typed, as before there was one.
+  const sentPurpose = listed || register ? chosen || null : chosen.trim() || purpose;
+  const limiting = usablePurpose(registered, sentPurpose);
+  const shown = cappedBy(form, limiting);
   const parsedDays = days.trim() === '' ? null : Number.parseInt(days, 10);
-  const ceiling = form.maxDays ?? MAX_DAYS;
+  const ceiling = shown.maxDays ?? MAX_DAYS;
   const daysValid =
-    parsedDays === null ? form.allowUntilRevoked : parsedDays >= 1 && parsedDays <= ceiling;
-  const problem = checkAnswers(form, {
-    reason,
-    purpose: sentPurpose,
-    days: parsedDays,
-    reference: form.referenceLabel ? reference : '',
-  });
+    parsedDays === null ? shown.allowUntilRevoked : parsedDays >= 1 && parsedDays <= ceiling;
+  const problem =
+    checkAnswers(form, {
+      reason,
+      purpose: sentPurpose,
+      days: parsedDays,
+      reference: form.referenceLabel ? reference : '',
+    }) ?? purposeDaysProblem(limiting, parsedDays);
 
   const send = useMutation({
     mutationFn: () =>
@@ -269,34 +292,12 @@ export function RequestAccessForm({
             : 'The statement you ran and the refusal go with the request, so they can see what you were trying to do.'}
         </p>
 
-        {(listed || form.purposeRequired) && (
-          <div className="tw:flex tw:flex-col tw:gap-1.5">
-            <span className="tw:text-sm tw:font-medium tw:text-secondary">
-              Purpose {form.purposeRequired && <span className="tw:text-error-primary">*</span>}
-            </span>
-            {listed ? (
-              <Select
-                ariaLabel="Purpose"
-                className="tw:max-w-sm"
-                onChange={(value) => setChosen(value === NO_PURPOSE ? '' : value)}
-                options={[
-                  ...(form.purposeRequired ? [] : [{ value: NO_PURPOSE, label: 'No particular purpose' }]),
-                  ...form.purposes.map((p) => ({ value: p, label: p })),
-                ]}
-                placeholder="Choose a purpose"
-                value={chosen || (form.purposeRequired ? '' : NO_PURPOSE)}
-              />
-            ) : (
-              <TextField
-                ariaLabel="Purpose"
-                className="tw:max-w-sm"
-                onChange={setChosen}
-                placeholder={purpose ?? 'What the data is for'}
-                value={chosen}
-              />
-            )}
-          </div>
-        )}
+        <RequestPurpose
+          form={form}
+          onChange={choosePurpose}
+          placeholder={purpose ?? undefined}
+          value={chosen}
+        />
 
         <label className="tw:flex tw:flex-col tw:gap-1.5">
           <span className="tw:text-sm tw:font-medium tw:text-secondary">
@@ -340,9 +341,9 @@ export function RequestAccessForm({
 
         <div className="tw:flex tw:flex-col tw:gap-1.5">
           <span className="tw:text-sm tw:font-medium tw:text-secondary">For how long</span>
-          {(form.durations.length > 0 || form.allowUntilRevoked) && (
+          {(shown.durations.length > 0 || shown.allowUntilRevoked) && (
             <div aria-label="Durations" className="tw:flex tw:flex-wrap tw:gap-1.5" role="group">
-              {form.durations.map((option) => (
+              {shown.durations.map((option) => (
                 <button
                   aria-pressed={parsedDays === option}
                   className={chip(parsedDays === option)}
@@ -352,7 +353,7 @@ export function RequestAccessForm({
                   {option} days
                 </button>
               ))}
-              {form.allowUntilRevoked && (
+              {shown.allowUntilRevoked && (
                 <button
                   aria-pressed={days.trim() === ''}
                   className={chip(days.trim() === '')}
@@ -372,10 +373,10 @@ export function RequestAccessForm({
               value={days}
             />
             <span className="tw:text-sm tw:text-tertiary">
-              days{days.trim() === '' && form.allowUntilRevoked ? ' (until revoked)' : ''}
-              {form.maxDays ? ` · at most ${form.maxDays}` : ''}
+              days{days.trim() === '' && shown.allowUntilRevoked ? ' (until revoked)' : ''}
+              {shown.maxDays ? ` · at most ${shown.maxDays}` : ''}
             </span>
-            {purpose && !listed && !form.purposeRequired && (
+            {purpose && !listed && !form.purposeRequired && !register && (
               <Badge color="gray" size="sm" type="pill-color">
                 Purpose: {purpose}
               </Badge>
@@ -383,7 +384,7 @@ export function RequestAccessForm({
           </div>
           {!daysValid && (
             <span className="tw:text-xs tw:text-error-primary">
-              Between 1 and {ceiling} days{form.allowUntilRevoked ? ', or blank' : ''}.
+              Between 1 and {ceiling} days{shown.allowUntilRevoked ? ', or blank' : ''}.
             </span>
           )}
         </div>
@@ -431,25 +432,8 @@ export const BUILT_IN_TEMPLATE: RequestTemplate = {
   },
 };
 
-const NO_PURPOSE = '__none__';
-
 function daysText(days: number | null): string {
   return days === null ? '' : String(days);
-}
-
-/**
- * The purpose the form starts on.
- *
- * <p>The Query page's purpose is kept when the template offers it, spelled as
- * the template spells it; a purpose the list does not have is dropped rather
- * than sent to be refused. With no list, the field starts empty and the
- * Query page's purpose is what goes unless something else is typed.
- */
-function pickPurpose(form: RequestForm, purpose: string | null): string {
-  if (!purpose || form.purposes.length === 0) {
-    return '';
-  }
-  return form.purposes.find((p) => p.toLowerCase() === purpose.toLowerCase()) ?? '';
 }
 
 function chip(active: boolean) {

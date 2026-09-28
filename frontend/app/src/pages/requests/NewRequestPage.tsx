@@ -30,7 +30,15 @@ import {
   type Answers,
   type RequestTemplate,
 } from '../../api/requestTemplates';
-import { FIELD, Select, Step, TextField } from '../policies/controls';
+import { usablePurpose, usePurposes } from '../../api/purposes';
+import { FIELD, Step, TextField } from '../policies/controls';
+import {
+  cappedBy,
+  fitDays,
+  purposeDaysProblem,
+  RequestPurpose,
+  startingPurpose,
+} from '../policies/purposePickers';
 import { BUILT_IN_TEMPLATE } from '../query/RequestAccess';
 
 /**
@@ -78,8 +86,6 @@ export function standingOf(eligibility: Eligibility | undefined, error: unknown)
 }
 
 type Outcome = { fqn: string; sent: AccessRequest } | { fqn: string; failed: string };
-
-const NO_PURPOSE = '__none__';
 
 function useDebounced<T>(value: T, ms: number): T {
   const [settled, setSettled] = useState(value);
@@ -133,23 +139,34 @@ export default function NewRequestPage() {
   const merged = mergeForms(going.map((row) => row.template.form));
   const form = going.length > 0 ? merged.form : BUILT_IN_TEMPLATE.form;
 
+  const { data: register } = usePurposes();
+  const registered = register?.purposes;
+
   const [reason, setReason] = useState('');
   const [days, setDays] = useState(daysText(form.defaultDays));
   const [purpose, setPurpose] = useState('');
   const [reference, setReference] = useState('');
   // When the tables change, so may the form: start its choices where it says,
-  // keep what was typed as the reason and reference.
-  const shape = JSON.stringify([form.defaultDays, form.purposes]);
+  // keep what was typed as the reason and reference. A purpose the new form
+  // cannot offer is dropped; without a list or a register, a typed one stays.
+  const shape = JSON.stringify([form.defaultDays, form.purposes, !!register]);
   const [shapedBy, setShapedBy] = useState(shape);
   if (shapedBy !== shape) {
+    const kept =
+      form.purposes.length === 0 && !register ? purpose : startingPurpose(form, registered, purpose || null);
     setShapedBy(shape);
-    setDays(daysText(form.defaultDays));
-    if (form.purposes.length > 0 && !form.purposes.includes(purpose)) setPurpose('');
+    setPurpose(kept);
+    setDays(fitDays(daysText(form.defaultDays), usablePurpose(registered, kept)));
   }
+  const choosePurpose = (value: string) => {
+    setPurpose(value);
+    setDays((now) => fitDays(now, usablePurpose(registered, value)));
+  };
 
-  const listed = form.purposes.length > 0;
   const parsedDays = days.trim() === '' ? null : Number.parseInt(days, 10);
-  const ceiling = form.maxDays ?? MAX_DAYS;
+  const limiting = usablePurpose(registered, purpose);
+  const shown = cappedBy(form, limiting);
+  const ceiling = shown.maxDays ?? MAX_DAYS;
   const answers: Answers = {
     reason,
     purpose: purpose.trim() || null,
@@ -163,7 +180,7 @@ export default function NewRequestPage() {
     if (checking) return 'Checking the tables…';
     if (going.length === 0) return 'None of the chosen tables can be asked for';
     if (merged.conflicts.length > 0) return merged.conflicts[0];
-    const overall = checkAnswers(form, answers);
+    const overall = checkAnswers(form, answers) ?? purposeDaysProblem(limiting, parsedDays);
     if (overall) return overall;
     for (const row of going) {
       const own = row.template.form;
@@ -378,34 +395,7 @@ export default function NewRequestPage() {
                 </div>
               )}
 
-              {(listed || form.purposeRequired) && (
-                <div className="tw:flex tw:flex-col tw:gap-1.5">
-                  <span className="tw:text-sm tw:font-medium tw:text-secondary">
-                    Purpose {form.purposeRequired && <span className="tw:text-error-primary">*</span>}
-                  </span>
-                  {listed ? (
-                    <Select
-                      ariaLabel="Purpose"
-                      className="tw:max-w-sm"
-                      onChange={(value) => setPurpose(value === NO_PURPOSE ? '' : value)}
-                      options={[
-                        ...(form.purposeRequired ? [] : [{ value: NO_PURPOSE, label: 'No particular purpose' }]),
-                        ...form.purposes.map((p) => ({ value: p, label: p })),
-                      ]}
-                      placeholder="Choose a purpose"
-                      value={purpose || (form.purposeRequired ? '' : NO_PURPOSE)}
-                    />
-                  ) : (
-                    <TextField
-                      ariaLabel="Purpose"
-                      className="tw:max-w-sm"
-                      onChange={setPurpose}
-                      placeholder="What the data is for"
-                      value={purpose}
-                    />
-                  )}
-                </div>
-              )}
+              <RequestPurpose form={form} onChange={choosePurpose} value={purpose} />
 
               <label className="tw:flex tw:flex-col tw:gap-1.5">
                 <span className="tw:text-sm tw:font-medium tw:text-secondary">
@@ -449,9 +439,9 @@ export default function NewRequestPage() {
 
               <div className="tw:flex tw:flex-col tw:gap-1.5">
                 <span className="tw:text-sm tw:font-medium tw:text-secondary">For how long</span>
-                {(form.durations.length > 0 || form.allowUntilRevoked) && (
+                {(shown.durations.length > 0 || shown.allowUntilRevoked) && (
                   <div aria-label="Durations" className="tw:flex tw:flex-wrap tw:gap-1.5" role="group">
-                    {form.durations.map((option) => (
+                    {shown.durations.map((option) => (
                       <button
                         aria-pressed={parsedDays === option}
                         className={chip(parsedDays === option)}
@@ -461,7 +451,7 @@ export default function NewRequestPage() {
                         {option} days
                       </button>
                     ))}
-                    {form.allowUntilRevoked && (
+                    {shown.allowUntilRevoked && (
                       <button
                         aria-pressed={days.trim() === ''}
                         className={chip(days.trim() === '')}
@@ -481,7 +471,7 @@ export default function NewRequestPage() {
                     value={days}
                   />
                   <span className="tw:text-sm tw:text-tertiary">
-                    days{days.trim() === '' && form.allowUntilRevoked ? ' (until revoked)' : ''} · at most{' '}
+                    days{days.trim() === '' && shown.allowUntilRevoked ? ' (until revoked)' : ''} · at most{' '}
                     {ceiling}
                   </span>
                 </div>

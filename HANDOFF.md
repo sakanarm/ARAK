@@ -1,6 +1,6 @@
 # HANDOFF — ARAK (Data Access Control Platform)
 
-> อัปเดต: 2026-09-28 · ข้อ CM (**เลือก column ให้ NokRak ร่าง description ได้** — ติ๊กทีละ column หรือทั้งหมดที่เห็น · ร่างใหม่ทับ column ที่มีคำอธิบายแล้วได้ในฟอร์ม · **roadmap M31–M36: object ที่ ARAK ควรเก็บเพิ่มนอกจาก policy** · **NokRak ไม่ตอบ "ไม่พบ" เมื่อตารางที่ตรงถูกกันสิทธิ์ — บอกจำนวนแทน** · คำอธิบายตัวอย่าง PO 49 column ขึ้น prod แล้ว) · ข้อ CL (**All rows** — ดาวน์โหลดทุกแถวเป็น CSV ผ่าน policy เดิม · audit บอกว่าเป็นการดาวน์โหลด · hover column บอก description · คลิกขวาไป Data Catalog · ลากขนาด editor ขึ้นลง / explanation ซ้ายขวา · FR-6.3) · ข้อ CK (**Find data** — NokRak หาตารางจากประโยคในหน้า Query · ตรวจสิทธิ์ก่อนโมเดลเห็นตาราง · อ่านได้ → เติม SQL · ขอได้ → ฟอร์มขอสิทธิ์ · M16) · ข้อ CJ.1 (ยิง explain-dashboard กับ LLM จริงแล้วผ่าน · ภาษาไทยแยก query กับ คำขอสิทธิ์) · ข้อ CJ (NokRak อธิบาย dashboard — panel **Ask NokRak** ใต้ key figures เลือกหัวข้อได้ · ชื่อคนเป็น `[P1]` ก่อนส่ง · M15 (ข) · M15 ครบ) · ข้อ CI (NokRak อธิบาย policy — ปุ่ม **Explain with NokRak** ในหน้า policy · M15 (ก)) · ข้อ CH (ปุ่ม **Query** ที่หัวหน้าตาราง สำหรับคนที่อ่านได้แล้ว — เปิดหน้า Query บน source ของตารางพร้อม SQL · FR-1.6d) · ข้อ CG (เปลี่ยนรหัสผ่านเอง — Profile → Password · หน้าบังคับเปลี่ยนเมื่อรหัสถูก admin ตั้ง · M2 / FR-2.2) · ข้อ CF (NokRak ตอบคำถามวิธีใช้ ARAK จากคู่มือที่แพ็กเข้า jar — `search_docs`) · ข้อ CE (สร้าง classification / tag ของ ARAK เองในหน้า Governance — provenance local · sync ไม่ทับ · ไม่เขียนกลับ OM) · ข้อ CD (Column description เขียนใน ARAK · NokRak ร่าง · แสดงใน ticket) · ข้อ CC (tab Access รับ list ยาว — แถบสรุป · chip · ค้น · แบ่งหน้า · กดดูรายละเอียดเต็ม) · ข้อ CB (NokRak ช่วยแก้ policy ที่มีอยู่ — คน review แล้วกด Save เอง) · ข้อ CA (ประวัติ policy · diff · rollback) · ข้อ BW (tag จาก OM ผ่าน webhook/poller ย้าย policy binding ทันที) · ข้อ BV (tab Access เฉพาะผู้ดูแล + Diagram แบบ canvas) · ข้อ BU (FR-1.7 local tag + demo group บน prod) · push ขึ้น origin/main แล้ว · repo https://github.com/sakanarm/ARAK (**public**)
+> อัปเดต: 2026-09-28 · ข้อ CN (**ทะเบียน Purpose (M31a · FR-21)** — Settings → Purposes · ฐานกฎหมาย PDPA · ข้อมูลอ่อนไหว · ระยะสิทธิ์สูงสุด · ปลดแทนลบ + ประวัติ · picker ใน policy / template / ฟอร์มขอ / Pre-authorize / Query / Simulator · server ตรวจทุกที่ · เหลือ M31b) · ข้อ CM (**เลือก column ให้ NokRak ร่าง description ได้** — ติ๊กทีละ column หรือทั้งหมดที่เห็น · ร่างใหม่ทับ column ที่มีคำอธิบายแล้วได้ในฟอร์ม · **roadmap M31–M36: object ที่ ARAK ควรเก็บเพิ่มนอกจาก policy** · **NokRak ไม่ตอบ "ไม่พบ" เมื่อตารางที่ตรงถูกกันสิทธิ์ — บอกจำนวนแทน** · คำอธิบายตัวอย่าง PO 49 column ขึ้น prod แล้ว) · ข้อ CL (**All rows** — ดาวน์โหลดทุกแถวเป็น CSV ผ่าน policy เดิม · audit บอกว่าเป็นการดาวน์โหลด · hover column บอก description · คลิกขวาไป Data Catalog · ลากขนาด editor ขึ้นลง / explanation ซ้ายขวา · FR-6.3) · ข้อ CK (**Find data** — NokRak หาตารางจากประโยคในหน้า Query · ตรวจสิทธิ์ก่อนโมเดลเห็นตาราง · อ่านได้ → เติม SQL · ขอได้ → ฟอร์มขอสิทธิ์ · M16) · ข้อ CJ.1 (ยิง explain-dashboard กับ LLM จริงแล้วผ่าน · ภาษาไทยแยก query กับ คำขอสิทธิ์) · ข้อ CJ (NokRak อธิบาย dashboard — panel **Ask NokRak** ใต้ key figures เลือกหัวข้อได้ · ชื่อคนเป็น `[P1]` ก่อนส่ง · M15 (ข) · M15 ครบ) · ข้อ CI (NokRak อธิบาย policy — ปุ่ม **Explain with NokRak** ในหน้า policy · M15 (ก)) · ข้อ CH (ปุ่ม **Query** ที่หัวหน้าตาราง สำหรับคนที่อ่านได้แล้ว — เปิดหน้า Query บน source ของตารางพร้อม SQL · FR-1.6d) · ข้อ CG (เปลี่ยนรหัสผ่านเอง — Profile → Password · หน้าบังคับเปลี่ยนเมื่อรหัสถูก admin ตั้ง · M2 / FR-2.2) · ข้อ CF (NokRak ตอบคำถามวิธีใช้ ARAK จากคู่มือที่แพ็กเข้า jar — `search_docs`) · ข้อ CE (สร้าง classification / tag ของ ARAK เองในหน้า Governance — provenance local · sync ไม่ทับ · ไม่เขียนกลับ OM) · ข้อ CD (Column description เขียนใน ARAK · NokRak ร่าง · แสดงใน ticket) · ข้อ CC (tab Access รับ list ยาว — แถบสรุป · chip · ค้น · แบ่งหน้า · กดดูรายละเอียดเต็ม) · ข้อ CB (NokRak ช่วยแก้ policy ที่มีอยู่ — คน review แล้วกด Save เอง) · ข้อ CA (ประวัติ policy · diff · rollback) · ข้อ BW (tag จาก OM ผ่าน webhook/poller ย้าย policy binding ทันที) · ข้อ BV (tab Access เฉพาะผู้ดูแล + Diagram แบบ canvas) · ข้อ BU (FR-1.7 local tag + demo group บน prod) · push ขึ้น origin/main แล้ว · repo https://github.com/sakanarm/ARAK (**public**)
 >
 > อ่านคู่กับ **[docs/DESIGN.md](docs/DESIGN.md)** — ไฟล์นั้นคือ requirement + feature catalogue + สถานะครบทุกข้อ
 > ไฟล์นี้บอกเฉพาะ "ทำถึงไหน จะไปต่อยังไง อะไรที่ลองแล้วไม่เวิร์ค"
@@ -631,6 +631,7 @@ M10 → M23 (ใช้ query log ของ M10 · ส่วน "ปลอดภ�
 M10 → M24 (ข้อ 1–3 ทำได้เลยหลัง query log · ข้อ 4 ต้องมี M11 · ข้อ 5 ต้องมี M19)
 M25 ทำแยกได้ (profile ผ่าน proxy ที่มีแล้ว · sandbox ใช้ source registry ของ M18)
 M31 → M32 → M33  (Purpose ก่อน: รอบทบทวนและ project อ้าง purpose · M33 รวม M27)
+                  M31a ✅ (ข้อ CN) · M31b (grant purpose · รายงาน PII · ม.26) ต่อได้เลย
 M34 · M35 ทำแยกได้ (M35 ก่อน M30b — `arak test` ใช้ไฟล์ชุดเดียวกัน)
 M36 → M14 · M21 · M29 · M30 (ทุกตัวต้องมี principal ที่ไม่ใช่คนก่อน)
 
@@ -640,7 +641,41 @@ M36 → M14 · M21 · M29 · M30 (ทุกตัวต้องมี principal
 
 ---
 
-## รอบนี้ — **ข้อ CM: เลือก column ให้ NokRak ร่าง description · roadmap M31–M36 · Find data บอกจำนวนตารางที่เข้าไม่ถึง**
+## รอบนี้ — **ข้อ CN: Purpose register (M31a · FR-21)**
+
+ผู้ใช้สั่ง "ทำต่อ" หลังแนะนำ M31 เป็นตัวแรกของชุด M31–M36 · แบ่งเป็น **M31a** (ทะเบียน + picker + ตรวจที่ server — รอบนี้) และ **M31b** (grant · รายงาน · บังคับข้อมูลอ่อนไหว)
+
+**ทำไม** — purpose เคยเป็นคำพิมพ์เอง 4 ที่ (`subject.context.purpose` ของ policy · `form.purposes` ของ template · ช่องในฟอร์มขอ · กล่องในหน้า Query) · ไม่มีอะไรบอกว่าสองคำเป็นเรื่องเดียวกัน หรือกฎหมายให้ใช้เพื่ออะไร
+
+**backend**
+- **Flyway V43** `purpose` (key · name · description · legal_basis · sensitive_allowed · owner · max_days 1–365 · status ACTIVE / RETIRED · created / updated by+at) · unique `lower(key)` และ `lower(name)` · `audit_purpose` append-only (CREATE / UPDATE / RETIRE / REINSTATE · reason · before / after jsonb) · seed `fraud-analysis` · `reporting` · `support` (สามตัวที่หน้า Query เคยมี · ฐานกฎหมายเว้นว่าง)
+- key regex `^[a-z0-9][a-z0-9._-]{0,62}$` (เก็บตัวเล็ก ให้ตรงกับที่ engine เทียบแบบไม่สนตัวพิมพ์) · แก้ key ไม่ได้ · ลบไม่ได้ ปลดแทน
+- ฐานกฎหมาย: `CONSENT` · `CONTRACT` · `LEGAL_OBLIGATION` · `VITAL_INTEREST` · `PUBLIC_TASK` · `LEGITIMATE_INTEREST` · `RESEARCH_OR_STATISTICS` หรือ null
+- `purpose/PurposeStore` — list · find · create / update / retire / reinstate (เขียน audit ใน transaction เดียวกัน) · `usage()` นับ policy ที่ไม่ archived · template · คำขอที่ยังเปิด · `audit_decision` 90 วัน (รวมคำที่ไม่อยู่ในทะเบียน → *Named but not listed*) · `history(key)`
+  - `declared(raw)` — Query (`run` / `export`) และ Decision / Simulator: ไม่อยู่ในทะเบียนหรือถูกปลด → 400 · คืน key ตามที่ทะเบียนสะกด
+  - `requireListed(values, grandfathered, where)` — policy (`subject.context.purpose` ทุก rule) และ template (`form.purposes`) ต้องอ้างตัวที่ยังใช้อยู่ · **ค่าที่ของชิ้นนั้นมีอยู่แล้วผ่าน** (แก้ของเก่าได้โดยไม่ติดสิ่งที่คนแก้ไม่ได้ก่อ)
+- `AccessRequestStore.listedPurpose` — ทุกเส้นทางของคำขอ (ฟอร์ม · จากหน้า Query · Pre-authorize): ปลดแล้ว → ปฏิเสธ · purpose มี `max_days` → วันเกินหรือไม่ใส่วัน (until revoked) → *Access for {name} lasts at most {N} days* (+ *; choose a number of days*) · template มีรายการ → ต้องอยู่ในรายการ (ไม่อยู่ในทะเบียนแต่อยู่ในรายการของ template ยังใช้ได้)
+- `resources/PurposeResource` `/v1/purposes`: `GET` (ทุกคนที่ login · `canEdit`) · `GET /usage` + `GET /{key}/history` (admin · POLICY_AUTHOR · DATA_OWNER · AUDITOR) · `POST` · `PUT /{key}` · `POST /{key}/retire` · `POST /{key}/reinstate` (admin · POLICY_AUTHOR · retire / reinstate ต้องมีเหตุผล) · ชื่อซ้ำ / key ซ้ำ → 409
+
+**frontend**
+- `api/purposes.ts` (hook + type + ป้ายฐานกฎหมายพร้อมมาตรา) · `pages/policies/purposePickers.tsx` — `PurposeSelect` · `PurposeChecklist` · `RequestPurpose` · `PurposeLabel` · `PurposeName` · `cappedBy` / `fitDays` / `purposeDaysProblem` (ข้อความเดียวกับ server)
+- **Settings → Purposes** (`PurposesPage.tsx` · route `/settings/purposes`) — In use · Named but not listed (+ **List it** เติมชื่อและ key ให้) · Retired · New / Edit (key แก้ได้เฉพาะตอนสร้าง) · Retire / Reinstate พร้อมเหตุผล · History (อ่านเป็นประโยค เช่น *changed the name, the longest access*) · คนที่ไม่มีสิทธิ์ดู usage ไม่ยิง `/usage` เลย
+- picker: SubjectBuilder (ติ๊กจากทะเบียน · ค่าเดิมที่ไม่อยู่ในทะเบียนยังเห็น) · Request templates · ฟอร์มขอ 3 ที่ (RequestAccess จากหน้า Query · New request · Pre-authorize) · Query · Simulator
+- ฟอร์มขอ: template มีรายการ → เลือกได้เฉพาะรายการนั้น (ชื่อตามทะเบียน · ซ่อนตัวที่ถูกปลด) · ไม่มีรายการ → เลือกจากทะเบียน (*No particular purpose* ได้ ถ้า template ไม่บังคับ) · ไม่มีทะเบียน → แบบเดิม · purpose มีระยะสูงสุด → ตัดตัวเลือกวันที่ยาวกว่า + *Until revoked* และดึงวันลงมา · Pre-authorize เลือกตัวเลือกที่ยาวที่สุดที่ไม่เกิน
+- Requests: badge ในรายการใช้ชื่อ (`PurposeName`) · หน้ารายละเอียดแสดงชื่อ + ฐานกฎหมาย + ป้าย Sensitive / Retired (`PurposeLabel`)
+
+**test**
+- backend: `PurposeResourceTest` · `DeclaredPurposeTest` · `PolicyPurposeTest` · `RequestTemplateResourceTest` เพิ่ม · IT `purpose/PurposeStoreIT` + `AccessRequestIT` เพิ่ม → unit **792 ผ่าน** · IT ที่เกี่ยวผ่าน
+- jest: `purposePickers.test` 12 · `PurposesPage.test` 12 · `RequestAccess` / `NewRequestPage` / `PreauthorizePage` / `RequestTemplatesPage` เพิ่ม · `SubjectBuilder.test` mock ทะเบียน (PurposeChecklist ต้องใช้ query) → **809 ผ่าน / 81 suites**
+
+**ยังไม่ทำ (M31b)**
+- grant เก็บ purpose และอายุไม่เกิน `max_days` ของ purpose (วันนี้บังคับที่คำขอ ไม่ใช่ที่ grant ที่ owner ให้ตรงๆ)
+- รายงาน *"ข้อมูล PII ถูกใช้เพื่ออะไรบ้าง"* บน Dashboard
+- บังคับ `sensitive_allowed` (ม.26) กับตารางที่ติดป้ายข้อมูลอ่อนไหว — วันนี้บันทึกและแสดงอย่างเดียว
+- ปลด purpose → grant ที่อ้างอยู่เข้ารอบทบทวน (ต้องมี M32)
+- บน prod **ไม่ได้สร้างหรือปลด purpose ทดสอบ** — ทะเบียนมีแค่ 3 ตัวจาก seed · ฐานกฎหมายให้เจ้าของข้อมูลใส่เอง
+
+## รอบก่อนหน้า — **ข้อ CM: เลือก column ให้ NokRak ร่าง description · roadmap M31–M36 · Find data บอกจำนวนตารางที่เข้าไม่ถึง**
 
 ผู้ใช้ขอ *"อยากให้สามารถเลือก gen Column description ได้เฉพาะบาง Column"* · ระหว่างทำขอให้ใส่ object ที่ควรเก็บเพิ่มลง roadmap (AP.17 · DESIGN FR-21 – FR-26 · M31–M36)
 

@@ -2731,6 +2731,98 @@ class AccessRequestIT {
     }
   }
 
+  @Nested
+  @DisplayName("purposes")
+  class Purposes {
+
+    private com.mfec.dac.purpose.PurposeStore register;
+    private AccessRequestStore listed;
+
+    @BeforeEach
+    void registerOfThree() {
+      jdbi.useHandle(
+          handle -> {
+            handle.execute("DELETE FROM purpose WHERE created_by <> 'system'");
+            handle.execute("UPDATE purpose SET status = 'ACTIVE', max_days = NULL");
+          });
+      register = new com.mfec.dac.purpose.PurposeStore(jdbi);
+      listed = new AccessRequestStore(jdbi, json, grants, workflows, templates, register);
+    }
+
+    private AccessRequestStore.StoredRequest askFor(String purpose, Integer days) {
+      return listed.create(
+          new AccessRequestStore.NewRequest(
+              CUSTOMER, idOf("analyst_a"), "analyst_a", null, "Quarter-end reconciliation",
+              purpose, days, null, null, null, null),
+          ANALYST_A);
+    }
+
+    @Test
+    @DisplayName("a purpose in the register is stored by its key, whatever case was sent")
+    void storesTheKey() {
+      assertThat(askFor("Fraud-Analysis", 7).purpose()).isEqualTo("fraud-analysis");
+    }
+
+    @Test
+    @DisplayName("one the register lacks, or one retired, is refused before anything is stored")
+    void refusesUnlisted() {
+      assertInvalid(() -> askFor("marketing", 7));
+      register.retire("support", "Merged into reporting", "admin");
+      assertThatThrownBy(() -> askFor("support", 7))
+          .isInstanceOf(AccessRequestStore.RequestException.class)
+          .hasMessageContaining("retired");
+      int stored =
+          jdbi.withHandle(
+              h -> h.createQuery("SELECT count(*) FROM access_request").mapTo(Integer.class).one());
+      assertThat(stored).isZero();
+    }
+
+    @Test
+    @DisplayName("a purpose with a longest access holds the days asked for to it, and refuses until revoked")
+    void capsTheDays() {
+      register.update(
+          "reporting",
+          new com.mfec.dac.purpose.PurposeStore.Details("Reporting", null, null, false, null, 30),
+          "admin");
+
+      assertThatThrownBy(() -> askFor("reporting", 60))
+          .isInstanceOf(AccessRequestStore.RequestException.class)
+          .hasMessageContaining("at most 30 days");
+      assertThatThrownBy(() -> askFor("reporting", null))
+          .isInstanceOf(AccessRequestStore.RequestException.class)
+          .hasMessageContaining("choose a number of days");
+      assertThat(askFor("reporting", 30).requestedDays()).isEqualTo(30);
+    }
+
+    @Test
+    @DisplayName("a template written before the register keeps the purposes it lists by name")
+    void keepsTheTemplatesWords() {
+      templates.create(
+          RequestTemplate.validate(
+              new RequestTemplate.Draft(
+                  "PII tables",
+                  null,
+                  null,
+                  List.of("PII"),
+                  true,
+                  new RequestTemplate.Form(
+                      List.of("Fraud investigation", "reporting"),
+                      false, List.of(), null, null, true, null, false, 1, null))),
+          "admin");
+
+      assertThat(askFor("fraud investigation", null).purpose()).isEqualTo("Fraud investigation");
+      listed.withdraw(
+          listed.openRequest(CUSTOMER, "analyst_a").orElseThrow().id(), ANALYST_A);
+      assertThat(askFor("REPORTING", null).purpose()).isEqualTo("reporting");
+    }
+
+    @Test
+    @DisplayName("without a purpose, nothing is asked of the register")
+    void none() {
+      assertThat(askFor(null, 7).purpose()).isNull();
+    }
+  }
+
   // ------------------------------------------------------------------ fixture
 
   private AccessRequestStore.StoredRequest ask(String who, String fqn, Integer days) {

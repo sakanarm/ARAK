@@ -3,6 +3,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import PreauthorizePage, { lengthsFor, targetOf, valuesFor } from './PreauthorizePage';
 import type { Vocabulary } from '../../api/governance';
+import type { Purpose, PurposeListing } from '../../api/purposes';
 import type { RequestTemplate } from '../../api/requestTemplates';
 
 const requestAccess = jest.fn();
@@ -38,6 +39,32 @@ jest.mock('../../api/governance', () => {
     fetchAttributeVocabulary: () => Promise.resolve({ keys: [], appRoles: [] }),
   };
 });
+
+function purpose(key: string, name: string, extra: Partial<Purpose> = {}): Purpose {
+  return {
+    key,
+    name,
+    description: null,
+    legalBasis: null,
+    sensitiveAllowed: false,
+    owner: null,
+    maxDays: null,
+    status: 'ACTIVE',
+    createdBy: 'system',
+    createdAt: '2026-09-28T03:00:00Z',
+    updatedBy: 'system',
+    updatedAt: '2026-09-28T03:00:00Z',
+    ...extra,
+  };
+}
+
+// Without a register the form asks as it did before there was one.
+let register: PurposeListing | undefined;
+
+jest.mock('../../api/purposes', () => ({
+  ...jest.requireActual('../../api/purposes'),
+  usePurposes: () => ({ data: register, isLoading: false, isError: false }),
+}));
 
 const SCOPE = 'demo-pg.salesdb.sales';
 
@@ -110,6 +137,7 @@ async function chooseScope() {
 
 beforeEach(() => {
   [requestAccess, measure, fetchAssets, fetchTemplate].forEach((fn) => fn.mockReset());
+  register = undefined;
   fetchTemplate.mockResolvedValue(BUILT_IN);
   fetchAssets.mockResolvedValue({
     items: [{ id: 'a-1', fqn: SCOPE, name: 'sales', displayName: null, assetType: 'SCHEMA' }],
@@ -254,6 +282,38 @@ describe('PreauthorizePage', () => {
       days: null,
       target: { subject: { kind: 'ATTRIBUTE', principals: [], attributes: [{ key: 'clearance', operator: 'eq', value: 'L2' }] } },
     });
+  });
+
+  it('offers the register, and takes the lengths a purpose does not allow off the list', async () => {
+    register = {
+      purposes: [
+        purpose('fraud-analysis', 'Fraud analysis', { maxDays: 14 }),
+        purpose('support', 'Support', { status: 'RETIRED' }),
+      ],
+      canEdit: false,
+    };
+    requestAccess.mockResolvedValue({ id: 'req-11', ticket: 'REQ-000011' });
+    renderPage();
+
+    await chooseScope();
+    fireEvent.change(screen.getByLabelText('Condition 1 value'), { target: { value: 'PII.Sensitive' } });
+    fireEvent.change(screen.getByLabelText('Team 1'), { target: { value: 'Finance' } });
+    fireEvent.change(screen.getByLabelText('Why they need it'), { target: { value: 'Fraud reviews' } });
+    expect(screen.getByRole('button', { name: '90 days' })).toHaveAttribute('aria-pressed', 'true');
+
+    fireEvent.click(screen.getByRole('button', { name: /Purpose/ }));
+    expect(screen.queryByRole('option', { name: /Support/ })).toBeNull();
+    fireEvent.click(await screen.findByRole('option', { name: /^Fraud analysis/ }));
+
+    const durations = screen.getByRole('group', { name: 'Durations' });
+    expect(within(durations).queryByRole('button', { name: '90 days' })).toBeNull();
+    expect(within(durations).queryByRole('button', { name: 'Until revoked' })).toBeNull();
+    expect(within(durations).getByRole('button', { name: '14 days' })).toHaveAttribute('aria-pressed', 'true');
+    fireEvent.click(screen.getByRole('button', { name: 'Send for approval' }));
+
+    await waitFor(() =>
+      expect(requestAccess.mock.calls[0][0]).toMatchObject({ purpose: 'fraud-analysis', days: 14 })
+    );
   });
 
   it("asks what the scope's request template asks, and sends it", async () => {

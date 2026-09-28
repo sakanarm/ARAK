@@ -13,6 +13,7 @@ import com.mfec.dac.access.AccessWorkflow.Workflow;
 import com.mfec.dac.access.ApproverDirectory.Member;
 import com.mfec.dac.access.ApproverDirectory.Pool;
 import com.mfec.dac.catalog.CatalogQuery;
+import com.mfec.dac.purpose.PurposeStore;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.Duration;
@@ -100,6 +101,7 @@ public class AccessRequestStore {
   private final WorkflowStore workflows;
   private final ApproverDirectory directory;
   private final RequestTemplateStore templates;
+  private final PurposeStore purposes;
 
   /** Requests asked on the built-in template only, as before templates existed. */
   public AccessRequestStore(
@@ -117,12 +119,27 @@ public class AccessRequestStore {
       GrantStore grants,
       WorkflowStore workflows,
       RequestTemplateStore templates) {
+    this(jdbi, json, grants, workflows, templates, null);
+  }
+
+  /**
+   * @param purposes the register a request's purpose is checked against
+   *     (FR-21); null = only the template's own list is
+   */
+  public AccessRequestStore(
+      Jdbi jdbi,
+      ObjectMapper json,
+      GrantStore grants,
+      WorkflowStore workflows,
+      RequestTemplateStore templates,
+      PurposeStore purposes) {
     this.jdbi = jdbi;
     this.json = json;
     this.grants = grants;
     this.workflows = workflows;
     this.directory = new ApproverDirectory(json);
     this.templates = templates;
+    this.purposes = purposes;
   }
 
   /** Why a request could not be made or moved, and which HTTP answer that is. */
@@ -832,6 +849,7 @@ public class AccessRequestStore {
           if (problem != null) {
             throw new RequestException(RequestException.Kind.INVALID, problem);
           }
+          String purpose = listedPurpose(handle, template.form(), request);
 
           Workflow workflow = workflows.effective(handle, fqn);
           UUID id =
@@ -855,7 +873,7 @@ public class AccessRequestStore {
                   .bind("username", request.requesterUsername())
                   .bind("source", request.dataSourceId())
                   .bind("reason", request.reason().trim())
-                  .bind("purpose", RequestTemplate.canonicalPurpose(template.form(), request.purpose()))
+                  .bind("purpose", purpose)
                   .bind("days", request.requestedDays())
                   .bind("sql", truncate(request.attemptedSql(), 20_000))
                   .bind("deniedBy", truncate(request.deniedBy(), 2_000))
@@ -2145,6 +2163,45 @@ public class AccessRequestStore {
         rs.getString("target") == null
             ? null
             : read(rs.getString("target"), Preauthorization.Target.class));
+  }
+
+  /**
+   * The purpose a request is stored with (FR-21). One in the register is stored
+   * by its key, and must still be offered and allow the days asked for; one the
+   * register lacks is taken only when this table's template lists it by name,
+   * which is how a template written before the register keeps working. Without
+   * a register -- a store built without one -- the template's check is all.
+   */
+  private String listedPurpose(
+      Handle handle, RequestTemplate.Form form, NewRequest request) {
+    String purpose = RequestTemplate.canonicalPurpose(form, request.purpose());
+    if (purposes == null || purpose == null) {
+      return purpose;
+    }
+    Optional<PurposeStore.Purpose> listed = PurposeStore.find(handle, purpose);
+    if (listed.isPresent()) {
+      PurposeStore.Purpose found = listed.get();
+      if (!found.active()) {
+        throw new RequestException(
+            RequestException.Kind.INVALID,
+            "The purpose " + found.name() + " was retired, so it cannot be asked for any more;"
+                + " choose another");
+      }
+      Integer most = found.maxDays();
+      if (most != null && (request.requestedDays() == null || request.requestedDays() > most)) {
+        throw new RequestException(
+            RequestException.Kind.INVALID,
+            "Access for " + found.name() + " lasts at most " + most + " days"
+                + (request.requestedDays() == null ? "; choose a number of days" : ""));
+      }
+      return found.key();
+    }
+    if (form.purposes().stream().noneMatch(p -> p.equalsIgnoreCase(purpose))) {
+      throw new RequestException(
+          RequestException.Kind.INVALID,
+          "\"" + purpose + "\" is not in the register of purposes; choose one that is");
+    }
+    return purpose;
   }
 
   private String write(Object value) {

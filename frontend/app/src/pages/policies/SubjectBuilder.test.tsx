@@ -9,6 +9,12 @@ jest.mock('../../api/expressions', () => ({
     Promise.resolve({ valid: true, rowDependent: false, unknownAttributes: [] }),
 }));
 
+// No register loaded: the purpose rows ask as they did before there was one.
+jest.mock('../../api/purposes', () => ({
+  ...jest.requireActual('../../api/purposes'),
+  usePurposes: () => ({ data: undefined, isLoading: false, isError: false }),
+}));
+
 /**
  * How the rows on this form are joined.
  *

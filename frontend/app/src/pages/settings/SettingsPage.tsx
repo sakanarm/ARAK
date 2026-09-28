@@ -14,6 +14,7 @@ import {
   Server02,
   ShieldTick,
   Tag01,
+  Target04,
   User03,
   Users01,
 } from '@untitledui/icons';
@@ -112,6 +113,14 @@ const GROUPS: SettingGroup[] = [
           'What a request for a table must say -- a purpose from a list, a reference, how long a reason -- and for how long it may ask, chosen by scope or by the tags and terms the table carries.',
         to: '/settings/request-templates',
         icon: FileCheck02,
+        roles: ['PLATFORM_ADMIN', 'POLICY_AUTHOR', 'DATA_OWNER', 'AUDITOR'],
+      },
+      {
+        title: 'Purposes',
+        description:
+          'What data may be used for, with the legal basis each rests on, whether sensitive data may be used for it and how long access for it may last. Policies, templates, requests and queries pick from it.',
+        to: '/settings/purposes',
+        icon: Target04,
         roles: ['PLATFORM_ADMIN', 'POLICY_AUTHOR', 'DATA_OWNER', 'AUDITOR'],
       },
       {

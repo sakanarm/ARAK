@@ -4,6 +4,7 @@ import com.mfec.dac.auth.AuthenticatedUser;
 import com.mfec.dac.auth.Secured;
 import com.mfec.dac.auth.Stewardship;
 import com.mfec.dac.policy.DecisionService;
+import com.mfec.dac.purpose.PurposeStore;
 import com.mfec.dac.schema.api.PolicyDecision;
 import jakarta.ws.rs.BadRequestException;
 import jakarta.ws.rs.Consumes;
@@ -44,9 +45,19 @@ public class DecisionResource {
       String principal, String assetFqn, String at, String ip, String purpose, String environment) {}
 
   private final DecisionService decisions;
+  private final PurposeStore purposes;
 
   public DecisionResource(DecisionService decisions) {
+    this(decisions, null);
+  }
+
+  /**
+   * @param purposes the register a purpose asked about must be in (FR-21);
+   *     null takes whatever was typed
+   */
+  public DecisionResource(DecisionService decisions, PurposeStore purposes) {
     this.decisions = decisions;
+    this.purposes = purposes;
   }
 
   @POST
@@ -67,7 +78,20 @@ public class DecisionResource {
 
     return decisions.decide(
         new DecisionService.Ask(
-            subject, ask.assetFqn(), instant(ask.at()), ask.ip(), ask.purpose(), ask.environment()));
+            subject, ask.assetFqn(), instant(ask.at()), ask.ip(), purpose(ask.purpose()),
+            ask.environment()));
+  }
+
+  /** The purpose as the register keys it; one it does not offer is a mistake in the question. */
+  private String purpose(String raw) {
+    if (purposes == null) {
+      return raw;
+    }
+    try {
+      return purposes.declared(raw);
+    } catch (PurposeStore.Refused e) {
+      throw new BadRequestException(e.getMessage());
+    }
   }
 
   private static Instant instant(String value) {

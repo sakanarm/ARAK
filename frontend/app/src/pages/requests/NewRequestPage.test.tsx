@@ -3,6 +3,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { MemoryRouter } from 'react-router-dom';
 import NewRequestPage, { standingOf } from './NewRequestPage';
 import type { Eligibility } from '../../api/accessRequests';
+import type { Purpose, PurposeListing } from '../../api/purposes';
 import type { RequestTemplate } from '../../api/requestTemplates';
 
 const requestAccess = jest.fn();
@@ -27,6 +28,38 @@ jest.mock('../../api/accessRequests', () => {
 jest.mock('../../api/client', () => ({
   apiErrorMessage: (error: { message?: string }, fallback: string) => error?.message ?? fallback,
   fetchAssets: (...args: unknown[]) => fetchAssets(...args),
+}));
+
+function purpose(key: string, name: string, extra: Partial<Purpose> = {}): Purpose {
+  return {
+    key,
+    name,
+    description: null,
+    legalBasis: null,
+    sensitiveAllowed: false,
+    owner: null,
+    maxDays: null,
+    status: 'ACTIVE',
+    createdBy: 'system',
+    createdAt: '2026-09-28T03:00:00Z',
+    updatedBy: 'system',
+    updatedAt: '2026-09-28T03:00:00Z',
+    ...extra,
+  };
+}
+
+const REGISTER = [
+  purpose('fraud-analysis', 'Fraud analysis', { legalBasis: 'LEGITIMATE_INTEREST', maxDays: 14 }),
+  purpose('reporting', 'Reporting'),
+  purpose('support', 'Support', { status: 'RETIRED' }),
+];
+
+// Without a register the forms ask as they did before there was one.
+let register: PurposeListing | undefined;
+
+jest.mock('../../api/purposes', () => ({
+  ...jest.requireActual('../../api/purposes'),
+  usePurposes: () => ({ data: register, isLoading: false, isError: false }),
 }));
 
 const BUILT_IN: RequestTemplate = {
@@ -106,6 +139,7 @@ function renderPage() {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  register = undefined;
   fetchAssets.mockResolvedValue({ items: TABLES, total: TABLES.length, limit: 50, offset: 0 });
   fetchTemplate.mockImplementation((f: string) => Promise.resolve(f === fqn('customers') ? DPIA : BUILT_IN));
   fetchEligibility.mockImplementation((f: string) =>
@@ -214,6 +248,33 @@ describe('NewRequestPage', () => {
     fireEvent.change(screen.getByLabelText('Days'), { target: { value: '90' } });
     expect(screen.getByRole('status')).toHaveTextContent('between 1 and 60 days');
     expect(screen.getByRole('button', { name: 'Send 2 requests' })).toBeDisabled();
+  });
+
+  it('offers the register, and holds the days to the purpose chosen', async () => {
+    register = { purposes: REGISTER, canEdit: false };
+    requestAccess.mockResolvedValue({ ticket: 'AR-103' });
+    renderPage();
+    await choose('orders');
+    fireEvent.change(screen.getByLabelText('Why you need them'), { target: { value: 'Case 4411' } });
+    expect(screen.getByRole('button', { name: 'Until revoked' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /Purpose/ }));
+    expect(screen.queryByRole('option', { name: /Support/ })).toBeNull();
+    fireEvent.click(await screen.findByRole('option', { name: /^Fraud analysis/ }));
+
+    expect(screen.getByLabelText('Days')).toHaveValue('14');
+    expect(screen.queryByRole('button', { name: 'Until revoked' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '30 days' })).toBeNull();
+    fireEvent.change(screen.getByLabelText('Days'), { target: { value: '20' } });
+    const send = screen.getByRole('button', { name: 'Send request' });
+    expect(send).toBeDisabled();
+    expect(screen.getByRole('status')).toHaveTextContent('14 days');
+
+    fireEvent.click(screen.getByRole('button', { name: '7 days' }));
+    await waitFor(() => expect(send).toBeEnabled());
+    fireEvent.click(send);
+    await waitFor(() => expect(requestAccess).toHaveBeenCalledTimes(1));
+    expect(requestAccess.mock.calls[0][0]).toMatchObject({ purpose: 'fraud-analysis', days: 7 });
   });
 
   it('removes a table from the tray and sends nothing when none can be asked for', async () => {

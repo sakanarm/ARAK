@@ -56,6 +56,7 @@ import { joinOf, stepsOf } from '../../api/accessWorkflows';
 import { fetchPolicies } from '../../api/policies';
 import { useAuthStore } from '../../auth/authStore';
 import { FIELD } from '../policies/controls';
+import { PurposeLabel, PurposeName } from '../policies/purposePickers';
 import { countLabel, tableName, useRequestNotices } from './useRequestNotices';
 import { AccessColumns, ConflictList, RequestReview, useAccessReview } from './RequestReview';
 
@@ -634,7 +635,7 @@ function RequestList({
                   )}
                   {!progress && !yours && request.purpose && (
                     <span className="tw:truncate tw:text-xs tw:text-quaternary">
-                      {request.purpose}
+                      <PurposeName value={request.purpose} />
                     </span>
                   )}
                 </span>
@@ -783,7 +784,13 @@ function RequestDetail({
             </span>
           </Fact>
           <Fact label="For">{duration(request.requestedDays)}</Fact>
-          <Fact label="Purpose">{request.purpose ?? <span className="tw:text-quaternary">—</span>}</Fact>
+          <Fact label="Purpose">
+            {request.purpose ? (
+              <PurposeLabel value={request.purpose} />
+            ) : (
+              <span className="tw:text-quaternary">—</span>
+            )}
+          </Fact>
           <Fact label="Asked">
             <span title={when(request.createdAt)}>{relativeTime(request.createdAt)}</span>
           </Fact>

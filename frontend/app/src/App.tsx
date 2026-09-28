@@ -26,6 +26,7 @@ import SimulatorPage from './pages/simulator/SimulatorPage';
 import AccessWorkflowsPage from './pages/settings/AccessWorkflowsPage';
 import WorkflowBuilderPage from './pages/settings/WorkflowBuilderPage';
 import RequestTemplatesPage from './pages/settings/RequestTemplatesPage';
+import PurposesPage from './pages/settings/PurposesPage';
 import AppRolesPage from './pages/settings/AppRolesPage';
 import HomePersonasPage from './pages/settings/HomePersonasPage';
 import LlmSettingsPage from './pages/settings/LlmSettingsPage';
@@ -111,6 +112,7 @@ export default function App() {
           <Route element={<AccessWorkflowsPage />} path="/settings/workflows" />
           <Route element={<WorkflowBuilderPage />} path="/settings/workflows/:id" />
           <Route element={<RequestTemplatesPage />} path="/settings/request-templates" />
+          <Route element={<PurposesPage />} path="/settings/purposes" />
           <Route element={<HomePersonasPage />} path="/settings/home" />
           <Route element={<LlmSettingsPage />} path="/settings/assistant" />
           <Route element={<SettingsPage />} path="/settings" />

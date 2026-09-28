@@ -10,6 +10,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -22,6 +23,7 @@ import com.mfec.dac.access.RequestTemplate.Stored;
 import com.mfec.dac.access.RequestTemplate.Template;
 import com.mfec.dac.access.RequestTemplateStore;
 import com.mfec.dac.auth.AuthenticatedUser;
+import com.mfec.dac.purpose.PurposeStore;
 import jakarta.ws.rs.BadRequestException;
 import jakarta.ws.rs.ForbiddenException;
 import jakarta.ws.rs.WebApplicationException;
@@ -121,5 +123,25 @@ class RequestTemplateResourceTest {
         .isInstanceOf(WebApplicationException.class)
         .satisfies(e -> assertThat(((WebApplicationException) e).getResponse().getStatus()).isEqualTo(409));
     assertThat(RequestTemplate.builtIn().form().allowUntilRevoked()).isTrue();
+  }
+
+  @Test
+  @DisplayName("a template offers listed purposes; the ones it already offered stay whatever the register says")
+  void purposes() {
+    PurposeStore register = mock(PurposeStore.class);
+    RequestTemplateResource checked = new RequestTemplateResource(store, register);
+    doThrow(new PurposeStore.Refused(PurposeStore.Refused.Reason.INVALID, "\"Audit\" is not in the register"))
+        .when(register)
+        .requireListed(eq(List.of("Audit")), eq(List.of()), anyString());
+    assertThatThrownBy(() -> checked.create(draft(null), as(ADMIN)))
+        .isInstanceOf(BadRequestException.class)
+        .hasMessageContaining("not in the register");
+    verify(store, never()).create(any(), anyString());
+
+    UUID id = UUID.randomUUID();
+    when(store.find(id)).thenReturn(Optional.of(stored(id, null)));
+    when(store.update(eq(id), any(), anyString())).thenReturn(stored(id, null));
+    checked.update(id, draft(null), as(ADMIN));
+    verify(register).requireListed(List.of("Audit"), List.of("Audit"), "a request template");
   }
 }

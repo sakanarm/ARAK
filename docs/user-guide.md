@@ -99,7 +99,7 @@ The left-hand menu shows only what your roles can use:
 - **Requests**: ask for access, and decide requests for tables you own.
 - **Simulator**: see a table as another person would.
 - **Enforcement**: review, apply and roll back secure views.
-- **Settings**: connections, roles, workflows, templates and the assistant.
+- **Settings**: connections, roles, workflows, templates, purposes and the assistant.
 
 **Customize rail**, at the foot of the menu, shows or hides sections. Some are
 hidden by default (Enforcement, for one, which is also reached from Settings),
@@ -218,6 +218,13 @@ The form asks for a reason, a duration and sometimes a purpose or a reference
 from the request template for those tables. When the tables' templates differ,
 the stricter one applies.
 
+The purpose is chosen from the register (see *Purposes*). When the template
+lists purposes, only those are offered; otherwise any purpose in use is, and
+*No particular purpose* is allowed unless the template requires one. Retired
+purposes are not offered. A purpose can limit how long access for it lasts: when
+it does, the longer durations and *Until revoked* disappear and the days are
+brought within the limit.
+
 After you send it, the request has a ticket number and its own page
 (`/requests/<ticket>`), which you can share. You can withdraw an open request.
 
@@ -233,6 +240,8 @@ certain attributes), where (the service, database, schema or table the tables
 are under), which tables (conditions on tags, terms or domains; *contains*
 takes a tag's children and a domain's sub-domains with it), why, and for how
 long. *What it reaches today* shows the tables the request would cover now.
+The purpose is chosen from the register, and a purpose with a longest access
+takes the longer durations off the list.
 
 ## Request status: what each state means
 
@@ -295,6 +304,51 @@ default, suggested and longest duration, how many days ahead it may start, the
 shortest reason accepted, the purposes offered, a reference label, and guidance
 shown to the requester. When a request covers tables with different templates,
 the stricter setting of each applies.
+
+The purposes offered are picked from the register. A purpose a template already
+listed before it was retired stays on that template until you remove it, but
+you cannot add a retired or unlisted one.
+
+## Purposes
+
+**Settings → Purposes** is the register of what data may be used for. A policy
+can allow a table only for some purposes, a request template offers them, and a
+request or a query names one. Everybody signed in can read the register.
+
+Each purpose has:
+
+- a **key**, which policies, templates, requests and queries store. It is lower
+  case (letters, digits, dots, dashes and underscores, like `fraud-analysis`)
+  and cannot be changed once the purpose exists;
+- a **name**, which people pick from. No two purposes share a name or a key;
+- what it is for;
+- the **legal basis** under the PDPA: consent, contract, legal obligation,
+  vital interest, public task, legitimate interest, or research or statistics.
+  It can be left unrecorded until somebody who knows records it;
+- whether **sensitive data** (PDPA section 26) may be used for it. Today this is
+  recorded and shown, not yet enforced;
+- who **answers for** it (for example the DPO or a steward);
+- the **longest access** a request for it may ask for, from 1 to 365 days.
+  A request for the purpose cannot ask for longer, or until revoked.
+
+The page has three parts:
+
+- **In use**: the purposes people may choose. Administrators, policy authors,
+  data owners and auditors also see how many policies, templates, open requests
+  and decisions of the last 90 days name each one.
+- **Named but not listed**: words a policy, a template, an open request or a
+  recent query uses that are not in the register. What names them keeps
+  working, but nothing new may name them. **List it** opens a new purpose with
+  that name and a key made from it.
+- **Retired**: purposes nobody may choose any more. A purpose is retired rather
+  than deleted, so a request from last year still says what it was for.
+  Retiring and reinstating ask for a reason.
+
+**History** on a purpose shows every change: who made it, when, what changed,
+and the reason given for retiring or reinstating.
+
+Platform administrators and policy authors can add, edit, retire and reinstate
+purposes. Everybody else can read them.
 
 ## Grants: giving access directly
 
@@ -374,6 +428,7 @@ the statement before it reaches the database.
 - A repeated query can be answered from the result cache. The result is marked,
   the policy was still applied, and the database was not asked again.
 - **Purpose** records why you are reading, and some policies depend on it.
+  It is chosen from the register; a retired or unlisted purpose is refused.
 - **Ran as** lets an administrator see a query as another person would, for
   checking a policy.
 
@@ -492,6 +547,9 @@ A policy's **subject rule** says who it is for:
   user.country == asset.prop('dataResidency');
 - **time** windows (days and hours in a time zone, valid from and to);
 - **context**: the network address the request came from, or the purpose given.
+  Purposes are ticked from the register. Saving a rule that names a purpose
+  the register does not list, or has retired, is refused, unless the policy
+  already named it.
 
 Everything in a rule must hold at once, except the list of principals, where one
 match is enough. An empty rule matches nobody.
@@ -597,8 +655,8 @@ Anybody who can open a policy's page can ask. The answer is not saved.
 ## Simulator: see a table as someone else
 
 **Simulator** shows what a person would see before a policy reaches production.
-Choose the **person**, the **table**, and optionally a **purpose**, a **from
-address** and the **environment**. It shows whether they would get in, *what they
+Choose the **person**, the **table**, and optionally a **purpose** (from the
+register), a **from address** and the **environment**. It shows whether they would get in, *what they
 would see* (each column as visible, masked or hidden), *which rows* (the filters),
 and the reasons: every restriction traced to the policy and layer it came from.
 

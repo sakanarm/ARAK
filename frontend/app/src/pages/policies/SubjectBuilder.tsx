@@ -13,6 +13,7 @@ import {
   type ExpressionVerdict,
 } from "../../api/expressions";
 import { Field, Select, TextField } from "./controls";
+import { PurposeChecklist } from "./purposePickers";
 
 /**
  * Who a policy is about (FR-3.2).
@@ -371,23 +372,30 @@ export default function SubjectBuilder({
             value={subject.context?.ipCidr?.join(", ") ?? ""}
           />
         </Field>
-        <Field
-          hint="Declared by the caller and recorded in the audit log."
-          label="For these purposes (optional)"
-        >
-          <TextField
+        {/* Not a Field: that is a <label>, and a label around a list of
+            checkboxes ticks the first one whenever its heading is clicked. */}
+        <div className="tw:flex tw:flex-col tw:gap-1.5">
+          <span className="tw:text-sm tw:font-medium tw:text-secondary">
+            For these purposes (optional)
+          </span>
+          <PurposeChecklist
+            emptyHint="The register lists no purpose yet, so none can be named."
+            label="For these purposes"
             onChange={(next) =>
               patch({
                 context: {
                   ...subject.context,
-                  purpose: splitList(next),
+                  purpose: next.length > 0 ? next : undefined,
                 },
               })
             }
-            placeholder="fraud-analysis"
-            value={subject.context?.purpose?.join(", ") ?? ""}
+            value={subject.context?.purpose ?? []}
           />
-        </Field>
+          <span className="tw:text-xs tw:text-tertiary">
+            From the register of purposes. None ticked allows any purpose, or none;
+            the caller declares one and it is recorded in the audit log.
+          </span>
+        </div>
       </div>
     </div>
   );

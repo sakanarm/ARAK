@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import RequestTemplatesPage, { parseDurations, parsePurposes, problemOf } from './RequestTemplatesPage';
+import RequestTemplatesPage, { parseDurations, problemOf } from './RequestTemplatesPage';
+import type { Purpose } from '../../api/purposes';
 import type {
   RequestForm,
   RequestTemplate,
@@ -38,6 +39,39 @@ jest.mock('../../api/client', () => ({
 jest.mock('../../api/governance', () => ({
   fetchVocabulary: () => fetchVocabulary(),
   flatten: jest.requireActual('../../api/governance').flatten,
+}));
+
+function purpose(key: string, name: string, extra: Partial<Purpose> = {}): Purpose {
+  return {
+    key,
+    name,
+    description: null,
+    legalBasis: null,
+    sensitiveAllowed: false,
+    owner: null,
+    maxDays: null,
+    status: 'ACTIVE',
+    createdBy: 'system',
+    createdAt: '2026-09-28T03:00:00Z',
+    updatedBy: 'system',
+    updatedAt: '2026-09-28T03:00:00Z',
+    ...extra,
+  };
+}
+
+const REGISTER = [
+  purpose('fraud-analysis', 'Fraud analysis', { legalBasis: 'LEGITIMATE_INTEREST' }),
+  purpose('reporting', 'Reporting'),
+  purpose('support', 'Support', { status: 'RETIRED' }),
+];
+
+jest.mock('../../api/purposes', () => ({
+  ...jest.requireActual('../../api/purposes'),
+  usePurposes: () => ({
+    data: { purposes: REGISTER, canEdit: false },
+    isLoading: false,
+    isError: false,
+  }),
 }));
 
 jest.mock('../../auth/authStore', () => ({
@@ -224,9 +258,12 @@ describe('RequestTemplatesPage', () => {
     fireEvent.change(within(form).getByLabelText('Template name'), { target: { value: ' PII tables ' } });
     fireEvent.change(within(form).getByLabelText('Add a tag or term'), { target: { value: 'PII' } });
     fireEvent.click(within(form).getByRole('button', { name: 'Add' }));
-    fireEvent.change(within(form).getByLabelText('Purposes offered'), {
-      target: { value: ['Fraud investigation', '', 'fraud investigation', 'Regulatory report'].join(String.fromCharCode(10)) },
-    });
+    const offered = within(form).getByRole('group', { name: 'Purposes offered' });
+    // Only what the register lists and has not retired can be ticked.
+    expect(within(offered).queryByRole('checkbox', { name: /Support/ })).not.toBeInTheDocument();
+    expect(within(offered).getByText('Legitimate interest')).toBeInTheDocument();
+    fireEvent.click(within(offered).getByRole('checkbox', { name: /Fraud analysis/ }));
+    fireEvent.click(within(offered).getByRole('checkbox', { name: /Reporting/ }));
     fireEvent.click(within(form).getByLabelText('A purpose is required'));
     fireEvent.change(within(form).getByLabelText('Reference label'), { target: { value: 'DPIA number' } });
     fireEvent.click(within(form).getByLabelText('The reference is required'));
@@ -239,7 +276,7 @@ describe('RequestTemplatesPage', () => {
     fireEvent.change(within(form).getByLabelText('Guidance'), { target: { value: 'Name the case.' } });
 
     const preview = within(form).getByRole('region', { name: 'What the requester sees' });
-    expect(preview).toHaveTextContent('One of: Fraud investigation, Regulatory report');
+    expect(preview).toHaveTextContent('One of: Fraud analysis, Reporting');
     expect(within(preview).getByRole('note', { name: 'Guidance' })).toHaveTextContent('Name the case.');
 
     expect(create).toBeEnabled();
@@ -252,7 +289,7 @@ describe('RequestTemplatesPage', () => {
       matchFacets: ['PII'],
       enabled: true,
       form: {
-        purposes: ['Fraud investigation', 'Regulatory report'],
+        purposes: ['fraud-analysis', 'reporting'],
         purposeRequired: true,
         durations: [7, 14],
         defaultDays: 7,
@@ -264,6 +301,27 @@ describe('RequestTemplatesPage', () => {
         guidance: 'Name the case.',
       },
     });
+  });
+
+  it('keeps the purposes a template already offered, marked, until they are unticked', async () => {
+    fetchTemplates.mockResolvedValue(listing({ templates: [row(PII)] }));
+    updateTemplate.mockResolvedValue(row(PII));
+    renderPage();
+    const card = await screen.findByRole('article', { name: 'Template PII tables' });
+    fireEvent.click(within(card).getByRole('button', { name: 'Edit' }));
+    const form = screen.getByRole('form', { name: 'Edit PII tables' });
+    const offered = within(form).getByRole('group', { name: 'Purposes offered' });
+
+    const kept = within(offered).getByRole('checkbox', { name: /Fraud investigation/ });
+    expect(kept).toBeChecked();
+    expect(within(offered).getAllByText('Not in the register')).toHaveLength(2);
+    fireEvent.click(kept);
+    expect(within(offered).queryByRole('checkbox', { name: /Fraud investigation/ })).not.toBeInTheDocument();
+    fireEvent.click(within(offered).getByRole('checkbox', { name: /Reporting/ }));
+
+    fireEvent.click(within(form).getByRole('button', { name: 'Save template' }));
+    await waitFor(() => expect(updateTemplate).toHaveBeenCalled());
+    expect(updateTemplate.mock.calls[0][1].form.purposes).toEqual(['Regulatory report', 'reporting']);
   });
 
   it('edits a template in place and shows the server’s refusal as it is', async () => {
@@ -305,11 +363,7 @@ describe('problemOf', () => {
     expect(problemOf(draft({ durations: [1, 2, 3, 4, 5, 6, 7, 8, 9] }), true)).toBe('Suggest at most 8 durations');
   });
 
-  it('reads durations and purposes the way they are typed', () => {
+  it('reads durations the way they are typed', () => {
     expect(parseDurations('90, 7 30,,7')).toEqual([7, 30, 90]);
-    expect(parsePurposes(['  Audit ', 'audit', '', 'Report'].join(String.fromCharCode(10)))).toEqual([
-      'Audit',
-      'Report',
-    ]);
   });
 });

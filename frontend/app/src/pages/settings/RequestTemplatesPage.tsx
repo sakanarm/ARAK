@@ -21,7 +21,9 @@ import {
   type TemplateRow,
 } from '../../api/requestTemplates';
 import { useAuthStore } from '../../auth/authStore';
+import { purposeName, usePurposes } from '../../api/purposes';
 import { FIELD, Field } from '../policies/controls';
+import { PurposeChecklist } from '../policies/purposePickers';
 import { ScopePicker } from './pickers';
 
 /**
@@ -354,6 +356,7 @@ function TemplateCard({
  */
 function FormPreview({ form, name }: { form: RequestForm; name: string | null }) {
   const ceiling = form.maxDays ?? MAX_DAYS;
+  const { data: register } = usePurposes();
   return (
     <div
       aria-label="What the requester sees"
@@ -386,8 +389,10 @@ function FormPreview({ form, name }: { form: RequestForm; name: string | null })
             <dt className="tw:text-tertiary">Purpose</dt>
             <dd className="tw:text-primary">
               {form.purposes.length > 0
-                ? `${form.purposeRequired ? 'One of' : 'Optionally one of'}: ${form.purposes.join(', ')}`
-                : 'Required, typed'}
+                ? `${form.purposeRequired ? 'One of' : 'Optionally one of'}: ${form.purposes
+                    .map((purpose) => purposeName(register?.purposes, purpose))
+                    .join(', ')}`
+                : 'Required, from the register'}
             </dd>
           </>
         )}
@@ -489,20 +494,6 @@ export function parseDurations(text: string): number[] {
   return [...new Set(days)].sort((a, b) => a - b);
 }
 
-/** One purpose a line, blanks and repeats (in any case) dropped. */
-export function parsePurposes(text: string): string[] {
-  const seen = new Set<string>();
-  const out: string[] = [];
-  for (const line of text.split(String.fromCharCode(10))) {
-    const purpose = line.trim();
-    if (purpose && !seen.has(purpose.toLowerCase())) {
-      seen.add(purpose.toLowerCase());
-      out.push(purpose);
-    }
-  }
-  return out;
-}
-
 /** The first thing the server would refuse, said the same way, or null. */
 export function problemOf(draft: TemplateDraft, scopeRequired: boolean): string | null {
   const form = draft.form;
@@ -563,7 +554,7 @@ function TemplateEditor({
   const [scopeFqn, setScopeFqn] = useState<string | null>(start.scopeFqn || null);
   const [facets, setFacets] = useState<string[]>(start.matchFacets);
   const [enabled, setEnabled] = useState(start.enabled);
-  const [purposes, setPurposes] = useState(start.form.purposes.join(String.fromCharCode(10)));
+  const [purposes, setPurposes] = useState<string[]>(start.form.purposes);
   const [purposeRequired, setPurposeRequired] = useState(start.form.purposeRequired);
   const [durations, setDurations] = useState(start.form.durations.join(', '));
   const [defaultDays, setDefaultDays] = useState(start.form.defaultDays === null ? '' : String(start.form.defaultDays));
@@ -575,7 +566,7 @@ function TemplateEditor({
   const [guidance, setGuidance] = useState(start.form.guidance ?? '');
 
   const form: RequestForm = {
-    purposes: parsePurposes(purposes),
+    purposes,
     purposeRequired,
     durations: parseDurations(durations),
     defaultDays: daysOf(defaultDays),
@@ -665,17 +656,14 @@ function TemplateEditor({
           <fieldset className="tw:flex tw:flex-col tw:gap-3">
             <legend className="tw:mb-2 tw:text-sm tw:font-medium tw:text-secondary">What it asks</legend>
             <div className="tw:grid tw:gap-4 tw:md:grid-cols-2">
-              <Field
-                hint="One a line. Empty lets the requester type one, or none."
-                label="Purposes offered">
-                <textarea
-                  aria-label="Purposes offered"
-                  className={`${FIELD} tw:min-h-24 tw:resize-y`}
-                  onChange={(event) => setPurposes(event.target.value)}
-                  placeholder={['Fraud investigation', 'Regulatory report'].join(String.fromCharCode(10))}
-                  value={purposes}
-                />
-              </Field>
+              <div className="tw:flex tw:flex-col tw:gap-1.5">
+                <span className="tw:text-sm tw:font-medium tw:text-secondary">Purposes offered</span>
+                <PurposeChecklist label="Purposes offered" onChange={setPurposes} value={purposes} />
+                <span className="tw:text-xs tw:text-tertiary">
+                  From the register of purposes. None ticked lets the requester pick any purpose the
+                  register lists, or none.
+                </span>
+              </div>
               <div className="tw:flex tw:flex-col tw:gap-3">
                 <label className="tw:flex tw:items-center tw:gap-2 tw:text-sm tw:text-secondary">
                   <input

@@ -100,7 +100,9 @@ import com.mfec.dac.resources.CatalogResource;
 import com.mfec.dac.resources.GovernanceResource;
 import com.mfec.dac.resources.SearchResource;
 import com.mfec.dac.resources.OpenMetadataSettingsResource;
+import com.mfec.dac.purpose.PurposeStore;
 import com.mfec.dac.resources.PolicyResource;
+import com.mfec.dac.resources.PurposeResource;
 import com.mfec.dac.resources.PrincipalResource;
 import com.mfec.dac.resources.SourceResource;
 import com.mfec.dac.source.DataSourceStore;
@@ -346,6 +348,11 @@ public class DacApplication extends Application<DacConfiguration> {
                 .withExpressions(new PolicyExpressionEvaluator()));
     PrincipalLoader principalLoader = new PrincipalLoader();
     PolicyOverview policyOverview = new PolicyOverview(jdbi, environment.getObjectMapper());
+    // The purposes data may be used for (FR-21): what a policy, a template, a
+    // request and a query name must be in it, so a purpose is one thing
+    // everywhere rather than a word typed four ways.
+    PurposeStore purposes = new PurposeStore(jdbi);
+    environment.jersey().register(new PurposeResource(purposes));
     environment
         .jersey()
         .register(
@@ -353,7 +360,8 @@ public class DacApplication extends Application<DacConfiguration> {
                 policyStore,
                 materializer,
                 policyOverview,
-                new ImpactAnalysis(jdbi, contexts, principalLoader, policyStore, engine)));
+                new ImpactAnalysis(jdbi, contexts, principalLoader, policyStore, engine),
+                purposes));
 
     // Tags attached in ARAK (FR-1.7). The resource re-resolves the table's
     // bindings itself; the store's notifier is on the invalidation list below,
@@ -440,7 +448,7 @@ public class DacApplication extends Application<DacConfiguration> {
     DecisionService decisionService =
         new DecisionService(
             jdbi, contexts, principalLoader, policyStore, grants, engine, decisionCache);
-    environment.jersey().register(new DecisionResource(decisionService));
+    environment.jersey().register(new DecisionResource(decisionService, purposes));
     environment
         .jersey()
         .register(
@@ -462,7 +470,8 @@ public class DacApplication extends Application<DacConfiguration> {
         new RequestTemplateStore(jdbi, environment.getObjectMapper());
     AccessRequestStore accessRequests =
         new AccessRequestStore(
-            jdbi, environment.getObjectMapper(), grants, accessWorkflows, requestTemplates);
+            jdbi, environment.getObjectMapper(), grants, accessWorkflows, requestTemplates,
+            purposes);
     AccessEligibility eligibility = new AccessEligibility(decisionService, accessRequests);
     AccessReview accessReview =
         new AccessReview(
@@ -477,7 +486,7 @@ public class DacApplication extends Application<DacConfiguration> {
                 new RequestStatistics(jdbi),
                 java.time.Clock.systemUTC()));
     environment.jersey().register(new AccessWorkflowResource(accessWorkflows));
-    environment.jersey().register(new RequestTemplateResource(requestTemplates));
+    environment.jersey().register(new RequestTemplateResource(requestTemplates, purposes));
     environment.jersey().register(
         new QueryResource(
             new QueryService(
@@ -491,7 +500,8 @@ public class DacApplication extends Application<DacConfiguration> {
                 queryCosts,
                 java.time.Clock.systemUTC()),
             eligibility,
-            config.getQueryLimits().getExportTimeoutSeconds()));
+            config.getQueryLimits().getExportTimeoutSeconds(),
+            purposes));
     // Statements kept under a name; the text only, never what it returned.
     environment.jersey().register(new SavedQueryResource(new SavedQueryStore(jdbi)));
     // The query log (FR-8.3, M10): each reader sees the rows that are theirs

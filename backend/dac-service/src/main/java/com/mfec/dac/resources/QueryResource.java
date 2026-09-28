@@ -4,6 +4,7 @@ import com.mfec.dac.access.AccessEligibility;
 import com.mfec.dac.auth.AuthenticatedUser;
 import com.mfec.dac.auth.Secured;
 import com.mfec.dac.policy.QueryService;
+import com.mfec.dac.purpose.PurposeStore;
 import jakarta.ws.rs.BadRequestException;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.ForbiddenException;
@@ -60,6 +61,7 @@ public class QueryResource {
   private final QueryService queries;
   private final AccessEligibility eligibility;
   private final int exportSeconds;
+  private final PurposeStore purposes;
 
   public QueryResource(QueryService queries) {
     this(queries, null);
@@ -75,9 +77,19 @@ public class QueryResource {
    * @param exportSeconds how long a download of every row may run
    */
   public QueryResource(QueryService queries, AccessEligibility eligibility, int exportSeconds) {
+    this(queries, eligibility, exportSeconds, null);
+  }
+
+  /**
+   * @param purposes the register a declared purpose must be in (FR-21); null
+   *     takes whatever was typed, as before the register
+   */
+  public QueryResource(
+      QueryService queries, AccessEligibility eligibility, int exportSeconds, PurposeStore purposes) {
     this.queries = queries;
     this.eligibility = eligibility;
     this.exportSeconds = exportSeconds;
+    this.purposes = purposes;
   }
 
   @POST
@@ -86,6 +98,7 @@ public class QueryResource {
 
     AuthenticatedUser caller = caller(security);
     UUID sourceId = sourceOf(ask);
+    String purpose = declared(ask);
 
     String principal = caller.getName();
     if (ask.asPrincipal() != null && !ask.asPrincipal().isBlank()) {
@@ -106,7 +119,7 @@ public class QueryResource {
               caller.getName(),
               ask.maxRows() == null ? 0 : ask.maxRows(),
               clientIp(request),
-              ask.purpose(),
+              purpose,
               Boolean.TRUE.equals(ask.fresh()));
 
       Map<String, Object> body = new LinkedHashMap<>();
@@ -156,7 +169,7 @@ public class QueryResource {
         AccessEligibility.Verdict verdict =
             AccessEligibility.toldTo(
                 caller,
-                eligibility.check(principal, e.deniedAsset(), clientIp(request), ask.purpose()));
+                eligibility.check(principal, e.deniedAsset(), clientIp(request), purpose));
         refusal.put("assetFqn", verdict.assetFqn());
         refusal.put("requestable", verdict.requestable());
         refusal.put("queryable", verdict.queryable());
@@ -203,6 +216,7 @@ public class QueryResource {
 
     AuthenticatedUser caller = caller(security);
     UUID sourceId = sourceOf(ask);
+    String purpose = declared(ask);
     if (ask.asPrincipal() != null
         && !ask.asPrincipal().isBlank()
         && !ask.asPrincipal().trim().equalsIgnoreCase(caller.getName())) {
@@ -214,7 +228,7 @@ public class QueryResource {
     try {
       download =
           queries.export(
-              sourceId, ask.sql(), caller.getName(), clientIp(request), ask.purpose(), exportSeconds);
+              sourceId, ask.sql(), caller.getName(), clientIp(request), purpose, exportSeconds);
     } catch (QueryService.BusyException e) {
       throw busy(e);
     } catch (QueryService.RejectedException e) {
@@ -266,6 +280,22 @@ public class QueryResource {
       throw new ForbiddenException("No caller on this request");
     }
     return caller;
+  }
+
+  /**
+   * The purpose as the register keys it. One the register does not list, or
+   * one retired, is a mistake in the request rather than a refusal by policy,
+   * so it is a 400 before anything reaches the source or the log.
+   */
+  private String declared(Ask ask) {
+    if (purposes == null) {
+      return ask.purpose();
+    }
+    try {
+      return purposes.declared(ask.purpose());
+    } catch (PurposeStore.Refused e) {
+      throw new BadRequestException(e.getMessage());
+    }
   }
 
   private static UUID sourceOf(Ask ask) {

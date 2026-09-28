@@ -8,6 +8,7 @@ import com.mfec.dac.access.RequestTemplateStore;
 import com.mfec.dac.auth.AuthenticatedUser;
 import com.mfec.dac.auth.Secured;
 import com.mfec.dac.auth.Stewardship;
+import com.mfec.dac.purpose.PurposeStore;
 import jakarta.ws.rs.BadRequestException;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.DELETE;
@@ -45,9 +46,19 @@ import java.util.function.Supplier;
 public class RequestTemplateResource {
 
   private final RequestTemplateStore templates;
+  private final PurposeStore purposes;
 
   public RequestTemplateResource(RequestTemplateStore templates) {
+    this(templates, null);
+  }
+
+  /**
+   * @param purposes the register a template's purposes are picked from
+   *     (FR-21); null = not checked
+   */
+  public RequestTemplateResource(RequestTemplateStore templates, PurposeStore purposes) {
     this.templates = templates;
+    this.purposes = purposes;
   }
 
   /** One template, and whether the caller may change it. */
@@ -96,6 +107,7 @@ public class RequestTemplateResource {
     AuthenticatedUser caller = caller(security);
     Draft clean = validated(draft);
     requireEdit(caller, clean.scopeFqn());
+    listedPurposes(clean, null);
     Stored created = guarded(() -> templates.create(clean, caller.username()));
     return Response.status(Response.Status.CREATED).entity(row(created, true)).build();
   }
@@ -111,6 +123,7 @@ public class RequestTemplateResource {
     // as much as giving it to the new one does.
     requireEdit(caller, before.template().scopeFqn());
     requireEdit(caller, clean.scopeFqn());
+    listedPurposes(clean, before.template());
     return row(guarded(() -> templates.update(id, clean, caller.username())), true);
   }
 
@@ -137,6 +150,26 @@ public class RequestTemplateResource {
   }
 
   // --------------------------------------------------------------- plumbing
+
+  /**
+   * The purposes a template offers come from the register (FR-21). Ones the
+   * template already offered before this change are let through whatever the
+   * register now says, so a template written before the register stays
+   * editable; the Purposes page lists them as in use but not listed.
+   */
+  private void listedPurposes(Draft draft, Template before) {
+    if (purposes == null) {
+      return;
+    }
+    try {
+      purposes.requireListed(
+          draft.form().purposes(),
+          before == null ? List.of() : before.form().purposes(),
+          "a request template");
+    } catch (PurposeStore.Refused e) {
+      throw new BadRequestException(e.getMessage());
+    }
+  }
 
   private static Row row(Stored s, boolean canEdit) {
     return new Row(s.template(), s.createdBy(), s.createdAt(), s.updatedBy(), s.updatedAt(), canEdit);

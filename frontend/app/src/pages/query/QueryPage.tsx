@@ -41,6 +41,8 @@ import {
 } from '../../api/query';
 import { download, exportName, toCsv, toXlsx } from '../../lib/tabular';
 import { Field, Select, TextField } from '../policies/controls';
+import { PurposeSelect } from '../policies/purposePickers';
+import { purposeName, usePurposes } from '../../api/purposes';
 import BusyNote from './BusyNote';
 import CachedNote from './CachedNote';
 import DownloadAll from './DownloadAll';
@@ -681,6 +683,7 @@ function QuerySettings({
   rowLimitNote: string;
 }) {
   const rows = maxRows || String(DEFAULT_ROWS);
+  const { data: register } = usePurposes();
   return (
     <DialogTrigger>
       <AriaButton className="tw:inline-flex tw:min-w-0 tw:cursor-pointer tw:items-center tw:gap-1.5 tw:rounded-lg tw:px-2.5 tw:py-1.5 tw:text-sm tw:font-semibold tw:text-secondary tw:outline-none tw:hover:bg-primary_hover tw:focus-visible:outline-2 tw:focus-visible:outline-brand">
@@ -692,7 +695,9 @@ function QuerySettings({
         <span aria-hidden className="tw:text-quaternary">
           ·
         </span>
-        <span className="tw:truncate tw:font-medium tw:text-tertiary">{purpose || 'No purpose'}</span>
+        <span className="tw:truncate tw:font-medium tw:text-tertiary">
+          {purpose ? purposeName(register?.purposes, purpose) : 'No purpose'}
+        </span>
       </AriaButton>
       <Popover
         className="tw:w-72 tw:rounded-xl tw:border tw:border-secondary tw:bg-primary tw:shadow-lg tw:outline-none"
@@ -712,18 +717,10 @@ function QuerySettings({
               value={maxRows}
             />
           </Field>
-          <Field hint="A policy that asks for a purpose allows only a query that states it." label="Purpose">
-            <Select
-              ariaLabel="Purpose"
-              onChange={onPurpose}
-              options={[
-                { value: '', label: 'No purpose' },
-                { value: 'fraud-analysis', label: 'fraud-analysis' },
-                { value: 'reporting', label: 'reporting' },
-                { value: 'support', label: 'support' },
-              ]}
-              value={purpose}
-            />
+          <Field
+            hint="From the register of purposes. A policy that asks for a purpose allows only a query that states it."
+            label="Purpose">
+            <PurposeSelect onChange={onPurpose} value={purpose} />
           </Field>
         </Dialog>
       </Popover>

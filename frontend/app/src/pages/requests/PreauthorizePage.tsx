@@ -14,6 +14,7 @@ import {
   type PreauthTarget,
 } from '../../api/accessRequests';
 import { fetchAttributeVocabulary, fetchPrincipals, fetchVocabulary, flatten, type Vocabulary } from '../../api/governance';
+import { usablePurpose, usePurposes } from '../../api/purposes';
 import {
   checkAnswers,
   fetchEffectiveTemplate,
@@ -23,6 +24,7 @@ import {
   type RequestForm,
 } from '../../api/requestTemplates';
 import { FIELD, Select, Step, TextField } from '../policies/controls';
+import { cappedBy, purposeDaysProblem, RequestPurpose } from '../policies/purposePickers';
 import { BUILT_IN_TEMPLATE } from '../query/RequestAccess';
 import { ScopePicker } from '../settings/pickers';
 
@@ -55,7 +57,6 @@ const ATTRIBUTE_OPERATORS: { value: PreauthAttribute['operator']; label: string 
 ];
 
 const DURATIONS = [30, 90, 180, 365];
-const NO_PURPOSE = '__none__';
 
 /**
  * The lengths offered: the scope's template's own, or the usual ones up to its
@@ -168,16 +169,29 @@ export default function PreauthorizePage() {
   });
   const template = (scope && templated.data) || BUILT_IN_TEMPLATE;
   const form = template.form;
+  const { data: register } = usePurposes();
+  const registered = register?.purposes;
   // The built-in form's short lengths suit one table for one person; a class of
   // tables for a group keeps the usual ones unless a template says otherwise.
-  const lengths = lengthsFor(template.id ? form : { ...form, durations: [], defaultDays: 90 });
+  const base = template.id ? form : { ...form, durations: [], defaultDays: 90 };
   const [shapedBy, setShapedBy] = useState<string | null>(null);
   if (shapedBy !== template.id) {
     setShapedBy(template.id);
-    setDays(lengths.start);
+    setDays(lengthsFor(base).start);
     setPurpose('');
   }
-  const listed = form.purposes.length > 0;
+  // A purpose that lasts only so long takes the longer lengths off the list.
+  const limiting = usablePurpose(registered, purpose);
+  const lengths = lengthsFor(cappedBy(base, limiting));
+  const choosePurpose = (value: string) => {
+    setPurpose(value);
+    const chosen = usablePurpose(registered, value);
+    const most = chosen?.maxDays;
+    if (most) {
+      const { offered } = lengthsFor(cappedBy(base, chosen));
+      setDays((now) => (now === null || now > most ? offered[offered.length - 1] : now));
+    }
+  };
 
   const target = useMemo(
     () => targetOf(conditions, kind, principals, attributes),
@@ -219,12 +233,12 @@ export default function PreauthorizePage() {
         : 'Name at least one thing the tables carry, and an attribute with its value.'
       : reason.trim().length === 0
         ? 'Say why these people need these tables ahead of time.'
-        : checkAnswers(form, {
+        : (checkAnswers(form, {
             reason,
             purpose: purpose.trim() || null,
             days,
             reference: form.referenceLabel ? reference : '',
-          });
+          }) ?? purposeDaysProblem(limiting, days));
   const ready = problem === null && !send.isPending;
 
   const principalType = (p: PreauthPrincipal) => (p.type === 'team' ? 'Team' : 'Group');
@@ -524,34 +538,7 @@ export default function PreauthorizePage() {
               <p className="tw:min-w-0 tw:whitespace-pre-line tw:break-words">{form.guidance}</p>
             </div>
           )}
-          {(listed || form.purposeRequired) && (
-            <div className="tw:flex tw:flex-col tw:gap-1.5">
-              <span className="tw:text-sm tw:font-medium tw:text-secondary">
-                Purpose {form.purposeRequired && <span className="tw:text-error-primary">*</span>}
-              </span>
-              {listed ? (
-                <Select
-                  ariaLabel="Purpose"
-                  className="tw:max-w-sm"
-                  onChange={(value) => setPurpose(value === NO_PURPOSE ? '' : value)}
-                  options={[
-                    ...(form.purposeRequired ? [] : [{ value: NO_PURPOSE, label: 'No particular purpose' }]),
-                    ...form.purposes.map((p) => ({ value: p, label: p })),
-                  ]}
-                  placeholder="Choose a purpose"
-                  value={purpose || (form.purposeRequired ? '' : NO_PURPOSE)}
-                />
-              ) : (
-                <TextField
-                  ariaLabel="Purpose"
-                  className="tw:max-w-sm"
-                  onChange={setPurpose}
-                  placeholder="What the data is for"
-                  value={purpose}
-                />
-              )}
-            </div>
-          )}
+          <RequestPurpose form={form} onChange={choosePurpose} value={purpose} />
           <label className="tw:flex tw:flex-col tw:gap-1.5">
             <span className="tw:text-sm tw:font-medium tw:text-secondary">
               Why they need it <span className="tw:text-error-primary">*</span>
@@ -600,7 +587,7 @@ export default function PreauthorizePage() {
                   {option} days
                 </button>
               ))}
-              {form.allowUntilRevoked && (
+              {form.allowUntilRevoked && !limiting?.maxDays && (
                 <button
                   aria-pressed={days === null}
                   className={chip(days === null)}

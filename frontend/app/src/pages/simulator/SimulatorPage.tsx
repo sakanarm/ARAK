@@ -28,6 +28,7 @@ import {
   type ResolvedRowPredicate,
 } from '../../api/decisions';
 import { Field, Select, TextField } from '../policies/controls';
+import { PurposeSelect } from '../policies/purposePickers';
 import { describeMasking } from '../policies/policyLanguage';
 
 /**
@@ -149,13 +150,9 @@ export default function SimulatorPage() {
           </Field>
 
           <Field
-            hint="Some policies grant access only for a stated purpose."
+            hint="From the register. Some policies grant access only for a stated purpose."
             label="Purpose">
-            <TextField
-              onChange={setPurpose}
-              placeholder="fraud-analysis"
-              value={purpose}
-            />
+<PurposeSelect onChange={setPurpose} value={purpose} />
           </Field>
 
           <Field

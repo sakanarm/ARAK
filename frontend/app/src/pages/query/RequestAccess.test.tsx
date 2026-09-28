@@ -3,6 +3,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { MemoryRouter } from 'react-router-dom';
 import RequestAccess from './RequestAccess';
 import type { AccessRequest, Refusal, Route } from '../../api/accessRequests';
+import type { Purpose, PurposeListing } from '../../api/purposes';
 import type { RequestTemplate } from '../../api/requestTemplates';
 
 const requestAccess = jest.fn();
@@ -26,6 +27,38 @@ jest.mock('../../api/accessRequests', () => {
 
 jest.mock('../../api/client', () => ({
   apiErrorMessage: (error: { message?: string }, fallback: string) => error?.message ?? fallback,
+}));
+
+function purpose(key: string, name: string, extra: Partial<Purpose> = {}): Purpose {
+  return {
+    key,
+    name,
+    description: null,
+    legalBasis: null,
+    sensitiveAllowed: false,
+    owner: null,
+    maxDays: null,
+    status: 'ACTIVE',
+    createdBy: 'system',
+    createdAt: '2026-09-28T03:00:00Z',
+    updatedBy: 'system',
+    updatedAt: '2026-09-28T03:00:00Z',
+    ...extra,
+  };
+}
+
+const REGISTER = [
+  purpose('fraud-analysis', 'Fraud analysis', { legalBasis: 'LEGITIMATE_INTEREST', maxDays: 14 }),
+  purpose('reporting', 'Reporting'),
+  purpose('support', 'Support', { status: 'RETIRED' }),
+];
+
+// Without a register the forms ask as they did before there was one.
+let register: PurposeListing | undefined;
+
+jest.mock('../../api/purposes', () => ({
+  ...jest.requireActual('../../api/purposes'),
+  usePurposes: () => ({ data: register, isLoading: false, isError: false }),
 }));
 
 const FQN = 'demo-pg.salesdb.sales.customer';
@@ -132,6 +165,7 @@ const PII: RequestTemplate = {
 };
 
 beforeEach(() => {
+  register = undefined;
   requestAccess.mockReset();
   fetchEffectiveTemplate.mockReset();
   // No template configured: the built-in form, as before templates.
@@ -217,6 +251,88 @@ describe('RequestAccess on a template', () => {
     await screen.findByText(/Request sent/);
     expect(requestAccess.mock.calls[0][0]).not.toHaveProperty('reference');
     expect(requestAccess.mock.calls[0][0]).toMatchObject({ days: null });
+  });
+});
+
+describe('RequestAccess with the register of purposes', () => {
+  beforeEach(() => {
+    register = { purposes: REGISTER, canEdit: false };
+  });
+
+  it('offers the register where the template lists nothing, and sends the key', async () => {
+    requestAccess.mockResolvedValue(sent());
+    renderBox(refusal());
+    const { reason, send } = openForm();
+    fireEvent.change(reason, { target: { value: 'Audit' } });
+
+    fireEvent.click(screen.getByRole('button', { name: /Purpose/ }));
+    expect(screen.queryByRole('option', { name: /Support/ })).toBeNull();
+    fireEvent.click(await screen.findByRole('option', { name: /^Reporting/ }));
+    fireEvent.click(send);
+
+    await screen.findByText(/Request sent/);
+    expect(requestAccess.mock.calls[0][0]).toMatchObject({ purpose: 'reporting', days: 30 });
+  });
+
+  it('holds the days to the purpose’s longest access, and offers no until revoked', async () => {
+    requestAccess.mockResolvedValue(sent());
+    renderBox(refusal(), 'Fraud-Analysis');
+    const { reason, days, send } = openForm();
+    fireEvent.change(reason, { target: { value: 'Case 4411' } });
+
+    // The Query page's purpose, by its key; 30 days is past what it allows.
+    expect(days.value).toBe('14');
+    expect(screen.getByText('Access for this purpose lasts at most 14 days.')).toBeInTheDocument();
+    const durations = screen.getByRole('group', { name: 'Durations' });
+    expect(within(durations).queryByRole('button', { name: 'Until revoked' })).toBeNull();
+    expect(within(durations).queryByRole('button', { name: '30 days' })).toBeNull();
+
+    fireEvent.change(days, { target: { value: '20' } });
+    expect(send).toBeDisabled();
+    expect(screen.getByText('Between 1 and 14 days.')).toBeInTheDocument();
+    fireEvent.click(within(durations).getByRole('button', { name: '7 days' }));
+    fireEvent.click(send);
+
+    await screen.findByText(/Request sent/);
+    expect(requestAccess.mock.calls[0][0]).toMatchObject({ purpose: 'fraud-analysis', days: 7 });
+  });
+
+  it('gives the days back when a purpose without a limit is chosen instead', async () => {
+    renderBox(refusal(), 'fraud-analysis');
+    const { days } = openForm();
+    expect(days.value).toBe('14');
+
+    fireEvent.click(screen.getByRole('button', { name: /Purpose/ }));
+    fireEvent.click(await screen.findByRole('option', { name: /^Reporting/ }));
+    expect(screen.getByRole('button', { name: 'Until revoked' })).toBeInTheDocument();
+    fireEvent.change(days, { target: { value: '' } });
+    expect(screen.getByText(/until revoked/)).toBeInTheDocument();
+  });
+
+  it('starts on no purpose when the Query page’s one was retired', async () => {
+    requestAccess.mockResolvedValue(sent());
+    renderBox(refusal(), 'support');
+    const { reason, send } = openForm();
+    fireEvent.change(reason, { target: { value: 'Audit' } });
+    fireEvent.click(send);
+
+    await screen.findByText(/Request sent/);
+    expect(requestAccess.mock.calls[0][0]).toMatchObject({ purpose: null });
+  });
+
+  it('names a template’s purposes as the register does, and leaves out the retired ones', async () => {
+    fetchEffectiveTemplate.mockResolvedValue({
+      ...PII,
+      form: { ...PII.form, purposes: ['fraud-analysis', 'support', 'Regulatory report'] },
+    });
+    renderBox(refusal());
+    openForm();
+    await screen.findByText('PII tables');
+
+    fireEvent.click(screen.getByRole('button', { name: /Purpose/ }));
+    expect(await screen.findByRole('option', { name: /^Fraud analysis/ })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: /^Regulatory report/ })).toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: /Support/ })).toBeNull();
   });
 });
 

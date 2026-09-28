@@ -8,6 +8,7 @@ import com.mfec.dac.policy.ImpactAnalysis;
 import com.mfec.dac.policy.PolicyBindingMaterializer;
 import com.mfec.dac.policy.PolicyOverview;
 import com.mfec.dac.policy.PolicyStore;
+import com.mfec.dac.purpose.PurposeStore;
 import com.mfec.dac.schema.entity.policy.Policy;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.ws.rs.BadRequestException;
@@ -49,16 +50,31 @@ public class PolicyResource {
   private final PolicyBindingMaterializer materializer;
   private final PolicyOverview overview;
   private final ImpactAnalysis impact;
+  private final PurposeStore purposes;
 
   public PolicyResource(
       PolicyStore policies,
       PolicyBindingMaterializer materializer,
       PolicyOverview overview,
       ImpactAnalysis impact) {
+    this(policies, materializer, overview, impact, null);
+  }
+
+  /**
+   * @param purposes the register a policy's purposes are checked against when
+   *     it is saved (FR-21); null = not checked
+   */
+  public PolicyResource(
+      PolicyStore policies,
+      PolicyBindingMaterializer materializer,
+      PolicyOverview overview,
+      ImpactAnalysis impact,
+      PurposeStore purposes) {
     this.policies = policies;
     this.materializer = materializer;
     this.overview = overview;
     this.impact = impact;
+    this.purposes = purposes;
   }
 
   @GET
@@ -235,6 +251,7 @@ public class PolicyResource {
       @Context HttpServletRequest request) {
     AuthenticatedUser caller = caller(security);
     authorise(caller, document);
+    listedPurposes(document, null);
     PolicyStore.StoredPolicy created =
         guard(() -> policies.create(document, caller.username(), clientIp(request)));
     // Bound at creation, while still DRAFT. Nothing is enforced from a draft,
@@ -261,6 +278,7 @@ public class PolicyResource {
     // may not move one into their scope either.
     authorise(caller, existing.document());
     authorise(caller, document);
+    listedPurposes(document, existing.document());
 
     PolicyStore.StoredPolicy updated =
         guard(
@@ -306,6 +324,7 @@ public class PolicyResource {
             .revision(id, version)
             .orElseThrow(() -> new NotFoundException("Policy " + id + " has no version " + version));
     authorise(caller, target.document());
+    listedPurposes(target.document(), existing.document());
 
     PolicyStore.StoredPolicy restored =
         guard(
@@ -370,6 +389,37 @@ public class PolicyResource {
         policies.find(id).orElseThrow(() -> new NotFoundException("No policy " + id));
     authorise(caller, existing.document());
     return materializer.materialize(id);
+  }
+
+  // ------------------------------------------------------------------- purposes
+
+  /**
+   * Every purpose the policy names must be in the register and not retired
+   * (FR-21): a purpose declared at query time is only ever a listed one, so a
+   * policy naming anything else would grant nothing, silently. Purposes the
+   * policy already named before this change are let through whatever the
+   * register now says, so an older policy stays editable; the Purposes page
+   * lists them as in use but not listed.
+   */
+  private void listedPurposes(Policy document, Policy before) {
+    if (purposes == null) {
+      return;
+    }
+    try {
+      purposes.requireListed(purposesOf(document), purposesOf(before), "a policy");
+    } catch (PurposeStore.Refused e) {
+      throw new BadRequestException(e.getMessage());
+    }
+  }
+
+  private static List<String> purposesOf(Policy document) {
+    if (document == null
+        || document.getSubject() == null
+        || document.getSubject().getContext() == null
+        || document.getSubject().getContext().getPurpose() == null) {
+      return List.of();
+    }
+    return document.getSubject().getContext().getPurpose();
   }
 
   // ------------------------------------------------------------------ authority
