@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.mfec.dac.llm.AssistPrompts.Column;
 import com.mfec.dac.llm.AssistPrompts.Neighbour;
+import com.mfec.dac.llm.AssistPrompts.Pick;
 import com.mfec.dac.llm.AssistPrompts.PolicyFacts;
 import com.mfec.dac.llm.AssistPrompts.Table;
 import java.util.List;
@@ -685,6 +686,104 @@ class AssistPromptsTest {
     void userCarriesTheBrief() {
       assertThat(AssistPrompts.explainDashboardUser("Window: the last 7 days."))
           .isEqualTo("The dashboard as it stands now:\n\nWindow: the last 7 days.");
+    }
+  }
+
+  @Nested
+  @DisplayName("find data (M16)")
+  class FindData {
+
+    private final Table customer =
+        new Table(
+            "demo-pg.salesdb.sales.customer",
+            "One row per customer",
+            List.of(
+                new Column("id", "bigint", null, List.of()),
+                new Column("Email", "varchar", null, List.of("PII.Sensitive"))));
+
+    @Test
+    @DisplayName("asks for search words from the sentence alone, and never for values")
+    void keywordsPromptIsTheSentence() {
+      assertThat(AssistPrompts.findKeywordsSystem())
+          .contains("search words", "Translate", "English")
+          .contains("Leave out names of people, values, dates and numbers")
+          .contains("{\"keywords\":");
+      assertThat(AssistPrompts.findKeywordsUser("  ลูกค้า\n ที่ยังค้างชำระ "))
+          .isEqualTo("Request: ลูกค้า ที่ยังค้างชำระ");
+    }
+
+    @Test
+    @DisplayName("keeps at most eight keywords that look like names, no two alike")
+    void keywordsAreCleaned() {
+      assertThat(
+              AssistPrompts.extractKeywords(
+                  "```json\n{\"keywords\":[\"customer\",\"Customer\",\"x\",\"po line\","
+                      + "\"DROP TABLE; --\",\"a\",\"b1\",\"c2\",\"d3\",\"e4\",\"f5\",\"g6\"]}\n```"))
+          .containsExactly("customer", "po line", "b1", "c2", "d3", "e4", "f5", "g6");
+      assertThat(AssistPrompts.extractKeywords("customers, probably")).isEmpty();
+      assertThat(AssistPrompts.extractKeywords(null)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("falls back to the sentence's own words")
+    void wordsOfTheSentence() {
+      assertThat(AssistPrompts.wordsOf("Where are the customers' emails?"))
+          .containsExactly("where", "are", "the", "customer", "email");
+    }
+
+    @Test
+    @DisplayName("tells the model to pick, explain and keep quiet about access, in the language asked for")
+    void systemCarriesTheRules() {
+      assertThat(AssistPrompts.findDataSystem("thai")).contains("sentences in Thai");
+      assertThat(AssistPrompts.findDataSystem(null))
+          .contains("sentences in English")
+          .contains("You have not seen any data")
+          .contains("Never invent a table or a column")
+          .contains("Do not say whether they can read a table")
+          .contains("at most 6", "at most 8");
+      assertThat(AssistPrompts.findDataUser("customer emails", List.of(customer)))
+          .startsWith("Request: customer emails\n\nTables:\n")
+          .contains("demo-pg.salesdb.sales.customer", "Email varchar  [PII.Sensitive]");
+    }
+
+    @Test
+    @DisplayName("keeps only tables and columns it was shown, under the catalogue's names")
+    void picksAreCheckedAgainstWhatWasShown() {
+      String answer =
+          "{\"tables\":["
+              + "{\"fqn\":\"DEMO-PG.SALESDB.SALES.CUSTOMER\",\"why\":\"  Holds\\n emails. \","
+              + "\"columns\":[\"email\",\"ghost\",\"EMAIL\",\"id\"]},"
+              + "{\"fqn\":\"demo-pg.salesdb.sales.customer\",\"why\":\"again\"},"
+              + "{\"fqn\":\"demo-pg.secret.x.y\",\"why\":\"invented\",\"columns\":[\"k\"]}]}";
+
+      List<Pick> picks = AssistPrompts.extractPicks(answer, List.of(customer)).orElseThrow();
+
+      assertThat(picks).hasSize(1);
+      assertThat(picks.get(0).fqn()).isEqualTo("demo-pg.salesdb.sales.customer");
+      assertThat(picks.get(0).why()).isEqualTo("Holds emails.");
+      assertThat(picks.get(0).columns()).containsExactly("Email", "id");
+    }
+
+    @Test
+    @DisplayName("tells an empty list from an answer that is not one")
+    void emptyIsNotUnanswered() {
+      assertThat(AssistPrompts.extractPicks("{\"tables\":[]}", List.of(customer)))
+          .contains(List.of());
+      assertThat(AssistPrompts.extractPicks("The customer table.", List.of(customer))).isEmpty();
+      assertThat(AssistPrompts.extractPicks("{\"answer\":1}", List.of(customer))).isEmpty();
+    }
+
+    @Test
+    @DisplayName("caps a long reason")
+    void longReasonIsCapped() {
+      String answer =
+          "{\"tables\":[{\"fqn\":\"demo-pg.salesdb.sales.customer\",\"why\":\""
+              + "w".repeat(1000)
+              + "\"}]}";
+
+      String why = AssistPrompts.extractPicks(answer, List.of(customer)).orElseThrow().get(0).why();
+
+      assertThat(why).hasSize(AssistPrompts.MAX_FOUND_WHY).endsWith("…");
     }
   }
 }

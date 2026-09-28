@@ -1,6 +1,6 @@
 # HANDOFF — ARAK (Data Access Control Platform)
 
-> อัปเดต: 2026-09-28 · ข้อ CJ.1 (ยิง explain-dashboard กับ LLM จริงแล้วผ่าน · ภาษาไทยแยก query กับ คำขอสิทธิ์) · ข้อ CJ (NokRak อธิบาย dashboard — panel **Ask NokRak** ใต้ key figures เลือกหัวข้อได้ · ชื่อคนเป็น `[P1]` ก่อนส่ง · M15 (ข) · M15 ครบ) · ข้อ CI (NokRak อธิบาย policy — ปุ่ม **Explain with NokRak** ในหน้า policy · M15 (ก)) · ข้อ CH (ปุ่ม **Query** ที่หัวหน้าตาราง สำหรับคนที่อ่านได้แล้ว — เปิดหน้า Query บน source ของตารางพร้อม SQL · FR-1.6d) · ข้อ CG (เปลี่ยนรหัสผ่านเอง — Profile → Password · หน้าบังคับเปลี่ยนเมื่อรหัสถูก admin ตั้ง · M2 / FR-2.2) · ข้อ CF (NokRak ตอบคำถามวิธีใช้ ARAK จากคู่มือที่แพ็กเข้า jar — `search_docs`) · ข้อ CE (สร้าง classification / tag ของ ARAK เองในหน้า Governance — provenance local · sync ไม่ทับ · ไม่เขียนกลับ OM) · ข้อ CD (Column description เขียนใน ARAK · NokRak ร่าง · แสดงใน ticket) · ข้อ CC (tab Access รับ list ยาว — แถบสรุป · chip · ค้น · แบ่งหน้า · กดดูรายละเอียดเต็ม) · ข้อ CB (NokRak ช่วยแก้ policy ที่มีอยู่ — คน review แล้วกด Save เอง) · ข้อ CA (ประวัติ policy · diff · rollback) · ข้อ BW (tag จาก OM ผ่าน webhook/poller ย้าย policy binding ทันที) · ข้อ BV (tab Access เฉพาะผู้ดูแล + Diagram แบบ canvas) · ข้อ BU (FR-1.7 local tag + demo group บน prod) · push ขึ้น origin/main แล้ว · repo https://github.com/sakanarm/ARAK (**public**)
+> อัปเดต: 2026-09-28 · ข้อ CK (**Find data** — NokRak หาตารางจากประโยคในหน้า Query · ตรวจสิทธิ์ก่อนโมเดลเห็นตาราง · อ่านได้ → เติม SQL · ขอได้ → ฟอร์มขอสิทธิ์ · M16) · ข้อ CJ.1 (ยิง explain-dashboard กับ LLM จริงแล้วผ่าน · ภาษาไทยแยก query กับ คำขอสิทธิ์) · ข้อ CJ (NokRak อธิบาย dashboard — panel **Ask NokRak** ใต้ key figures เลือกหัวข้อได้ · ชื่อคนเป็น `[P1]` ก่อนส่ง · M15 (ข) · M15 ครบ) · ข้อ CI (NokRak อธิบาย policy — ปุ่ม **Explain with NokRak** ในหน้า policy · M15 (ก)) · ข้อ CH (ปุ่ม **Query** ที่หัวหน้าตาราง สำหรับคนที่อ่านได้แล้ว — เปิดหน้า Query บน source ของตารางพร้อม SQL · FR-1.6d) · ข้อ CG (เปลี่ยนรหัสผ่านเอง — Profile → Password · หน้าบังคับเปลี่ยนเมื่อรหัสถูก admin ตั้ง · M2 / FR-2.2) · ข้อ CF (NokRak ตอบคำถามวิธีใช้ ARAK จากคู่มือที่แพ็กเข้า jar — `search_docs`) · ข้อ CE (สร้าง classification / tag ของ ARAK เองในหน้า Governance — provenance local · sync ไม่ทับ · ไม่เขียนกลับ OM) · ข้อ CD (Column description เขียนใน ARAK · NokRak ร่าง · แสดงใน ticket) · ข้อ CC (tab Access รับ list ยาว — แถบสรุป · chip · ค้น · แบ่งหน้า · กดดูรายละเอียดเต็ม) · ข้อ CB (NokRak ช่วยแก้ policy ที่มีอยู่ — คน review แล้วกด Save เอง) · ข้อ CA (ประวัติ policy · diff · rollback) · ข้อ BW (tag จาก OM ผ่าน webhook/poller ย้าย policy binding ทันที) · ข้อ BV (tab Access เฉพาะผู้ดูแล + Diagram แบบ canvas) · ข้อ BU (FR-1.7 local tag + demo group บน prod) · push ขึ้น origin/main แล้ว · repo https://github.com/sakanarm/ARAK (**public**)
 >
 > อ่านคู่กับ **[docs/DESIGN.md](docs/DESIGN.md)** — ไฟล์นั้นคือ requirement + feature catalogue + สถานะครบทุกข้อ
 > ไฟล์นี้บอกเฉพาะ "ทำถึงไหน จะไปต่อยังไง อะไรที่ลองแล้วไม่เวิร์ค"
@@ -43,7 +43,7 @@ Phase 1 รองรับ SQL Server + PostgreSQL · identity หลักค�
 | **M13 Request access จากจุดที่โดนปฏิเสธ** | ✅ **เสร็จรอบนี้ (ข้อ AX)** · refusal (403) ของ `POST /v1/query` พก `assetFqn` · `requestable` · `blockedBy` · `approvers[]` · `openRequestId` · หน้า Query ขึ้นกล่อง **"The owner can let you in"** → ฟอร์มขอสิทธิ์ (เหตุผล + จำนวนวัน + purpose + SQL ที่ติด) · ถ้า grant ช่วยไม่ได้ (DENY / ชั้นบนปฏิเสธ) บอกชื่อ policy ที่ขวางแทน ไม่ส่งไปให้ owner · **SQL Suggest** ในหน้า Query พร้อมป้าย *Readable* / *Request needed* ต่อ table · **ปุ่มเดียวกันบนหน้า asset ใน Catalog ✅ (ข้อ AY)** — มุมขวาบนของหัวหน้า asset · เปิด dialog ฟอร์มเดียวกัน · บอก *You can read this* / *Access requested* / กุญแจ + ชื่อ policy ที่ขวาง · ยังไม่ทำ: flag "ปฏิเสธแบบไม่บอกอะไรเลย" ต่อ policy |
 | **M14 Public API + Swagger + Org Key** | ⬜ **Roadmap ใหม่ — ผู้ใช้ขอ 2026-09-24** · เปิด ARAK ให้ระบบอื่นเรียกได้: **Swagger UI + OpenAPI spec** ที่ generate จาก resource จริง · **สร้าง policy** และ **query ตามสิทธิ์ที่ตัวเองมี** ผ่าน API ได้ · auth ด้วย **Org Key ที่มีวันหมดอายุบังคับ** — scope ต่อ key, ผูกกับ principal ที่ระบุ, สิทธิ์ของ key ไม่เกินสิทธิ์ของเจ้าของ — ดูข้อ AP.2 |
 | **M15 LLM อธิบาย policy และอธิบาย dashboard** | ✅ **(ก) ✅ 2026-09-28 (ข้อ CI)** · **(ข) ✅ 2026-09-28 (ข้อ CJ)** · **Roadmap ใหม่ — ผู้ใช้ขอ 2026-09-24** · ต่อยอดจาก M11 ที่ per-user gateway ใช้ได้จริงแล้ว · **(ก)** admin เปิด policy ตัวหนึ่งแล้วกด "อธิบายให้ฟัง" — LLM แปล selector + subject rule + row filter + mask ออกมาเป็นภาษาคน พร้อมบอกว่า **จะถูก policy ชั้นบนทับตรงไหน** · **(ข)** หน้า Dashboard (M10) กดที่กราฟแล้วให้ LLM อ่านตัวเลขให้ฟังว่ามันแปลว่าอะไรและควรไปดูอะไรต่อ — ⚠️ **ส่ง metadata + ตัวเลขสรุปเท่านั้น ห้ามส่งแถวข้อมูลจริง และ LLM ยังไม่มีสิทธิ์ activate อะไรทั้งสิ้น** (FR-2.6) — ดูข้อ AP.3 |
-| **M16 LLM ช่วยหา asset จากสิ่งที่อยากได้** | ⬜ **Roadmap ใหม่ — ผู้ใช้ขอ 2026-09-24** · ในหน้า Query เพิ่ม option ให้พิมพ์เป็นภาษาคนว่า *“อยากได้ข้อมูลผลิตภัณฑ์และราคา”* แล้ว LLM ไปค้นใน metadata (asset + column + description + tag + glossary term + domain) แล้วตอบกลับเป็น **ตาราง/คอลัมน์ที่น่าจะใช่ พร้อมเหตุผลว่าทำไม** · แต่ละตัวต้องบอกด้วยว่า **คุณ query ได้เลย** หรือ **ต้องไปขอสิทธิ์ก่อน** (ต่อปุ่มของ M13 ตรงนั้น) · ตัวที่ query ได้กดแล้วเติม SQL ร่างลงช่อง editor ให้เลย — ⚠️ **ค้นบน metadata เท่านั้น ห้ามส่งแถวข้อมูลจริงให้ LLM** และผลลัพธ์ต้อง **กรองด้วยสิทธิ์ของคนที่ถาม** ก่อนแสดง (ห้ามใช้ LLM เป็นช่องทางส่องว่ามีตารางอะไรอยู่บ้าง) — ดูข้อ AP.4 · **จุดเข้าที่สอง — หน้า Catalog** (ผู้ใช้ขอ 2026-09-26 *"Catalog ต้องสามารถให้ LLM มาช่วยในการค้นหาได้ด้วย"*): ช่องค้นหาของ Catalog มีโหมด "Ask" ที่พิมพ์เป็นภาษาคนได้ ใช้ backend ตัวเดียวกับหน้า Query · ผลลัพธ์เป็น asset ที่คนถามมองเห็นอยู่แล้วเท่านั้น พร้อมเหตุผล และปุ่มเปิดหน้า asset / ขอสิทธิ์ · ตัวแชทเต็มรูปแบบอยู่ใน **M28** |
+| **M16 LLM ช่วยหา asset จากสิ่งที่อยากได้** | ✅ **2026-09-28 (ข้อ CK)** · **Roadmap ใหม่ — ผู้ใช้ขอ 2026-09-24** · ในหน้า Query เพิ่ม option ให้พิมพ์เป็นภาษาคนว่า *“อยากได้ข้อมูลผลิตภัณฑ์และราคา”* แล้ว LLM ไปค้นใน metadata (asset + column + description + tag + glossary term + domain) แล้วตอบกลับเป็น **ตาราง/คอลัมน์ที่น่าจะใช่ พร้อมเหตุผลว่าทำไม** · แต่ละตัวต้องบอกด้วยว่า **คุณ query ได้เลย** หรือ **ต้องไปขอสิทธิ์ก่อน** (ต่อปุ่มของ M13 ตรงนั้น) · ตัวที่ query ได้กดแล้วเติม SQL ร่างลงช่อง editor ให้เลย — ⚠️ **ค้นบน metadata เท่านั้น ห้ามส่งแถวข้อมูลจริงให้ LLM** และผลลัพธ์ต้อง **กรองด้วยสิทธิ์ของคนที่ถาม** ก่อนแสดง (ห้ามใช้ LLM เป็นช่องทางส่องว่ามีตารางอะไรอยู่บ้าง) — ดูข้อ AP.4 · **จุดเข้าที่สอง — หน้า Catalog** (ผู้ใช้ขอ 2026-09-26 *"Catalog ต้องสามารถให้ LLM มาช่วยในการค้นหาได้ด้วย"*): ช่องค้นหาของ Catalog มีโหมด "Ask" ที่พิมพ์เป็นภาษาคนได้ ใช้ backend ตัวเดียวกับหน้า Query · ผลลัพธ์เป็น asset ที่คนถามมองเห็นอยู่แล้วเท่านั้น พร้อมเหตุผล และปุ่มเปิดหน้า asset / ขอสิทธิ์ · ตัวแชทเต็มรูปแบบอยู่ใน **M28** |
 | **M17 ประวัติย้อนหลังของ policy** | ✅ **เสร็จ (ข้อ CA)** — tab History · diff ตามความหมาย · rollback เป็นเวอร์ชันใหม่ + impact ก่อน + เหตุผลบังคับ · `audit_policy_change` เขียนทุกเวอร์ชัน (V39) · *ที่มาเดิม:* ผู้ใช้ขอ 2026-09-24 · ชิป *`v13 · active`* ที่เห็นบนหน้า policy มาจาก `policy.version` + `policy.lifecycle_state` · **ประวัติเก็บครบอยู่แล้วใน `policy_version`** (append-only ตั้งแต่ V3 — `PolicyStore` เขียนทุกครั้งก่อนแก้แถวจริง เก็บ `document` ทั้งใบ + `lifecycle_state` + `changed_by` + `change_reason` + `changed_at`) และ `GET /v1/policies/{id}/versions` ก็เปิดอยู่ **แต่ไม่มีหน้าจอไหนเรียกมันเลย** (`fetchPolicyVersions` ใน `api/policies.ts` เขียนไว้แล้วแต่ไม่มีใครใช้) · งานคือ: **แท็บ History** บนหน้า policy · **diff ระหว่างสองเวอร์ชัน** · **rollback** (เขียนเวอร์ชันใหม่ทับ ไม่ใช่ลบของเก่า ตาม FR-9.2) · และ **`audit_policy_change` ที่ยังไม่มีใครเขียนลงไปเลยสักแถว** — ดูข้อ AP.5 |
 | **M18 รองรับ database type ใหม่ได้โดยไม่ต้องไล่แก้ 14 จุด** | 🚧 **~75% — slice 1 จบรอบนี้และ*ผ่านการรันจริง*แล้ว (ดูข้อ AR)** · `SourceEngine` registry + `SqlDialects` + `ProxyCapabilities` + `V18__source_engine.sql` + `GET /v1/sources/engines` · **switch ทั้ง 3 ตัวและ hardcode ฝั่ง frontend ทั้ง 6 ไฟล์หายไปแล้ว** · **proxy fail-closed แล้ว** — engine ที่ mask ไม่ได้ถูกปฏิเสธพร้อมบอกทางออก แทนที่จะคืน column แบบ plaintext · เหลือ: introspection quirk ต่อ engine (`supportsSchemas` ยังไม่มีใครอ่าน) · `engine_capability` ฝั่ง native ยังไม่มีคนอ่าน (รอ M6) · และ **เพิ่ม engine ตัวที่ 3 จริงเพื่อพิสูจน์ว่า class เดียวพอ** · เดิมคือ ⬜ **Roadmap ใหม่ — ผู้ใช้ขอ 2026-09-24** · ของที่แพงออกแบบถูกแล้ว (`PolicyDecision` ไม่มี SQL · `SqlDialect` เป็น interface · `engine_capability` เป็น data) **แต่ชื่อ engine ถูก hardcode อยู่ 14 ที่** — `CHECK (engine IN (...))` 2 migration · switch ใน `JdbcTargets` + `SourceProbe` + `QueryService.dialectFor()` · frontend อีก 6 ไฟล์ · ลืมจุดเดียว**ไม่ error ตอน compile** แต่พังตอน runtime · งานคือ **`SourceEngine` registry ตัวเดียว** ที่ถือ url template + driver + dialect + probe + introspection quirk แล้วให้ทุกจุดอ่านจากมัน → เพิ่ม engine = **class 1 ตัว + capability rows** — ดูข้อ AP.7 |
 | **M19 AI-Driven Anomalous Access Detection** | ⬜ **Roadmap ใหม่ — ผู้ใช้ขอ 2026-09-25** · เรียนรู้ baseline การเข้าถึงข้อมูลของแต่ละคน (ปริมาณแถว · ช่วงเวลา · table ที่แตะ · อัตราโดนปฏิเสธ) แล้วจับพฤติกรรมที่ผิดไปจาก baseline เช่น ปกติดึงลูกค้าวันละ 10 แถว แต่วันหนึ่งดึง 5,000 แถวตอนตี 3 · **ตอบสนองได้ 3 ระดับ: แจ้งเตือน → ขอเหตุผลหรือให้ owner อนุมัติ → block แล้วพักสิทธิ์ใช้ query ไว้จนกว่า security จะตรวจ** · **block ทันทีทำได้เฉพาะเมื่อ query ผ่าน proxy (5.2)** · โหมด native (5.1.1 / 5.1.2) ทำได้แค่ตรวจย้อนหลังแล้วพักสิทธิ์ · v1 ใช้สถิติที่อธิบายได้ (median / MAD · histogram ตามชั่วโมง · table ที่ไม่เคยแตะ) ก่อน ML · LLM ใช้อธิบายเหตุผลเท่านั้น และเห็นแค่ตัวเลขสรุป ไม่เห็นข้อมูลจริง · ต้องเริ่มจาก shadow mode (แจ้งเตือนอย่างเดียว) · ต้องมี M10 (query log + `asset_fqns`) ก่อน · ดูข้อ AP.9 |
@@ -598,8 +598,8 @@ M9 + M13  ทำพร้อมกัน  (ปุ่มขอสิทธิ์�
 M14       ทำแยกได้เลย  (ไม่ขึ้นกับใคร แต่ต้องรอ M3 นิ่ง ซึ่งนิ่งแล้ว)
 M10 → M15 (ข)          ✅ เสร็จ (ข้อ CJ)
 M15 (ก)   ✅ เสร็จ (ข้อ CI)
-M13 → M16              (M16 ใช้ปุ่ม "ขอสิทธิ์" ของ M13 เป็นปลายทางของกองที่สอง
-                        และใช้ flag "ปฏิเสธโดยไม่บอกอะไร" ตัวเดียวกัน)
+M13 → M16              ✅ เสร็จ (ข้อ CK) — ปุ่ม "ขอสิทธิ์" ของ M13 เป็นปลายทางของกองที่สอง
+                        · flag "ปฏิเสธโดยไม่บอกอะไร" ยังค้าง (ต้องครอบ Catalog + แชท + find-data พร้อมกัน)
 M17       ✅ เสร็จ (ข้อ CA) — รวมข้อ 5 audit_policy_change แล้ว
 M18 → M6  (M6 คือ NativeCompiler ต่อ engine — ถ้าทำ M6 ก่อน M18
            จะได้ switch เพิ่มมาอีกชุดที่ต้องมารื้อทีหลัง)
@@ -620,7 +620,44 @@ M25 ทำแยกได้ (profile ผ่าน proxy ที่มีแล�
 
 ---
 
-## รอบนี้ — **ข้อ CJ: NokRak อธิบาย dashboard (M15 (ข)) — M15 ครบ**
+## รอบนี้ — **ข้อ CK: Find data — NokRak หาตารางจากประโยค (M16)**
+
+ผู้ใช้สั่ง "ทำอย่างอื่นต่อได้เลย" → ทำ M16 ตาม AP.4 · M11 (per-user gateway) กับ M13 (ปุ่มขอสิทธิ์) มีแล้วจึงไม่ติดอะไร
+
+**ลำดับที่ server ทำ (สิทธิ์อยู่ตรงกลาง ก่อนโมเดลเห็นตาราง)**
+1. ถามโมเดลครั้งที่ 1 ด้วย **ประโยคอย่างเดียว** → ขอคำค้นภาษาอังกฤษ ≤ 8 คำ (แปล · เติมคำย่อ · ห้ามใส่ชื่อคน / ค่า / วันที่ / ตัวเลข) · ตอบไม่เป็น JSON → ใช้คำในประโยคเอง (`AssistPrompts.wordsOf`)
+2. ค้นแต่ละคำด้วย `SearchQuery` (30 hit ต่อคำ) → ให้คะแนนต่อตาราง (ชื่อ / description ตรง = 3 · column ตรง = 1 · คำหนึ่งนับครั้งเดียวต่อตาราง) เรียงมากไปน้อย
+3. **ตรวจสิทธิ์ทีละตาราง** ด้วย `AssistToolbox.seen()` (ตัวเดียวกับที่แชทใช้ · ตรวจไม่เกิน 30 · เก็บไม่เกิน 10) — ตารางที่อ่านไม่ได้และขอไม่ได้ **ถูกทิ้งตรงนี้ ไม่เคยถูกเขียนลง prompt** · ตารางที่อ่านได้ถูกตัด column ที่ decision ซ่อนออก (`hiddenColumns`)
+4. ไม่เหลือสักตาราง → ตอบรายการว่าง **ไม่ถามโมเดลครั้งที่ 2**
+5. ถามโมเดลครั้งที่ 2 ด้วยประโยค + metadata ของตารางที่เหลือ (ชื่อ · description · column · type · tag — column ที่คำค้นพูดถึงมาก่อน ≤ 60 ต่อตาราง) · กติกา: ไม่เคยเห็นข้อมูล · ห้ามแต่งตาราง / column · **ห้ามพูดว่าอ่านได้หรือไม่** · ≤ 6 ตาราง ≤ 8 column · เหตุผลเป็นภาษาของประโยค
+6. `extractPicks` เอาเฉพาะตาราง / column ที่ส่งไปจริง (เทียบไม่สนตัวพิมพ์ แล้วคืนชื่อตาม catalogue) · ตอบไม่เป็นรายการ → 503 "The assistant did not answer with a list of tables" (ไม่เดา)
+7. access ของแต่ละตาราง **มาจากการตรวจในข้อ 3 ไม่ใช่จากโมเดล** · แนบ source ที่ query ไปถึงตารางได้ (`querySource` ก่อน `dataSource`)
+
+**backend**
+- `POST /v1/llm/assist/find-data` body `{want, language, model}` → `{tables:[{fqn, access, description, why, columns, sourceId, engine}], keywords, model, personal}` · want ว่าง / < 2 ตัว → 400 · > 500 ตัว → 400 · feature `CATALOG_SEARCH` (ตัวเดียวกับที่แชทใช้ค้น catalogue — description ใหม่บอกว่ามีทั้งในแชทและหน้า Query) · ไม่ได้ wire toolbox → 503
+- `resources/DataFinder` (ใหม่) · `AssistToolbox.seen()` (ใหม่ — `describe_asset` ใช้ตัวนี้แล้ว ผลเหมือนเดิม) · `AssistPrompts` section *find data (M16)*
+- **ไม่ run อะไร ไม่ส่งคำขออะไร** — หน้าเว็บเสนอปุ่ม คนกดเอง
+
+**frontend**
+- `api/llm.ts` `assistFindData` (timeout 180s) · type `FoundTable` / `FoundData`
+- `pages/query/FindData.tsx` — panel **Ask NokRak where the data is** (ปุ่ม **Find data** ข้าง "NokRak, write it" ในแถบ editor · เปิดได้ทีละ panel · ไม่ต้องเลือก source ก่อน)
+  - ภาษาของเหตุผล = ภาษาของประโยค (มีตัวอักษรไทย → Thai)
+  - การ์ดต่อตาราง: FQN (ลิงก์ไปหน้า catalogue) · badge *You can query / You can request* แบบเดียวกับ catalogue · description · เหตุผล · column ที่เข้าข่าย
+  - อ่านได้ → **Put in the editor** เติม `SELECT <column> FROM schema.table` และสลับไป source ของตาราง (ถ้าหน้า Query เข้าถึงได้) · column ที่ต้อง quote (Postgres ตัวใหญ่ · คำสงวน · เว้นวรรค) → ใช้ `SELECT *` แทน
+  - ขอได้ → `AssetAccessAction` ตัวเดียวกับหัวหน้าตาราง (เปิดฟอร์มขอสิทธิ์ในที่ · ถ้ามีคำขอค้างอยู่ขึ้น *Access requested*)
+  - ไม่เจอ → บอกตรงๆ + ลิงก์ไป catalogue
+- คู่มือ (`docs/user-guide.md` · NokRak ตอบจากคู่มือนี้ได้): bullet **Find data** ใน *NokRak on the Query page* + บรรทัดในรายการของ NokRak
+- **หน้า Catalog** ใช้ปุ่ม **Ask NokRak** เดิม (ส่งคำถามเข้าแชท ซึ่งค้นด้วย tool ที่กรองสิทธิ์ชุดเดียวกัน) · ไม่เพิ่มปุ่มที่สองให้รก
+
+**test**
+- `LlmFindDataTest` 12 (เฉพาะตารางที่อ่าน / ขอได้ · ตารางนอกสองกองไม่ถูกเอ่ยถึงใน prompt ไหนเลย · คำถามแรกเป็นประโยคอย่างเดียว · column ที่ decision ซ่อนไม่อยู่ทั้งใน prompt และผล · ของที่โมเดลแต่งถูกทิ้ง · แนบ source · fallback คำค้น · ไม่เจอถามครั้งเดียว · ตอบไม่เป็นรายการ 503 · ความยาวประโยค · feature gate · ปิด assistant) · `AssistPromptsTest$FindData` 7
+- jest: `FindData.test` 10 → **741 ผ่าน / 76 suites**
+- **ข้อ CK.1 — ยิงกับ LLM จริงบน local แล้วผ่าน** (admin): ประโยคอังกฤษ / ไทย / เรื่องที่ไม่มีในระบบ → 200 · `access` ของทุกตารางที่ตอบตรงกับ eligibility · ส่ง `language: Thai` แล้วเหตุผลเป็นภาษาไทย · ตารางที่ admin ทั้งอ่านไม่ได้และขอไม่ได้ (ไม่มี source ที่ ARAK ต่อได้) 31 จาก 87 ตัว — ถามด้วยชื่อตรงๆ ก็ไม่โผล่ · ตั้งคำถามที่ไม่มีคำตอบ → รายการว่าง · บัญชีธรรมดาที่ไม่มี assistant ของตัวเอง → 403 *The assistant is not switched on for this account* (ถูกตาม per-user gateway)
+
+**ยังไม่ทำ (ตั้งใจแยก)**
+- flag "ปฏิเสธโดยไม่บอกอะไร" ต่อ policy (AP.1 / AP.4 ข้อ 2) — วันนี้ตารางในกอง *ขอได้* ก็เห็นอยู่แล้วในหน้า Catalog (ทุกคนที่ login เห็นรายการ asset) และในแชท · M16 จึงไม่เปิดเผยอะไรเพิ่ม แต่เมื่อทำ flag นี้ต้องครอบทั้ง Catalog · แชท · find-data พร้อมกัน
+
+## รอบก่อนหน้า — **ข้อ CJ: NokRak อธิบาย dashboard (M15 (ข)) — M15 ครบ**
 
 ผู้ใช้สั่ง "ทำต่อครับ" → ทำ M15 (ข) ตาม AP.3 · M10 เสร็จแล้วตั้งแต่ข้อ BE จึงไม่ติดอะไร
 
@@ -655,7 +692,7 @@ M25 ทำแยกได้ (profile ผ่าน proxy ที่มีแล�
   - **เจอ 1 จุด**: ภาษาไทยเรียก query ว่า "คำขอ" ซึ่งบนหน้า ARAK หมายถึงคำขอสิทธิ์ → อ่านแล้วสับสน · แก้ `AssistPrompts.explainDashboardSystem`: กติกาใหม่ "Keep queries and access requests apart" + ถ้าเป็นไทยให้เขียน "query" / "คำขอสิทธิ์" และห้ามเรียก query ว่า "คำขอ" · test `AssistPromptsTest$ExplainDashboard` ตรวจทั้งสองภาษา (ภาษาอังกฤษต้องไม่มีคำไทยหลุด) → unit **633 ผ่าน** · ยิงซ้ำ: "query ถูกปฏิเสธ 208 ครั้ง" · "ประวัติของคำขอสิทธิ์" ✓
 - ⚠️ **start local จาก Git Bash** ต้อง `export MSYS2_ENV_CONV_EXCL=APP_WEB_BASE_PATH` (หรือ `MSYS_NO_PATHCONV=1`) ไม่งั้น `/Arak/` ถูกแปลงเป็น `C:/Program Files/Git/Arak/` → log ขึ้น "bundle was built for /Arak/ but web.basePath is …" และ `/Arak/api/*` ตอบ index.html (200) แทน 401
 
-## รอบก่อนหน้า — **ข้อ CI: NokRak อธิบาย policy (M15 (ก))**
+## ก่อนหน้านั้น — **ข้อ CI: NokRak อธิบาย policy (M15 (ก))**
 
 ผู้ใช้สั่ง "ทำต่อครับ M อื่น" → ทำ M15 (ก) ตาม AP.3 · (ข) อธิบาย dashboard ยังไม่ทำ
 

@@ -872,6 +872,55 @@ public class LlmAssistResource {
         mine.usingOwnGateway());
   }
 
+  // -------------------------------------------------------- find data (M16)
+
+  /** What somebody is looking for, in their own words, and the language to answer in. */
+  public record FindAsk(String want, String language, String model) {}
+
+  /** The tables found, the words that were searched for, and whose gateway answered. */
+  public record FoundData(
+      List<DataFinder.Found> tables, List<String> keywords, String model, boolean personal) {}
+
+  /**
+   * Finds the tables that hold what a sentence describes (M16).
+   *
+   * <p>Only tables this caller may already read, or may ask for, are found; the
+   * check is made on each one before the model is told anything about it, so a
+   * table outside both is never named to the model or to the caller. Each table
+   * found carries its access from that check, the columns the model thinks fit
+   * and the source a query reaches it through. Nothing is run and nothing is
+   * requested here: the page offers a statement for the editor, or the request
+   * form, and the person decides.
+   */
+  @POST
+  @Path("/find-data")
+  public FoundData findData(
+      FindAsk ask, @Context SecurityContext security, @Context HttpServletRequest request) {
+    String want = ask == null || ask.want() == null ? "" : ask.want().trim();
+    if (want.length() < 2) {
+      throw new BadRequestException("Say what data you are looking for");
+    }
+    if (want.length() > AssistPrompts.MAX_WANT) {
+      throw new BadRequestException(
+          "That is too long; keep it under " + AssistPrompts.MAX_WANT + " characters");
+    }
+    AuthenticatedUser actor = caller(security);
+    EffectiveSetting mine = ready(actor, Feature.CATALOG_SEARCH);
+    if (tools == null) {
+      throw new ServiceUnavailableException("Finding data is not available on this deployment");
+    }
+    String ip = request == null ? null : request.getRemoteAddr();
+    AssistToolbox toolbox = new AssistToolbox(tools, actor, security, ip, null, null);
+    DataFinder.Result found =
+        new DataFinder(tools, toolbox)
+            .find(
+                want,
+                ask.language(),
+                (system, user) -> ask(actor, mine, ask.model(), system, user));
+    return new FoundData(
+        found.tables(), found.keywords(), chosenModel(ask.model(), mine), mine.usingOwnGateway());
+  }
+
   /** The jobs this caller is offered; every one when nobody has narrowed them. */
   private Set<Feature> allowed(AuthenticatedUser actor) {
     return features == null ? EnumSet.allOf(Feature.class) : features.allowedFor(actor);

@@ -10,6 +10,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -760,6 +761,209 @@ public final class AssistPrompts {
       }
     }
     return out;
+  }
+
+  // ------------------------------------------------------------ find data (M16)
+
+  /** The longest description of what somebody is after that is accepted. */
+  public static final int MAX_WANT = 500;
+
+  /** Search words asked for from one sentence. */
+  public static final int MAX_FIND_KEYWORDS = 8;
+
+  /** Tables the model may pick for one sentence. */
+  public static final int MAX_FOUND_TABLES = 6;
+
+  /** Columns named for one table. */
+  public static final int MAX_FOUND_COLUMNS = 8;
+
+  /** The longest reason kept for one table. */
+  public static final int MAX_FOUND_WHY = 300;
+
+  /** A keyword: letters, digits and the few marks a table or column name carries. */
+  private static final Pattern KEYWORD = Pattern.compile("[\\p{L}\\p{N}_][\\p{L}\\p{N}_ .\\-]{0,39}");
+
+  /** A table the model picked, with the columns it named, under the names the catalogue uses. */
+  public record Pick(String fqn, String why, List<String> columns) {}
+
+  /**
+   * The rules for turning a sentence into search words.
+   *
+   * <p>Only the sentence goes with it -- no table, no column, nothing from the
+   * catalogue -- because what it produces is used to search, and the search is
+   * what applies the asker's permissions. The catalogue's names are mostly
+   * English, so a sentence in Thai is translated here rather than searched as
+   * it stands.
+   */
+  public static String findKeywordsSystem() {
+    return "You turn a request for data into search words for a data catalogue. Its table and"
+        + " column names, descriptions and tags are mostly in English.\n"
+        + "Rules:\n"
+        + "- Give at most "
+        + MAX_FIND_KEYWORDS
+        + " keywords, most likely first: single English words or short names a table or column"
+        + " would carry, such as customer, invoice, vendor, salary, email.\n"
+        + "- Translate from any language to English, and add the abbreviations and synonyms a"
+        + " schema tends to use (purchase order: po, purchase_order; employee: emp, staff).\n"
+        + "- Say what kind of data it is. Leave out names of people, values, dates and numbers"
+        + " from the request.\n"
+        + "- Answer with JSON only, no prose and no code fence: {\"keywords\":[\"...\"]}";
+  }
+
+  /** The sentence, and nothing else. */
+  public static String findKeywordsUser(String want) {
+    return "Request: " + oneLine(want == null ? "" : want, MAX_WANT);
+  }
+
+  /**
+   * The search words in an answer: at most {@link #MAX_FIND_KEYWORDS}, each two
+   * to forty characters of the kind a name is made of, no two the same. An
+   * answer that is not the JSON asked for gives none, and the caller searches
+   * the sentence's own words instead.
+   */
+  public static List<String> extractKeywords(String answer) {
+    String body = extractJson(answer);
+    if (body.isEmpty()) {
+      return List.of();
+    }
+    JsonNode root;
+    try {
+      root = JSON.readTree(body);
+    } catch (JsonProcessingException e) {
+      return List.of();
+    }
+    JsonNode keywords = root == null ? null : root.path("keywords");
+    if (keywords == null || !keywords.isArray()) {
+      return List.of();
+    }
+    Map<String, String> out = new LinkedHashMap<>();
+    for (JsonNode keyword : keywords) {
+      String text = keyword.asText("").replaceAll("\\s+", " ").trim();
+      if (text.length() < 2 || !KEYWORD.matcher(text).matches()) {
+        continue;
+      }
+      out.putIfAbsent(text.toLowerCase(Locale.ROOT), text);
+      if (out.size() >= MAX_FIND_KEYWORDS) {
+        break;
+      }
+    }
+    return List.copyOf(out.values());
+  }
+
+  /**
+   * A sentence's own words, for when the model gave no keywords: the same
+   * splitting {@link #mostRelevant} uses, so at least what was typed is
+   * searched.
+   */
+  public static List<String> wordsOf(String want) {
+    List<String> out = new ArrayList<>();
+    for (String word : words(want)) {
+      if (out.size() >= MAX_FIND_KEYWORDS) {
+        break;
+      }
+      out.add(word);
+    }
+    return out;
+  }
+
+  /**
+   * The rules for picking, from tables the asker may already use or ask for,
+   * the ones that hold what they described.
+   *
+   * <p>The tables are chosen before the model sees them: every one is readable
+   * by the asker or open to their request, and a readable one comes without the
+   * columns their decision hides. The model only orders and explains. It is
+   * told not to say who can read what, because the page does, from the
+   * permission check rather than from a model.
+   */
+  public static String findDataSystem(String language) {
+    String written =
+        "Thai".equalsIgnoreCase(language == null ? "" : language.trim()) ? "Thai" : "English";
+    return "You help somebody find the tables that hold the data they describe, in a data"
+        + " catalogue. You are given their request and some tables, each with its columns, types,"
+        + " tags and descriptions. You have not seen any data in them.\n"
+        + "Rules:\n"
+        + "- Pick the tables that hold what they asked for, best first, at most "
+        + MAX_FOUND_TABLES
+        + ". Leave out a table that does not fit; an empty list is a fair answer.\n"
+        + "- Use table and column names exactly as given. Never invent a table or a column.\n"
+        + "- For each table write one or two sentences in "
+        + written
+        + " saying why it fits, and name the columns that hold what they asked for (at most "
+        + MAX_FOUND_COLUMNS
+        + "), with a key column to join on when it helps.\n"
+        + "- Work only from the names, types, tags and descriptions given. Never state or guess"
+        + " values, counts or examples of what is in a table.\n"
+        + "- Do not say whether they can read a table, or how to get access; the page shows"
+        + " that.\n"
+        + "- Answer with JSON only, no prose and no code fence:"
+        + " {\"tables\":[{\"fqn\":\"<table name exactly as given>\",\"why\":\"<one or two"
+        + " sentences>\",\"columns\":[\"<column name exactly as given>\"]}]}";
+  }
+
+  /** The request and the tables to pick from, as the brief every other job uses. */
+  public static String findDataUser(String want, List<Table> tables) {
+    return "Request: "
+        + oneLine(want == null ? "" : want, MAX_WANT)
+        + "\n\nTables:\n"
+        + schemaBrief(tables);
+  }
+
+  /**
+   * The tables an answer picked, among the ones it was shown.
+   *
+   * <p>A name is matched without regard to case and returned as the catalogue
+   * has it; a table or a column the model was not shown is dropped, so nothing
+   * it invents reaches the page. Empty when the answer is not the JSON asked
+   * for, which is how the caller tells "nothing fits" (a list with no tables)
+   * from "no answer".
+   */
+  public static Optional<List<Pick>> extractPicks(String answer, List<Table> shown) {
+    String body = extractJson(answer);
+    if (body.isEmpty() || shown == null) {
+      return Optional.empty();
+    }
+    JsonNode root;
+    try {
+      root = JSON.readTree(body);
+    } catch (JsonProcessingException e) {
+      return Optional.empty();
+    }
+    JsonNode tables = root == null ? null : root.path("tables");
+    if (tables == null || !tables.isArray()) {
+      return Optional.empty();
+    }
+    Map<String, Table> byName = new LinkedHashMap<>();
+    for (Table table : shown) {
+      byName.putIfAbsent(table.fqn().toLowerCase(Locale.ROOT), table);
+    }
+    Map<String, Pick> picks = new LinkedHashMap<>();
+    for (JsonNode picked : tables) {
+      if (picks.size() >= MAX_FOUND_TABLES) {
+        break;
+      }
+      Table table = byName.get(picked.path("fqn").asText("").trim().toLowerCase(Locale.ROOT));
+      if (table == null || picks.containsKey(table.fqn())) {
+        continue;
+      }
+      Map<String, String> columnNames = new LinkedHashMap<>();
+      for (Column column : table.columns()) {
+        columnNames.putIfAbsent(column.name().toLowerCase(Locale.ROOT), column.name());
+      }
+      Set<String> columns = new LinkedHashSet<>();
+      for (JsonNode name : picked.path("columns")) {
+        String column = columnNames.get(name.asText("").trim().toLowerCase(Locale.ROOT));
+        if (column != null && columns.size() < MAX_FOUND_COLUMNS) {
+          columns.add(column);
+        }
+      }
+      String why = picked.path("why").asText("").replaceAll("\\s+", " ").trim();
+      if (why.length() > MAX_FOUND_WHY) {
+        why = why.substring(0, MAX_FOUND_WHY - 1).trim() + "…";
+      }
+      picks.put(table.fqn(), new Pick(table.fqn(), why, List.copyOf(columns)));
+    }
+    return Optional.of(List.copyOf(picks.values()));
   }
 
   // ------------------------------------------------------- explain a policy (M15)

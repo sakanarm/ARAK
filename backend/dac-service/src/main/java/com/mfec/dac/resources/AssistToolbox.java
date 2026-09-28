@@ -96,6 +96,13 @@ public final class AssistToolbox implements Toolbox {
   /** Where the person is: the source the editor points at, the table on screen. */
   record Here(UUID sourceId, String assetFqn) {}
 
+  /**
+   * A table as this person may see it: READABLE or REQUESTABLE, and its columns
+   * less the ones their decision hides.
+   */
+  record Seen(
+      CatalogQuery.AssetSummary asset, String access, List<CatalogQuery.ColumnDetail> columns) {}
+
   private final Deps deps;
   private final AuthenticatedUser actor;
   private final SecurityContext security;
@@ -217,26 +224,13 @@ public final class AssistToolbox implements Toolbox {
     if (fqn == null || fqn.isBlank()) {
       return Result.text("error: fqn is required");
     }
-    Optional<CatalogQuery.AssetDetail> detail = deps.catalog().asset(fqn.trim());
-    String access = detail.isEmpty() ? null : access(detail.get().asset().fqn());
-    if (access == null) {
+    Optional<Seen> seen = seen(fqn);
+    if (seen.isEmpty()) {
       // The same words either way, so this cannot be used to test for a name.
       return Result.text("not found, or not visible to this person: " + fqn.trim());
     }
-    CatalogQuery.AssetSummary asset = detail.get().asset();
-
-    Set<String> hidden = new HashSet<>();
-    if ("READABLE".equals(access)) {
-      List<String> dropped =
-          deps.decisions()
-              .decide(new DecisionService.Ask(actor.getName(), asset.fqn(), null, ip, null, null))
-              .getHiddenColumns();
-      if (dropped != null) {
-        for (String column : dropped) {
-          hidden.add(column.toLowerCase(Locale.ROOT));
-        }
-      }
-    }
+    CatalogQuery.AssetSummary asset = seen.get().asset();
+    String access = seen.get().access();
 
     ObjectNode out = deps.json().createObjectNode();
     out.put("fqn", asset.fqn());
@@ -253,10 +247,7 @@ public final class AssistToolbox implements Toolbox {
         });
     ArrayNode columns = out.putArray("columns");
     int kept = 0;
-    for (CatalogQuery.ColumnDetail column : detail.get().columns()) {
-      if (hidden.contains(lower(column.name())) || hidden.contains(lower(column.fqn()))) {
-        continue;
-      }
+    for (CatalogQuery.ColumnDetail column : seen.get().columns()) {
       if (kept++ >= MAX_COLUMNS) {
         out.put("moreColumns", true);
         break;
@@ -491,6 +482,40 @@ public final class AssistToolbox implements Toolbox {
     return verdict.requestable() ? "REQUESTABLE" : null;
   }
 
+  /**
+   * The table as this person may see it, or empty when it is not there or they
+   * may neither read nor request it -- the two look the same from outside.
+   * A readable table is decided once more, for the columns to leave out.
+   */
+  Optional<Seen> seen(String fqn) {
+    Optional<CatalogQuery.AssetDetail> detail = deps.catalog().asset(fqn.trim());
+    String access = detail.isEmpty() ? null : access(detail.get().asset().fqn());
+    if (access == null) {
+      return Optional.empty();
+    }
+    CatalogQuery.AssetSummary asset = detail.get().asset();
+
+    Set<String> hidden = new HashSet<>();
+    if ("READABLE".equals(access)) {
+      List<String> dropped =
+          deps.decisions()
+              .decide(new DecisionService.Ask(actor.getName(), asset.fqn(), null, ip, null, null))
+              .getHiddenColumns();
+      if (dropped != null) {
+        for (String column : dropped) {
+          hidden.add(column.toLowerCase(Locale.ROOT));
+        }
+      }
+    }
+    List<CatalogQuery.ColumnDetail> columns = new ArrayList<>();
+    for (CatalogQuery.ColumnDetail column : detail.get().columns()) {
+      if (!hidden.contains(lower(column.name())) && !hidden.contains(lower(column.fqn()))) {
+        columns.add(column);
+      }
+    }
+    return Optional.of(new Seen(asset, access, columns));
+  }
+
   /** The table a hit is about, or null for a hit that is not one. */
   static String tableOf(SearchQuery.Hit hit) {
     if ("asset".equals(hit.kind())) {
@@ -515,7 +540,7 @@ public final class AssistToolbox implements Toolbox {
         access);
   }
 
-  private Optional<DataSourceStore.Source> sourceNamed(String name) {
+  Optional<DataSourceStore.Source> sourceNamed(String name) {
     if (name == null) {
       return Optional.empty();
     }

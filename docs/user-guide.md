@@ -366,6 +366,17 @@ When the assistant is turned on for you:
   refusal for lack of access; that is what a request is for.
 - **Explain**: explains in plain words what a statement does: what it reads,
   joins and filters.
+- **Find data**: say what you are looking for in your own words, in English or
+  Thai (for example "customer emails and the branch they belong to"), and NokRak
+  names the tables that hold it, why each fits, and the columns that matter.
+  You do not need to pick a source first. Only tables you can query or may
+  request are ever looked at; each card says which:
+  - *You can query*: **Put in the editor** writes `SELECT <columns> FROM
+    schema.table` into the editor and switches to that table's source. Nothing
+    runs until you press Run, and your masks and row filters still apply.
+  - *You can request*: **Request access** opens the same form as on the table's
+    page.
+  If nothing fits, NokRak says so; try other words or browse the catalogue.
 
 NokRak is sent metadata (table and column names, types, descriptions, tags) and
 your statement or error. It is never sent result rows.
@@ -620,7 +631,8 @@ takes a scope). Every change is audited.
 NokRak is ARAK's assistant, in the corner of every page and behind **Ask NokRak**
 in the catalogue. It can:
 
-- find tables you can read or may request, and describe their columns;
+- find tables you can read or may request, and describe their columns (in the
+  chat, and from **Find data** on the Query page);
 - write a query as a card you put in the editor yourself;
 - draft a policy, or suggest a change to one, for you to review;
 - explain a policy in words on its page, including how it meets the others;

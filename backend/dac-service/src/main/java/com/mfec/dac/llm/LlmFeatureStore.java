@@ -38,7 +38,8 @@ public class LlmFeatureStore {
     DRAFT_POLICY("Draft policies", "Turn a sentence into a draft policy for the builder."),
     CATALOG_SEARCH(
         "Search the catalogue",
-        "Find tables by what they hold. Only tables the person can read or request are shown."),
+        "Find tables by what they hold, in the chat and from the Query page. Only tables the"
+            + " person can read or request are shown."),
     INSIGHTS(
         "Query log and dashboard answers",
         "Answer questions about the query log and the dashboard, as each page shows them to the"

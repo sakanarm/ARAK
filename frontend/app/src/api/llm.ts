@@ -411,6 +411,49 @@ export async function assistExplainDashboard(ask: DashboardExplainAsk): Promise<
   return data;
 }
 
+// -------------------------------------------------------- find data (M16)
+
+export interface FindDataAsk {
+  /** What the person is after, in their own words and language. */
+  want: string;
+  /** The language the reasons are written in: "English" or "Thai". */
+  language?: string;
+  model?: string;
+}
+
+/** One table found. Access is the permission check's answer, not the model's. */
+export interface FoundTable {
+  fqn: string;
+  access: 'READABLE' | 'REQUESTABLE';
+  description: string | null;
+  why: string;
+  /** Columns the model thinks hold what was asked for; all of them ones this person may see. */
+  columns: string[];
+  /** The source a query reaches the table through, or null when none is connected. */
+  sourceId: string | null;
+  engine: string | null;
+}
+
+export interface FoundData {
+  tables: FoundTable[];
+  /** The words the catalogue was searched for. */
+  keywords: string[];
+  model: string;
+  personal: boolean;
+}
+
+/**
+ * The tables that hold what a sentence describes. Only tables the caller may
+ * read or request are ever looked at, and the check is made before the model
+ * hears of a table. Nothing is run or requested.
+ */
+export async function assistFindData(ask: FindDataAsk): Promise<FoundData> {
+  const { data } = await apiClient.post<FoundData>('/v1/llm/assist/find-data', ask, {
+    timeout: 180_000,
+  });
+  return data;
+}
+
 // ------------------------------------------------------------- the agent (M28)
 
 /** The assistant's jobs, each of which an administrator can narrow by role. */

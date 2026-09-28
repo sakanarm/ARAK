@@ -53,6 +53,7 @@ import {
   WriteWithNokRak,
 } from './QueryAssist';
 import { NokRakButton } from '../../assist/NokRakAsk';
+import { FindWithNokRak } from './FindData';
 import SchemaExplorer from './SchemaExplorer';
 import { SavedQueriesPanel, SaveQueryButton } from './SavedQueries';
 import type { SavedQuery } from '../../api/savedQueries';
@@ -183,7 +184,14 @@ export default function QueryPage() {
   const explainReady = useAssistReady('EXPLAIN_SQL');
   const fixReady = useAssistReady('FIX_SQL');
   const writeReady = useAssistReady('WRITE_SQL');
-  const [writing, setWriting] = useState(false);
+  // Find data (M16): which tables hold what somebody is after. It needs no
+  // source chosen -- it looks across every table the person may use -- and
+  // shares the space under the bar with "write it", so one closes the other.
+  const findReady = useAssistReady('CATALOG_SEARCH');
+  const [helper, setHelper] = useState<'write' | 'find' | null>(null);
+  const writing = helper === 'write';
+  const finding = helper === 'find';
+  const toggle = (which: 'write' | 'find') => setHelper((open) => (open === which ? null : which));
   const { explain, about: explained } = useSqlExplanation();
 
   // What the editor suggests: the same catalog page the Explorer beside it
@@ -465,9 +473,13 @@ export default function QueryPage() {
               {writeReady && (
                 <NokRakButton
                   label="NokRak, write it"
-                  onPress={() => setWriting((open) => !open)}
+                  onPress={() => toggle('write')}
                   open={writing}
                 />
+              )}
+
+              {findReady && (
+                <NokRakButton label="Find data" onPress={() => toggle('find')} open={finding} />
               )}
 
               {explainReady && (
@@ -506,12 +518,30 @@ export default function QueryPage() {
               <div className="tw:absolute tw:left-0 tw:top-full tw:z-30 tw:mt-2 tw:w-[min(40rem,100%)]">
                 <WriteWithNokRak
                   engine={engine}
-                  onClose={() => setWriting(false)}
+                  onClose={() => setHelper(null)}
                   onUse={(text) => {
                     setSql(text);
-                    setWriting(false);
+                    setHelper(null);
                   }}
                   sourceId={effectiveSource}
+                />
+              </div>
+            )}
+
+            {findReady && finding && (
+              <div className="tw:absolute tw:left-0 tw:top-full tw:z-30 tw:mt-2 tw:w-[min(44rem,100%)]">
+                <FindWithNokRak
+                  onClose={() => setHelper(null)}
+                  onUse={(text, found) => {
+                    setSql(text);
+                    // The table's own source, when this console can reach it;
+                    // otherwise the one chosen stays, and the proxy says so
+                    // if the table is not on it.
+                    if (found && usable.some((source) => source.id === found)) {
+                      setSourceId(found);
+                    }
+                    setHelper(null);
+                  }}
                 />
               </div>
             )}
