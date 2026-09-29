@@ -64,6 +64,7 @@ export function ruleProblem(rules: ScopeRule[], candidate: ScopeRule): string | 
   if (!value) return 'Type some text to compare table names with.';
   if (value.length > MAX_VALUE) return `A rule can be at most ${MAX_VALUE} characters long.`;
   // Tab and newline are the ones a paste brings in; the server refuses them all.
+  // eslint-disable-next-line no-control-regex
   if (/[\u0000-\u001f\u007f]/.test(value)) {
     return 'A rule cannot contain line breaks or control characters.';
   }
