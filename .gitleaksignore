@@ -1,0 +1,8 @@
+# Findings gitleaks may report that are not secrets. One line each, the
+# fingerprint gitleaks prints; say why above it. Anything real is rotated and
+# removed, never listed here.
+
+# An unsigned token ({"alg":"none"}, {"sub":"admin"}) that JwtServiceTest
+# feeds the verifier to prove it is refused. It signs nothing.
+1338a7a4774b3521df1b3967ede2c128ff1c1b9f:backend/dac-service/src/test/java/com/mfec/dac/auth/JwtServiceTest.java:jwt:73
+backend/dac-service/src/test/java/com/mfec/dac/auth/JwtServiceTest.java:jwt:73
