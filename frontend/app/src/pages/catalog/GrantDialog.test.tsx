@@ -2,12 +2,41 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { GrantDialog } from './GrantDialog';
 import type { Principal } from '../../api/governance';
+import type { Purpose, PurposeListing } from '../../api/purposes';
 
 const fetchPrincipals = jest.fn();
 
 jest.mock('../../api/governance', () => ({
   fetchPrincipals: (...args: unknown[]) => fetchPrincipals(...args),
 }));
+
+let register: PurposeListing | undefined;
+
+jest.mock('../../api/purposes', () => ({
+  ...jest.requireActual('../../api/purposes'),
+  usePurposes: () => ({ data: register, isLoading: false, isError: false }),
+}));
+
+function purpose(key: string, name: string, extra: Partial<Purpose> = {}): Purpose {
+  return {
+    key,
+    name,
+    description: null,
+    legalBasis: null,
+    sensitiveAllowed: false,
+    owner: null,
+    maxDays: null,
+    status: 'ACTIVE',
+    createdBy: 'system',
+    createdAt: '2026-09-28T03:00:00Z',
+    updatedBy: 'system',
+    updatedAt: '2026-09-28T03:00:00Z',
+    ...extra,
+  };
+}
+
+const CAPPED = purpose('fraud-analysis', 'Fraud analysis', { maxDays: 30 });
+const OPEN = purpose('reporting', 'Reporting');
 
 function principal(overrides: Partial<Principal> = {}): Principal {
   return {
@@ -57,9 +86,16 @@ async function openDialog() {
 
 const grantButton = () => screen.getByText('Grant access', { selector: 'span' });
 
+/** Picks a purpose by the name the register gives it. */
+async function choosePurpose(name: string) {
+  fireEvent.click(screen.getByRole('button', { name: /Purpose/ }));
+  fireEvent.click(await screen.findByRole('option', { name: new RegExp(`^${name}`) }));
+}
+
 describe('GrantDialog', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    register = undefined;
   });
 
   it('sends the typed number of days rather than only the chips', async () => {
@@ -73,6 +109,8 @@ describe('GrantDialog', () => {
     await waitFor(() => expect(onSubmit).toHaveBeenCalled());
     const sent = onSubmit.mock.calls[0][0];
     expect(sent.validFrom).toBeNull();
+    // No purpose chosen is none sent, not an empty key the server would look up.
+    expect(sent.purpose).toBeNull();
 
     // 45 days out, to the minute. Asserting the exact instant would assert the
     // clock; asserting the gap is what the field actually promises.
@@ -201,5 +239,114 @@ describe('GrantDialog', () => {
     // Whitespace, because the server treats a blank reason as no reason and a
     // form that sends it collects a 400 instead of a grant.
     expect(grantButton().closest('button')).toBeDisabled();
+  });
+});
+
+describe('GrantDialog with a purpose', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    register = { purposes: [OPEN, CAPPED], canEdit: false };
+  });
+
+  it('sends the register key of the purpose chosen', async () => {
+    const onSubmit = await openDialog();
+
+    await choosePurpose('Reporting');
+    fireEvent.click(grantButton());
+
+    await waitFor(() => expect(onSubmit).toHaveBeenCalled());
+    expect(onSubmit.mock.calls[0][0].purpose).toBe('reporting');
+  });
+
+  it('pulls the countdown within a purpose’s longest access, and stops offering forever', async () => {
+    await openDialog();
+    fireEvent.change(screen.getByLabelText('Number of days'), { target: { value: '45' } });
+
+    await choosePurpose('Fraud analysis');
+
+    expect(screen.getByLabelText('Number of days')).toHaveValue(30);
+    expect(
+      screen.getByText(
+        'Access for Fraud analysis lasts at most 30 days, so the grant has to end within that.'
+      )
+    ).toBeInTheDocument();
+    expect(screen.queryByText('No expiry')).toBeNull();
+    expect(screen.queryByText('90 days')).toBeNull();
+    expect(screen.getByText('30 days')).toBeInTheDocument();
+    expect(grantButton().closest('button')).toBeEnabled();
+  });
+
+  it('keeps a shorter countdown as typed', async () => {
+    await openDialog();
+    fireEvent.change(screen.getByLabelText('Number of days'), { target: { value: '12' } });
+
+    await choosePurpose('Fraud analysis');
+
+    expect(screen.getByLabelText('Number of days')).toHaveValue(12);
+  });
+
+  it('refuses more days than the purpose allows, and no days at all', async () => {
+    await openDialog();
+    await choosePurpose('Fraud analysis');
+
+    fireEvent.change(screen.getByLabelText('Number of days'), { target: { value: '31' } });
+    expect(screen.getByText('Access for Fraud analysis lasts at most 30 days.')).toBeInTheDocument();
+    expect(grantButton().closest('button')).toBeDisabled();
+
+    // Cleared, which without a purpose reads as No expiry.
+    fireEvent.change(screen.getByLabelText('Number of days'), { target: { value: '' } });
+    expect(
+      screen.getByText('Access for Fraud analysis lasts at most 30 days; choose a number of days.')
+    ).toBeInTheDocument();
+    expect(grantButton().closest('button')).toBeDisabled();
+
+    fireEvent.change(screen.getByLabelText('Number of days'), { target: { value: '0' } });
+    // No expiry is not on offer, so the hint does not point at it.
+    expect(screen.getByText('Give a number of days above zero.')).toBeInTheDocument();
+  });
+
+  it('asks for an end within the purpose when the dates are typed', async () => {
+    const onSubmit = await openDialog();
+    await choosePurpose('Fraud analysis');
+
+    fireEvent.click(screen.getByText('Set start and end dates'));
+    fireEvent.change(screen.getByLabelText('Starts'), {
+      target: { value: '2027-01-04T09:00' },
+    });
+    expect(
+      screen.getByText('Access for Fraud analysis lasts at most 30 days; give the grant an end.')
+    ).toBeInTheDocument();
+    expect(grantButton().closest('button')).toBeDisabled();
+
+    // Counted from the start, not from today: 31 days after it is too long.
+    fireEvent.change(screen.getByLabelText('Ends'), {
+      target: { value: '2027-02-04T09:00' },
+    });
+    expect(screen.getByText(/lasts at most 30 days; end it by/)).toBeInTheDocument();
+    expect(grantButton().closest('button')).toBeDisabled();
+
+    fireEvent.change(screen.getByLabelText('Ends'), {
+      target: { value: '2027-02-03T09:00' },
+    });
+    fireEvent.click(grantButton());
+
+    await waitFor(() => expect(onSubmit).toHaveBeenCalled());
+    const sent = onSubmit.mock.calls[0][0];
+    expect(sent.purpose).toBe('fraud-analysis');
+    expect(new Date(sent.validUntil).getTime()).toBe(new Date('2027-02-03T09:00').getTime());
+  });
+
+  it('brings the countdown back within the purpose when switching from dates', async () => {
+    await openDialog();
+    fireEvent.change(screen.getByLabelText('Number of days'), { target: { value: '' } });
+    fireEvent.click(screen.getByText('Set start and end dates'));
+
+    await choosePurpose('Fraud analysis');
+    fireEvent.click(screen.getByText('Use a duration'));
+
+    // The empty countdown the dates left behind would otherwise come back as a
+    // refusal the person never caused.
+    expect(screen.getByLabelText('Number of days')).toHaveValue(30);
+    expect(grantButton().closest('button')).toBeEnabled();
   });
 });

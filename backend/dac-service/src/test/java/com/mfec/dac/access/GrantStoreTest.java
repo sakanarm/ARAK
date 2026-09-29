@@ -109,7 +109,7 @@ class GrantStoreTest {
               NOON,
               null,
               null,
-              null);
+              null, null);
 
       Policy policy = GrantStore.asPolicy(stored);
 
@@ -184,7 +184,7 @@ class GrantStoreTest {
               live.grantedAt(),
               NOON.plusSeconds(60),
               "owner_o",
-              "Left the team");
+              "Left the team", null);
 
       // The tombstone wins over the window, not the other way round. A revoke
       // that only took effect once the grant expired anyway would be a revoke
@@ -213,6 +213,6 @@ class GrantStoreTest {
         NOON,
         null,
         null,
-        null);
+        null, null);
   }
 }

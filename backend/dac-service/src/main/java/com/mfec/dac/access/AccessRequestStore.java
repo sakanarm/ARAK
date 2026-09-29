@@ -1298,12 +1298,24 @@ public class AccessRequestStore {
                         + " — approved by " + row.decidedBy()
                         + (row.decisionNote() == null ? "" : " (" + row.decisionNote() + ")")
                         + (note == null ? "" : "; " + note);
-                made[0] =
-                    grants.grantForRequest(
-                        handle,
-                        new GrantStore.NewGrant(
-                            row.assetFqn(), row.requesterId(), now, until, why, actor.username()),
-                        row.id());
+                try {
+                  made[0] =
+                      grants.grantForRequest(
+                          handle,
+                          new GrantStore.NewGrant(
+                              row.assetFqn(),
+                              row.requesterId(),
+                              now,
+                              until,
+                              why,
+                              actor.username(),
+                              row.purpose()),
+                          row.id());
+                } catch (IllegalArgumentException e) {
+                  // The purpose's limit, or anything else the grant itself refuses:
+                  // the configurer reads why and shortens it, or declines.
+                  throw new RequestException(RequestException.Kind.INVALID, e.getMessage());
+                }
                 grantId = made[0].id();
               } else {
                 if (what.days() != null) {

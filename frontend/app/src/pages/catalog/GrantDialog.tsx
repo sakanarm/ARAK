@@ -10,6 +10,8 @@ import { SearchLg, User01, Users01 } from '@untitledui/icons';
 import { Button } from '@openmetadata/ui-core-components/components/base/buttons/button';
 import { fetchPrincipals, type Principal } from '../../api/governance';
 import type { NewGrant } from '../../api/access';
+import { usablePurpose, usePurposes, type Purpose } from '../../api/purposes';
+import { fitDays, PurposeSelect } from '../policies/purposePickers';
 
 /**
  * Giving one person or group access to one table (FR-7.1).
@@ -28,6 +30,12 @@ import type { NewGrant } from '../../api/access';
  * is a second mode that takes the two instants directly. Both produce the same
  * two fields the API has always accepted; the form was simply never letting
  * anybody reach them.
+ *
+ * <p>What the access is for is the fifth thing, and optional: a purpose from
+ * the register, kept on the grant and in its trail. A purpose with a longest
+ * access bounds the window -- the grant has to end, within that many days of
+ * its start -- so the form offers only windows that fit and says why when one
+ * does not, instead of letting the server refuse it.
  *
  * <p>Groups come from every directory the platform knows — local, OpenMetadata
  * teams, and Entra when it arrives — for the same reason the engine resolves
@@ -60,6 +68,11 @@ export function GrantDialog({
   const [startsAt, setStartsAt] = useState('');
   const [endsAt, setEndsAt] = useState('');
   const [reason, setReason] = useState('');
+  // The register's key, or empty for none -- the way every purpose picker
+  // keeps it.
+  const [purpose, setPurpose] = useState('');
+  const { data: register } = usePurposes();
+  const chosen = usablePurpose(register?.purposes, purpose);
 
   // Reopening is a new decision, not a continuation of the last one: leaving
   // the previous principal selected is how somebody grants access to the wrong
@@ -73,6 +86,7 @@ export function GrantDialog({
       setStartsAt('');
       setEndsAt('');
       setReason('');
+      setPurpose('');
     }
   }, [isOpen]);
 
@@ -91,9 +105,19 @@ export function GrantDialog({
   const groups = rows.filter((row) => row.principalType === 'GROUP');
   const users = rows.filter((row) => row.principalType !== 'GROUP');
 
-  const grantWindow = windowFrom(mode, days, startsAt, endsAt);
+  const grantWindow = windowFrom(mode, days, startsAt, endsAt, chosen);
   const ready =
     selected != null && reason.trim().length > 0 && grantWindow.problem == null;
+
+  // A purpose with a longest access pulls the countdown within it, rather than
+  // leaving a 90 the person never typed to be refused. The dates are left as
+  // typed: moving somebody's end date is a decision, so it is refused instead.
+  const choosePurpose = (value: string) => {
+    setPurpose(value);
+    if (mode === 'duration') {
+      setDays(fitDays(days, usablePurpose(register?.purposes, value)));
+    }
+  };
 
   const submit = () => {
     if (!selected || !ready) {
@@ -105,6 +129,7 @@ export function GrantDialog({
       validFrom: grantWindow.validFrom,
       validUntil: grantWindow.validUntil,
       reason: reason.trim(),
+      purpose: purpose || null,
     });
   };
 
@@ -206,6 +231,23 @@ export function GrantDialog({
             </div>
 
             <div>
+              <span className="tw:text-xs tw:font-medium tw:text-secondary">
+                What for
+              </span>
+              <PurposeSelect
+                ariaLabel="Purpose"
+                className="tw:mt-1"
+                onChange={choosePurpose}
+                value={purpose}
+              />
+              <p className="tw:mt-1 tw:text-xs tw:text-quaternary">
+                {chosen?.maxDays
+                  ? `Access for ${chosen.name} lasts at most ${chosen.maxDays} days, so the grant has to end within that.`
+                  : 'Optional. From the register of purposes; the grant keeps it, and so does the trail.'}
+              </p>
+            </div>
+
+            <div>
               <div className="tw:flex tw:items-baseline tw:justify-between tw:gap-3">
                 <span className="tw:text-xs tw:font-medium tw:text-secondary">
                   {mode === 'duration' ? 'For how long' : 'Between'}
@@ -216,9 +258,12 @@ export function GrantDialog({
                     one won. */}
                 <button
                   className="tw:cursor-pointer tw:text-xs tw:text-brand-secondary tw:underline"
-                  onClick={() =>
-                    setMode(mode === 'duration' ? 'dates' : 'duration')
-                  }
+                  onClick={() => {
+                    if (mode === 'dates') {
+                      setDays(fitDays(days, chosen));
+                    }
+                    setMode(mode === 'duration' ? 'dates' : 'duration');
+                  }}
                   type="button">
                   {mode === 'duration'
                     ? 'Set start and end dates'
@@ -229,16 +274,18 @@ export function GrantDialog({
               {mode === 'duration' ? (
                 <>
                   <div className="tw:mt-1 tw:flex tw:flex-wrap tw:gap-1.5">
-                    {DURATIONS.map((option) => (
-                      <button
-                        aria-pressed={days === option.value}
-                        className={chip(days === option.value)}
-                        key={option.value}
-                        onClick={() => setDays(option.value)}
-                        type="button">
-                        {option.label}
-                      </button>
-                    ))}
+                    {DURATIONS.filter((option) => withinPurpose(option.value, chosen)).map(
+                      (option) => (
+                        <button
+                          aria-pressed={days === option.value}
+                          className={chip(days === option.value)}
+                          key={option.value}
+                          onClick={() => setDays(option.value)}
+                          type="button">
+                          {option.label}
+                        </button>
+                      )
+                    )}
                   </div>
                   <div className="tw:mt-2 tw:flex tw:items-center tw:gap-2">
                     <label
@@ -395,6 +442,19 @@ const DURATIONS = [
 
 type WindowMode = 'duration' | 'dates';
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** Whether a countdown chip is one the purpose allows; No expiry never is under a cap. */
+function withinPurpose(days: string, purpose: Purpose | undefined): boolean {
+  const most = purpose?.maxDays;
+  return !most || (days !== '' && Number(days) <= most);
+}
+
+/** The server's words for a window longer than the purpose allows. */
+function purposeLimit(purpose: Purpose, most: number): string {
+  return `Access for ${purpose.name} lasts at most ${most} days`;
+}
+
 function chip(active: boolean) {
   return `tw:cursor-pointer tw:rounded-md tw:border tw:px-2.5 tw:py-1.5 tw:text-sm ${
     active
@@ -423,16 +483,28 @@ interface GrantWindow {
  * <p>The refusals here are the server's own rules restated, deliberately: the
  * server checks them again and is the authority, but a person who has just
  * typed an end date before the start date should be told so while their
- * attention is still on the field, not after a round trip.
+ * attention is still on the field, not after a round trip. The purpose's
+ * longest access is one of them: the grant has to end, within that many days
+ * of its start.
  */
 function windowFrom(
   mode: WindowMode,
   days: string,
   startsAt: string,
-  endsAt: string
+  endsAt: string,
+  purpose?: Purpose
 ): GrantWindow {
+  const most = purpose?.maxDays ?? null;
   if (mode === 'duration') {
     if (!days.trim()) {
+      if (purpose && most) {
+        return {
+          validFrom: null,
+          validUntil: null,
+          problem: `${purposeLimit(purpose, most)}; choose a number of days.`,
+          summary: '',
+        };
+      }
       return {
         validFrom: null,
         validUntil: null,
@@ -445,11 +517,21 @@ function windowFrom(
       return {
         validFrom: null,
         validUntil: null,
-        problem: 'Give a number of days above zero, or pick No expiry.',
+        problem: most
+          ? 'Give a number of days above zero.'
+          : 'Give a number of days above zero, or pick No expiry.',
         summary: '',
       };
     }
-    const until = new Date(Date.now() + count * 24 * 60 * 60 * 1000);
+    if (purpose && most && count > most) {
+      return {
+        validFrom: null,
+        validUntil: null,
+        problem: `${purposeLimit(purpose, most)}.`,
+        summary: '',
+      };
+    }
+    const until = new Date(Date.now() + count * DAY_MS);
     return {
       validFrom: null,
       validUntil: until.toISOString(),
@@ -472,6 +554,27 @@ function windowFrom(
       problem: 'The end has to come after the start.',
       summary: '',
     };
+  }
+  if (purpose && most) {
+    if (!until) {
+      return {
+        validFrom: null,
+        validUntil: null,
+        problem: `${purposeLimit(purpose, most)}; give the grant an end.`,
+        summary: '',
+      };
+    }
+    // Counted from the start, or from now when it starts now, as the server
+    // counts it.
+    const start = from ?? new Date();
+    if (until.getTime() - start.getTime() > most * DAY_MS) {
+      return {
+        validFrom: null,
+        validUntil: null,
+        problem: `${purposeLimit(purpose, most)}; end it by ${new Date(start.getTime() + most * DAY_MS).toLocaleString()}.`,
+        summary: '',
+      };
+    }
   }
 
   const opens = from

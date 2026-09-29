@@ -48,6 +48,8 @@ export interface GrantAccess {
   grantedAt: string | null;
   live: boolean;
   effectiveFor: number;
+  /** The register's key it was given for; null when none was. */
+  purpose: string | null;
 }
 
 /**
@@ -89,6 +91,7 @@ export interface StoredGrant {
   revokedAt: string | null;
   revokedBy: string | null;
   revokeReason: string | null;
+  purpose: string | null;
 }
 
 /** One line of the append-only grant trail (FR-7.2, FR-8.1). */
@@ -105,6 +108,8 @@ export interface GrantHistoryEntry {
   validFrom: string | null;
   validUntil: string | null;
   reason: string | null;
+  /** What the grant was for when this line was written. */
+  purpose: string | null;
 }
 
 /**
@@ -162,6 +167,11 @@ export interface NewGrant {
   validFrom?: string | null;
   validUntil?: string | null;
   reason: string;
+  /**
+   * A key from the register of purposes, or null for none. Where the register
+   * caps the days, the grant must end within that many days of its start.
+   */
+  purpose?: string | null;
 }
 
 export async function createGrant(request: NewGrant): Promise<StoredGrant> {

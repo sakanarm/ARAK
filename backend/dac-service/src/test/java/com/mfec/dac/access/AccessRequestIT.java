@@ -2821,6 +2821,77 @@ class AccessRequestIT {
     void none() {
       assertThat(askFor(null, 7).purpose()).isNull();
     }
+
+    @Test
+    @DisplayName("the grant a request becomes keeps its purpose")
+    void grantKeepsIt() {
+      AccessRequestStore.StoredRequest made = askFor("Reporting", 7);
+      listed.approve(made.id(), OWNER, null, null);
+      AccessRequestStore.StoredRequest done = listed.complete(made.id(), OWNER, grantFor(7));
+
+      assertThat(grants.find(done.grantId()).orElseThrow().purpose()).isEqualTo("reporting");
+      assertThat(grants.historyFor(CUSTOMER, 10))
+          .singleElement()
+          .extracting(GrantStore.HistoryEntry::purpose)
+          .isEqualTo("reporting");
+    }
+
+    @Test
+    @DisplayName("a limit tightened after the ask holds the grant to it")
+    void limitTightenedSince() {
+      AccessRequestStore.StoredRequest made = askFor("reporting", 7);
+      listed.approve(made.id(), OWNER, null, null);
+      register.update(
+          "reporting",
+          new com.mfec.dac.purpose.PurposeStore.Details("Reporting", null, null, false, null, 5),
+          "admin");
+
+      assertThatThrownBy(() -> listed.complete(made.id(), OWNER, grantFor(7)))
+          .satisfies(e -> assertThat(kind(e)).isEqualTo(AccessRequestStore.RequestException.Kind.INVALID))
+          .hasMessageContaining("at most 5 days");
+      // Refused whole: still waiting, and nothing granted.
+      assertThat(listed.find(made.id(), OWNER).status()).isEqualTo("APPROVED");
+      assertThat(grants.onAsset(CUSTOMER)).isEmpty();
+
+      AccessRequestStore.StoredRequest done = listed.complete(made.id(), OWNER, grantFor(5));
+      assertThat(grants.find(done.grantId()).orElseThrow().purpose()).isEqualTo("reporting");
+    }
+
+    @Test
+    @DisplayName("a purpose retired after the ask cannot be granted for")
+    void retiredSince() {
+      AccessRequestStore.StoredRequest made = askFor("support", 7);
+      listed.approve(made.id(), OWNER, null, null);
+      register.retire("support", "Merged into reporting", "admin");
+
+      assertThatThrownBy(() -> listed.complete(made.id(), OWNER, grantFor(7)))
+          .satisfies(e -> assertThat(kind(e)).isEqualTo(AccessRequestStore.RequestException.Kind.INVALID))
+          .hasMessageContaining("retired");
+      assertThat(grants.onAsset(CUSTOMER)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("a template's own word from before the register reaches the grant as it is")
+    void templatesWordReachesTheGrant() {
+      templates.create(
+          RequestTemplate.validate(
+              new RequestTemplate.Draft(
+                  "PII tables",
+                  null,
+                  null,
+                  List.of("PII"),
+                  true,
+                  new RequestTemplate.Form(
+                      List.of("Fraud investigation"),
+                      false, List.of(), null, null, true, null, false, 1, null))),
+          "admin");
+      AccessRequestStore.StoredRequest made = askFor("fraud investigation", 7);
+      listed.approve(made.id(), OWNER, null, null);
+      AccessRequestStore.StoredRequest done = listed.complete(made.id(), OWNER, grantFor(7));
+
+      assertThat(grants.find(done.grantId()).orElseThrow().purpose())
+          .isEqualTo("Fraud investigation");
+    }
   }
 
   @Nested

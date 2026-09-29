@@ -59,7 +59,7 @@ class StewardshipGuardsTest {
   static GrantStore.StoredGrant stored(UUID id, String fqn) {
     return new GrantStore.StoredGrant(
         id, fqn, UUID.randomUUID(), "analyst", "Analyst", "user", "local", "manual", null, null,
-        null, "because", "admin", Instant.now(), null, null, null);
+        null, "because", "admin", Instant.now(), null, null, null, null);
   }
 
   @Nested
@@ -105,7 +105,7 @@ class StewardshipGuardsTest {
     final UUID someone = UUID.randomUUID();
 
     AccessResource.GrantRequest on(String fqn) {
-      return new AccessResource.GrantRequest(fqn, someone, null, null, "for the audit");
+      return new AccessResource.GrantRequest(fqn, someone, null, null, "for the audit", null);
     }
 
     @Test
@@ -212,7 +212,7 @@ class StewardshipGuardsTest {
       GrantStore.StoredGrant gone =
           new GrantStore.StoredGrant(
               id, OWNED, UUID.randomUUID(), "analyst", "Analyst", "user", "local", "manual", null,
-              null, null, "because", "admin", Instant.now(), Instant.now(), "admin", "left");
+              null, null, "because", "admin", Instant.now(), Instant.now(), "admin", "left", null);
       when(grants.find(id)).thenReturn(Optional.of(gone));
       assertThatThrownBy(() -> resource.amend(id, longer(), as(ADMIN)))
           .isInstanceOf(NotFoundException.class);

@@ -215,13 +215,16 @@ public class AccessResource {
    *
    * @param validUntil null means open-ended, which is allowed and is the choice
    *     the UI has to make deliberate rather than easy
+   * @param purpose the register's key for what the access is for; optional, but
+   *     when given its limit on days holds
    */
   public record GrantRequest(
       String assetFqn,
       UUID principalId,
       Instant validFrom,
       Instant validUntil,
-      String reason) {}
+      String reason,
+      String purpose) {}
 
   /** Creates a grant. */
   @POST
@@ -258,7 +261,8 @@ public class AccessResource {
                   request.validFrom(),
                   request.validUntil(),
                   request.reason(),
-                  actor.username()));
+                  actor.username(),
+                  request.purpose()));
     } catch (IllegalArgumentException e) {
       throw new BadRequestException(e.getMessage());
     }

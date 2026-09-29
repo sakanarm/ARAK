@@ -1,6 +1,6 @@
 # HANDOFF — ARAK (Data Access Control Platform)
 
-> อัปเดต: 2026-09-29 · ข้อ CO (**อะไรนับเป็นข้อมูลอ่อนไหว (M31b slice 1)** — Settings → Purposes · รายการรวม / ยกเว้น · กติกา built-in · วัด coverage · ประวัติ · Off / **Warn** / Enforce ที่ Query และคำขอสิทธิ์ · review บอก purpose ที่ไม่อนุญาต) · ข้อ CN (**ทะเบียน Purpose (M31a · FR-21)** — Settings → Purposes · ฐานกฎหมาย PDPA · ข้อมูลอ่อนไหว · ระยะสิทธิ์สูงสุด · ปลดแทนลบ + ประวัติ · picker ใน policy / template / ฟอร์มขอ / Pre-authorize / Query / Simulator · server ตรวจทุกที่ · เหลือ M31b) · ข้อ CM (**เลือก column ให้ NokRak ร่าง description ได้** — ติ๊กทีละ column หรือทั้งหมดที่เห็น · ร่างใหม่ทับ column ที่มีคำอธิบายแล้วได้ในฟอร์ม · **roadmap M31–M36: object ที่ ARAK ควรเก็บเพิ่มนอกจาก policy** · **NokRak ไม่ตอบ "ไม่พบ" เมื่อตารางที่ตรงถูกกันสิทธิ์ — บอกจำนวนแทน** · คำอธิบายตัวอย่าง PO 49 column ขึ้น prod แล้ว) · ข้อ CL (**All rows** — ดาวน์โหลดทุกแถวเป็น CSV ผ่าน policy เดิม · audit บอกว่าเป็นการดาวน์โหลด · hover column บอก description · คลิกขวาไป Data Catalog · ลากขนาด editor ขึ้นลง / explanation ซ้ายขวา · FR-6.3) · ข้อ CK (**Find data** — NokRak หาตารางจากประโยคในหน้า Query · ตรวจสิทธิ์ก่อนโมเดลเห็นตาราง · อ่านได้ → เติม SQL · ขอได้ → ฟอร์มขอสิทธิ์ · M16) · ข้อ CJ.1 (ยิง explain-dashboard กับ LLM จริงแล้วผ่าน · ภาษาไทยแยก query กับ คำขอสิทธิ์) · ข้อ CJ (NokRak อธิบาย dashboard — panel **Ask NokRak** ใต้ key figures เลือกหัวข้อได้ · ชื่อคนเป็น `[P1]` ก่อนส่ง · M15 (ข) · M15 ครบ) · ข้อ CI (NokRak อธิบาย policy — ปุ่ม **Explain with NokRak** ในหน้า policy · M15 (ก)) · ข้อ CH (ปุ่ม **Query** ที่หัวหน้าตาราง สำหรับคนที่อ่านได้แล้ว — เปิดหน้า Query บน source ของตารางพร้อม SQL · FR-1.6d) · ข้อ CG (เปลี่ยนรหัสผ่านเอง — Profile → Password · หน้าบังคับเปลี่ยนเมื่อรหัสถูก admin ตั้ง · M2 / FR-2.2) · ข้อ CF (NokRak ตอบคำถามวิธีใช้ ARAK จากคู่มือที่แพ็กเข้า jar — `search_docs`) · ข้อ CE (สร้าง classification / tag ของ ARAK เองในหน้า Governance — provenance local · sync ไม่ทับ · ไม่เขียนกลับ OM) · ข้อ CD (Column description เขียนใน ARAK · NokRak ร่าง · แสดงใน ticket) · ข้อ CC (tab Access รับ list ยาว — แถบสรุป · chip · ค้น · แบ่งหน้า · กดดูรายละเอียดเต็ม) · ข้อ CB (NokRak ช่วยแก้ policy ที่มีอยู่ — คน review แล้วกด Save เอง) · ข้อ CA (ประวัติ policy · diff · rollback) · ข้อ BW (tag จาก OM ผ่าน webhook/poller ย้าย policy binding ทันที) · ข้อ BV (tab Access เฉพาะผู้ดูแล + Diagram แบบ canvas) · ข้อ BU (FR-1.7 local tag + demo group บน prod) · push ขึ้น origin/main แล้ว · repo https://github.com/sakanarm/ARAK (**public**)
+> อัปเดต: 2026-09-29 · ข้อ CS (**grant เก็บ purpose (M31b slice 2a)** — ช่อง *What for* ในฟอร์ม Grant access · อายุ grant ไม่เกินระยะสูงสุดของ purpose · grant จากคำขอคง purpose ของคำขอ · tab Access แสดง / ค้นด้วย purpose ได้) · ข้อ CO (**อะไรนับเป็นข้อมูลอ่อนไหว (M31b slice 1)** — Settings → Purposes · รายการรวม / ยกเว้น · กติกา built-in · วัด coverage · ประวัติ · Off / **Warn** / Enforce ที่ Query และคำขอสิทธิ์ · review บอก purpose ที่ไม่อนุญาต) · ข้อ CN (**ทะเบียน Purpose (M31a · FR-21)** — Settings → Purposes · ฐานกฎหมาย PDPA · ข้อมูลอ่อนไหว · ระยะสิทธิ์สูงสุด · ปลดแทนลบ + ประวัติ · picker ใน policy / template / ฟอร์มขอ / Pre-authorize / Query / Simulator · server ตรวจทุกที่ · เหลือ M31b) · ข้อ CM (**เลือก column ให้ NokRak ร่าง description ได้** — ติ๊กทีละ column หรือทั้งหมดที่เห็น · ร่างใหม่ทับ column ที่มีคำอธิบายแล้วได้ในฟอร์ม · **roadmap M31–M36: object ที่ ARAK ควรเก็บเพิ่มนอกจาก policy** · **NokRak ไม่ตอบ "ไม่พบ" เมื่อตารางที่ตรงถูกกันสิทธิ์ — บอกจำนวนแทน** · คำอธิบายตัวอย่าง PO 49 column ขึ้น prod แล้ว) · ข้อ CL (**All rows** — ดาวน์โหลดทุกแถวเป็น CSV ผ่าน policy เดิม · audit บอกว่าเป็นการดาวน์โหลด · hover column บอก description · คลิกขวาไป Data Catalog · ลากขนาด editor ขึ้นลง / explanation ซ้ายขวา · FR-6.3) · ข้อ CK (**Find data** — NokRak หาตารางจากประโยคในหน้า Query · ตรวจสิทธิ์ก่อนโมเดลเห็นตาราง · อ่านได้ → เติม SQL · ขอได้ → ฟอร์มขอสิทธิ์ · M16) · ข้อ CJ.1 (ยิง explain-dashboard กับ LLM จริงแล้วผ่าน · ภาษาไทยแยก query กับ คำขอสิทธิ์) · ข้อ CJ (NokRak อธิบาย dashboard — panel **Ask NokRak** ใต้ key figures เลือกหัวข้อได้ · ชื่อคนเป็น `[P1]` ก่อนส่ง · M15 (ข) · M15 ครบ) · ข้อ CI (NokRak อธิบาย policy — ปุ่ม **Explain with NokRak** ในหน้า policy · M15 (ก)) · ข้อ CH (ปุ่ม **Query** ที่หัวหน้าตาราง สำหรับคนที่อ่านได้แล้ว — เปิดหน้า Query บน source ของตารางพร้อม SQL · FR-1.6d) · ข้อ CG (เปลี่ยนรหัสผ่านเอง — Profile → Password · หน้าบังคับเปลี่ยนเมื่อรหัสถูก admin ตั้ง · M2 / FR-2.2) · ข้อ CF (NokRak ตอบคำถามวิธีใช้ ARAK จากคู่มือที่แพ็กเข้า jar — `search_docs`) · ข้อ CE (สร้าง classification / tag ของ ARAK เองในหน้า Governance — provenance local · sync ไม่ทับ · ไม่เขียนกลับ OM) · ข้อ CD (Column description เขียนใน ARAK · NokRak ร่าง · แสดงใน ticket) · ข้อ CC (tab Access รับ list ยาว — แถบสรุป · chip · ค้น · แบ่งหน้า · กดดูรายละเอียดเต็ม) · ข้อ CB (NokRak ช่วยแก้ policy ที่มีอยู่ — คน review แล้วกด Save เอง) · ข้อ CA (ประวัติ policy · diff · rollback) · ข้อ BW (tag จาก OM ผ่าน webhook/poller ย้าย policy binding ทันที) · ข้อ BV (tab Access เฉพาะผู้ดูแล + Diagram แบบ canvas) · ข้อ BU (FR-1.7 local tag + demo group บน prod) · push ขึ้น origin/main แล้ว · repo https://github.com/sakanarm/ARAK (**public**)
 >
 > อ่านคู่กับ **[docs/DESIGN.md](docs/DESIGN.md)** — ไฟล์นั้นคือ requirement + feature catalogue + สถานะครบทุกข้อ
 > ไฟล์นี้บอกเฉพาะ "ทำถึงไหน จะไปต่อยังไง อะไรที่ลองแล้วไม่เวิร์ค"
@@ -631,7 +631,7 @@ M10 → M23 (ใช้ query log ของ M10 · ส่วน "ปลอดภ�
 M10 → M24 (ข้อ 1–3 ทำได้เลยหลัง query log · ข้อ 4 ต้องมี M11 · ข้อ 5 ต้องมี M19)
 M25 ทำแยกได้ (profile ผ่าน proxy ที่มีแล้ว · sandbox ใช้ source registry ของ M18)
 M31 → M32 → M33  (Purpose ก่อน: รอบทบทวนและ project อ้าง purpose · M33 รวม M27)
-                  M31a ✅ (ข้อ CN) · M31b slice 1 ✅ (ข้อ CO · ม.26) · slice 2 (grant purpose · รายงาน PII) ต่อได้เลย
+                  M31a ✅ (ข้อ CN) · M31b slice 1 ✅ (ข้อ CO · ม.26) · slice 2a ✅ (ข้อ CS · grant purpose) · slice 2b (รายงาน PII) ต่อได้เลย
 M34 · M35 ทำแยกได้ (M35 ก่อน M30b — `arak test` ใช้ไฟล์ชุดเดียวกัน)
 M36 → M14 · M21 · M29 · M30 (ทุกตัวต้องมี principal ที่ไม่ใช่คนก่อน)
 
@@ -641,7 +641,29 @@ M36 → M14 · M21 · M29 · M30 (ทุกตัวต้องมี principal
 
 ---
 
-## รอบนี้ — **ข้อ CR: ติด label `integration` ที่ PR ที่เปิดอยู่แล้ว CI รัน Integration ทันที**
+## รอบนี้ — **ข้อ CS: grant เก็บ purpose และอายุไม่เกินของ purpose (M31b slice 2a · FR-21)**
+
+ต่อจาก DESIGN FR-21 *"grant เก็บ `purpose_id` และมีอายุไม่เกินของ purpose"* — ก่อนหน้านี้คำขอสิทธิ์เก็บ purpose แต่พอ owner กด complete แล้ว grant ที่ได้ไม่รู้ว่าให้ไปเพื่ออะไร และ grant ที่ owner ให้ตรงไม่มีช่อง purpose เลย ระยะสิทธิ์สูงสุดของ purpose จึงบังคับได้แค่ตอนขอ
+
+**DB** — V45 `grant_access.purpose` (text · nullable) · เก็บ key ของทะเบียน หรือคำเดิมของ template ที่มีก่อนทะเบียน · อ่านผ่าน history ของ grant ด้วย (revoke / amend เป็น tombstone เหมือนเดิม)
+
+**กติกา (ตรวจใน `GrantStore` ที่เดียว ตาม `Origin`)**
+- `DIRECT` (ให้ตรงจาก tab Access) — ไม่ใส่ก็ได้ · ใส่แล้วต้องอยู่ในทะเบียนและยังใช้อยู่ (ไม่อยู่ / ถูกปลด → 400)
+- `REQUEST` (complete คำขอ) — ใช้คำที่คำขอเก็บไว้ · ไม่อยู่ในทะเบียนผ่านได้ (template เก่ามีคำของตัวเอง) · ถูกปลดหลังส่งคำขอ → ปฏิเสธ · `AccessRequestStore.complete` แปลงเป็น `INVALID` ทั้งก้อน คำขอยังอยู่ที่ `APPROVED` ไม่มี grant ถูกสร้าง
+- `EDIT` (แก้ grant) — คง purpose เดิม · ถูกปลดไปแล้วก็ยังแก้ได้ (แก้วันที่ของ grant เก่าได้โดยไม่ติดสิ่งที่คนแก้ไม่ได้ก่อ) แต่ระยะสูงสุดยังบังคับ
+- purpose มี `maxDays` → grant ต้องมีวันจบ · จบไม่เกิน `maxDays` วัน + 10 นาที นับจากวันเริ่ม (แก้ grant = นับจากวันเริ่มเดิม ยืดออกไปเรื่อยๆ ไม่ได้) · ระยะถูกลดหลังส่งคำขอ → complete ด้วยระยะเดิมไม่ได้ ต้องย่อ
+
+**API** — `GrantRequest.purpose` (POST grant) · `purpose` ใน `GrantAccess` / grant ที่เก็บ / history entry
+
+**frontend**
+- `GrantDialog` — ช่อง *What for* (`PurposeSelect` เฉพาะตัวที่ใช้อยู่) · เลือก purpose ที่มีระยะสูงสุด → ชิป *No expiry* / ระยะที่ยาวกว่าหายไป · วันถูกตัดด้วย `fitDays` · โหมดวันที่บอกเหตุผลก่อนส่ง (*lasts at most N days; end it by …* / *give the grant an end*) · ปุ่ม Grant ปิดจนกว่าจะพอดี
+- `AccessTab` — badge ชื่อ purpose ข้าง grant · รายละเอียดมี **Purpose** + ฐานกฎหมาย หรือ *None named* · ค้นด้วย purpose ได้ (`accessLists.filterGrants`)
+
+**test** — backend unit ผ่านทั้ง reactor · IT ใหม่ `GrantCompositionIT.Purposes` 5 (เก็บ key · ไม่ใส่ · ไม่อยู่ในทะเบียน → ปฏิเสธ · ระยะเกิน → ปฏิเสธ · แก้แล้วคง purpose) · `AccessRequestIT.Purposes` +4 (grant คง purpose ของคำขอ · ระยะถูกลดหลังขอ · ถูกปลดหลังขอ · คำเดิมของ template ผ่าน) · IT ของ GrantCompositionIT + AccessRequestIT ผ่านทั้งหมด 129 (Testcontainers) · jest ทั้งหมด 848 ผ่าน (`GrantDialog.test` +6 · `AccessTab.test` +1 · `accessLists.test` +1) · type-check สะอาด · lint: error มีเฉพาะไฟล์ scratch `shot-*.mjs` ที่ไม่ได้ commit
+
+**ยังไม่ทำ (slice 2b)** — รายงาน *"ข้อมูล PII ถูกใช้เพื่ออะไร"* บน Dashboard จาก `audit_decision.sensitive` · ปลด purpose แล้วส่ง grant เข้ารอบทบทวน (ต้องมี M32)
+
+## รอบก่อนหน้า — **ข้อ CR: ติด label `integration` ที่ PR ที่เปิดอยู่แล้ว CI รัน Integration ทันที**
 
 ตอน merge CP / CQ เจอว่า Integration (Testcontainers) ขึ้น *skipped* ทั้งที่ติด label `integration` แล้ว — `ci.yml` ฟัง `pull_request` แค่ type ค่าเริ่มต้น (opened / synchronize / reopened) การติด label หลังเปิด PR จึงไม่สั่งรันใหม่ ต้องปิด-เปิด PR หรือ push commit ใหม่ ขณะที่ CONTRIBUTING.md บอกว่าติด label แล้วจะรัน
 

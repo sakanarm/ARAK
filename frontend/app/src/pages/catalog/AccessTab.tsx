@@ -28,6 +28,7 @@ import {
 } from '../../api/access';
 import { apiErrorMessage } from '../../api/client';
 import { Panel } from './panels';
+import { PurposeLabel, PurposeName } from '../policies/purposePickers';
 import { GrantDialog } from './GrantDialog';
 import { AccessDecision } from './AccessDecision';
 import { DirectAccessPanel } from './DirectAccessPanel';
@@ -468,7 +469,7 @@ function GrantList({
             setSearch(next);
             setOffset(0);
           }}
-          placeholder="Name, reason or who granted it"
+          placeholder="Name, reason, purpose or who granted it"
           value={search}
         />
         <div aria-label="Grant status" className="tw:flex tw:flex-wrap tw:gap-1.5" role="group">
@@ -619,6 +620,14 @@ function GrantRow({
           <Clock className="tw:size-3.5" />
           {windowLabel(grant)}
         </span>
+
+        {grant.purpose && (
+          <span className="tw:max-w-40 tw:shrink-0 tw:truncate" title="What it was given for">
+            <Badge color="brand" size="sm" type="pill-color">
+              <PurposeName value={grant.purpose} />
+            </Badge>
+          </span>
+        )}
 
         <button
           aria-controls={details}
@@ -811,6 +820,11 @@ function GrantDetails({
         {grant.validFrom ? `From ${longDate(grant.validFrom)}` : 'From when it was granted'}
         {' · '}
         {grant.validUntil ? `until ${longDate(grant.validUntil)}` : 'no expiry'}
+      </dd>
+
+      <dt className={term}>Purpose</dt>
+      <dd className={value}>
+        {grant.purpose ? <PurposeLabel value={grant.purpose} /> : 'None named'}
       </dd>
 
       <dt className={term}>Reason</dt>

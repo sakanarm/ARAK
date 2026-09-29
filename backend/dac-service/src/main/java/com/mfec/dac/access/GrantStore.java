@@ -1,12 +1,14 @@
 package com.mfec.dac.access;
 
 import com.mfec.dac.common.ChangeNotifier;
+import com.mfec.dac.purpose.PurposeStore;
 import com.mfec.dac.schema.api.ResolvedColumnMask;
 import com.mfec.dac.schema.entity.policy.Policy;
 import com.mfec.dac.schema.entity.policy.PrincipalMatch;
 import com.mfec.dac.schema.entity.policy.SubjectRule;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -72,7 +74,12 @@ public class GrantStore {
     return changes;
   }
 
-  /** A grant as stored, with the principal resolved for display. */
+  /**
+   * A grant as stored, with the principal resolved for display.
+   *
+   * @param purpose the register's key for what the grant was given for (FR-21);
+   *     null when it was given without one
+   */
   public record StoredGrant(
       UUID id,
       String assetFqn,
@@ -90,7 +97,8 @@ public class GrantStore {
       Instant grantedAt,
       Instant revokedAt,
       String revokedBy,
-      String revokeReason) {
+      String revokeReason,
+      String purpose) {
 
     /** True while this grant is neither revoked nor outside its window. */
     public boolean liveAt(Instant at) {
@@ -327,7 +335,8 @@ public class GrantStore {
       String targetSource,
       Instant validFrom,
       Instant validUntil,
-      String reason) {}
+      String reason,
+      String purpose) {}
 
   /**
    * Everything that has ever been granted or revoked on one asset, newest first.
@@ -363,7 +372,8 @@ public class GrantStore {
                             rs.getString("target_source"),
                             instant(rs, "valid_from"),
                             instant(rs, "valid_until"),
-                            rs.getString("reason")))
+                            rs.getString("reason"),
+                            rs.getString("purpose")))
                 .list());
   }
 
@@ -436,6 +446,7 @@ public class GrantStore {
             at,
             null,
             null,
+            null,
             null));
   }
 
@@ -481,14 +492,44 @@ public class GrantStore {
 
   // --------------------------------------------------------------- writing
 
-  /** What a caller asks for when granting. */
+  /**
+   * What a caller asks for when granting.
+   *
+   * @param purpose the register's key for what the access is for; null for none
+   */
   public record NewGrant(
       String assetFqn,
       UUID principalId,
       Instant validFrom,
       Instant validUntil,
       String reason,
-      String grantedBy) {}
+      String grantedBy,
+      String purpose) {
+
+    /** A grant given without a purpose. */
+    public NewGrant(
+        String assetFqn,
+        UUID principalId,
+        Instant validFrom,
+        Instant validUntil,
+        String reason,
+        String grantedBy) {
+      this(assetFqn, principalId, validFrom, validUntil, reason, grantedBy, null);
+    }
+  }
+
+  /** Where a grant being written comes from; the purpose is checked differently for each. */
+  private enum Origin {
+    DIRECT,
+    REQUEST,
+    EDIT
+  }
+
+  /**
+   * How far a browser's clock may run ahead of the server's before a grant
+   * computed there as "N days from now" reads as longer than N days here.
+   */
+  private static final Duration CLOCK_SLACK = Duration.ofMinutes(10);
 
   /**
    * Creates a grant and records it.
@@ -497,7 +538,8 @@ public class GrantStore {
    * without a trail is exactly the row an access review cannot account for.
    */
   public StoredGrant grant(NewGrant request) {
-    StoredGrant created = jdbi.inTransaction(handle -> insert(handle, request, null));
+    StoredGrant created =
+        jdbi.inTransaction(handle -> insert(handle, request, null, Origin.DIRECT));
     announce(created);
     return created;
   }
@@ -518,7 +560,7 @@ public class GrantStore {
     if (requestId == null) {
       throw new IllegalArgumentException("a grant from a request must name the request");
     }
-    return insert(handle, request, requestId);
+    return insert(handle, request, requestId, Origin.REQUEST);
   }
 
   /** Tells every listener that a grant now exists; see {@link #grantForRequest}. */
@@ -534,7 +576,7 @@ public class GrantStore {
     changes.fire("grant " + created.id() + " on " + created.assetFqn());
   }
 
-  private StoredGrant insert(Handle handle, NewGrant request, UUID requestId) {
+  private StoredGrant insert(Handle handle, NewGrant request, UUID requestId, Origin origin) {
     if (request.reason() == null || request.reason().isBlank()) {
       throw new IllegalArgumentException("a grant must say why it was given");
     }
@@ -549,6 +591,7 @@ public class GrantStore {
       throw new IllegalArgumentException(
           "the end is already past; a grant has to end in the future");
     }
+    String purpose = checkedPurpose(handle, request, from, origin);
 
     UUID id =
         handle
@@ -556,9 +599,10 @@ public class GrantStore {
                 """
                 INSERT INTO access_grant
                   (asset_fqn, principal_id, source, request_id, valid_from,
-                   valid_until, reason, granted_by)
+                   valid_until, reason, granted_by, purpose)
                 VALUES
-                  (:fqn, :principal, :source, :request, :from, :until, :reason, :by)
+                  (:fqn, :principal, :source, :request, :from, :until, :reason, :by,
+                   :purpose)
                 RETURNING id
                 """)
             .bind("fqn", request.assetFqn())
@@ -569,6 +613,7 @@ public class GrantStore {
             .bind("until", request.validUntil())
             .bind("reason", request.reason())
             .bind("by", request.grantedBy())
+            .bind("purpose", purpose)
             .mapTo(UUID.class)
             .one();
 
@@ -588,6 +633,60 @@ public class GrantStore {
 
     audit(handle, "GRANT", request.grantedBy(), stored, request.reason());
     return stored;
+  }
+
+  /**
+   * The purpose a grant is stored with, as the register spells its key (FR-21).
+   *
+   * <p>A grant given directly must name a purpose the register lists and has
+   * not retired, as a request must. A grant from a request takes the request's
+   * purpose, checked when it was asked for: one the register never listed -- a
+   * template's own word from before the register -- is kept as it is, but one
+   * retired since is refused, because granting now would be using it now. An
+   * edit keeps whatever the grant already had, retired or not; what happens to
+   * those grants is an access review's question, not an edit's.
+   *
+   * <p>Wherever the register caps the days, the grant has to end, and within
+   * that many days of its start. It is the limit a request already obeys, held
+   * on the grant itself, so it cannot be had by asking an owner directly or by
+   * extending the grant afterwards.
+   */
+  private static String checkedPurpose(
+      Handle handle, NewGrant request, Instant from, Origin origin) {
+    String asked = request.purpose() == null ? null : request.purpose().strip();
+    if (asked == null || asked.isEmpty()) {
+      return null;
+    }
+    Optional<PurposeStore.Purpose> listed = PurposeStore.find(handle, asked);
+    if (listed.isEmpty()) {
+      if (origin == Origin.DIRECT) {
+        throw new IllegalArgumentException(
+            "\"" + asked + "\" is not in the register of purposes; choose one that is");
+      }
+      return asked;
+    }
+    PurposeStore.Purpose purpose = listed.get();
+    if (!purpose.active() && origin != Origin.EDIT) {
+      throw new IllegalArgumentException(
+          "The purpose " + purpose.name() + " was retired, so access cannot be given for it"
+              + (origin == Origin.REQUEST
+                  ? " any more; decline the request, or reinstate the purpose first"
+                  : " any more; choose another"));
+    }
+    Integer most = purpose.maxDays();
+    if (most != null) {
+      String limit = "Access for " + purpose.name() + " lasts at most " + most + " days";
+      if (request.validUntil() == null) {
+        throw new IllegalArgumentException(limit + "; give the grant an end");
+      }
+      if (Duration.between(from, request.validUntil())
+              .compareTo(Duration.ofDays(most).plus(CLOCK_SLACK))
+          > 0) {
+        throw new IllegalArgumentException(
+            limit + (origin == Origin.EDIT ? " from when the grant started" : ""));
+      }
+    }
+    return purpose.key();
   }
 
   /**
@@ -724,8 +823,10 @@ public class GrantStore {
                           from,
                           validUntil,
                           reason.trim(),
-                          actor),
-                      old.requestId()));
+                          actor,
+                          old.purpose()),
+                      old.requestId(),
+                      Origin.EDIT));
             });
     amended.ifPresent(this::announce);
     return amended;
@@ -797,9 +898,10 @@ public class GrantStore {
             """
             INSERT INTO audit_grant_change
               (actor, action, grant_id, asset_fqn, target_username, target_source,
-               valid_from, valid_until, reason)
+               valid_from, valid_until, reason, purpose)
             VALUES
-              (:actor, :action, :grant, :fqn, :username, :source, :from, :until, :why)
+              (:actor, :action, :grant, :fqn, :username, :source, :from, :until, :why,
+               :purpose)
             """);
     update
         .bind("actor", actor)
@@ -811,6 +913,7 @@ public class GrantStore {
         .bind("from", grant.validFrom())
         .bind("until", grant.validUntil())
         .bind("why", why)
+        .bind("purpose", grant.purpose())
         .execute();
   }
 
@@ -835,7 +938,8 @@ public class GrantStore {
         instant(rs, "granted_at"),
         instant(rs, "revoked_at"),
         rs.getString("revoked_by"),
-        rs.getString("revoke_reason"));
+        rs.getString("revoke_reason"),
+        rs.getString("purpose"));
   }
 
   private static UUID uuidOrNull(String value) {
