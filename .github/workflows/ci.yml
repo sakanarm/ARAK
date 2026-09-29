@@ -4,6 +4,10 @@ on:
   push:
     branches: [main]
   pull_request:
+    # "labeled" as well, so adding the integration label to an open pull
+    # request runs the Testcontainers job. On the default types it stayed
+    # skipped, and looked green, until the next push.
+    types: [opened, synchronize, reopened, labeled]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
