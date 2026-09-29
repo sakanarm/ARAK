@@ -641,7 +641,30 @@ M36 → M14 · M21 · M29 · M30 (ทุกตัวต้องมี principal
 
 ---
 
-## รอบนี้ — **ข้อ CP: "is one of" ใส่ได้หลายค่า (และบั๊ก fail-open ของ "is none of") · subscription เลือกระดับ Organisation ได้**
+## รอบนี้ — **ข้อ CQ: Row filter เลือก column ด้วย tag ได้ (Column tagged)**
+
+ผู้ใช้ถาม *"ทำไม Column ไม่มีให้เลือก Column tag เวลา scope column ใน data policy"* — ช่อง Column ของ row filter (Which rows they see) เป็นชื่อ column ตายตัวชื่อเดียว ขณะที่ column rule เลือกด้วย tag ได้อยู่แล้ว · policy เดียวจึงใช้กับตารางที่ตั้งชื่อ column สาขาต่างกันไม่ได้
+
+**spec** — `dataPolicy.json` `rowFilter.columns` (assetSelector) ใช้กับ `ATTRIBUTE_COMPARE` / `IN_LIST` เท่านั้น · ใช้แทน `column` ไม่ใช่ใช้คู่กัน
+
+**engine** — `PolicyEngine.filteredColumns` resolve selector กับ `asset.columns()` ตอนตัดสินใจ (`SelectorMatcher.matches`)
+- ไม่มี column ไหน match → `ALWAYS_FALSE` พร้อมเหตุผล *no column of this table matches it* (fail-closed ไม่ใช่ปล่อยทุกแถว)
+- match หลาย column → predicate ต่อ column แล้ว AND กัน (ไม่เดาว่าผู้เขียนหมายถึงตัวไหน)
+- compiler / proxy / AccessReview ไม่ต้องแก้ เพราะได้ `ResolvedRowPredicate` ที่มีชื่อ column จริงอยู่แล้ว
+- tag ของตารางไม่ตกทอดลง column (ตาม FacetInheritance) → นับเฉพาะ tag ที่ติดที่ column เอง
+
+**server** — `ConditionValues.rowFilterColumn` ปฏิเสธ (400): selector บน kind อื่น · มีทั้ง `column` และ `columns` · selector ว่าง · ค่าใน selector ว่าง/ผิดรูป (ตามกติกาข้อ CP)
+
+**frontend**
+- `DataPolicyBuilder` `RowFilterRow` — Select *Pick the column by*: **Column named** (ช่องพิมพ์เดิม) / **Column tagged** (`SelectorBuilder subject="column"` + vocabulary) · เปลี่ยน kind เป็นแบบที่ไม่เทียบ column แล้วทิ้ง `columns` · hint บอกกรณีไม่มี / มีหลาย column
+- `conditionValues.normaliseConditionValues` normalise selector ของ row filter ด้วย
+- `policyLanguage.describeRowFilter` — *only rows where the column (tag under Org.Branch) …*
+
+**test** — backend unit ผ่านทั้ง reactor (`PolicyEngineTest` +3: 2 ตารางชื่อ column ต่างกัน · ไม่มี column → ALWAYS_FALSE · 2 column → 2 predicate · `ConditionValuesTest` +4) · jest `DataPolicyBuilder.test` ใหม่ 3 · `conditionValues.test` +1 · `policyLanguage.test` +1 · IT ไม่ได้รัน (Docker ไม่ขึ้น)
+
+**พฤติกรรมเดิมไม่เปลี่ยน** — policy ที่ใช้ `column` ตามชื่ออยู่แล้วทำงานเหมือนเดิมทุกอย่าง
+
+## รอบก่อนหน้า — **ข้อ CP: "is one of" ใส่ได้หลายค่า (และบั๊ก fail-open ของ "is none of") · subscription เลือกระดับ Organisation ได้**
 
 ผู้ใช้ถาม *"attribute ยังไม่มี or เลย"* แล้วถามต่อ *"หน้าจอไม่เห็นมีให้ใส่หลายอันเลย is one of"* และสั่ง *"เปิดระดับ Org หน่อย เพราะยังไงเรา Filter asset ได้ ในข้อนี้อยู่แล้ว Which assets it covers"*
 

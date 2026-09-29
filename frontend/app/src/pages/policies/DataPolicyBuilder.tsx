@@ -97,6 +97,7 @@ export default function DataPolicyBuilder({
               attributeNames={attributeNames}
               filter={filter}
               key={index}
+              vocabulary={vocabulary}
               onChange={(next) => {
                 const copy = [...rowFilters];
                 copy[index] = next;
@@ -200,18 +201,26 @@ export default function DataPolicyBuilder({
   );
 }
 
+/** The kinds that compare a column, and so can pick it by tag instead of name. */
+function comparesColumn(kind: RowFilter['kind']): boolean {
+  return kind === 'ATTRIBUTE_COMPARE' || kind === 'IN_LIST';
+}
+
 function RowFilterRow({
   filter,
   onChange,
   onRemove,
   attributeNames,
+  vocabulary,
 }: {
   filter: RowFilter;
   onChange: (next: RowFilter) => void;
   onRemove: () => void;
   attributeNames: string[];
+  vocabulary?: Vocabulary;
 }) {
   const kind = ROW_FILTER_KINDS.find((entry) => entry.value === filter.kind);
+  const byTag = filter.columns !== undefined;
 
   return (
     <div className="tw:rounded-lg tw:border tw:border-secondary tw:p-4">
@@ -219,7 +228,16 @@ function RowFilterRow({
         <Select
           ariaLabel="Row filter kind"
           className="tw:w-72"
-          onChange={(next) => onChange({ ...filter, kind: next as RowFilter['kind'] })}
+          onChange={(next) => {
+            const nextKind = next as RowFilter['kind'];
+            // A selector on a kind that compares no column would be ignored,
+            // and the server refuses it rather than let it look like it works.
+            onChange(
+              comparesColumn(nextKind)
+                ? { ...filter, kind: nextKind }
+                : { ...filter, kind: nextKind, columns: undefined }
+            );
+          }}
           options={ROW_FILTER_KINDS.map((entry) => ({
             value: entry.value,
             label: entry.label,
@@ -227,15 +245,39 @@ function RowFilterRow({
           value={filter.kind}
         />
 
-        {(filter.kind === 'ATTRIBUTE_COMPARE' || filter.kind === 'IN_LIST') && (
+        {comparesColumn(filter.kind) && (
           <>
-            <TextField
-              ariaLabel="Column"
-              className="tw:w-48"
-              onChange={(next) => onChange({ ...filter, column: next })}
-              placeholder="branch_code"
-              value={filter.column ?? ''}
+            <Select
+              ariaLabel="Pick the column by"
+              className="tw:w-40"
+              onChange={(next) =>
+                onChange(
+                  next === 'tag'
+                    ? {
+                        ...filter,
+                        column: undefined,
+                        columns: {
+                          condition: { facet: 'tags', operator: 'contains', value: '' },
+                        },
+                      }
+                    : { ...filter, column: '', columns: undefined }
+                )
+              }
+              options={[
+                { value: 'name', label: 'Column named' },
+                { value: 'tag', label: 'Column tagged' },
+              ]}
+              value={byTag ? 'tag' : 'name'}
             />
+            {!byTag && (
+              <TextField
+                ariaLabel="Column"
+                className="tw:w-48"
+                onChange={(next) => onChange({ ...filter, column: next })}
+                placeholder="branch_code"
+                value={filter.column ?? ''}
+              />
+            )}
             {filter.kind === 'ATTRIBUTE_COMPARE' ? (
               <Select
                 ariaLabel="Comparison"
@@ -298,6 +340,21 @@ function RowFilterRow({
           size="sm"
         />
       </div>
+      {comparesColumn(filter.kind) && byTag && (
+        <div className="tw:mt-3">
+          <SelectorBuilder
+            onChange={(next) => onChange({ ...filter, columns: next })}
+            subject="column"
+            value={filter.columns}
+            vocabulary={vocabulary}
+          />
+          <p className="tw:mt-2 tw:text-xs tw:text-tertiary">
+            Found in each table by its tag, so one policy covers tables that name
+            the column differently. A table without such a column shows no rows;
+            a table with two is filtered on both.
+          </p>
+        </div>
+      )}
       {kind && <p className="tw:mt-2 tw:text-xs tw:text-tertiary">{kind.help}</p>}
     </div>
   );

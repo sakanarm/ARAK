@@ -98,14 +98,19 @@ export function normaliseConditionValues(policy: Policy): Policy {
       attributes: policy.subject.attributes.map((row) => withOperator(row, row.operator)),
     };
   }
-  if (policy.data?.columnRules) {
-    next.data = {
-      ...policy.data,
-      columnRules: policy.data.columnRules.map((rule) => ({
+  if (policy.data) {
+    next.data = { ...policy.data };
+    if (policy.data.rowFilters) {
+      next.data.rowFilters = policy.data.rowFilters.map((filter) =>
+        filter.columns ? { ...filter, columns: selector(filter.columns) } : filter
+      );
+    }
+    if (policy.data.columnRules) {
+      next.data.columnRules = policy.data.columnRules.map((rule) => ({
         ...rule,
         columns: selector(rule.columns),
-      })),
-    };
+      }));
+    }
   }
 
   return next;

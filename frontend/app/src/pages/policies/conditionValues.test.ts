@@ -112,4 +112,37 @@ describe('normaliseConditionValues', () => {
       values: ['email'],
     });
   });
+
+  it('rewrites a row filter column selector, and leaves a named column alone', () => {
+    const legacy: Policy = {
+      name: 'branches',
+      policyType: 'DATA',
+      scopeLevel: 'ORG',
+      selector: { condition: { facet: 'schema', operator: 'eq', value: 'sales' } },
+      data: {
+        rowFilters: [
+          {
+            kind: 'ATTRIBUTE_COMPARE',
+            operator: 'eq',
+            userAttribute: 'branch',
+            columns: { condition: { facet: 'tags', operator: 'in', value: 'Org.Branch, Org.Region' } },
+          },
+          { kind: 'IN_LIST', column: 'region', userAttribute: 'regions' },
+        ],
+      },
+    };
+
+    const saved = JSON.parse(JSON.stringify(normaliseConditionValues(legacy)));
+
+    expect(saved.data.rowFilters[0].columns.condition).toEqual({
+      facet: 'tags',
+      operator: 'in',
+      values: ['Org.Branch', 'Org.Region'],
+    });
+    expect(saved.data.rowFilters[1]).toEqual({
+      kind: 'IN_LIST',
+      column: 'region',
+      userAttribute: 'regions',
+    });
+  });
 });

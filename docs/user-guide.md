@@ -632,6 +632,23 @@ its list typed into one box is shown as separate items and saved in the new
 form. Until it is saved again it is read the same way, so "FINANCE, RISK" means
 either department, not one department with a comma in its name.
 
+**Which rows they see.** A row filter that compares a column with the person
+(*Column matches their own attribute*, *Column is one of their values*) picks
+that column in one of two ways:
+
+- **Column named**: type its name, for example branch_code. It fits only the
+  tables that call the column that.
+- **Column tagged**: pick it by its metadata, as a column rule does, for
+  example tags contains Org.Branch. ARAK finds the column in each table when
+  it decides, so one policy covers a branch column called branch_code in one
+  table and sale_branch in another. Only tags put on the column itself count;
+  a tag on the table does not pass down to its columns here.
+
+A table with **no** column that matches shows **no rows**, rather than all of
+them. A table with **several** is filtered on each, so a row must pass every
+one (a transfer with from_branch and to_branch shows only transfers inside the
+person's own branch). A filter uses one way or the other, not both.
+
 ## How policies combine (conflicts)
 
 When several policies apply to one table:

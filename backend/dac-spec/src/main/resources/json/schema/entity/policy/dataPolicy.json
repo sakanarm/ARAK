@@ -43,6 +43,10 @@
           "enum": ["ATTRIBUTE_COMPARE", "IN_LIST", "ENTITLEMENT_JOIN", "ALWAYS_FALSE", "RAW_PREDICATE"]
         },
         "column": { "type": "string" },
+        "columns": {
+          "description": "ATTRIBUTE_COMPARE and IN_LIST: the column compared, chosen by facet instead of by name, for example the column tagged Department. Resolved against the table's columns when the decision is made, so one policy covers tables whose column has a different name in each. Use this or column, not both. A table with no matching column shows no rows; a table with several filters on every one of them.",
+          "$ref": "../../type/facet.json#/definitions/assetSelector"
+        },
         "operator": { "$ref": "../../type/facet.json#/definitions/facetOperator" },
         "userAttribute": {
           "description": "ATTRIBUTE_COMPARE and IN_LIST: the user-side attribute the column is compared against, for example branch.",
