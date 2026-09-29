@@ -1,7 +1,7 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { useState } from 'react';
 import DataPolicyBuilder from './DataPolicyBuilder';
-import type { DataPolicy } from '../../generated/entity/policy/policy';
+import type { DataPolicy, RowLookup } from '../../generated/entity/policy/policy';
 
 jest.mock('../../api/client', () => ({
   apiClient: {},
@@ -104,8 +104,8 @@ it('drops the selector when the kind compares no column', async () => {
 
 /*
  * A lookup: department AA sees division A because a mapping table says so.
- * The column is named; the mapping, its keys and how it is read are written
- * beside it.
+ * The column is named or tagged, as for any other filter; the mapping, its
+ * keys and how it is read are written beside it.
  */
 function type(label: string, text: string) {
   fireEvent.change(screen.getByLabelText(label), { target: { value: text } });
@@ -123,11 +123,19 @@ it('writes a filter whose values come from a mapping table', async () => {
   });
 
   await pick(/Row filter kind/, 'Column is one of the values a mapping table gives them');
-  expect(screen.queryByRole('button', { name: /Pick the column by/ })).not.toBeInTheDocument();
+  // A lookup finds its column the same way, so the tag it was picked by stays.
+  expect(screen.getByRole('button', { name: /Pick the column by/ })).toHaveTextContent(
+    'Column tagged'
+  );
+  expect(seen.data.rowFilters?.[0].columns).toEqual({
+    condition: { facet: 'tags', operator: 'contains', value: 'Org.Division' },
+  });
+  expect(seen.data.rowFilters?.[0].column).toBeUndefined();
   expect(screen.getByRole('button', { name: /How the mapping is read/ })).toHaveTextContent(
     'Join it into the query'
   );
 
+  await pick(/Pick the column by/, 'Column named');
   type('Column', 'division');
   type('Value column', 'division');
   type('Mapping table', 'warehouse.sales.ref.department_division');
@@ -152,7 +160,7 @@ it('writes a filter whose values come from a mapping table', async () => {
       mode: 'READ_VALUES',
     },
   });
-  // A selector the server would refuse on this kind is not carried along.
+  // Named now, so the selector is gone: the server refuses a filter with both.
   expect(seen.data.rowFilters?.[0].columns).toBeUndefined();
   expect(screen.getByText(/may be on another data source/)).toBeInTheDocument();
 
@@ -188,4 +196,27 @@ it('drops the mapping when the filter becomes another kind', async () => {
   expect(seen.data.rowFilters?.[0].column).toBe('division');
   expect(seen.data.rowFilters?.[0].lookup).toBeUndefined();
   expect(screen.queryByLabelText('Mapping table')).not.toBeInTheDocument();
+});
+
+it('lets a mapping filter pick its column by tag', async () => {
+  const lookup: RowLookup = {
+    table: 'warehouse.sales.ref.department_division',
+    keys: [{ column: 'department', userAttribute: 'department' }],
+    valueColumn: 'division',
+  };
+  const seen = renderLive({ rowFilters: [{ kind: 'LOOKUP', column: 'division', lookup }] });
+  expect(screen.getByLabelText('Column')).toHaveValue('division');
+
+  await pick(/Pick the column by/, 'Column tagged');
+
+  expect(seen.data.rowFilters?.[0]).toEqual({
+    kind: 'LOOKUP',
+    lookup,
+    columns: { condition: { facet: 'tags', operator: 'contains', value: '' } },
+  });
+  expect(screen.queryByLabelText('Column')).not.toBeInTheDocument();
+  expect(screen.getByLabelText('Mapping table')).toHaveValue(
+    'warehouse.sales.ref.department_division'
+  );
+  expect(screen.getByText(/A table without such a column shows no rows/)).toBeInTheDocument();
 });

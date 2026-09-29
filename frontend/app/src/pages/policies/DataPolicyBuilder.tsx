@@ -225,9 +225,18 @@ export default function DataPolicyBuilder({
   );
 }
 
-/** The kinds that compare a column, and so can pick it by tag instead of name. */
+/** The kinds that compare a column with the person's own attribute. */
 function comparesColumn(kind: RowFilter['kind']): boolean {
   return kind === 'ATTRIBUTE_COMPARE' || kind === 'IN_LIST';
+}
+
+/**
+ * The kinds that filter on a column, and so can pick it by tag instead of
+ * name. A lookup compares its column with what the mapping gives, not with an
+ * attribute, but finds that column the same way.
+ */
+function picksColumn(kind: RowFilter['kind']): boolean {
+  return comparesColumn(kind) || kind === 'LOOKUP';
 }
 
 /** A mapping to fill in: one key, joined into the query. */
@@ -268,6 +277,45 @@ function RowFilterRow({
     patchLookup({ keys });
   }
 
+  /** Named or tagged, and the name when it is named. */
+  function columnPicker(placeholder: string, width: string) {
+    return (
+      <>
+        <Select
+          ariaLabel="Pick the column by"
+          className="tw:w-40"
+          onChange={(next) =>
+            onChange(
+              next === 'tag'
+                ? {
+                    ...filter,
+                    column: undefined,
+                    columns: {
+                      condition: { facet: 'tags', operator: 'contains', value: '' },
+                    },
+                  }
+                : { ...filter, column: '', columns: undefined }
+            )
+          }
+          options={[
+            { value: 'name', label: 'Column named' },
+            { value: 'tag', label: 'Column tagged' },
+          ]}
+          value={byTag ? 'tag' : 'name'}
+        />
+        {!byTag && (
+          <TextField
+            ariaLabel="Column"
+            className={width}
+            onChange={(next) => onChange({ ...filter, column: next })}
+            placeholder={placeholder}
+            value={filter.column ?? ''}
+          />
+        )}
+      </>
+    );
+  }
+
   return (
     <div className="tw:rounded-lg tw:border tw:border-secondary tw:p-4">
       <div className="tw:flex tw:flex-wrap tw:items-center tw:gap-2">
@@ -276,14 +324,16 @@ function RowFilterRow({
           className="tw:w-72"
           onChange={(next) => {
             const nextKind = next as RowFilter['kind'];
-            // A selector on a kind that compares no column would be ignored,
+            // A selector on a kind that filters on no column would be ignored,
             // and the server refuses it rather than let it look like it works.
-            const moved: RowFilter = comparesColumn(nextKind)
+            const moved: RowFilter = picksColumn(nextKind)
               ? { ...filter, kind: nextKind }
               : { ...filter, kind: nextKind, columns: undefined };
             onChange(
               nextKind === 'LOOKUP'
-                ? { ...moved, column: filter.column ?? '', lookup }
+                ? byTag
+                  ? { ...moved, lookup }
+                  : { ...moved, column: filter.column ?? '', lookup }
                 : // A mapping left on another kind would be saved and never read.
                   { ...moved, lookup: undefined }
             );
@@ -297,37 +347,7 @@ function RowFilterRow({
 
         {comparesColumn(filter.kind) && (
           <>
-            <Select
-              ariaLabel="Pick the column by"
-              className="tw:w-40"
-              onChange={(next) =>
-                onChange(
-                  next === 'tag'
-                    ? {
-                        ...filter,
-                        column: undefined,
-                        columns: {
-                          condition: { facet: 'tags', operator: 'contains', value: '' },
-                        },
-                      }
-                    : { ...filter, column: '', columns: undefined }
-                )
-              }
-              options={[
-                { value: 'name', label: 'Column named' },
-                { value: 'tag', label: 'Column tagged' },
-              ]}
-              value={byTag ? 'tag' : 'name'}
-            />
-            {!byTag && (
-              <TextField
-                ariaLabel="Column"
-                className="tw:w-48"
-                onChange={(next) => onChange({ ...filter, column: next })}
-                placeholder="branch_code"
-                value={filter.column ?? ''}
-              />
-            )}
+            {columnPicker('branch_code', 'tw:w-48')}
             {filter.kind === 'ATTRIBUTE_COMPARE' ? (
               <Select
                 ariaLabel="Comparison"
@@ -374,13 +394,7 @@ function RowFilterRow({
 
         {filter.kind === 'LOOKUP' && (
           <>
-            <TextField
-              ariaLabel="Column"
-              className="tw:w-44"
-              onChange={(next) => onChange({ ...filter, column: next })}
-              placeholder="division"
-              value={filter.column ?? ''}
-            />
+            {columnPicker('division', 'tw:w-44')}
             <span className="tw:text-sm tw:text-tertiary">is one of the</span>
             <TextField
               ariaLabel="Value column"
@@ -418,7 +432,7 @@ function RowFilterRow({
           size="sm"
         />
       </div>
-      {comparesColumn(filter.kind) && byTag && (
+      {picksColumn(filter.kind) && byTag && (
         <div className="tw:mt-3">
           <SelectorBuilder
             onChange={(next) => onChange({ ...filter, columns: next })}

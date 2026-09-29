@@ -137,7 +137,11 @@ requires elevated rights precisely because it is not.
 `LOOKUP` takes the allowed values from a mapping table instead of from the
 person: `column IN (SELECT valueColumn FROM table WHERE key1 IN (their attr1)
 AND …)`. The engine resolves the person's key values; a person without one of
-them gets `ALWAYS_FALSE`. Only the query proxy enforces it, in one of two modes:
+them gets `ALWAYS_FALSE`. Like `ATTRIBUTE_COMPARE` and `IN_LIST`, it names its
+column (`column`) or picks it by a column selector (`columns`), never both;
+each column the selector picks gets a lookup of its own, and a table with no
+such column gets `ALWAYS_FALSE`. Only the query proxy enforces it, in one of two
+modes:
 
 - `SUBQUERY` renders the subquery into the rewritten statement. The mapping must
   be on the same source and database as the filtered table. Results are not

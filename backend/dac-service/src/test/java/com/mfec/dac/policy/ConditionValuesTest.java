@@ -10,8 +10,10 @@ import com.mfec.dac.schema.entity.policy.ColumnRule;
 import com.mfec.dac.schema.entity.policy.DataPolicy;
 import com.mfec.dac.schema.entity.policy.FacetCondition;
 import com.mfec.dac.schema.entity.policy.FacetCondition.FacetType;
+import com.mfec.dac.schema.entity.policy.LookupKey;
 import com.mfec.dac.schema.entity.policy.Policy;
 import com.mfec.dac.schema.entity.policy.RowFilter;
+import com.mfec.dac.schema.entity.policy.RowLookup;
 import com.mfec.dac.schema.entity.policy.SubjectRule;
 import java.util.List;
 import org.junit.jupiter.api.DisplayName;
@@ -194,11 +196,53 @@ class ConditionValuesTest {
   @Test
   @DisplayName("a column selector on a row filter that compares no column is refused")
   void rowFilterSelectorOnOtherKindIsRefused() {
+    for (RowFilter.Kind kind :
+        List.of(
+            RowFilter.Kind.ALWAYS_FALSE,
+            RowFilter.Kind.ENTITLEMENT_JOIN,
+            RowFilter.Kind.RAW_PREDICATE)) {
+      assertThatThrownBy(() -> ConditionValues.check(filtering(byTag("Org.Branch").withKind(kind))))
+          .as(kind.value())
+          .isInstanceOf(IllegalArgumentException.class)
+          .hasMessageContaining("would be ignored");
+    }
+  }
+
+  private static RowFilter lookupByTag(String tag) {
+    return new RowFilter()
+        .withKind(RowFilter.Kind.LOOKUP)
+        .withColumns(
+            new AssetSelector().withCondition(tags(FacetOperator.CONTAINS).withValue(tag)))
+        .withLookup(
+            new RowLookup()
+                .withTable("warehouse.sales.ref.department_division")
+                .withKeys(
+                    List.of(new LookupKey().withColumn("department").withUserAttribute("department")))
+                .withValueColumn("division"));
+  }
+
+  @Test
+  @DisplayName("a lookup row filter may pick its column by tag")
+  void lookupColumnSelectorPasses() {
+    assertThatCode(() -> ConditionValues.check(filtering(lookupByTag("Org.Division"))))
+        .doesNotThrowAnyException();
+  }
+
+  @Test
+  @DisplayName("a lookup that picks its column by tag keeps the same rules as any other")
+  void lookupColumnSelectorIsCheckedLikeAnyOther() {
+    assertThatThrownBy(
+            () -> ConditionValues.check(filtering(lookupByTag("Org.Division").withColumn("division"))))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("give one of them");
+    assertThatThrownBy(() -> ConditionValues.check(filtering(lookupByTag(""))))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("no value to compare against");
     assertThatThrownBy(
             () ->
                 ConditionValues.check(
-                    filtering(byTag("Org.Branch").withKind(RowFilter.Kind.ALWAYS_FALSE))))
+                    filtering(lookupByTag("Org.Division").withColumns(new AssetSelector()))))
         .isInstanceOf(IllegalArgumentException.class)
-        .hasMessageContaining("would be ignored");
+        .hasMessageContaining("picks no column");
   }
 }
