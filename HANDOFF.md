@@ -641,7 +641,15 @@ M36 → M14 · M21 · M29 · M30 (ทุกตัวต้องมี principal
 
 ---
 
-## รอบนี้ — **ข้อ CQ: Row filter เลือก column ด้วย tag ได้ (Column tagged)**
+## รอบนี้ — **ข้อ CR: ติด label `integration` ที่ PR ที่เปิดอยู่แล้ว CI รัน Integration ทันที**
+
+ตอน merge CP / CQ เจอว่า Integration (Testcontainers) ขึ้น *skipped* ทั้งที่ติด label `integration` แล้ว — `ci.yml` ฟัง `pull_request` แค่ type ค่าเริ่มต้น (opened / synchronize / reopened) การติด label หลังเปิด PR จึงไม่สั่งรันใหม่ ต้องปิด-เปิด PR หรือ push commit ใหม่ ขณะที่ CONTRIBUTING.md บอกว่าติด label แล้วจะรัน
+
+**แก้** — `pull_request: types: [opened, synchronize, reopened, labeled]` · ติด label ใดก็ตามจะรัน CI ทั้งชุดใหม่ (concurrency ยกเลิกรอบที่ค้าง) ไม่ได้กรองเฉพาะ label `integration` เพราะถ้า job อื่น skip ในรอบที่มายกเลิกรอบเดิม required check จะดูเหมือนผ่านทั้งที่ไม่ได้รัน
+
+**ตรวจเพิ่ม (อ่านอย่างเดียว)** — เงื่อนไข `in` / `notIn` / `ne` ใน policy ที่เก็บอยู่ทั้งหมดไม่มีตัวไหนความหมายเปลี่ยนจากข้อ CP: `in` / `notIn` ใช้ `values` ครบทุกตัว · `ne` มีค่าให้เทียบทุกตัว
+
+## รอบก่อนหน้า — **ข้อ CQ: Row filter เลือก column ด้วย tag ได้ (Column tagged)**
 
 ผู้ใช้ถาม *"ทำไม Column ไม่มีให้เลือก Column tag เวลา scope column ใน data policy"* — ช่อง Column ของ row filter (Which rows they see) เป็นชื่อ column ตายตัวชื่อเดียว ขณะที่ column rule เลือกด้วย tag ได้อยู่แล้ว · policy เดียวจึงใช้กับตารางที่ตั้งชื่อ column สาขาต่างกันไม่ได้
 
