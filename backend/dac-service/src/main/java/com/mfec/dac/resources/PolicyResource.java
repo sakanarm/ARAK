@@ -115,6 +115,24 @@ public class PolicyResource {
   /** An object rather than a bare number, so a field can be added without a new shape. */
   public record PolicyCount(int total) {}
 
+  /**
+   * The tables a draft would cover, asked while it is being written.
+   *
+   * <p>Nothing is saved or bound: the answer comes from the same matcher the
+   * binding uses, run over the catalog and thrown away. It names tables and
+   * columns only -- metadata the catalog already shows every signed-in caller
+   * -- and never a row, so it is open to the same callers as the catalog.
+   */
+  @POST
+  @Path("/scope-preview")
+  public PolicyBindingMaterializer.Preview scopePreview(
+      Policy document, @QueryParam("limit") @DefaultValue("100") int limit) {
+    if (document == null) {
+      throw new BadRequestException("Give the draft policy to preview");
+    }
+    return materializer.preview(document, limit);
+  }
+
   @GET
   @Path("/{id}")
   public PolicyStore.StoredPolicy get(@PathParam("id") UUID id) {

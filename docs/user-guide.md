@@ -606,11 +606,20 @@ database, schema, table or column, and a **selector** that picks the assets,
 usually by metadata (for example tags contains 'PII.Sensitive', or domains
 contains 'Finance'). Tables that match later are covered automatically.
 
-In the builder a subscription policy can sit at **Organisation** or **Table**
-(the layers in between are not offered yet; a policy already stored at one
-keeps it). An organisation-level subscription covers exactly the assets step 3,
-*Which assets it covers*, selects, on every source. With nothing selected it
-covers nothing. Data policies can use every level.
+Both kinds can sit at any level. The level and its **anchor** (the fully
+qualified name it is measured from, such as a service, a database or a schema)
+only narrow where the policy looks: step 3, *Which assets it covers*, then
+picks among the assets under the anchor. An organisation-level policy looks on
+every source. Whatever the level, a policy with nothing selected in step 3
+covers nothing.
+
+Under step 3, **What this covers right now** lists the tables the draft would
+cover if it were saved now, grouped by schema, with how many of the tables in
+scope that is. For a data policy it also shows, on each table, the columns the
+column rules pick. A table's name opens its catalog page in a new tab. The
+panel follows your edits and saves nothing. A long list can be filtered by
+name; past 200 tables it shows the first 200 and says how many there are in
+all. It shows names only, never rows.
 
 A policy's **subject rule** says who it is for:
 
@@ -774,17 +783,20 @@ its own, before the form opens:
   selector you write yourself is kept if you go back and choose another
   connection.
 - **How it will be enforced**: *Query API*, *Secure view* or *Native source
-  config*. The builder checks the policy against this mode while you write it
-  and marks it *Chosen* in the rail. The card that matches the connection says
-  *In use on this connection*. *Query API* is not offered on an engine it has
-  nothing for. *Native source config* is marked *Checked, not applied yet*:
-  ARAK does not push native config yet.
+  config*. On one connection only the mode that connection is set to can be
+  chosen, and choosing the connection chooses it; the other modes are greyed
+  out and marked *Not set on this connection*. **Every connection** keeps all
+  three, since each connection is enforced by its own mode. The builder checks
+  the policy against this mode while you write it and marks it *Chosen* in the
+  rail. *Query API* is not offered on an engine it has nothing for. *Native
+  source config* is marked *Checked, not applied yet*: ARAK does not push
+  native config yet.
 
 The mode is **not saved in the policy**. A policy is always enforced by the mode
 its connection is set to under **Sources**, so a policy cannot quietly stop
-applying because somebody changed a connection's mode. If you choose a mode
-other than the connection's own, the page says so; only an administrator
-changes the connection. The chosen connection and mode show as chips at the
+applying because somebody changed a connection's mode. To write a policy for
+another mode on one connection, an administrator first changes that
+connection's mode under **Sources**. The chosen connection and mode show as chips at the
 top of the form, and **Change** goes back to the page. *Configure the policy*
 stays disabled until a connection and a mode are chosen.
 

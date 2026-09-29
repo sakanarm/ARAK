@@ -9,6 +9,7 @@ const fetchPolicy = jest.fn();
 const resolveBindings = jest.fn();
 const transitionPolicy = jest.fn();
 const updatePolicy = jest.fn();
+const previewPolicyScope = jest.fn();
 
 jest.mock('../../api/policies', () => ({
   ENFORCED_ENVIRONMENT: 'prod',
@@ -17,6 +18,7 @@ jest.mock('../../api/policies', () => ({
   resolveBindings: (...args: unknown[]) => resolveBindings(...args),
   transitionPolicy: (...args: unknown[]) => transitionPolicy(...args),
   updatePolicy: (...args: unknown[]) => updatePolicy(...args),
+  previewPolicyScope: (...args: unknown[]) => previewPolicyScope(...args),
 }));
 
 jest.mock('../../api/governance', () => ({
@@ -127,6 +129,7 @@ beforeEach(() => {
   fetchOfferedFeatures.mockResolvedValue([]);
   fetchSources.mockResolvedValue(sources);
   fetchEngines.mockResolvedValue(engines);
+  previewPolicyScope.mockResolvedValue({ scanned: 0, matched: 0, tables: [], truncated: false });
 });
 
 /*
@@ -146,10 +149,15 @@ describe('where a new policy runs', () => {
     expect(screen.queryByRole('button', { name: /environment/i })).not.toBeInTheDocument();
     expect(configure()).toBeDisabled();
 
-    fireEvent.click(await screen.findByRole('button', { name: 'demo-pg' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Every connection' }));
     expect(configure()).toBeDisabled();
-    fireEvent.click(screen.getByRole('button', { name: 'Query API' }));
+    fireEvent.click(screen.getByRole('button', { name: 'demo-pg' }));
 
+    // The connection is set to the query API, so choosing it chose that too.
+    expect(screen.getByRole('button', { name: 'Query API' })).toHaveAttribute(
+      'aria-pressed',
+      'true'
+    );
     expect(configure()).toBeEnabled();
     expect(screen.getByTestId('target-summary')).toHaveTextContent(
       'Subscription policy on demo-pg, enforced by Query API'
@@ -214,17 +222,35 @@ describe('where a new policy runs', () => {
     );
   });
 
-  test('says when the mode is not the one the connection is set to', async () => {
+  test('on one connection, a mode it is not set to cannot be chosen', async () => {
     renderNew('/policies/new');
 
+    fireEvent.click(await screen.findByRole('button', { name: 'Secure view' }));
     fireEvent.click(await screen.findByRole('button', { name: 'demo-pg' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Secure view' }));
 
-    expect(
-      screen.getByText(/demo-pg is enforced by query proxy today, and stays that way/)
-    ).toBeInTheDocument();
-    // Written for another mode is still written: the way on stays open.
-    expect(configure()).toBeEnabled();
+    // Checking a policy against a mode the connection will never use would
+    // pass checks that mean nothing, so the other two are greyed out.
+    expect(screen.getByRole('button', { name: 'Secure view' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Native source config' })).toBeDisabled();
+    expect(screen.getAllByText('Not set on this connection')).toHaveLength(2);
+    expect(screen.getByRole('button', { name: 'Query API' })).toHaveAttribute(
+      'aria-pressed',
+      'true'
+    );
+    expect(screen.getByTestId('mode-locked')).toHaveTextContent(
+      'demo-pg is enforced by query proxy'
+    );
+  });
+
+  test('every connection keeps all three modes', async () => {
+    renderNew('/policies/new');
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Every connection' }));
+
+    for (const name of ['Query API', 'Secure view', 'Native source config']) {
+      expect(screen.getByRole('button', { name })).toBeEnabled();
+    }
+    expect(screen.queryByText('Not set on this connection')).not.toBeInTheDocument();
   });
 
   test('native config is checked but not applied yet', async () => {
@@ -261,6 +287,31 @@ describe('where a new policy runs', () => {
     expect(await screen.findByDisplayValue('drafted-in-chat')).toBeInTheDocument();
     expect(screen.queryByRole('region', { name: 'Which connection' })).not.toBeInTheDocument();
     expect(useAssistStore.getState().policy).toBeNull();
+  });
+
+  test('step 3 shows the tables the draft covers before it is saved', async () => {
+    previewPolicyScope.mockResolvedValue({
+      scanned: 5,
+      matched: 1,
+      tables: [{ fqn: 'svc.db.sales.customer', columns: [] }],
+      truncated: false,
+    });
+    useAssistStore.getState().deliverPolicy(
+      JSON.stringify({
+        name: 'drafted-in-chat',
+        policyType: 'SUBSCRIPTION',
+        scopeLevel: 'ORG',
+        selector: { condition: { facet: 'tags', operator: 'contains', value: 'PII' } },
+      })
+    );
+    renderNew('/policies/new');
+
+    const panel = await screen.findByRole('region', { name: 'Tables this policy covers' });
+    expect(await within(panel).findByRole('link', { name: 'customer' })).toBeInTheDocument();
+    expect(previewPolicyScope.mock.calls[0][0].selector).toEqual({
+      condition: { facet: 'tags', operator: 'contains', value: 'PII' },
+    });
+    expect(createPolicy).not.toHaveBeenCalled();
   });
 
   test('a data policy starts on the organisation', async () => {
@@ -409,23 +460,37 @@ test('editing a policy says which version it is, when it was last edited and by 
 });
 
 /*
- * A subscription may sit on the whole organisation or on one table. What the
- * organisation layer gates is what step 3 selects, so it is no wider than the
- * selector; the layers in between stay hidden.
+ * A subscription may sit on any layer. What a layer gates is what step 3
+ * selects under its anchor, so no layer is wider than the selector.
  */
-test('a subscription is offered the organisation and table levels only', async () => {
+test('a subscription is offered every level', async () => {
   renderNew();
 
   fireEvent.click(await screen.findByRole('button', { name: /level/i }));
 
-  expect(await screen.findByRole('option', { name: 'Organisation' })).toBeInTheDocument();
-  expect(screen.getByRole('option', { name: 'Table' })).toBeInTheDocument();
-  expect(screen.queryByRole('option', { name: 'Schema' })).not.toBeInTheDocument();
-  expect(
-    screen.queryByRole('option', { name: 'Domain or sub-domain' })
-  ).not.toBeInTheDocument();
+  for (const name of [
+    'Organisation',
+    'Domain or sub-domain',
+    'Service',
+    'Database',
+    'Schema',
+    'Table',
+    'Column',
+  ]) {
+    expect(await screen.findByRole('option', { name })).toBeInTheDocument();
+  }
 
-  fireEvent.click(screen.getByRole('option', { name: 'Organisation' }));
+  fireEvent.click(screen.getByRole('option', { name: 'Schema' }));
+
+  expect(await screen.findByPlaceholderText('prod-mssql.SalesDB.dbo')).toBeInTheDocument();
+  expect(screen.getByText(/step 3 then picks among them/)).toBeInTheDocument();
+});
+
+test('the organisation level says it covers what step 3 selects', async () => {
+  renderNew();
+
+  fireEvent.click(await screen.findByRole('button', { name: /level/i }));
+  fireEvent.click(await screen.findByRole('option', { name: 'Organisation' }));
 
   expect(await screen.findByText(/Every asset step 3 selects/)).toBeInTheDocument();
 });

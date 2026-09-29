@@ -45,8 +45,12 @@ import { MODES, type EnforcementMode } from './enforcement';
  * The mode is not written into the policy. A policy is enforced by the mode its
  * source is set to, and one that only held in a single mode would stop holding
  * the day somebody switched the source -- quietly, which is the failure the
- * capability matrix exists to prevent. So the choice drives the warnings, and
- * the screen says so when the source is set to something else.
+ * capability matrix exists to prevent. So the choice drives the warnings.
+ *
+ * On one connection only the mode it is set to can be chosen, and choosing the
+ * connection chooses it: offering another would let an author check a policy
+ * against a mode that will never carry it. Every connection keeps all three,
+ * because each connection there brings its own.
  */
 
 export type PolicyKind = Policy['policyType'];
@@ -134,6 +138,17 @@ function modeColor(mode: SourceMode) {
 }
 
 /**
+ * The one mode a connection allows here, or null when it allows any.
+ *
+ * A connection set to nothing yet allows any: the policy is written ahead of
+ * the day an administrator picks its mode.
+ */
+export function lockedMode(source: Source | null): EnforcementMode | null {
+  const current = source?.defaultEnforcementMode;
+  return current && current !== 'NONE' ? current : null;
+}
+
+/**
  * What choosing this mode on this source means, or null when it means nothing
  * more than what the card says.
  */
@@ -184,7 +199,12 @@ export default function PolicyTargetPicker({
   // The query API refuses a policy it cannot express on the engine, so an
   // engine it has nothing for is not offered as a place to write for it.
   const proxyMissing = Boolean(engine && engine.proxyCapabilities.length === 0);
-  const ready = chosen && mode !== null && !(mode === 'PROXY' && proxyMissing);
+  const locked = lockedMode(source);
+  const ready =
+    chosen &&
+    mode !== null &&
+    !(mode === 'PROXY' && proxyMissing) &&
+    (locked === null || mode === locked);
 
   return (
     <>
@@ -269,7 +289,15 @@ export default function PolicyTargetPicker({
                       icon={<IconTile icon={Database01} tone="tw:bg-utility-blue-50 tw:text-utility-blue-600" />}
                       key={entry.id}
                       label={entry.name}
-                      onSelect={() => setSourceId(entry.id)}
+                      onSelect={() => {
+                        setSourceId(entry.id);
+                        const only = lockedMode(entry);
+                        const noProxy =
+                          engines?.find((known) => known.id === entry.engine)?.proxyCapabilities
+                            .length === 0;
+                        if (only && !(only === 'PROXY' && noProxy)) setMode(only);
+                        else if (only) setMode(null);
+                      }}
                       selected={sourceId === entry.id}>
                       <p className="tw:truncate tw:text-sm tw:font-semibold tw:text-primary">{entry.name}</p>
                       <p className="tw:mt-0.5 tw:truncate tw:text-sm tw:text-tertiary">
@@ -314,9 +342,10 @@ export default function PolicyTargetPicker({
             {MODES.map((entry) => {
               const inUse = source?.defaultEnforcementMode === entry.mode;
               const unavailable = entry.mode === 'PROXY' && proxyMissing;
+              const notSet = locked !== null && entry.mode !== locked;
               return (
                 <Choice
-                  disabled={unavailable}
+                  disabled={unavailable || notSet}
                   icon={<IconTile icon={MODE_ICONS[entry.mode]} tone="tw:bg-utility-purple-50 tw:text-utility-purple-600" />}
                   key={entry.mode}
                   label={entry.title}
@@ -339,6 +368,11 @@ export default function PolicyTargetPicker({
                         Not on {engineLabel(engines, source?.engine)}
                       </Badge>
                     )}
+                    {notSet && !unavailable && (
+                      <Badge color="gray" size="sm" type="pill-color">
+                        Not set on this connection
+                      </Badge>
+                    )}
                   </div>
                   <p className="tw:mt-1 tw:text-sm tw:text-tertiary">{entry.summary}</p>
                   <p className="tw:mt-2 tw:text-xs tw:text-quaternary">Needs: {entry.requirement}.</p>
@@ -346,6 +380,17 @@ export default function PolicyTargetPicker({
               );
             })}
           </div>
+          {source && locked && (
+            <p className="tw:mt-3 tw:text-sm tw:text-tertiary" data-testid="mode-locked">
+              {source.name} is enforced by {modeLabel(locked).toLowerCase()}, so that is the
+              mode this policy is written for. An administrator changes a connection's mode
+              under{' '}
+              <Link className="tw:font-medium tw:text-brand-secondary tw:hover:underline" to="/sources">
+                Sources
+              </Link>
+              .
+            </p>
+          )}
           {chosen && mode && modeNote(source, mode) && (
             <p className="tw:mt-3 tw:flex tw:gap-2 tw:rounded-lg tw:border tw:border-secondary tw:bg-secondary tw:p-3 tw:text-sm tw:text-tertiary">
               <AlertTriangle className="tw:mt-0.5 tw:size-4 tw:flex-none tw:text-warning-primary" />

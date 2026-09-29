@@ -641,7 +641,30 @@ M36 → M14 · M21 · M29 · M30 (ทุกตัวต้องมี principal
 
 ---
 
-## รอบนี้ — **ข้อ CU: หน้า *Where it runs* ก่อนฟอร์ม policy · `LOOKUP` เลือก column ด้วย tag · Credits**
+## รอบนี้ — **ข้อ CV: step 3 แสดง table ที่ policy จะครอบ · subscription เลือกได้ทุกระดับ · connection เดียวเลือกได้แค่โหมดของมัน**
+
+ผู้ใช้ขอ *"ตอนที่เลือก Which assets it covers ต้องแสดง Table หรือ Asset ที่อยู่ใน Scope ให้เห็นด้วยว่า มีอันไหนโดนบ้าง ออกแบบให้สวยหน่อย"* · *"Where it sits เอา Level อื่นของ table กลับมา … เพราะเรามีไป Filter ข้อ 3 Which assets it covers อยู่แล้วหนิ"* · และจาก screenshot: *"ถ้า Source ไม่รองรับ ทำไมมีให้เลือกอะ มันต้องเทาไปไม่ใช่หรอ"* (connection ตั้งเป็น Query proxy แต่ Secure view ยังกดได้)
+
+**Preview ของ step 3** — `POST /v1/policies/scope-preview?limit=` (`PolicyResource.scopePreview`) รับ draft ที่ยังไม่ save แล้วเรียก `PolicyBindingMaterializer.preview(policy, limit)` ซึ่งใช้ `loader.forEachInScope` + `SelectorMatcher.matches` ตัวเดียวกับตอน save (ผลต้องไม่ต่างจาก binding จริง) · **ไม่เขียนอะไรลง DB** · ตอบแค่ชื่อ: `scanned` · `matched` (ไม่ถูก cap) · `tables[{fqn, columns}]` (cap 1..500) · `truncated` · `columns` = column ที่ column rule ของ data policy เลือก · selector ว่างได้ 0 เสมอ (เหมือน matcher)
+- `ScopePreview.tsx` ใหม่ ใต้ `SelectorBuilder` ใน step 3: หัว *What this covers right now* + บอก scope (ทั้ง estate / *Inside X only*) · 3 stat (Tables covered · Tables in scope · Columns picked หรือ Share of scope) + progress bar · จัดกลุ่มตาม schema · ชื่อ table เป็นลิงก์ไป catalog (tab ใหม่) · data policy แสดง badge column ต่อ table · ช่อง filter เมื่อรายการยาว · เกิน 200 บอก *Showing the first 200 of N*
+- debounce 400ms ที่ตัว draft (`useSettled`) แล้ว key ด้วย `scopeKey` (type · level · anchor · selector · column rules) · selector ที่ยังไม่มีค่า (`hasCondition`) ไม่ยิง API · 🐛 ที่เจอตอนเทสต์: รอบแรกยิงด้วย selector `{}` ของ EMPTY ก่อน draft จาก NokRak จะมาถึง และ queryFn ส่ง draft สด ไม่ใช่ตัวที่ settle → แก้ให้ส่งตัวที่ settle
+
+**ทุกระดับกลับมาให้ subscription** — ลบ `SUBSCRIPTION_LEVELS` / `levelOptions()` · Level ใช้ `SCOPE_LEVELS` ทั้ง 7 ชั้นทั้งสอง kind · anchor แค่ทำให้แคบลง ไม่เคยทำให้กว้างขึ้น (step 3 เลือกต่อจากใต้ anchor) · placeholder ของ Anchor ตามชั้น (`ANCHOR_EXAMPLES`) + hint อธิบาย · เปลี่ยน kind ไม่รีเซ็ต level อีกแล้ว
+
+**Connection เดียว → เลือกได้แค่โหมดของมัน** (`PolicyTargetPicker.lockedMode`) — `defaultEnforcementMode` ของ source (ไม่นับ `NONE`) คือโหมดเดียวที่กดได้ · กด connection = เลือกโหมดนั้นให้เลย · โหมดอื่นเทา + badge *Not set on this connection* + ข้อความ `mode-locked` ว่าต้องให้ admin เปลี่ยนที่ Sources · *Every connection* เลือกได้ทั้ง 3 · `ready` ต้องตรงกับโหมดที่ล็อก · เหตุผล: โหมดไม่ถูกเก็บใน policy และ policy ถูก enforce ด้วยโหมดของ source เสมอ การให้เลือกโหมดอื่นเท่ากับให้เขียน policy ที่ check กับโหมดที่ไม่มีวันถูกใช้
+
+**test** — `PolicyBindingMaterializerIT` 15/15 บน Postgres จริง (+5 ใน `// preview`: ผลตรงกับที่ save จะ bind และไม่เขียน `policy_binding` · อยู่ใน scope · ไม่มี selector = 0 · column ที่ column rule เลือก · truncated ที่ limit) · backend unit ผ่าน · jest 86 suites / 872 ผ่าน (`ScopePreview.test` 7 ใหม่ · `PolicyBuilderPage.test`: connection เดียวโหมดอื่นกดไม่ได้ · Every connection มีครบ 3 · step 3 แสดง table ของ draft จาก NokRak ก่อน save · subscription มีครบ 7 ระดับ + placeholder/hint) · type-check ผ่าน · lint: error เฉพาะ `shot-*.mjs` (ของ local)
+- docs: `user-guide.md` (ระดับของ policy + panel *What this covers right now* · หน้า where it runs ล็อกโหมด) · DESIGN M4
+
+**prod** — ข้อ CU (`4db034d`) deploy แล้ว 2026-09-30 (ไม่มี migration · dist ใหม่มีหน้า picker) · smoke ผ่าน API ยังค้าง (tunnel ไม่ได้รับอนุญาต) · ข้อ CV ยังไม่ขึ้น prod
+
+**ยังไม่ทำ / ข้อควรรู้**
+- ผู้ใช้ขอแล้ว ทำต่อ: หน้ารายการ policy แสดง kind · connection (Every / ชื่อ) · โหมด และ filter ได้ (ต้องทำฝั่ง server เพราะรายการแบ่งหน้า)
+- draft จาก NokRak / access request ยังข้ามหน้า picker (connection = Every · ไม่มีโหมด) — เสนอให้มีตัวเลือก *where it runs* ในฟอร์ม ยังไม่ได้รับคำตอบ
+- connection ที่ตั้ง Query proxy บน engine ที่ไม่มี proxy capabilities: โหมดเดียวที่ล็อกไว้กดไม่ได้ → เลือก connection นั้นไม่ได้ (ถือว่า config ของ source ผิด ต้องแก้ที่ Sources)
+- DBeaver / pgwire (M29 · FR-19)
+
+## รอบก่อนหน้า — **ข้อ CU: หน้า *Where it runs* ก่อนฟอร์ม policy · `LOOKUP` เลือก column ด้วย tag · Credits**
 
 ผู้ใช้ขอ *"หน้าที่ให้เลือก Connection, Query API, Native config, Secure view ที่จะสร้าง Policy ทำให้สวยๆหน่อยนะ ก่อนเข้าหน้า Configure policy"* · ก่อนหน้านั้นถามว่าควรแยกไหมว่า policy นี้สำหรับโหมดไหนของ connection อะไร โดยให้เลือก connection ก่อนแล้วเลือกโหมดที่ connection นั้นรองรับ · และตอบ *"yes"* ให้แก้ `ConditionValues` เพื่อให้ `LOOKUP` เลือก column ด้วย tag ได้ (ค้างจากข้อ CT) · และขอเพิ่มชื่อผู้ร่วมพัฒนาใน *Designed and built*
 
@@ -770,7 +793,7 @@ M36 → M14 · M21 · M29 · M30 (ทุกตัวต้องมี principal
 - `policies/conditionValues.ts` — `isListOperator` · `splitValues` · `listOf` · `withOperator` (เปลี่ยน operator แล้วย้ายค่าไปช่องที่ถูก · ออกจาก list เก็บตัวแรก ไม่ join) · `normaliseConditionValues` (เรียกตอน save ทุกครั้ง ทำให้ policy เก่าที่เปิดแล้วกด Save เฉยๆ ผ่าน server)
 - `controls.tsx` `ValueList` — ชิปทีละค่า: พิมพ์แล้ว **Enter** หรือ **จุลภาค** · × ลบ · Backspace ในช่องว่างลบตัวสุดท้าย · ไม่รับค่าซ้ำ · datalist เดิมยังใช้ได้
 - ใช้ใน `SelectorBuilder` (Which assets it covers + column rules) และ `SubjectBuilder` (attributes)
-- `PolicyBuilderPage` — `SUBSCRIPTION_LEVELS = ['ORG', 'TABLE']` · hint ของ ORG: *Every asset step 3 selects, on every source. With nothing selected it covers nothing.*
+- `PolicyBuilderPage` — `SUBSCRIPTION_LEVELS = ['ORG', 'TABLE']` · hint ของ ORG: *Every asset step 3 selects, on every source. With nothing selected it covers nothing.* · **อัปเดต (ข้อ CV):** `SUBSCRIPTION_LEVELS` ถูกลบแล้ว subscription เลือกได้ทุกระดับ
 
 **test** — backend unit ผ่านทั้ง reactor (`SelectorMatcherTest` 13 · `SubjectMatcherTest` 15 · `ConditionValuesTest` 7 ใหม่) · jest **836 ผ่าน / 84 suites** (`conditionValues.test` · `SelectorBuilder.test` ใหม่ · `SubjectBuilder.test` +3 · `PolicyBuilderPage.test` +2: เมนู Level มี Organisation / Table เท่านั้น · policy เก่ากด Save แล้วส่ง `values`) · type-check · lint (ไฟล์ที่ track) ผ่าน · IT ไม่ได้รัน (Docker ไม่ขึ้น)
 
@@ -4317,6 +4340,8 @@ private static boolean mayImpersonate(AuthenticatedUser user) {
 คำสั่งผู้ใช้: `ปรับ Subscription Policy ให้ มีให้เลือกแค่ระดับ table ก่อน ระดับอื่น hide ไปก่อน`
 
 > **อัปเดต (ข้อ CP):** เปิดระดับ **Organisation** กลับแล้ว — `SUBSCRIPTION_LEVELS = ['ORG', 'TABLE']` · ชั้นกลางยังซ่อนอยู่
+>
+> **อัปเดต (ข้อ CV):** ผู้ใช้ขอให้เอาทุกระดับกลับมา (step 3 กรองต่อได้อยู่แล้ว) — ลบ `SUBSCRIPTION_LEVELS` / `levelOptions()` ออก โค้ดข้างล่างเป็นของเก่า
 
 `src/pages/policies/PolicyBuilderPage.tsx`:
 
