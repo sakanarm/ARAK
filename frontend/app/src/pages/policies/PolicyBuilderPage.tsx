@@ -47,8 +47,15 @@ import PolicyFlowChart from './PolicyFlowChart';
 import PolicyDiagram from './PolicyDiagram';
 import SelectorBuilder from './SelectorBuilder';
 import SubjectBuilder from './SubjectBuilder';
-import { capabilities, MODES, type Engine } from './enforcement';
-import { engineOptions, useSourceEngines } from '../../engines';
+import { capabilities, MODES, type Engine, type EnforcementMode } from './enforcement';
+import { engineLabel, engineOptions, useSourceEngines } from '../../engines';
+import { fetchSources } from '../../api/sources';
+import PolicyTargetPicker, {
+  isSourceSelector,
+  modeNote,
+  sourceSelector,
+  type PolicyTarget,
+} from './PolicyTargetPicker';
 import { describePolicy } from './policyLanguage';
 import { diffPolicies, type PolicyFieldChange } from './policyDiff';
 
@@ -128,7 +135,7 @@ function levelOptions(policy: Policy) {
 
 export default function PolicyBuilderPage() {
   const { id } = useParams();
-  const [params] = useSearchParams();
+  const [params, setParams] = useSearchParams();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const isNew = !id;
@@ -164,10 +171,33 @@ export default function PolicyBuilderPage() {
   // exists precisely so it does not have to.
   const [engine, setEngine] = useState<Engine | null>(null);
   const { data: engines } = useSourceEngines();
+
+  // Where a new policy runs, chosen on the page before the form: `source` is
+  // a connection's id or `any`, `mode` how it will be enforced. Both live in
+  // the address, so a reload or Back lands on the same answer. The mode is not
+  // written into the document -- PolicyTargetPicker says why.
+  const sourceParam = params.get('source');
+  const modeParam = MODES.some((entry) => entry.mode === params.get('mode'))
+    ? (params.get('mode') as EnforcementMode)
+    : null;
+  const { data: sources } = useQuery({
+    queryKey: ['sources'],
+    queryFn: fetchSources,
+    enabled: isNew && Boolean(sourceParam) && sourceParam !== 'any',
+    retry: false,
+  });
+  const target =
+    sourceParam && sourceParam !== 'any'
+      ? (sources?.find((entry) => entry.id === sourceParam) ?? null)
+      : null;
+
   useEffect(() => {
+    // A connection fixes the engine, so its menu has nothing left to choose.
+    const fixed = target?.engine;
     const first = engines?.[0]?.id;
-    if (first) setEngine((current) => current ?? first);
-  }, [engines]);
+    if (fixed) setEngine(fixed);
+    else if (first) setEngine((current) => current ?? first);
+  }, [engines, target?.engine]);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [assistNote, setAssistNote] = useState<string | null>(() =>
     suggested
@@ -252,11 +282,17 @@ export default function PolicyBuilderPage() {
     }
   };
 
+  // Whether a document NokRak drafted was taken into this form. Taking it
+  // empties the store, so this is what remembers that the form is already
+  // written and has no need of the page asking where it runs.
+  const [tookDraft, setTookDraft] = useState(false);
+
   useEffect(() => {
     if (!drafted) {
       return;
     }
     takePolicy();
+    setTookDraft(true);
     loadDrafted(drafted.text);
     // loadDrafted only calls state setters, which never change.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -290,6 +326,19 @@ export default function PolicyBuilderPage() {
       setLoaded(existing);
     }
   }, [existing]);
+
+  useEffect(() => {
+    // Covers the connection's assets and nothing else, until the author writes
+    // a selector of their own -- which a later change of connection leaves
+    // alone rather than throwing away.
+    if (!isNew || sourceParam === null) return;
+    setDraft((current) => {
+      const empty = !current.selector || Object.keys(current.selector).length === 0;
+      if (!empty && !isSourceSelector(current.selector)) return current;
+      if (sourceParam === 'any') return empty ? current : { ...current, selector: {} };
+      return target ? { ...current, selector: sourceSelector(target) } : current;
+    });
+  }, [isNew, sourceParam, target]);
 
   const { data: vocabulary } = useQuery({
     queryKey: ['governance-vocabulary'],
@@ -372,6 +421,32 @@ export default function PolicyBuilderPage() {
       <p className="tw:rounded-lg tw:border tw:border-error tw:bg-error-primary tw:p-4 tw:text-sm tw:text-error-primary">
         {apiErrorMessage(loadError, 'Could not load this policy.')}
       </p>
+    );
+  }
+
+  // A new policy is asked where it runs first. Not one that arrives already
+  // written -- from an access request or from NokRak -- which carries its
+  // answer in its selector, and would be held behind a page it does not need.
+  if (isNew && !suggested && !drafted && !tookDraft && !modeParam) {
+    return (
+      <PolicyTargetPicker
+        initial={{
+          kind: draft.policyType,
+          sourceId: sourceParam === 'any' ? null : sourceParam,
+          mode: modeParam,
+        }}
+        onPick={(picked: PolicyTarget) => {
+          if (picked.kind !== draft.policyType) {
+            // As the Create menu would have opened it: a data policy on the
+            // organisation, a subscription on the table.
+            patch({
+              policyType: picked.kind,
+              scopeLevel: picked.kind === 'DATA' ? 'ORG' : 'TABLE',
+            });
+          }
+          setParams({ kind: picked.kind, source: picked.source?.id ?? 'any', mode: picked.mode });
+        }}
+      />
     );
   }
 
@@ -668,6 +743,30 @@ export default function PolicyBuilderPage() {
             <p className="tw:mt-0.5 tw:text-sm tw:text-tertiary">
               Written once; enforced the same wherever it runs.
             </p>
+            {isNew && modeParam && (
+              <div
+                className="tw:mt-2 tw:flex tw:flex-wrap tw:items-center tw:gap-1.5"
+                data-testid="policy-target">
+                <Badge color="blue" size="sm" type="pill-color">
+                  {target
+                    ? `${target.name} · ${engineLabel(engines, target.engine)}`
+                    : 'Every connection'}
+                </Badge>
+                <Badge color="purple" size="sm" type="pill-color">
+                  {MODES.find((entry) => entry.mode === modeParam)?.title}
+                </Badge>
+                <button
+                  className="tw:cursor-pointer tw:text-sm tw:font-medium tw:text-brand-secondary tw:hover:underline"
+                  onClick={() => {
+                    const next = new URLSearchParams(params);
+                    next.delete('mode');
+                    setParams(next);
+                  }}
+                  type="button">
+                  Change
+                </button>
+              </div>
+            )}
           </div>
         </div>
         <div className="tw:flex tw:flex-wrap tw:items-center tw:gap-2">
@@ -887,18 +986,29 @@ export default function PolicyBuilderPage() {
               <h2 className="tw:text-sm tw:font-semibold tw:text-primary">
                 Where it can be enforced
               </h2>
-              <Select
-                ariaLabel="Engine"
-                className="tw:w-32 tw:py-1"
-                onChange={(next) => setEngine(next as Engine)}
-                options={engineOptions(engines)}
-                value={engine ?? ''}
-              />
+              {target ? (
+                <Badge color="blue" size="sm" type="pill-color">
+                  {engineLabel(engines, target.engine)}
+                </Badge>
+              ) : (
+                <Select
+                  ariaLabel="Engine"
+                  className="tw:w-32 tw:py-1"
+                  onChange={(next) => setEngine(next as Engine)}
+                  options={engineOptions(engines)}
+                  value={engine ?? ''}
+                />
+              )}
             </div>
             <p className="tw:mt-2 tw:text-xs tw:text-tertiary">
               The mode is chosen per data source and can be overridden per asset.
               This says which of them would carry this policy whole.
             </p>
+            {isNew && modeParam && modeNote(target, modeParam) && (
+              <p className="tw:mt-2 tw:text-xs tw:text-warning-primary">
+                {modeNote(target, modeParam)}
+              </p>
+            )}
             <div className="tw:mt-3 tw:flex tw:flex-col tw:gap-3">
               {modes.map((note) => {
                 const mode = MODES.find((entry) => entry.mode === note.mode)!;
@@ -914,13 +1024,26 @@ export default function PolicyBuilderPage() {
                     : note.support === 'partial'
                       ? 'tw:text-warning-primary'
                       : 'tw:text-error-primary';
+                const picked = isNew && note.mode === modeParam;
                 return (
-                  <div key={note.mode}>
+                  <div
+                    className={
+                      picked
+                        ? 'tw:-mx-2 tw:rounded-lg tw:border tw:border-brand tw:bg-brand-primary tw:p-2'
+                        : undefined
+                    }
+                    data-chosen={picked || undefined}
+                    key={note.mode}>
                     <div className="tw:flex tw:items-center tw:gap-2">
                       <Icon className={`tw:size-4 ${tone}`} />
                       <span className="tw:text-sm tw:font-medium tw:text-primary">
                         {mode.title}
                       </span>
+                      {picked && (
+                        <Badge color="brand" size="sm" type="pill-color">
+                          Chosen
+                        </Badge>
+                      )}
                     </div>
                     <p className="tw:mt-1 tw:text-xs tw:text-tertiary">
                       {mode.summary}

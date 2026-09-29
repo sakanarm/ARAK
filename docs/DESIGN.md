@@ -240,7 +240,7 @@ conf/dac.yml                 config เดียวที่ commit — ใช�
 
 | # | Feature | สถานะ |
 |---|---|---|
-| FR-4.1 | Row-Level Security: เทียบ column กับ user attribute, `IN` จาก multi-value, entitlement table join, `ALWAYS FALSE` · **ค่าที่เห็นได้มาจาก mapping table** (`LOOKUP` — department AA → division A · key หลายตัว AND กัน · `SUBQUERY` join ใน query บน source เดียวกัน / `READ_VALUES` อ่านค่าก่อน ข้าม source ได้ ≤ 1,000 ค่า) | ✅ schema · ⬜ compiler · `LOOKUP` ✅ 2026-09-30 ผ่าน query API เท่านั้น (ข้อ CT) — secure view ได้ 0 แถว · native ไม่รองรับ |
+| FR-4.1 | Row-Level Security: เทียบ column กับ user attribute, `IN` จาก multi-value, entitlement table join, `ALWAYS FALSE` · **ค่าที่เห็นได้มาจาก mapping table** (`LOOKUP` — department AA → division A · key หลายตัว AND กัน · `SUBQUERY` join ใน query บน source เดียวกัน / `READ_VALUES` อ่านค่าก่อน ข้าม source ได้ ≤ 1,000 ค่า) | ✅ schema · ⬜ compiler · `LOOKUP` ✅ 2026-09-30 ผ่าน query API เท่านั้น (ข้อ CT) — secure view ได้ 0 แถว · native ไม่รองรับ · `LOOKUP` เลือก column ด้วย tag ได้ ✅ 2026-09-30 (ข้อ CU) |
 | FR-4.2 | เลือก column ที่จะ mask ด้วย **ทุก facet** (name/pattern, classification, tag, glossary, term, dataType, custom property) + ผสม AND/NOT | ✅ |
 | FR-4.3 | Cell masking = column mask + row condition | ✅ schema (`ROW_DEPENDENT`) · ⬜ compiler |
 | FR-4.4 | Masking library: `NULLIFY`, `CONSTANT`, `HASH` (SHA-256 + salt ต่อ column), `PARTIAL`, `REGEX_REPLACE`, `ROUNDING`, `CONDITIONAL` | ✅ schema + `MaskStrength` · ⬜ SQL |
@@ -519,7 +519,7 @@ login ด้วย **PAT / service account** (M14) ไม่ใช่รหั�
 | **M1** | OM connector: REST client · entity mapper ครบทุก governance object · FQN mapping · full crawl · **webhook + poller** · `asset_facet` + effective facet · nightly reconcile · **Catalog UI** | 4 wk | 🚧 **~95%** — เหลือ FR-1.6 (reconcile กับ JDBC) · FR-1.7 push-back (ผู้ใช้สั่ง read-only) |
 | **M2** | Entra OIDC · Graph sync · LocalProvider · OmTeamProvider · AttributeResolver · app RBAC | 2 wk | 🚧 **~55%** — local sign-in + local account + app role จาก UI + **เปลี่ยนรหัสผ่านเอง / บังคับเปลี่ยนหลัง admin ตั้ง (ข้อ CG)** · ยังไม่มี Entra / Graph / write API ของ attribute |
 | **M3** | Policy IR · AssetSelector resolver + `policy_binding` materializer · SubjectRule evaluator · layered composer · ConflictResolver · decision cache · Simulator | 5 wk | 🚧 **~97%** — เหลือ ANTLR grammar ของ `expr` |
-| **M4** | Policy Authoring UI (global + local builder, data policy builder, หน้า effective policy, view-as-user, impact analysis) | 4 wk | ✅ **เสร็จ** |
+| **M4** | Policy Authoring UI (global + local builder, data policy builder, หน้า effective policy, view-as-user, impact analysis) | 4 wk | ✅ **เสร็จ** · หน้า *Where it runs* ก่อนฟอร์ม (kind · connection · โหมด) ✅ 2026-09-30 (ข้อ CU) |
 | **M5** | **5.1.2 Secure View** — ViewCompiler + dialect · `row_entitlement` maintainer · `DbPrincipalProvisioner` · cutover helper · dry-run/rollback · golden-file + Testcontainers | 4 wk | 🚧 **~85%** |
 | **M6** | **5.1.1 Push config** — PG `CREATE POLICY` + column GRANT + `anon` · MSSQL `CREATE SECURITY POLICY` + granular UNMASK + `CREATE USER FROM EXTERNAL PROVIDER` · capability matrix · **ไม่ทำ DDM** (FR-6.2a) | 3 wk | ⏸️ **ON HOLD** (ผู้ใช้สั่ง 2026-09-24) |
 | **M7** | **5.2a Query API** — JSqlParser rewrite · table resolution (CTE/sub-query/`SELECT *`) · fail-closed · stream · row limit/timeout · direct-access detector | 3 wk | ✅ — direct-access detector ✅ (FR-6.3.1) · result cache ✅ (FR-6.3) |
