@@ -104,6 +104,19 @@ const FEATURES: Feature[] = [
   },
   {
     used: (policy) =>
+      (policy.data?.rowFilters ?? []).some((filter) => filter.kind === 'LOOKUP'),
+    // The allowed values depend on the reader and on a mapping table only the
+    // query API reads as that reader. Anywhere else could only guess, and a
+    // guess either leaks rows or loses the filter.
+    gap: {
+      SECURE_VIEW: () =>
+        'A row filter that reads a mapping table cannot be built into a view per reader, so the view shows no rows to anybody. Enforce the table through the query API.',
+      NATIVE_CONFIG: () =>
+        'A row filter that reads a mapping table is not pushed into the source. Enforce the table through the query API.',
+    },
+  },
+  {
+    used: (policy) =>
       (policy.data?.columnRules ?? []).some((rule) => rule.action === 'MASK'),
     gap: {
       NATIVE_CONFIG: (engine) => NATIVE_MASK_NOTES[engine] ?? UNKNOWN_ENGINE_MASK_NOTE,

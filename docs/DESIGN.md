@@ -240,7 +240,7 @@ conf/dac.yml                 config เดียวที่ commit — ใช�
 
 | # | Feature | สถานะ |
 |---|---|---|
-| FR-4.1 | Row-Level Security: เทียบ column กับ user attribute, `IN` จาก multi-value, entitlement table join, `ALWAYS FALSE` | ✅ schema · ⬜ compiler |
+| FR-4.1 | Row-Level Security: เทียบ column กับ user attribute, `IN` จาก multi-value, entitlement table join, `ALWAYS FALSE` · **ค่าที่เห็นได้มาจาก mapping table** (`LOOKUP` — department AA → division A · key หลายตัว AND กัน · `SUBQUERY` join ใน query บน source เดียวกัน / `READ_VALUES` อ่านค่าก่อน ข้าม source ได้ ≤ 1,000 ค่า) | ✅ schema · ⬜ compiler · `LOOKUP` ✅ 2026-09-30 ผ่าน query API เท่านั้น (ข้อ CT) — secure view ได้ 0 แถว · native ไม่รองรับ |
 | FR-4.2 | เลือก column ที่จะ mask ด้วย **ทุก facet** (name/pattern, classification, tag, glossary, term, dataType, custom property) + ผสม AND/NOT | ✅ |
 | FR-4.3 | Cell masking = column mask + row condition | ✅ schema (`ROW_DEPENDENT`) · ⬜ compiler |
 | FR-4.4 | Masking library: `NULLIFY`, `CONSTANT`, `HASH` (SHA-256 + salt ต่อ column), `PARTIAL`, `REGEX_REPLACE`, `ROUNDING`, `CONDITIONAL` | ✅ schema + `MaskStrength` · ⬜ SQL |

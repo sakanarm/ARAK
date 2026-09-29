@@ -3,8 +3,10 @@ import { Button } from '@openmetadata/ui-core-components/components/base/buttons
 import type {
   ColumnRule,
   DataPolicy,
+  LookupKey,
   MaskingSpec,
   RowFilter,
+  RowLookup,
 } from '../../generated/entity/policy/policy';
 import type { AttributeVocabulary, Vocabulary } from '../../api/governance';
 import { Field, Select, TextField } from './controls';
@@ -37,6 +39,11 @@ const ROW_FILTER_KINDS: { value: RowFilter['kind']; label: string; help: string 
     help: 'For mappings too irregular to express as a comparison. The platform maintains the entitlement rows from the same decision, in every mode.',
   },
   {
+    value: 'LOOKUP',
+    label: 'Column is one of the values a mapping table gives them',
+    help: 'For access kept in a table of its own: department AA sees division A because a mapping row says so. Whoever can change that mapping table decides who sees what, so govern it like this policy. Enforced through the query API only; a secure view over the table shows no rows.',
+  },
+  {
     value: 'ALWAYS_FALSE',
     label: 'No rows at all',
     help: 'The table keeps its shape and loses its contents. Useful when a schema has to stay discoverable.',
@@ -45,6 +52,23 @@ const ROW_FILTER_KINDS: { value: RowFilter['kind']; label: string; help: string 
     value: 'RAW_PREDICATE',
     label: 'Raw SQL predicate',
     help: 'The escape hatch. Dialect-checked, never interpolated with anything a caller sent, and it bypasses the validation the other kinds get.',
+  },
+];
+
+const LOOKUP_MODES: {
+  value: NonNullable<RowLookup['mode']>;
+  label: string;
+  help: string;
+}[] = [
+  {
+    value: 'SUBQUERY',
+    label: 'Join it into the query',
+    help: 'The source reads the mapping as part of each query, so a change to it counts at once and a person may map to any number of values. The mapping table has to be on the same data source as the table it filters.',
+  },
+  {
+    value: 'READ_VALUES',
+    label: 'Read the values first',
+    help: 'ARAK reads the allowed values when the query runs and filters on that list, so the mapping table may be on another data source. Refused when a person maps to more than 1,000 values, and only for text, whole-number, decimal, UUID and date columns.',
   },
 ];
 
@@ -206,6 +230,16 @@ function comparesColumn(kind: RowFilter['kind']): boolean {
   return kind === 'ATTRIBUTE_COMPARE' || kind === 'IN_LIST';
 }
 
+/** A mapping to fill in: one key, joined into the query. */
+function blankLookup(attributeNames: string[]): RowLookup {
+  return {
+    table: '',
+    keys: [{ column: '', userAttribute: attributeNames[0] ?? '' }],
+    valueColumn: '',
+    mode: 'SUBQUERY',
+  };
+}
+
 function RowFilterRow({
   filter,
   onChange,
@@ -221,6 +255,18 @@ function RowFilterRow({
 }) {
   const kind = ROW_FILTER_KINDS.find((entry) => entry.value === filter.kind);
   const byTag = filter.columns !== undefined;
+  const lookup = filter.lookup ?? blankLookup(attributeNames);
+  const mode = LOOKUP_MODES.find((entry) => entry.value === (lookup.mode ?? 'SUBQUERY'));
+
+  function patchLookup(next: Partial<RowLookup>) {
+    onChange({ ...filter, lookup: { ...lookup, ...next } });
+  }
+
+  function patchKey(index: number, next: Partial<LookupKey>) {
+    const keys = [...lookup.keys] as RowLookup['keys'];
+    keys[index] = { ...keys[index], ...next };
+    patchLookup({ keys });
+  }
 
   return (
     <div className="tw:rounded-lg tw:border tw:border-secondary tw:p-4">
@@ -232,10 +278,14 @@ function RowFilterRow({
             const nextKind = next as RowFilter['kind'];
             // A selector on a kind that compares no column would be ignored,
             // and the server refuses it rather than let it look like it works.
+            const moved: RowFilter = comparesColumn(nextKind)
+              ? { ...filter, kind: nextKind }
+              : { ...filter, kind: nextKind, columns: undefined };
             onChange(
-              comparesColumn(nextKind)
-                ? { ...filter, kind: nextKind }
-                : { ...filter, kind: nextKind, columns: undefined }
+              nextKind === 'LOOKUP'
+                ? { ...moved, column: filter.column ?? '', lookup }
+                : // A mapping left on another kind would be saved and never read.
+                  { ...moved, lookup: undefined }
             );
           }}
           options={ROW_FILTER_KINDS.map((entry) => ({
@@ -322,6 +372,34 @@ function RowFilterRow({
           />
         )}
 
+        {filter.kind === 'LOOKUP' && (
+          <>
+            <TextField
+              ariaLabel="Column"
+              className="tw:w-44"
+              onChange={(next) => onChange({ ...filter, column: next })}
+              placeholder="division"
+              value={filter.column ?? ''}
+            />
+            <span className="tw:text-sm tw:text-tertiary">is one of the</span>
+            <TextField
+              ariaLabel="Value column"
+              className="tw:w-40"
+              onChange={(next) => patchLookup({ valueColumn: next })}
+              placeholder="division"
+              value={lookup.valueColumn}
+            />
+            <span className="tw:text-sm tw:text-tertiary">values in</span>
+            <TextField
+              ariaLabel="Mapping table"
+              className="tw:w-96 tw:font-mono"
+              onChange={(next) => patchLookup({ table: next })}
+              placeholder="service.database.schema.table"
+              value={lookup.table}
+            />
+          </>
+        )}
+
         {filter.kind === 'RAW_PREDICATE' && (
           <TextField
             ariaLabel="Predicate"
@@ -353,6 +431,84 @@ function RowFilterRow({
             the column differently. A table without such a column shows no rows;
             a table with two is filtered on both.
           </p>
+        </div>
+      )}
+      {filter.kind === 'LOOKUP' && (
+        <div className="tw:mt-3 tw:flex tw:flex-col tw:gap-2">
+          {lookup.keys.map((key, index) => (
+            <div className="tw:flex tw:flex-wrap tw:items-center tw:gap-2" key={index}>
+              <span className="tw:w-12 tw:text-sm tw:text-tertiary">
+                {index === 0 ? 'where' : 'and'}
+              </span>
+              <TextField
+                ariaLabel={`Mapping column ${index + 1}`}
+                className="tw:w-44"
+                onChange={(next) => patchKey(index, { column: next })}
+                placeholder="department"
+                value={key.column}
+              />
+              <span className="tw:text-sm tw:text-tertiary">is one of their</span>
+              <TextField
+                ariaLabel={`Their attribute ${index + 1}`}
+                className="tw:w-52"
+                list="row-filter-attributes"
+                onChange={(next) => patchKey(index, { userAttribute: next })}
+                placeholder="department"
+                value={key.userAttribute}
+              />
+              {lookup.keys.length > 1 && (
+                <Button
+                  aria-label={`Remove key ${index + 1}`}
+                  color="tertiary"
+                  iconLeading={Trash01}
+                  onPress={() =>
+                    patchLookup({
+                      keys: lookup.keys.filter((_, i) => i !== index) as RowLookup['keys'],
+                    })
+                  }
+                  size="sm"
+                />
+              )}
+            </div>
+          ))}
+          <datalist id="row-filter-attributes">
+            {attributeNames.map((name) => (
+              <option key={name} value={name} />
+            ))}
+          </datalist>
+          <div>
+            <Button
+              color="secondary"
+              iconLeading={Plus}
+              onPress={() =>
+                patchLookup({ keys: [...lookup.keys, { column: '', userAttribute: '' }] })
+              }
+              size="sm">
+              Add a key
+            </Button>
+          </div>
+          <div className="tw:flex tw:flex-wrap tw:items-center tw:gap-2">
+            <span className="tw:text-sm tw:text-tertiary">The mapping is</span>
+            <Select
+              ariaLabel="How the mapping is read"
+              className="tw:w-64"
+              onChange={(next) =>
+                patchLookup({ mode: next as NonNullable<RowLookup['mode']> })
+              }
+              options={LOOKUP_MODES.map((entry) => ({
+                value: entry.value,
+                label: entry.label,
+              }))}
+              value={lookup.mode ?? 'SUBQUERY'}
+            />
+          </div>
+          <p className="tw:text-xs tw:text-tertiary">
+            Every key must match for a mapping row to count. A person without a
+            value for one of the attributes sees no rows. The database compares
+            the values, so write them in the mapping exactly as the tables hold
+            them, letter case included.
+          </p>
+          {mode && <p className="tw:text-xs tw:text-tertiary">{mode.help}</p>}
         </div>
       )}
       {kind && <p className="tw:mt-2 tw:text-xs tw:text-tertiary">{kind.help}</p>}

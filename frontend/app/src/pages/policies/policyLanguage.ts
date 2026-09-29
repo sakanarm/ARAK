@@ -183,6 +183,17 @@ export function describeRowFilter(filter: RowFilter): string {
       return `only rows whose ${rowFilterColumn(filter)} is one of their ${filter.userAttribute} values`;
     case 'ENTITLEMENT_JOIN':
       return `only rows they are entitled to, matched on ${filter.entitlementKey}`;
+    case 'LOOKUP': {
+      const lookup = filter.lookup;
+      if (!lookup?.table) {
+        return `no rows until a mapping table is chosen for ${rowFilterColumn(filter)}`;
+      }
+      const keys = (lookup.keys ?? [])
+        .map((key) => `${key.column} is one of their ${key.userAttribute}`)
+        .join(' and ');
+      const read = lookup.mode === 'READ_VALUES' ? ', read when the query runs' : '';
+      return `only rows whose ${rowFilterColumn(filter)} is one of the ${lookup.valueColumn} values in ${lookup.table} where ${keys}${read}`;
+    }
     case 'RAW_PREDICATE':
       return `only rows where ${filter.rawPredicate}`;
     default:

@@ -166,3 +166,29 @@ test('a row filter that picks its column by tag says so, not "undefined"', () =>
     describeRowFilter({ kind: 'IN_LIST', column: 'region', userAttribute: 'regions' })
   ).toBe('only rows whose region is one of their regions values');
 });
+
+test('a row filter that reads a mapping table names the mapping and its keys', () => {
+  const lookup = {
+    table: 'warehouse.sales.ref.department_division',
+    keys: [
+      { column: 'department', userAttribute: 'department' },
+      { column: 'region', userAttribute: 'region' },
+    ] as [{ column: string; userAttribute: string }, { column: string; userAttribute: string }],
+    valueColumn: 'division',
+  };
+  expect(describeRowFilter({ kind: 'LOOKUP', column: 'division', lookup })).toBe(
+    'only rows whose division is one of the division values in' +
+      ' warehouse.sales.ref.department_division where department is one of their' +
+      ' department and region is one of their region'
+  );
+  expect(
+    describeRowFilter({
+      kind: 'LOOKUP',
+      column: 'division',
+      lookup: { ...lookup, mode: 'READ_VALUES' },
+    })
+  ).toMatch(/, read when the query runs$/);
+  expect(describeRowFilter({ kind: 'LOOKUP', column: 'division' })).toBe(
+    'no rows until a mapping table is chosen for division'
+  );
+});

@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.mfec.dac.schema.api.MaskingSpec;
 import com.mfec.dac.schema.api.PolicyDecision;
 import com.mfec.dac.schema.api.ResolvedColumnMask;
+import com.mfec.dac.schema.api.ResolvedLookup;
 import com.mfec.dac.schema.api.ResolvedRowPredicate;
 import com.mfec.dac.schema.api.Unenforceable;
 import java.io.IOException;
@@ -247,6 +248,38 @@ class ViewCompilerTest {
             u -> {
               assertThat(u.getSuggestedMode()).isEqualTo(Unenforceable.SuggestedMode.PROXY);
               assertThat(u.getDetail()).contains("salary").contains("proxy");
+            });
+  }
+
+  @Test
+  void aRowFilterThatReadsAMappingTableClosesTheViewAndPointsAtTheProxy() {
+    PolicyDecision mapped =
+        new PolicyDecision()
+            .withRowPredicates(
+                List.of(
+                    new ResolvedRowPredicate()
+                        .withKind(ResolvedRowPredicate.Kind.LOOKUP)
+                        .withColumn("branch_code")
+                        .withOperator(ResolvedRowPredicate.FacetOperator.IN)
+                        .withLookup(
+                            new ResolvedLookup()
+                                .withTable("warehouse.sales.ref.region_branch")
+                                .withValueColumn("branch_code")
+                                .withMode(ResolvedLookup.Mode.SUBQUERY))
+                        .withSourcePolicyId(UUID.fromString("33333333-3333-3333-3333-333333333333"))));
+
+    ViewCompiler.Plan plan =
+        new ViewCompiler(new PostgresDialect())
+            .compile(List.of(mapped), target(new PostgresDialect()));
+
+    assertThat(plan.viewSql()).contains("(1 = 0)");
+    assertThat(plan.entitlementKeys()).isEmpty();
+    assertThat(plan.unenforceable())
+        .singleElement()
+        .satisfies(
+            u -> {
+              assertThat(u.getSuggestedMode()).isEqualTo(Unenforceable.SuggestedMode.PROXY);
+              assertThat(u.getDetail()).contains("region_branch").contains("proxy");
             });
   }
 

@@ -662,6 +662,59 @@ them. A table with **several** is filtered on each, so a row must pass every
 one (a transfer with from_branch and to_branch shows only transfers inside the
 person's own branch). A filter uses one way or the other, not both.
 
+**Rows given by a mapping table.** Sometimes what a person may see is not an
+attribute of theirs but a row in another table. A table holds sales by
+division; the person is in department AA; a mapping table says department AA
+belongs to division A. The kind *Column is one of the values a mapping table
+gives them* writes exactly that:
+
+- **Column**: the column of the filtered table, for example division. Pick it
+  by name; a mapping filter cannot pick its column by tag yet.
+- **Value column** and **Mapping table**: which column of which table holds
+  the values a person may see, for example division in
+  warehouse.sales.ref.department_division. Write the table's full name
+  (service.database.schema.table). It must be in the catalog: saving a filter
+  whose mapping table, or one of its columns, is not there is refused.
+- **Keys**: how a person is matched to rows of the mapping. Each key compares a
+  column of the mapping with one of the person's attributes (department with
+  their department). With several keys, a mapping row counts only when every
+  key matches. A person without a value for one of the attributes sees no rows.
+
+It is read in one of two ways, chosen under *The mapping is*:
+
+- **Join it into the query**: the source reads the mapping as part of each
+  query, so a change to the mapping counts from the next query, and a person
+  may map to any number of values. The mapping table has to be on the same data
+  source, and in the same database, as the table it filters; otherwise the
+  query is refused with a message that says so.
+- **Read the values first**: ARAK reads the person's values from the mapping
+  when the query runs, then filters on that list. The mapping may be on another
+  data source. The query is refused, not cut short, when a person maps to more
+  than 1,000 values, and when the value column is not text, a whole number, a
+  decimal, a UUID or a date. The values read go into that one query only: they
+  are not kept, and no assistant is given them. The rewritten SQL the person
+  sees carries them, since they are the values that person may see.
+
+Things to know:
+
+- **The mapping table decides access.** Its own policies do not apply when ARAK
+  reads it for a filter, and whoever can change it decides who sees what. Keep
+  it where only the people who could write this policy can change it.
+- **The database compares the values**, so write them in the mapping exactly as
+  the tables hold them. Letter case follows each column's own rules: on most
+  columns it counts, on a case-insensitive one (citext, or a case-insensitive
+  SQL Server collation) it does not.
+- **A mapping that is missing, moved or unreadable refuses the query** rather
+  than showing no rows, so the fault reaches someone who can report it. A
+  person the mapping gives nothing to sees no rows.
+- **One step only.** A mapping from department to division to region is two
+  steps; put them in a view that gives department and region side by side, and
+  map on the view.
+- **Query API only.** A secure view over the table shows no rows to anybody,
+  and native source config does not carry the filter; the builder says so when
+  you choose a mode. The simulator names the mapping table and the person's own
+  key values, never the values the mapping gives them.
+
 ## How policies combine (conflicts)
 
 When several policies apply to one table:

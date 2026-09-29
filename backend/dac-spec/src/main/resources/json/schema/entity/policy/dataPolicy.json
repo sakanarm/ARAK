@@ -35,16 +35,63 @@
       "required": ["function"],
       "additionalProperties": false
     },
+    "lookupKey": {
+      "description": "One link from the person to the mapping table: rows of the mapping table whose column holds one of the person's values of userAttribute.",
+      "type": "object",
+      "properties": {
+        "column": {
+          "description": "Column of the mapping table, for example department.",
+          "type": "string",
+          "minLength": 1
+        },
+        "userAttribute": {
+          "description": "The person's attribute matched against that column, for example department. A person without a value for it sees no rows.",
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": ["column", "userAttribute"],
+      "additionalProperties": false
+    },
+    "rowLookup": {
+      "description": "LOOKUP: the values a person may see are read from a mapping table instead of being held as a user attribute. The mapping rows whose keys match the person give the allowed values in valueColumn, and the filtered column must hold one of them. Whoever can change the mapping table decides who sees what, so it must be governed like the policy itself.",
+      "type": "object",
+      "properties": {
+        "table": {
+          "description": "The mapping table, as service.database.schema.table.",
+          "$ref": "../../type/basic.json#/definitions/fullyQualifiedName"
+        },
+        "keys": {
+          "description": "ANDed: a mapping row counts only when every key matches the person.",
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/definitions/lookupKey" }
+        },
+        "valueColumn": {
+          "description": "Column of the mapping table holding the allowed values, for example division.",
+          "type": "string",
+          "minLength": 1
+        },
+        "mode": {
+          "description": "SUBQUERY: the mapping is joined into the query as a subquery, so the database reads it; the mapping table must be on the same data source as the filtered table. READ_VALUES: ARAK reads the allowed values first and filters on the list, so the mapping table may be on another source; refused when the list is too long.",
+          "type": "string",
+          "enum": ["SUBQUERY", "READ_VALUES"],
+          "default": "SUBQUERY"
+        }
+      },
+      "required": ["table", "keys", "valueColumn"],
+      "additionalProperties": false
+    },
     "rowFilter": {
       "type": "object",
       "properties": {
         "kind": {
           "type": "string",
-          "enum": ["ATTRIBUTE_COMPARE", "IN_LIST", "ENTITLEMENT_JOIN", "ALWAYS_FALSE", "RAW_PREDICATE"]
+          "enum": ["ATTRIBUTE_COMPARE", "IN_LIST", "ENTITLEMENT_JOIN", "ALWAYS_FALSE", "RAW_PREDICATE", "LOOKUP"]
         },
         "column": { "type": "string" },
         "columns": {
-          "description": "ATTRIBUTE_COMPARE and IN_LIST: the column compared, chosen by facet instead of by name, for example the column tagged Department. Resolved against the table's columns when the decision is made, so one policy covers tables whose column has a different name in each. Use this or column, not both. A table with no matching column shows no rows; a table with several filters on every one of them.",
+          "description": "ATTRIBUTE_COMPARE, IN_LIST and LOOKUP: the column compared, chosen by facet instead of by name, for example the column tagged Department. Resolved against the table's columns when the decision is made, so one policy covers tables whose column has a different name in each. Use this or column, not both. A table with no matching column shows no rows; a table with several filters on every one of them.",
           "$ref": "../../type/facet.json#/definitions/assetSelector"
         },
         "operator": { "$ref": "../../type/facet.json#/definitions/facetOperator" },
@@ -59,6 +106,10 @@
         "rawPredicate": {
           "description": "RAW_PREDICATE: escape hatch, dialect-checked and never interpolated with user input. Authoring it requires elevated rights because it bypasses the IR the other kinds are validated against.",
           "type": "string"
+        },
+        "lookup": {
+          "description": "LOOKUP: where the allowed values of the column are read from.",
+          "$ref": "#/definitions/rowLookup"
         }
       },
       "required": ["kind"],
