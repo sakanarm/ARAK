@@ -11,6 +11,7 @@ import com.mfec.dac.schema.entity.policy.DataPolicy;
 import com.mfec.dac.schema.entity.policy.FacetCondition;
 import com.mfec.dac.schema.entity.policy.FacetCondition.FacetType;
 import com.mfec.dac.schema.entity.policy.Policy;
+import com.mfec.dac.schema.entity.policy.RowFilter;
 import com.mfec.dac.schema.entity.policy.SubjectRule;
 import java.util.List;
 import org.junit.jupiter.api.DisplayName;
@@ -143,5 +144,61 @@ class ConditionValuesTest {
     assertThatThrownBy(() -> ConditionValues.check(masking))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("A column rule");
+  }
+
+  private static Policy filtering(RowFilter filter) {
+    return selecting(tags(FacetOperator.CONTAINS).withValue("PII"))
+        .withData(new DataPolicy().withRowFilters(List.of(filter)));
+  }
+
+  private static RowFilter byTag(String tag) {
+    return new RowFilter()
+        .withKind(RowFilter.Kind.ATTRIBUTE_COMPARE)
+        .withOperator(FacetOperator.EQ)
+        .withUserAttribute("branch")
+        .withColumns(
+            new AssetSelector().withCondition(tags(FacetOperator.CONTAINS).withValue(tag)));
+  }
+
+  @Test
+  @DisplayName("a row filter that picks its column by tag is accepted")
+  void rowFilterColumnSelectorPasses() {
+    assertThatCode(() -> ConditionValues.check(filtering(byTag("Org.Branch"))))
+        .doesNotThrowAnyException();
+  }
+
+  @Test
+  @DisplayName("a row filter that names its column and also selects one is refused")
+  void rowFilterColumnAndSelectorIsRefused() {
+    assertThatThrownBy(
+            () -> ConditionValues.check(filtering(byTag("Org.Branch").withColumn("branch_code"))))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("give one of them");
+  }
+
+  @Test
+  @DisplayName("a row filter's column selector with no tag, or no condition, is refused")
+  void rowFilterEmptySelectorIsRefused() {
+    assertThatThrownBy(() -> ConditionValues.check(filtering(byTag(""))))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("A row filter's column selector")
+        .hasMessageContaining("no value to compare against");
+    assertThatThrownBy(
+            () ->
+                ConditionValues.check(
+                    filtering(byTag("Org.Branch").withColumns(new AssetSelector()))))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("picks no column");
+  }
+
+  @Test
+  @DisplayName("a column selector on a row filter that compares no column is refused")
+  void rowFilterSelectorOnOtherKindIsRefused() {
+    assertThatThrownBy(
+            () ->
+                ConditionValues.check(
+                    filtering(byTag("Org.Branch").withKind(RowFilter.Kind.ALWAYS_FALSE))))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("would be ignored");
   }
 }

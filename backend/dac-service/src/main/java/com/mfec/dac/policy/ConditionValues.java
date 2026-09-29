@@ -6,6 +6,7 @@ import com.mfec.dac.schema.entity.policy.AttributeCondition;
 import com.mfec.dac.schema.entity.policy.ColumnRule;
 import com.mfec.dac.schema.entity.policy.FacetCondition;
 import com.mfec.dac.schema.entity.policy.Policy;
+import com.mfec.dac.schema.entity.policy.RowFilter;
 import java.util.List;
 
 /**
@@ -22,7 +23,8 @@ import java.util.List;
  * rule, not a rule about everybody.
  *
  * <p>Checked on every condition the engine evaluates against a document: the
- * asset selector, each column rule's selector, and the subject's attributes.
+ * asset selector, each row filter's and column rule's selector, and the
+ * subject's attributes.
  */
 final class ConditionValues {
 
@@ -31,6 +33,13 @@ final class ConditionValues {
   /** @throws IllegalArgumentException naming the first condition that is wrong */
   static void check(Policy document) {
     selector(document.getSelector(), "The asset selector");
+    if (document.getData() != null && document.getData().getRowFilters() != null) {
+      for (RowFilter filter : document.getData().getRowFilters()) {
+        if (filter != null) {
+          rowFilterColumn(filter);
+        }
+      }
+    }
     if (document.getData() != null && document.getData().getColumnRules() != null) {
       for (ColumnRule rule : document.getData().getColumnRules()) {
         if (rule != null) {
@@ -49,6 +58,38 @@ final class ConditionValues {
         }
       }
     }
+  }
+
+  /**
+   * A row filter names its column or picks it by selector, not both. The
+   * engine filters on both when it is given both, which is safe but is not
+   * what anybody writing one of them meant; and a selector on a kind that
+   * compares no column would be ignored without a word.
+   */
+  private static void rowFilterColumn(RowFilter filter) {
+    if (filter.getColumns() == null) {
+      return;
+    }
+    if (filter.getKind() != RowFilter.Kind.ATTRIBUTE_COMPARE
+        && filter.getKind() != RowFilter.Kind.IN_LIST) {
+      throw new IllegalArgumentException(
+          "A row filter of kind " + (filter.getKind() == null ? "none" : filter.getKind().value())
+              + " compares no column, so a column selector on it would be ignored");
+    }
+    if (!blank(filter.getColumn())) {
+      throw new IllegalArgumentException(
+          "A row filter names its column and also picks it by selector; give one of them");
+    }
+    AssetSelector columns = filter.getColumns();
+    if (columns.getCondition() == null
+        && (columns.getAnd() == null || columns.getAnd().isEmpty())
+        && (columns.getOr() == null || columns.getOr().isEmpty())
+        && columns.getNot() == null) {
+      throw new IllegalArgumentException(
+          "A row filter's column selector is empty; it picks no column, so every table would"
+              + " show no rows");
+    }
+    selector(columns, "A row filter's column selector");
   }
 
   private static void selector(AssetSelector selector, String where) {

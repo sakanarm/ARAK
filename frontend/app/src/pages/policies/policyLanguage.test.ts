@@ -1,6 +1,11 @@
 import type { Policy } from '../../generated/entity/policy/policy';
 import { capabilities } from './enforcement';
-import { describePolicy, describeSelector, describeSubject } from './policyLanguage';
+import {
+  describePolicy,
+  describeRowFilter,
+  describeSelector,
+  describeSubject,
+} from './policyLanguage';
 
 /**
  * The readback is the only thing most approvers will actually read, so the two
@@ -146,4 +151,18 @@ test('a row-filter-only policy is carried whole by all three modes', () => {
   for (const note of capabilities(policy, 'POSTGRES')) {
     expect(note.support).toBe('full');
   }
+});
+
+test('a row filter that picks its column by tag says so, not "undefined"', () => {
+  expect(
+    describeRowFilter({
+      kind: 'ATTRIBUTE_COMPARE',
+      operator: 'eq',
+      userAttribute: 'branch',
+      columns: { condition: { facet: 'tags', operator: 'contains', value: 'Org.Branch' } },
+    })
+  ).toBe('only rows where the column (tag under Org.Branch) exactly their own branch');
+  expect(
+    describeRowFilter({ kind: 'IN_LIST', column: 'region', userAttribute: 'regions' })
+  ).toBe('only rows whose region is one of their regions values');
 });

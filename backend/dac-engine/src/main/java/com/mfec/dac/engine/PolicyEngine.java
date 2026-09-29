@@ -539,7 +539,7 @@ public final class PolicyEngine {
       if (data.getRowFilters() != null) {
         for (RowFilter filter : data.getRowFilters()) {
           if (filter != null) {
-            rowPredicates.add(resolve(filter, c.policy(), principal, reasons));
+            rowPredicates.addAll(resolve(filter, c.policy(), principal, asset, reasons));
           }
         }
       }
@@ -786,8 +786,12 @@ public final class PolicyEngine {
         + nullSafe(String.valueOf(predicate.getSourcePolicyId()));
   }
 
-  private ResolvedRowPredicate resolve(
-      RowFilter filter, Policy policy, Principal principal, List<DecisionReason> reasons) {
+  private List<ResolvedRowPredicate> resolve(
+      RowFilter filter,
+      Policy policy,
+      Principal principal,
+      AssetContext asset,
+      List<DecisionReason> reasons) {
 
     ResolvedRowPredicate out = new ResolvedRowPredicate().withSourcePolicyId(policy.getId());
     RowFilter.Kind kind = filter.getKind() == null ? RowFilter.Kind.ALWAYS_FALSE : filter.getKind();
@@ -807,24 +811,78 @@ public final class PolicyEngine {
                   "row filter needs the attribute "
                       + filter.getUserAttribute()
                       + ", which this principal does not have; no rows match"));
-          return out.withKind(ResolvedRowPredicate.Kind.ALWAYS_FALSE);
+          return List.of(out.withKind(ResolvedRowPredicate.Kind.ALWAYS_FALSE));
         }
-        return out.withKind(ResolvedRowPredicate.Kind.fromValue(kind.value()))
-            .withColumn(filter.getColumn())
-            .withOperator(filter.getOperator())
-            .withValues(new ArrayList<Object>(values));
+        List<String> columns = filteredColumns(filter, policy, asset, reasons);
+        if (columns.isEmpty()) {
+          return List.of(out.withKind(ResolvedRowPredicate.Kind.ALWAYS_FALSE));
+        }
+        List<ResolvedRowPredicate> predicates = new ArrayList<>(columns.size());
+        for (String column : columns) {
+          predicates.add(
+              new ResolvedRowPredicate()
+                  .withSourcePolicyId(policy.getId())
+                  .withKind(ResolvedRowPredicate.Kind.fromValue(kind.value()))
+                  .withColumn(column)
+                  .withOperator(filter.getOperator())
+                  .withValues(new ArrayList<Object>(values)));
+        }
+        return predicates;
       }
       case ENTITLEMENT_JOIN:
-        return out.withKind(ResolvedRowPredicate.Kind.ENTITLEMENT_JOIN)
-            .withColumn(filter.getColumn())
-            .withEntitlementKey(filter.getEntitlementKey());
+        return List.of(
+            out.withKind(ResolvedRowPredicate.Kind.ENTITLEMENT_JOIN)
+                .withColumn(filter.getColumn())
+                .withEntitlementKey(filter.getEntitlementKey()));
       case RAW_PREDICATE:
-        return out.withKind(ResolvedRowPredicate.Kind.RAW_PREDICATE)
-            .withRawPredicate(filter.getRawPredicate());
+        return List.of(
+            out.withKind(ResolvedRowPredicate.Kind.RAW_PREDICATE)
+                .withRawPredicate(filter.getRawPredicate()));
       case ALWAYS_FALSE:
       default:
-        return out.withKind(ResolvedRowPredicate.Kind.ALWAYS_FALSE);
+        return List.of(out.withKind(ResolvedRowPredicate.Kind.ALWAYS_FALSE));
     }
+  }
+
+  /**
+   * The columns a row filter compares on this table: the one it names, and
+   * every column its selector matches.
+   *
+   * <p>A selector is what lets one policy say "the column tagged Department"
+   * across tables that each call it something else. A table with no such
+   * column gets no rows rather than no filter: the policy meant to narrow the
+   * rows by that column, and a table that cannot be narrowed that way is not
+   * thereby open. A table with several gets a filter on each, ANDed like every
+   * other row filter, because choosing one of them would be a guess about which
+   * the author meant. An empty result means no rows.
+   */
+  private static List<String> filteredColumns(
+      RowFilter filter, Policy policy, AssetContext asset, List<DecisionReason> reasons) {
+    if (filter.getColumns() == null) {
+      // Named only: passed on as written, blank included, so the compiler
+      // refuses a filter with no column exactly as it did before selectors.
+      return Collections.singletonList(filter.getColumn());
+    }
+    List<String> out = new ArrayList<>();
+    for (ColumnContext column : asset.columns() == null ? List.<ColumnContext>of() : asset.columns()) {
+      if (SelectorMatcher.matches(filter.getColumns(), column)) {
+        out.add(column.name());
+      }
+    }
+    if (out.isEmpty()) {
+      reasons.add(
+          reason(
+              policy,
+              true,
+              "row filter compares the column its selector picks, and no column of this table "
+                  + "matches it; no rows match"));
+      return List.of();
+    }
+    String named = filter.getColumn();
+    if (named != null && !named.isBlank() && out.stream().noneMatch(named::equalsIgnoreCase)) {
+      out.add(0, named);
+    }
+    return out;
   }
 
   // -------------------------------------------------------------- utilities

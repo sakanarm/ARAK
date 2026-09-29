@@ -164,16 +164,23 @@ export function describeMasking(masking?: MaskingSpec): string {
   return word;
 }
 
+/** The column a row filter compares: named, or picked in each table by its tags. */
+function rowFilterColumn(filter: RowFilter): string {
+  return filter.columns
+    ? `the column (${describeSelector(filter.columns)})`
+    : `${filter.column}`;
+}
+
 export function describeRowFilter(filter: RowFilter): string {
   switch (filter.kind) {
     case 'ALWAYS_FALSE':
       return 'no rows at all — the shape of the table stays visible, the contents do not';
     case 'ATTRIBUTE_COMPARE':
-      return `only rows where ${filter.column} ${
+      return `only rows where ${rowFilterColumn(filter)} ${
         OPERATOR_WORDS[filter.operator ?? 'eq'] ?? filter.operator
       } their own ${filter.userAttribute}`;
     case 'IN_LIST':
-      return `only rows whose ${filter.column} is one of their ${filter.userAttribute} values`;
+      return `only rows whose ${rowFilterColumn(filter)} is one of their ${filter.userAttribute} values`;
     case 'ENTITLEMENT_JOIN':
       return `only rows they are entitled to, matched on ${filter.entitlementKey}`;
     case 'RAW_PREDICATE':
