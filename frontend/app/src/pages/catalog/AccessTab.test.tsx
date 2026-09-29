@@ -20,6 +20,34 @@ jest.mock('./AccessDecision', () => ({ AccessDecision: () => null }));
 // So is the panel about access outside ARAK.
 jest.mock('./DirectAccessPanel', () => ({ DirectAccessPanel: () => null }));
 
+// The register, as the grant list names a purpose by it.
+jest.mock('../../api/purposes', () => ({
+  ...jest.requireActual('../../api/purposes'),
+  usePurposes: () => ({
+    data: {
+      canEdit: false,
+      purposes: [
+        {
+          key: 'reporting',
+          name: 'Regular reporting',
+          description: null,
+          legalBasis: 'CONTRACT',
+          sensitiveAllowed: false,
+          owner: null,
+          maxDays: 30,
+          status: 'ACTIVE',
+          createdBy: 'system',
+          createdAt: '2026-09-28T03:00:00Z',
+          updatedBy: 'system',
+          updatedAt: '2026-09-28T03:00:00Z',
+        },
+      ],
+    },
+    isLoading: false,
+    isError: false,
+  }),
+}));
+
 const FQN = 'demo-pg.salesdb.sales.customer';
 
 function user(roles: string[], scopes: string[] = []): SessionUser {
@@ -48,6 +76,7 @@ function grant(id: string, over: Partial<GrantAccess> = {}): GrantAccess {
     grantedAt: '2026-09-24T03:00:00Z',
     live: true,
     effectiveFor: 1,
+    purpose: null,
     ...over,
   };
 }
@@ -172,6 +201,28 @@ describe('the Access tab', () => {
     expect(await screen.findByText('Quarter end', { exact: false })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Grant access' })).toBeNull();
     expect(screen.queryByRole('button', { name: /^Actions for/ })).toBeNull();
+  });
+
+  it('names what a grant was given for, by the register, and says when it was for nothing named', async () => {
+    renderAs(
+      user(['REQUESTER']),
+      access({
+        grants: [
+          grant('g-1', { principal: 'analyst_a', reason: 'Quarter end', purpose: 'reporting' }),
+          grant('g-2', { principal: 'analyst_b', reason: 'Year end' }),
+        ],
+      })
+    );
+
+    expect(await screen.findByText('Regular reporting')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Quarter end/ }));
+    const purpose = screen.getByText('Purpose').nextElementSibling as HTMLElement;
+    expect(purpose).toHaveTextContent('Regular reporting');
+    expect(purpose).toHaveTextContent('Contract');
+
+    fireEvent.click(screen.getByRole('button', { name: /Quarter end/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Year end/ }));
+    expect(screen.getByText('Purpose').nextElementSibling).toHaveTextContent('None named');
   });
 
   it('opens a cut-short reason into the details, with who granted it', async () => {

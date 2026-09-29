@@ -65,7 +65,7 @@ class AccessDashboardResourceTest {
     return new GrantStore.StoredGrant(
         UUID.randomUUID(), fqn, principal, username, username, "user", "local", "request",
         UUID.randomUUID(), NOW.minus(Duration.ofDays(1)), NOW.plus(left), "because", "admin",
-        NOW.minus(Duration.ofDays(1)), null, null, null);
+        NOW.minus(Duration.ofDays(1)), null, null, null, null);
   }
 
   @Nested

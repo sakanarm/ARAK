@@ -26,6 +26,7 @@ function grant(id: string, over: Partial<GrantAccess> = {}): GrantAccess {
     grantedAt: '2026-09-01T00:00:00Z',
     live: true,
     effectiveFor: 1,
+    purpose: null,
     ...over,
   };
 }
@@ -67,7 +68,7 @@ describe('the grant list', () => {
     grant('later', future),
     grant('live-1', { reason: 'Quarter end close' }),
     grant('ignored', { effectiveFor: 0 }),
-    grant('live-2', { displayName: 'Finance Team', principalType: 'GROUP' }),
+    grant('live-2', { displayName: 'Finance Team', principalType: 'GROUP', purpose: 'reporting' }),
   ];
 
   it('counts every grant once, so the chips add up to the list', () => {
@@ -85,7 +86,7 @@ describe('the grant list', () => {
     expect(shown.map((g) => g.id)).toEqual(['ignored', 'live-1', 'live-2', 'later']);
   });
 
-  it('searches name, display name, reason and who granted it, ignoring case', () => {
+  it('searches name, display name, reason, who granted it and what for, ignoring case', () => {
     const all = new Set(['IN_FORCE', 'OVERRULED', 'NOT_STARTED', 'EXPIRED'] as const);
     const find = (search: string) =>
       filterGrants(grants, { statuses: all, search, known: true, now: NOW }).map((g) => g.id);
@@ -93,6 +94,7 @@ describe('the grant list', () => {
     expect(find('  QUARTER ')).toEqual(['live-1']);
     expect(find('finance')).toEqual(['live-2']);
     expect(find('audit')).toEqual(['ended']);
+    expect(find('Reporting')).toEqual(['live-2']);
     expect(find('owner_o')).toHaveLength(5);
     expect(find('nobody-by-this-name')).toEqual([]);
   });

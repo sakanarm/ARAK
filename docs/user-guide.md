@@ -338,7 +338,8 @@ Each purpose has:
   data* below);
 - who **answers for** it (for example the DPO or a steward);
 - the **longest access** a request for it may ask for, from 1 to 365 days.
-  A request for the purpose cannot ask for longer, or until revoked.
+  A request for the purpose cannot ask for longer, or until revoked, and a
+  grant given for it cannot last longer or go without an end.
 
 The page has three parts:
 
@@ -411,6 +412,16 @@ stewards give grants from the table's **Access** tab with **Grant access**.
 - A reason is always required, and the end date must be in the future.
 - You cannot grant to yourself.
 - A grant can start later. Grants end by themselves on their end date.
+- **What for** names a purpose from the register (see *Purposes*); it is
+  optional. Only purposes in use are offered. A purpose with a longest access
+  bounds the grant: it must have an end, no more than that many days after its
+  start, so the longer durations and *No expiry* disappear, the days are brought
+  within the limit, and the form says why when the dates you typed go past it.
+- A grant made from a request keeps the request's purpose. If the purpose was
+  retired, or its longest access was shortened, after the request was sent,
+  completing the request is refused until the grant fits.
+- Editing a grant keeps its purpose, and its longest access still counts from
+  the grant's original start.
 - Edit or revoke a grant from its **⋯** menu. Revoking needs a reason. Revoked
   grants are kept in the history (the **Audit** tab), never deleted.
 - A grant only opens the door. Masks, hidden columns and row filters from data
@@ -431,8 +442,10 @@ The **Access** tab answers "who can read this table, and how".
     covers, so it lets nobody in.
   - *Not started*: starts later.
   - *Expired*: ended (hidden by default).
-  Search by name, reason or granter, filter by state, and page through long
-  lists. Click a name or a reason for the full details, including **Lets in**:
+  A grant given for a purpose shows the purpose's name beside it. Search by
+  name, reason, purpose or granter, filter by state, and page through long
+  lists. Click a name or a reason for the full details, including the
+  **Purpose** and its legal basis (or *None named*) and **Lets in**:
   the people this grant actually lets in, which for a group answers who in it
   gets access.
 - **How it is decided**: the policies that apply.
