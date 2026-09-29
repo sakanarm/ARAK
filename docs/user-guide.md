@@ -593,6 +593,12 @@ database, schema, table or column, and a **selector** that picks the assets,
 usually by metadata (for example tags contains 'PII.Sensitive', or domains
 contains 'Finance'). Tables that match later are covered automatically.
 
+In the builder a subscription policy can sit at **Organisation** or **Table**
+(the layers in between are not offered yet; a policy already stored at one
+keeps it). An organisation-level subscription covers exactly the assets step 3,
+*Which assets it covers*, selects, on every source. With nothing selected it
+covers nothing. Data policies can use every level.
+
 A policy's **subject rule** says who it is for:
 
 - named principals: roles, teams, groups, users, or the asset's owners
@@ -609,6 +615,22 @@ A policy's **subject rule** says who it is for:
 
 Everything in a rule must hold at once, except the list of principals, where one
 match is enough. An empty rule matches nobody.
+
+**Several values.** *is one of* and *is none of* take a list, in the selector
+and in the attributes alike. Type a value and press **Enter** (or type a comma);
+each value becomes its own item, and × removes it. So:
+
+- *either of two values of one attribute*: department **is one of** FINANCE,
+  RISK;
+- *either of two attributes*: write it in the expression, for example
+  user.department == 'FINANCE' || user.clearance >= 'L2' (attribute rows are
+  always joined with *and*).
+
+*is none of* with no values, or *is not* with nothing after it, is refused when
+you save: either would match everybody. A policy saved before this change with
+its list typed into one box is shown as separate items and saved in the new
+form. Until it is saved again it is read the same way, so "FINANCE, RISK" means
+either department, not one department with a comma in its name.
 
 ## How policies combine (conflicts)
 

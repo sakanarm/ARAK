@@ -979,6 +979,7 @@ public class PolicyStore {
       throw new IllegalArgumentException(
           "A policy needs a selector; an empty one binds to nothing and protects nobody");
     }
+    ConditionValues.check(document);
     validateExemptions(document);
     validateExpression(document);
   }

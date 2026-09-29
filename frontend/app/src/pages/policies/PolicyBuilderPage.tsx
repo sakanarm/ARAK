@@ -40,6 +40,7 @@ import {
   type StoredPolicy,
 } from '../../api/policies';
 import type { Policy } from '../../generated/entity/policy/policy';
+import { normaliseConditionValues } from './conditionValues';
 import { Field, Select, Step, TextField, useViewMode, ViewToggle } from './controls';
 import DataPolicyBuilder from './DataPolicyBuilder';
 import PolicyFlowChart from './PolicyFlowChart';
@@ -97,23 +98,25 @@ const SCOPE_LEVELS: { value: Policy['scopeLevel']; label: string }[] = [
 /**
  * The layers a subscription policy may currently be written at.
  *
- * <p>One, for now. The engine composes all seven and the stored documents
- * carry all seven, but a subscription written at an outer layer gates
- * everything beneath it -- which is the point of it and also the reason a
- * direct grant on one table can come out in force and admitting nobody. Until
- * the screens explain that where somebody meets it, offering the outer layers
- * in a form is offering a foot-gun. Data policies keep the full set: those
- * only ever add masking, so an outer one cannot lock anybody out.
+ * <p>The engine composes all seven and the stored documents carry all seven,
+ * but a subscription written at an outer layer gates everything beneath it --
+ * which is the point of it and also the reason a direct grant on one table can
+ * come out in force and admitting nobody. The organisation layer is offered
+ * because what it gates is exactly what step 3 selects, an empty selector
+ * selects nothing, and the override question on this step says what happens
+ * to a grant. The layers in between stay hidden until somebody asks for them.
+ * Data policies keep the full set: those only ever add masking, so an outer
+ * one cannot lock anybody out.
  */
-const SUBSCRIPTION_LEVELS: Policy['scopeLevel'][] = ['TABLE'];
+const SUBSCRIPTION_LEVELS: Policy['scopeLevel'][] = ['ORG', 'TABLE'];
 
 /**
  * What the Level menu offers.
  *
  * <p>A policy already stored at a hidden layer keeps its own level in the
  * list. Dropping it would leave the control showing a value it does not have,
- * and the first save of an unrelated edit would quietly move an
- * organisation-wide policy onto one table.
+ * and the first save of an unrelated edit would quietly move a schema- or
+ * domain-wide policy onto one table.
  */
 function levelOptions(policy: Policy) {
   if (policy.policyType !== 'SUBSCRIPTION') return SCOPE_LEVELS;
@@ -310,11 +313,14 @@ export default function PolicyBuilderPage() {
 
   const save = useMutation({
     mutationFn: async () => {
-      if (isNew) return createPolicy(draft);
+      // A list typed before "is one of" kept its items in `value`; the form
+      // shows those as separate items, and this saves them that way.
+      const document = normaliseConditionValues(draft);
+      if (isNew) return createPolicy(document);
       // The version the form was opened on, not one read back out of the
       // document: this is the question "has anyone changed it since", and a
       // conflict here is the screen catching an overwrite in time.
-      return updatePolicy(id!, draft, loaded?.version ?? 1);
+      return updatePolicy(id!, document, loaded?.version ?? 1);
     },
     onSuccess: (saved) => {
       setSaveError(null);
@@ -477,7 +483,13 @@ export default function PolicyBuilderPage() {
       body: (
         <>
           <div className="tw:grid tw:gap-4 tw:sm:grid-cols-2">
-            <Field label="Level">
+            <Field
+              hint={
+                draft.scopeLevel === 'ORG'
+                  ? 'Every asset step 3 selects, on every source. With nothing selected it covers nothing.'
+                  : undefined
+              }
+              label="Level">
               <Select
                 onChange={(next) =>
                   patch({ scopeLevel: next as Policy['scopeLevel'] })

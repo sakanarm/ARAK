@@ -641,7 +641,34 @@ M36 → M14 · M21 · M29 · M30 (ทุกตัวต้องมี principal
 
 ---
 
-## รอบนี้ — **ข้อ CO: อะไรนับเป็นข้อมูลอ่อนไหว + Off / Warn / Enforce (M31b slice 1 · FR-21 · PDPA ม.26)**
+## รอบนี้ — **ข้อ CP: "is one of" ใส่ได้หลายค่า (และบั๊ก fail-open ของ "is none of") · subscription เลือกระดับ Organisation ได้**
+
+ผู้ใช้ถาม *"attribute ยังไม่มี or เลย"* แล้วถามต่อ *"หน้าจอไม่เห็นมีให้ใส่หลายอันเลย is one of"* และสั่ง *"เปิดระดับ Org หน่อย เพราะยังไงเรา Filter asset ได้ ในข้อนี้อยู่แล้ว Which assets it covers"*
+
+**คำตอบเรื่อง or** — attribute ต่อกันด้วย AND ตั้งใจ (ตรงกับ `SubjectMatcher`) · OR ภายใน key เดียวใช้ *is one of* · OR ข้าม key เขียนใน expression ด้วย `||` · hint บนฟอร์มบอกแล้ว
+
+**บั๊กที่เจอระหว่างดู (ความปลอดภัย)** — editor เขียนสิ่งที่พิมพ์ลง `value` เสมอ แต่ engine อ่าน `in` / `notIn` จาก `values` → *is one of* "FINANCE, RISK" ไม่ match ใครเลย และ **_is none of_ match ทุกคน (fail-open)** · *is not* ที่ว่างก็ match ทุกคนเช่นกัน
+
+**engine** — `Operators`
+- `IN` / `NOT_IN` อ่านจาก `listOf(value, values)` · policy เก่าที่เก็บ list เป็น string เดียวถูกแยกที่จุลภาค (อ่านได้ตามที่ผู้เขียนตั้งใจ ไม่ต้อง migrate)
+- `NOT_IN` ที่ list ว่าง = false · `NE` ที่ไม่มีค่า = false (fail-closed)
+
+**server** — `policy/ConditionValues.check` (เรียกจาก `PolicyStore.validate` ทั้ง create / update / rollback)
+- ไล่ selector (and / or / not) · `data.columnRules[].columns` · `subject.attributes`
+- `in` / `notIn` ไม่มี `values` → 400 · มี `value` ที่ไม่ว่างอยู่ข้าง `values` → 400 (*would be ignored*) · operator อื่น (ยกเว้น exists / notExists) ที่ไม่มีค่า → 400
+- rollback ไป version ที่เป็นรูปแบบเก่า → ปฏิเสธพร้อมข้อความ *Version N can no longer be saved as it is: …*
+
+**frontend**
+- `policies/conditionValues.ts` — `isListOperator` · `splitValues` · `listOf` · `withOperator` (เปลี่ยน operator แล้วย้ายค่าไปช่องที่ถูก · ออกจาก list เก็บตัวแรก ไม่ join) · `normaliseConditionValues` (เรียกตอน save ทุกครั้ง ทำให้ policy เก่าที่เปิดแล้วกด Save เฉยๆ ผ่าน server)
+- `controls.tsx` `ValueList` — ชิปทีละค่า: พิมพ์แล้ว **Enter** หรือ **จุลภาค** · × ลบ · Backspace ในช่องว่างลบตัวสุดท้าย · ไม่รับค่าซ้ำ · datalist เดิมยังใช้ได้
+- ใช้ใน `SelectorBuilder` (Which assets it covers + column rules) และ `SubjectBuilder` (attributes)
+- `PolicyBuilderPage` — `SUBSCRIPTION_LEVELS = ['ORG', 'TABLE']` · hint ของ ORG: *Every asset step 3 selects, on every source. With nothing selected it covers nothing.*
+
+**test** — backend unit ผ่านทั้ง reactor (`SelectorMatcherTest` 13 · `SubjectMatcherTest` 15 · `ConditionValuesTest` 7 ใหม่) · jest **836 ผ่าน / 84 suites** (`conditionValues.test` · `SelectorBuilder.test` ใหม่ · `SubjectBuilder.test` +3 · `PolicyBuilderPage.test` +2: เมนู Level มี Organisation / Table เท่านั้น · policy เก่ากด Save แล้วส่ง `values`) · type-check · lint (ไฟล์ที่ track) ผ่าน · IT ไม่ได้รัน (Docker ไม่ขึ้น)
+
+**พฤติกรรมที่เปลี่ยนหลัง deploy (ต้องบอก maintainer)** — policy ที่ใช้ *is one of* แบบเก่าจะเริ่ม match ค่าที่ระบุจริง · *is none of* จะเลิก match ทุกคน · *is not* ที่ว่างจะไม่ match ใคร · ควรไล่ดู policy ACTIVE ที่ใช้ `in` / `notIn` / `ne` บน prod ก่อนหรือหลัง deploy ทันที
+
+## รอบก่อนหน้า — **ข้อ CO: อะไรนับเป็นข้อมูลอ่อนไหว + Off / Warn / Enforce (M31b slice 1 · FR-21 · PDPA ม.26)**
 
 ผู้ใช้ถาม *"ต้องมี ที่ Configure ไหม"* หลัง M31a → เสนอให้ตั้งได้ใน Settings → Purposes (รายการรวม / ยกเว้น · กติกา built-in เปิดไว้ · วัดก่อน save · แก้ได้ admin + POLICY_AUTHOR พร้อมประวัติ · mode Off / **Warn (default)** / Enforce) → ผู้ใช้ตอบ "ต่อ"
 
@@ -4180,6 +4207,8 @@ private static boolean mayImpersonate(AuthenticatedUser user) {
 ### AI.5 Subscription policy — เลือกได้แค่ระดับ **Table**
 
 คำสั่งผู้ใช้: `ปรับ Subscription Policy ให้ มีให้เลือกแค่ระดับ table ก่อน ระดับอื่น hide ไปก่อน`
+
+> **อัปเดต (ข้อ CP):** เปิดระดับ **Organisation** กลับแล้ว — `SUBSCRIPTION_LEVELS = ['ORG', 'TABLE']` · ชั้นกลางยังซ่อนอยู่
 
 `src/pages/policies/PolicyBuilderPage.tsx`:
 

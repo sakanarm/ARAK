@@ -197,4 +197,60 @@ class SelectorMatcherTest {
         new AssetSelector().withCondition(new FacetCondition().withFacet(FacetType.TAGS));
     assertThat(SelectorMatcher.matches(noOperator, customer())).isFalse();
   }
+
+  private static AssetSelector list(FacetType facet, FacetOperator op, Object... values) {
+    return new AssetSelector()
+        .withCondition(
+            new FacetCondition().withFacet(facet).withOperator(op).withValues(List.of(values)));
+  }
+
+  @Test
+  @DisplayName("is one of matches when any listed value does; is none of when none does")
+  void inAndNotInReadTheList() {
+    assertThat(SelectorMatcher.matches(list(FacetType.SCHEMA, FacetOperator.IN, "sales", "dbo"),
+            customer()))
+        .isTrue();
+    assertThat(SelectorMatcher.matches(list(FacetType.SCHEMA, FacetOperator.IN, "sales", "hr"),
+            customer()))
+        .isFalse();
+    assertThat(
+            SelectorMatcher.matches(list(FacetType.SCHEMA, FacetOperator.NOT_IN, "sales", "dbo"),
+                customer()))
+        .isFalse();
+    assertThat(
+            SelectorMatcher.matches(list(FacetType.SCHEMA, FacetOperator.NOT_IN, "sales", "hr"),
+                customer()))
+        .isTrue();
+  }
+
+  @Test
+  @DisplayName("a list saved as one comma-separated value is read as its items")
+  void legacyCommaSeparatedValueIsSplit() {
+    // The editor used to save "is one of" this way. Read as one string it
+    // matched nothing, and "is none of" matched every asset there is.
+    assertThat(SelectorMatcher.matches(cond(FacetType.SCHEMA, FacetOperator.IN, "sales, dbo"),
+            customer()))
+        .isTrue();
+    assertThat(
+            SelectorMatcher.matches(cond(FacetType.SCHEMA, FacetOperator.NOT_IN, "sales, dbo"),
+                customer()))
+        .isFalse();
+  }
+
+  @Test
+  @DisplayName("is none of an empty list, and is not nothing, select nothing")
+  void negationWithNothingToCompareSelectsNothing() {
+    assertThat(SelectorMatcher.matches(list(FacetType.SCHEMA, FacetOperator.NOT_IN), customer()))
+        .isFalse();
+    assertThat(SelectorMatcher.matches(cond(FacetType.SCHEMA, FacetOperator.NOT_IN, " "),
+            customer()))
+        .isFalse();
+    assertThat(SelectorMatcher.matches(cond(FacetType.SCHEMA, FacetOperator.NE, ""), customer()))
+        .isFalse();
+    assertThat(SelectorMatcher.matches(cond(FacetType.SCHEMA, FacetOperator.NE, null), customer()))
+        .isFalse();
+    assertThat(SelectorMatcher.matches(cond(FacetType.SCHEMA, FacetOperator.NE, "sales"),
+            customer()))
+        .isTrue();
+  }
 }
