@@ -709,6 +709,23 @@ export function describePredicate(predicate: ResolvedRowPredicate): string {
       return `Only rows where ${predicate.column} ${oneOf}.`;
     case 'ENTITLEMENT_JOIN':
       return `Only rows they are entitled to, matched on ${predicate.entitlementKey}.`;
+    case 'LOOKUP': {
+      // The decision carries this person's own values for each key. What the
+      // mapping gives them is read only when a query runs, so it is never
+      // shown here.
+      const lookup = predicate.lookup;
+      if (!lookup) {
+        return `No rows: the filter on ${predicate.column} names no mapping table.`;
+      }
+      const keys = (lookup.keys ?? [])
+        .map((key) => `${key.column} ${key.values.join(', ')}`)
+        .join(' and ');
+      const when =
+        lookup.mode === 'READ_VALUES'
+          ? 'ARAK reads them when the query runs'
+          : 'the source reads them as part of the query';
+      return `Only rows where ${predicate.column} is one of the ${lookup.valueColumn} values in ${lookup.table} for ${keys}; ${when}.`;
+    }
     case 'RAW_PREDICATE':
       return `Only rows where ${predicate.rawPredicate}.`;
     default:

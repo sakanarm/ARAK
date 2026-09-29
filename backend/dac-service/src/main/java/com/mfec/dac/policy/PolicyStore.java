@@ -980,6 +980,7 @@ public class PolicyStore {
           "A policy needs a selector; an empty one binds to nothing and protects nobody");
     }
     ConditionValues.check(document);
+    LookupCheck.check(jdbi, document);
     validateExemptions(document);
     validateExpression(document);
   }

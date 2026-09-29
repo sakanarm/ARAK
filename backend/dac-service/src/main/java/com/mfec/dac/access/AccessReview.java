@@ -8,6 +8,7 @@ import com.mfec.dac.purpose.SensitiveData;
 import com.mfec.dac.identity.PrincipalQuery;
 import com.mfec.dac.policy.AssetContextLoader;
 import com.mfec.dac.policy.DecisionService;
+import com.mfec.dac.policy.LookupBinder;
 import com.mfec.dac.policy.PolicyStore;
 import com.mfec.dac.policy.PrincipalLoader;
 import com.mfec.dac.schema.api.DecisionReason;
@@ -900,6 +901,10 @@ public class AccessReview {
     if (predicate.getKind() == null) {
       return "a row filter";
     }
+    String lookedUp = LookupBinder.describe(predicate);
+    if (lookedUp != null) {
+      return lookedUp;
+    }
     List<Object> values = safe(predicate.getValues());
     return switch (predicate.getKind()) {
       case ALWAYS_FALSE -> "no rows at all";
@@ -913,6 +918,7 @@ public class AccessReview {
       case ENTITLEMENT_JOIN ->
           "rows listed for them in the entitlement \"" + predicate.getEntitlementKey() + "\"";
       case RAW_PREDICATE -> predicate.getRawPredicate();
+      case LOOKUP -> predicate.getColumn() + " is one of the values of a mapping table";
     };
   }
 

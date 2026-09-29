@@ -101,3 +101,91 @@ it('drops the selector when the kind compares no column', async () => {
   expect(seen.data.rowFilters?.[0].kind).toBe('ALWAYS_FALSE');
   expect(seen.data.rowFilters?.[0].columns).toBeUndefined();
 });
+
+/*
+ * A lookup: department AA sees division A because a mapping table says so.
+ * The column is named; the mapping, its keys and how it is read are written
+ * beside it.
+ */
+function type(label: string, text: string) {
+  fireEvent.change(screen.getByLabelText(label), { target: { value: text } });
+}
+
+it('writes a filter whose values come from a mapping table', async () => {
+  const seen = renderLive({
+    rowFilters: [
+      {
+        kind: 'IN_LIST',
+        userAttribute: 'divisions',
+        columns: { condition: { facet: 'tags', operator: 'contains', value: 'Org.Division' } },
+      },
+    ],
+  });
+
+  await pick(/Row filter kind/, 'Column is one of the values a mapping table gives them');
+  expect(screen.queryByRole('button', { name: /Pick the column by/ })).not.toBeInTheDocument();
+  expect(screen.getByRole('button', { name: /How the mapping is read/ })).toHaveTextContent(
+    'Join it into the query'
+  );
+
+  type('Column', 'division');
+  type('Value column', 'division');
+  type('Mapping table', 'warehouse.sales.ref.department_division');
+  type('Mapping column 1', 'department');
+  type('Their attribute 1', 'department');
+  fireEvent.click(screen.getByRole('button', { name: 'Add a key' }));
+  type('Mapping column 2', 'region');
+  type('Their attribute 2', 'region');
+  await pick(/How the mapping is read/, 'Read the values first');
+
+  expect(seen.data.rowFilters?.[0]).toEqual({
+    kind: 'LOOKUP',
+    userAttribute: 'divisions',
+    column: 'division',
+    lookup: {
+      table: 'warehouse.sales.ref.department_division',
+      keys: [
+        { column: 'department', userAttribute: 'department' },
+        { column: 'region', userAttribute: 'region' },
+      ],
+      valueColumn: 'division',
+      mode: 'READ_VALUES',
+    },
+  });
+  // A selector the server would refuse on this kind is not carried along.
+  expect(seen.data.rowFilters?.[0].columns).toBeUndefined();
+  expect(screen.getByText(/may be on another data source/)).toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole('button', { name: 'Remove key 1' }));
+  expect(seen.data.rowFilters?.[0].lookup?.keys).toEqual([
+    { column: 'region', userAttribute: 'region' },
+  ]);
+  // The last key stays: a mapping with no key would not save.
+  expect(screen.queryByRole('button', { name: /Remove key/ })).not.toBeInTheDocument();
+});
+
+it('drops the mapping when the filter becomes another kind', async () => {
+  const seen = renderLive({
+    rowFilters: [
+      {
+        kind: 'LOOKUP',
+        column: 'division',
+        lookup: {
+          table: 'warehouse.sales.ref.department_division',
+          keys: [{ column: 'department', userAttribute: 'department' }],
+          valueColumn: 'division',
+        },
+      },
+    ],
+  });
+  expect(screen.getByLabelText('Mapping table')).toHaveValue(
+    'warehouse.sales.ref.department_division'
+  );
+
+  await pick(/Row filter kind/, 'Column is one of their values');
+
+  expect(seen.data.rowFilters?.[0].kind).toBe('IN_LIST');
+  expect(seen.data.rowFilters?.[0].column).toBe('division');
+  expect(seen.data.rowFilters?.[0].lookup).toBeUndefined();
+  expect(screen.queryByLabelText('Mapping table')).not.toBeInTheDocument();
+});

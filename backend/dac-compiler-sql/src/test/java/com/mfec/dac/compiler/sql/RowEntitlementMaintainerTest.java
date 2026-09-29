@@ -13,6 +13,7 @@ import com.mfec.dac.compiler.sql.RowEntitlementMaintainer.Subscription;
 import com.mfec.dac.schema.api.MaskingSpec;
 import com.mfec.dac.schema.api.PolicyDecision;
 import com.mfec.dac.schema.api.ResolvedColumnMask;
+import com.mfec.dac.schema.api.ResolvedLookup;
 import com.mfec.dac.schema.api.ResolvedRowPredicate;
 import java.util.List;
 import java.util.Set;
@@ -212,6 +213,29 @@ class RowEntitlementMaintainerTest {
     assertThat(run.desired().subscriptions()).containsExactly(new Subscription("analyst_a", ASSET));
     assertThat(run.desired().entitlements()).isEmpty();
     assertThat(run.notes()).anyMatch(note -> note.contains("any value of branch_code"));
+  }
+
+  @Test
+  void aMappingTableLookupIsNeverTurnedIntoRowsTheMappingDidNotGive() {
+    ResolvedRowPredicate mapped =
+        new ResolvedRowPredicate()
+            .withKind(ResolvedRowPredicate.Kind.LOOKUP)
+            .withColumn("branch_code")
+            .withOperator(ResolvedRowPredicate.FacetOperator.IN)
+            .withLookup(
+                new ResolvedLookup()
+                    .withTable("warehouse.sales.ref.region_branch")
+                    .withValueColumn("branch_code")
+                    .withMode(ResolvedLookup.Mode.SUBQUERY));
+    List<PolicyDecision> shapes = List.of(allowed("analyst_a").withRowPredicates(List.of(mapped)));
+    EntitlementSource everything = (principal, asset, key) -> List.of("BKK-01");
+
+    Maintenance run =
+        RowEntitlementMaintainer.maintain(plan(shapes), ASSET, shapes, everything, Rows.NONE);
+
+    // The compiler closed the view; nothing written here may reopen it.
+    assertThat(plan(shapes).viewSql()).contains("(1 = 0)");
+    assertThat(run.desired().entitlements()).isEmpty();
   }
 
   private static ResolvedRowPredicate lookup() {

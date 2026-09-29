@@ -5,12 +5,16 @@ import com.mfec.dac.schema.api.DecisionReason;
 import com.mfec.dac.schema.api.MaskingSpec;
 import com.mfec.dac.schema.api.PolicyDecision;
 import com.mfec.dac.schema.api.ResolvedColumnMask;
+import com.mfec.dac.schema.api.ResolvedLookup;
+import com.mfec.dac.schema.api.ResolvedLookupKey;
 import com.mfec.dac.schema.api.ResolvedRowPredicate;
 import com.mfec.dac.schema.entity.policy.ColumnRule;
 import com.mfec.dac.schema.entity.policy.DataPolicy;
 import com.mfec.dac.schema.entity.policy.Exemption;
+import com.mfec.dac.schema.entity.policy.LookupKey;
 import com.mfec.dac.schema.entity.policy.Policy;
 import com.mfec.dac.schema.entity.policy.RowFilter;
+import com.mfec.dac.schema.entity.policy.RowLookup;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -783,7 +787,41 @@ public final class PolicyEngine {
         + '\0'
         + nullSafe(predicate.getRawPredicate())
         + '\0'
+        + lookupSignature(predicate.getLookup())
+        + '\0'
         + nullSafe(String.valueOf(predicate.getSourcePolicyId()));
+  }
+
+  /**
+   * A lookup spelled out field by field. The generated {@code toString} carries
+   * an identity hash, so two equal lookups would never sort together.
+   */
+  private static String lookupSignature(ResolvedLookup lookup) {
+    if (lookup == null) {
+      return "";
+    }
+    StringBuilder out =
+        new StringBuilder()
+            .append(nullSafe(lookup.getTable()))
+            .append('\u0001')
+            .append(nullSafe(String.valueOf(lookup.getMode())))
+            .append('\u0001')
+            .append(nullSafe(lookup.getValueColumn()))
+            .append('\u0001')
+            .append(nullSafe(lookup.getSchemaName()))
+            .append('\u0001')
+            .append(nullSafe(lookup.getTableName()));
+    if (lookup.getKeys() != null) {
+      for (ResolvedLookupKey key : lookup.getKeys()) {
+        out.append('\u0001')
+            .append(nullSafe(key.getColumn()))
+            .append('\u0002')
+            .append(nullSafe(key.getUserAttribute()))
+            .append('\u0002')
+            .append(nullSafe(String.valueOf(key.getValues())));
+      }
+    }
+    return out.toString();
   }
 
   private List<ResolvedRowPredicate> resolve(
@@ -829,6 +867,77 @@ public final class PolicyEngine {
         }
         return predicates;
       }
+      case LOOKUP: {
+        RowLookup lookup = filter.getLookup();
+        String problem = lookupProblem(lookup);
+        if (problem != null) {
+          reasons.add(
+              reason(
+                  policy,
+                  true,
+                  "row filter reads its values from a mapping table, but " + problem + "; no rows match"));
+          return List.of(out.withKind(ResolvedRowPredicate.Kind.ALWAYS_FALSE));
+        }
+        List<ResolvedLookupKey> keys = new ArrayList<>(lookup.getKeys().size());
+        for (LookupKey key : lookup.getKeys()) {
+          List<String> values = principal.attributeValues(key.getUserAttribute(), null);
+          if (values.isEmpty()) {
+            // Same reasoning as a plain comparison: the mapping cannot say what
+            // a person with no department may see, and "everything" is not it.
+            reasons.add(
+                reason(
+                    policy,
+                    true,
+                    "row filter looks up "
+                        + key.getColumn()
+                        + " in "
+                        + lookup.getTable()
+                        + " by the attribute "
+                        + key.getUserAttribute()
+                        + ", which this principal does not have; no rows match"));
+            return List.of(out.withKind(ResolvedRowPredicate.Kind.ALWAYS_FALSE));
+          }
+          keys.add(
+              new ResolvedLookupKey()
+                  .withColumn(key.getColumn())
+                  .withUserAttribute(key.getUserAttribute())
+                  .withValues(new ArrayList<>(values)));
+        }
+        List<String> columns = filteredColumns(filter, policy, asset, reasons);
+        if (columns.isEmpty()) {
+          return List.of(out.withKind(ResolvedRowPredicate.Kind.ALWAYS_FALSE));
+        }
+        ResolvedLookup.Mode mode =
+            lookup.getMode() == RowLookup.Mode.READ_VALUES
+                ? ResolvedLookup.Mode.READ_VALUES
+                : ResolvedLookup.Mode.SUBQUERY;
+        List<ResolvedRowPredicate> predicates = new ArrayList<>(columns.size());
+        for (String column : columns) {
+          // A lookup per predicate, never shared: the proxy binds each one to
+          // its physical table in place.
+          List<ResolvedLookupKey> copies = new ArrayList<>(keys.size());
+          for (ResolvedLookupKey key : keys) {
+            copies.add(
+                new ResolvedLookupKey()
+                    .withColumn(key.getColumn())
+                    .withUserAttribute(key.getUserAttribute())
+                    .withValues(new ArrayList<>(key.getValues())));
+          }
+          predicates.add(
+              new ResolvedRowPredicate()
+                  .withSourcePolicyId(policy.getId())
+                  .withKind(ResolvedRowPredicate.Kind.LOOKUP)
+                  .withColumn(column)
+                  .withOperator(ResolvedRowPredicate.FacetOperator.IN)
+                  .withLookup(
+                      new ResolvedLookup()
+                          .withTable(lookup.getTable())
+                          .withKeys(copies)
+                          .withValueColumn(lookup.getValueColumn())
+                          .withMode(mode)));
+        }
+        return predicates;
+      }
       case ENTITLEMENT_JOIN:
         return List.of(
             out.withKind(ResolvedRowPredicate.Kind.ENTITLEMENT_JOIN)
@@ -842,6 +951,39 @@ public final class PolicyEngine {
       default:
         return List.of(out.withKind(ResolvedRowPredicate.Kind.ALWAYS_FALSE));
     }
+  }
+
+  /**
+   * What is wrong with a lookup as written, or null when it can be resolved.
+   * Saving a policy checks the same against the catalog; this is the engine's
+   * own guard for a policy that reached it some other way.
+   */
+  static String lookupProblem(RowLookup lookup) {
+    if (lookup == null) {
+      return "it names no mapping table";
+    }
+    if (lookup.getTable() == null || lookup.getTable().isBlank()) {
+      return "it names no mapping table";
+    }
+    if (Fqns.segments(lookup.getTable()).size() != 4) {
+      return "the mapping table " + lookup.getTable() + " is not named as service.database.schema.table";
+    }
+    if (lookup.getValueColumn() == null || lookup.getValueColumn().isBlank()) {
+      return "it names no column of " + lookup.getTable() + " to take the values from";
+    }
+    if (lookup.getKeys() == null || lookup.getKeys().isEmpty()) {
+      return "it names no key to match the person against " + lookup.getTable();
+    }
+    for (LookupKey key : lookup.getKeys()) {
+      if (key == null
+          || key.getColumn() == null
+          || key.getColumn().isBlank()
+          || key.getUserAttribute() == null
+          || key.getUserAttribute().isBlank()) {
+        return "one of its keys names no column or no attribute";
+      }
+    }
+    return null;
   }
 
   /**

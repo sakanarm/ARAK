@@ -558,6 +558,24 @@ public final class ViewCompiler {
         }
         put(gates, new RowGate(key, predicate.getColumn(), false));
       }
+      case LOOKUP -> {
+        // The allowed values depend on the reader and on a mapping table the
+        // view would have to join as the reader. The entitlement table is filled
+        // from attributes, not from that mapping, so a view could only guess --
+        // and a guess here either leaks rows or loses the filter.
+        blocked[0] = true;
+        unenforceable.add(
+            new Unenforceable()
+                .withPolicyId(predicate.getSourcePolicyId())
+                .withDetail(
+                    "row filter on "
+                        + predicate.getColumn()
+                        + " reads its values from the mapping table "
+                        + (predicate.getLookup() == null ? "(none)" : predicate.getLookup().getTable())
+                        + ", which a secure view cannot do per reader, so this view returns no rows to"
+                        + " anybody; enforce the asset through the proxy instead")
+                .withSuggestedMode(Unenforceable.SuggestedMode.PROXY));
+      }
       case IN_LIST, ATTRIBUTE_COMPARE -> {
         String column = predicate.getColumn();
         if (column == null || column.isBlank()) {

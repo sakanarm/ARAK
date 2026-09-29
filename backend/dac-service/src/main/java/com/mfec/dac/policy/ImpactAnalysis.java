@@ -7,6 +7,8 @@ import com.mfec.dac.engine.RequestContext;
 import com.mfec.dac.engine.SelectorMatcher;
 import com.mfec.dac.schema.api.PolicyDecision;
 import com.mfec.dac.schema.api.ResolvedColumnMask;
+import com.mfec.dac.schema.api.ResolvedLookup;
+import com.mfec.dac.schema.api.ResolvedLookupKey;
 import com.mfec.dac.schema.api.ResolvedRowPredicate;
 import com.mfec.dac.schema.entity.policy.Policy;
 import java.time.Instant;
@@ -524,6 +526,20 @@ public class ImpactAnalysis {
       }
       if (predicate.getRawPredicate() != null) {
         key.append(' ').append(predicate.getRawPredicate());
+      }
+      // Which mapping, how it is read and by what: a change to any of them
+      // changes who sees which rows, as much as a changed value list would.
+      ResolvedLookup lookup = predicate.getLookup();
+      if (lookup != null) {
+        key.append(" from ").append(lookup.getTable())
+            .append('.').append(lookup.getValueColumn())
+            .append(' ').append(lookup.getMode());
+        if (lookup.getKeys() != null) {
+          for (ResolvedLookupKey lookupKey : lookup.getKeys()) {
+            key.append(" where ").append(lookupKey.getColumn())
+                .append(" in ").append(lookupKey.getValues());
+          }
+        }
       }
       out.add(key.toString().trim());
     }
