@@ -646,8 +646,9 @@ form. Until it is saved again it is read the same way, so "FINANCE, RISK" means
 either department, not one department with a comma in its name.
 
 **Which rows they see.** A row filter that compares a column with the person
-(*Column matches their own attribute*, *Column is one of their values*) picks
-that column in one of two ways:
+(*Column matches their own attribute*, *Column is one of their values*, *Column
+is one of the values a mapping table gives them*) picks that column in one of
+two ways:
 
 - **Column named**: type its name, for example branch_code. It fits only the
   tables that call the column that.
@@ -669,7 +670,10 @@ belongs to division A. The kind *Column is one of the values a mapping table
 gives them* writes exactly that:
 
 - **Column**: the column of the filtered table, for example division. Pick it
-  by name; a mapping filter cannot pick its column by tag yet.
+  by name (*Column named*) or by its tag (*Column tagged*, for example tags
+  contains Org.Division), as for the other filters above. By tag, every column
+  that carries the tag is filtered through the mapping, and a table with no
+  such column shows no rows.
 - **Value column** and **Mapping table**: which column of which table holds
   the values a person may see, for example division in
   warehouse.sales.ref.department_division. Write the table's full name
@@ -758,7 +762,36 @@ term, data type or custom property.
 
 ## Writing a policy (policy builder)
 
-**Policies → New policy** opens the builder:
+**Policies → New policy** first asks **where the policy runs**, on a page of
+its own, before the form opens:
+
+- **What kind of policy**: *Subscription* (who gets in) or *Data* (what they
+  see).
+- **Which connection**: one of the registered data sources, each card showing
+  its engine, how many tables it has and the mode it is enforced by today; or
+  **Every connection**. Choosing a connection starts step 3 (*Which assets it
+  covers*) on that connection's assets, which you can narrow further. A
+  selector you write yourself is kept if you go back and choose another
+  connection.
+- **How it will be enforced**: *Query API*, *Secure view* or *Native source
+  config*. The builder checks the policy against this mode while you write it
+  and marks it *Chosen* in the rail. The card that matches the connection says
+  *In use on this connection*. *Query API* is not offered on an engine it has
+  nothing for. *Native source config* is marked *Checked, not applied yet*:
+  ARAK does not push native config yet.
+
+The mode is **not saved in the policy**. A policy is always enforced by the mode
+its connection is set to under **Sources**, so a policy cannot quietly stop
+applying because somebody changed a connection's mode. If you choose a mode
+other than the connection's own, the page says so; only an administrator
+changes the connection. The chosen connection and mode show as chips at the
+top of the form, and **Change** goes back to the page. *Configure the policy*
+stays disabled until a connection and a mode are chosen.
+
+A policy that arrives already written (suggested by an access request, or
+loaded from NokRak) skips this page and opens the form directly.
+
+Then, in the form:
 
 1. Choose the **kind** (subscription or data), the **level** and its
    **anchor** (which service, database, schema or table), and the **effect**.
