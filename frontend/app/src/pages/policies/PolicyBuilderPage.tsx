@@ -46,6 +46,7 @@ import DataPolicyBuilder from './DataPolicyBuilder';
 import PolicyFlowChart from './PolicyFlowChart';
 import PolicyDiagram from './PolicyDiagram';
 import SelectorBuilder from './SelectorBuilder';
+import ScopePreview from './ScopePreview';
 import SubjectBuilder from './SubjectBuilder';
 import { capabilities, MODES, type Engine, type EnforcementMode } from './enforcement';
 import { engineLabel, engineOptions, useSourceEngines } from '../../engines';
@@ -103,35 +104,21 @@ const SCOPE_LEVELS: { value: Policy['scopeLevel']; label: string }[] = [
 ];
 
 /**
- * The layers a subscription policy may currently be written at.
+ * Where the Anchor field points, per layer, as an example of its shape.
  *
- * <p>The engine composes all seven and the stored documents carry all seven,
- * but a subscription written at an outer layer gates everything beneath it --
- * which is the point of it and also the reason a direct grant on one table can
- * come out in force and admitting nobody. The organisation layer is offered
- * because what it gates is exactly what step 3 selects, an empty selector
- * selects nothing, and the override question on this step says what happens
- * to a grant. The layers in between stay hidden until somebody asks for them.
- * Data policies keep the full set: those only ever add masking, so an outer
- * one cannot lock anybody out.
+ * Every layer is offered to both kinds of policy. A subscription at an outer
+ * layer gates everything beneath it, but only what step 3 selects there -- the
+ * anchor narrows where the selector looks, it never widens what it picks -- and
+ * the override question on this step says what happens to a grant below it.
  */
-const SUBSCRIPTION_LEVELS: Policy['scopeLevel'][] = ['ORG', 'TABLE'];
-
-/**
- * What the Level menu offers.
- *
- * <p>A policy already stored at a hidden layer keeps its own level in the
- * list. Dropping it would leave the control showing a value it does not have,
- * and the first save of an unrelated edit would quietly move a schema- or
- * domain-wide policy onto one table.
- */
-function levelOptions(policy: Policy) {
-  if (policy.policyType !== 'SUBSCRIPTION') return SCOPE_LEVELS;
-  return SCOPE_LEVELS.filter(
-    (level) =>
-      SUBSCRIPTION_LEVELS.includes(level.value) || level.value === policy.scopeLevel
-  );
-}
+const ANCHOR_EXAMPLES: Partial<Record<Policy['scopeLevel'], string>> = {
+  DOMAIN: 'Finance.Risk',
+  SERVICE: 'prod-mssql',
+  DATABASE: 'prod-mssql.SalesDB',
+  SCHEMA: 'prod-mssql.SalesDB.dbo',
+  TABLE: 'demo-pg.salesdb.sales.customer',
+  COLUMN: 'demo-pg.salesdb.sales.customer.email',
+};
 
 export default function PolicyBuilderPage() {
   const { id } = useParams();
@@ -481,18 +468,9 @@ export default function PolicyBuilderPage() {
               hint="Subscription decides who reaches the table at all. Data decides what they see inside it. They are authored by different people at different times, which is why they are separate documents."
               label="Kind">
               <Select
-                onChange={(next) => {
-                  const policyType = next as Policy['policyType'];
-                  // Switching to a subscription lands on a layer it is
-                  // allowed to be written at, rather than leaving the menu
-                  // displaying a level the draft no longer offers.
-                  patch(
-                    policyType === 'SUBSCRIPTION' &&
-                      !SUBSCRIPTION_LEVELS.includes(draft.scopeLevel)
-                      ? { policyType, scopeLevel: 'TABLE' }
-                      : { policyType }
-                  );
-                }}
+                onChange={(next) =>
+                  patch({ policyType: next as Policy['policyType'] })
+                }
                 options={[
                   { value: 'SUBSCRIPTION', label: 'Subscription — who gets in' },
                   { value: 'DATA', label: 'Data — what they see' },
@@ -569,21 +547,17 @@ export default function PolicyBuilderPage() {
                 onChange={(next) =>
                   patch({ scopeLevel: next as Policy['scopeLevel'] })
                 }
-                options={levelOptions(draft)}
+                options={SCOPE_LEVELS}
                 value={draft.scopeLevel}
               />
             </Field>
             {draft.scopeLevel !== 'ORG' && (
               <Field
-                hint="The anchor this level is measured from, as a fully qualified name."
+                hint="The fully qualified name this layer is measured from. Only assets under it are looked at; step 3 then picks among them."
                 label="Anchor">
                 <TextField
                   onChange={(next) => patch({ scopeFqn: next || undefined })}
-                  placeholder={
-                    draft.scopeLevel === 'TABLE'
-                      ? 'demo-pg.salesdb.sales.customer'
-                      : 'prod-mssql.SalesDB.dbo'
-                  }
+                  placeholder={ANCHOR_EXAMPLES[draft.scopeLevel] ?? ''}
                   value={draft.scopeFqn ?? ''}
                 />
               </Field>
@@ -622,6 +596,7 @@ export default function PolicyBuilderPage() {
             value={draft.selector}
             vocabulary={vocabulary}
           />
+          <ScopePreview draft={draft} />
         </>
       ),
     },

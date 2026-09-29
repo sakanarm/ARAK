@@ -299,6 +299,88 @@ class PolicyBindingMaterializerIT {
     assertThat(targets(local)).containsExactly(CUSTOMER);
   }
 
+  // ------------------------------------------------------------------ preview
+
+  @Test
+  @DisplayName("a preview names the tables a save would bind, and binds none of them")
+  void previewMatchesWhatASaveWouldBind() {
+    Policy draft = document("mask-pii");
+
+    PolicyBindingMaterializer.Preview preview = materializer.preview(draft, 100);
+
+    // The builder shows this list as "what this policy will cover". If it and
+    // the materializer ever disagreed, the author would approve one set of
+    // tables and the platform would protect another.
+    assertThat(preview.scanned()).isEqualTo(3);
+    assertThat(preview.matched()).isEqualTo(2);
+    assertThat(preview.truncated()).isFalse();
+    assertThat(preview.tables())
+        .extracting(PolicyBindingMaterializer.PreviewTable::fqn)
+        .containsExactlyInAnyOrder(CUSTOMER, ARCHIVED_CUSTOMER);
+    int bindings =
+        jdbi.withHandle(
+            handle ->
+                handle.createQuery("SELECT count(*) FROM policy_binding").mapTo(Integer.class).one());
+    assertThat(bindings).isZero();
+  }
+
+  @Test
+  @DisplayName("a preview keeps to the scope the draft sits in, by segment")
+  void previewKeepsToScope() {
+    Policy draft = document("sales-only");
+    draft.setScopeLevel(ResolvedColumnMask.ScopeLevel.DATABASE);
+    draft.setScopeFqn(SALES);
+
+    PolicyBindingMaterializer.Preview preview = materializer.preview(draft, 100);
+
+    assertThat(preview.scanned()).isEqualTo(2);
+    assertThat(preview.tables())
+        .extracting(PolicyBindingMaterializer.PreviewTable::fqn)
+        .containsExactly(CUSTOMER);
+  }
+
+  @Test
+  @DisplayName("a draft with no selector yet previews nothing, not everything")
+  void previewWithoutSelectorMatchesNothing() {
+    Policy draft = document("empty");
+    draft.setSelector(null);
+
+    PolicyBindingMaterializer.Preview preview = materializer.preview(draft, 100);
+
+    // The same rule as enforcement: an empty selector covers nothing. A
+    // preview that said "every table" here would teach the opposite.
+    assertThat(preview.matched()).isZero();
+    assertThat(preview.tables()).isEmpty();
+  }
+
+  @Test
+  @DisplayName("a data policy preview lists the columns its rules pick out")
+  void previewListsColumnsPicked() {
+    Policy draft = document("mask-email");
+    draft.setPolicyType(Policy.PolicyType.DATA);
+    ColumnRule rule = new ColumnRule();
+    rule.setColumns(selector("PII.Sensitive"));
+    rule.setAction(ColumnRule.Action.MASK);
+    DataPolicy data = new DataPolicy();
+    data.setColumnRules(List.of(rule));
+    draft.setData(data);
+
+    PolicyBindingMaterializer.Preview preview = materializer.preview(draft, 100);
+
+    assertThat(preview.tables())
+        .allSatisfy(table -> assertThat(table.columns()).containsExactly("email"));
+  }
+
+  @Test
+  @DisplayName("a preview past its limit says so, and still counts every match")
+  void previewIsTruncatedAtTheLimit() {
+    PolicyBindingMaterializer.Preview preview = materializer.preview(document("mask-pii"), 1);
+
+    assertThat(preview.tables()).hasSize(1);
+    assertThat(preview.matched()).isEqualTo(2);
+    assertThat(preview.truncated()).isTrue();
+  }
+
   // ------------------------------------------------------------------ queries
 
   private List<String> targets(UUID policyId) {

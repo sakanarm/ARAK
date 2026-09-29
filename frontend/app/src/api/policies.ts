@@ -373,6 +373,37 @@ export async function transitionPolicy(
   return data;
 }
 
+/** One table a draft would cover, and the columns its column rules pick. */
+export interface ScopePreviewTable {
+  fqn: string;
+  columns: string[];
+}
+
+/** What a draft would cover if it were saved now. `matched` is never capped. */
+export interface PolicyScopePreview {
+  scanned: number;
+  matched: number;
+  tables: ScopePreviewTable[];
+  truncated: boolean;
+}
+
+/**
+ * Resolves an unsaved draft's selector the way saving it would.
+ *
+ * Nothing is stored: the backend runs the same matcher as the binding job and
+ * returns names only, the same metadata the catalog already shows.
+ */
+export async function previewPolicyScope(
+  document: Policy,
+  limit = 100
+): Promise<PolicyScopePreview> {
+  const { data } = await apiClient.post<PolicyScopePreview>(
+    `/v1/policies/scope-preview?limit=${limit}`,
+    document
+  );
+  return data;
+}
+
 /** Re-resolves the selector against the estate, and reports what moved. */
 export async function resolveBindings(id: string): Promise<BindingResult> {
   const { data } = await apiClient.post<BindingResult>(
