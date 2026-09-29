@@ -198,6 +198,81 @@ test('editing a policy says which version it is, when it was last edited and by 
   expect(fetchPolicy).toHaveBeenCalledWith(id);
 });
 
+/*
+ * A subscription may sit on the whole organisation or on one table. What the
+ * organisation layer gates is what step 3 selects, so it is no wider than the
+ * selector; the layers in between stay hidden.
+ */
+test('a subscription is offered the organisation and table levels only', async () => {
+  renderNew();
+
+  fireEvent.click(await screen.findByRole('button', { name: /level/i }));
+
+  expect(await screen.findByRole('option', { name: 'Organisation' })).toBeInTheDocument();
+  expect(screen.getByRole('option', { name: 'Table' })).toBeInTheDocument();
+  expect(screen.queryByRole('option', { name: 'Schema' })).not.toBeInTheDocument();
+  expect(
+    screen.queryByRole('option', { name: 'Domain or sub-domain' })
+  ).not.toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole('option', { name: 'Organisation' }));
+
+  expect(await screen.findByText(/Every asset step 3 selects/)).toBeInTheDocument();
+});
+
+/*
+ * "Is one of" used to be saved with its list typed into one value. The server
+ * now refuses that shape, so a policy opened and saved unchanged has to leave
+ * with the list where the engine reads it -- or it could never be saved again.
+ */
+test('saving a policy stored with an old-style list writes the items as values', async () => {
+  const id = '55555555-5555-5555-5555-555555555555';
+  const stored = {
+    id,
+    document: {
+      name: 'finance-reads-customer',
+      policyType: 'SUBSCRIPTION',
+      scopeLevel: 'TABLE',
+      scopeFqn: 'demo-pg.salesdb.sales.customer',
+      selector: {
+        condition: { facet: 'table', operator: 'eq', value: 'demo-pg.salesdb.sales.customer' },
+      },
+      subject: {
+        anyOf: [{ team: 'Finance' }],
+        attributes: [{ key: 'department', operator: 'in', value: 'FINANCE, RISK' }],
+      },
+      effect: 'ALLOW',
+    },
+    lifecycleState: 'DRAFT',
+    environment: 'prod',
+    version: 2,
+  };
+  fetchPolicy.mockResolvedValue(stored);
+  updatePolicy.mockResolvedValue({ ...stored, version: 3 });
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(
+    <QueryClientProvider client={client}>
+      <MemoryRouter initialEntries={[`/policies/${id}/edit`]}>
+        <Routes>
+          <Route element={<PolicyBuilderPage />} path="/policies/:id/edit" />
+        </Routes>
+      </MemoryRouter>
+    </QueryClientProvider>
+  );
+
+  // Shown as the two items it meant, before anybody touches it.
+  expect(await screen.findByRole('button', { name: 'Remove RISK' })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+  await waitFor(() => expect(updatePolicy).toHaveBeenCalled());
+  const [sentId, document, version] = updatePolicy.mock.calls[0];
+  expect(sentId).toBe(id);
+  expect(version).toBe(2);
+  expect(JSON.parse(JSON.stringify(document.subject.attributes))).toEqual([
+    { key: 'department', operator: 'in', values: ['FINANCE', 'RISK'] },
+  ]);
+});
+
 test('a plain new policy carries no note about a request', async () => {
   renderNew();
 

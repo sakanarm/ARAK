@@ -172,3 +172,78 @@ describe('how the rows are joined', () => {
     ).toBeInTheDocument();
   });
 });
+
+describe('an attribute that is one of several values', () => {
+  /** The form over a live rule, with the last rule it reported kept for checking. */
+  function renderLive(initial: SubjectRule) {
+    const seen: { rule: SubjectRule } = { rule: initial };
+    function Harness() {
+      const [value, setValue] = useState<SubjectRule>(initial);
+      return (
+        <SubjectBuilder
+          attributes={attributes as never}
+          onChange={(next) => {
+            seen.rule = next;
+            setValue(next);
+          }}
+          principals={[]}
+          value={value}
+        />
+      );
+    }
+    render(
+      <MemoryRouter>
+        <Harness />
+      </MemoryRouter>
+    );
+
+    return seen;
+  }
+
+  it('takes each value as its own item, written to values', () => {
+    // The list is what the engine reads. One string "FINANCE, RISK" in value
+    // is a department nobody is in, so "is one of" admitted nobody.
+    const seen = renderLive({
+      attributes: [{ key: 'department', operator: 'in', values: [] }],
+    });
+    const box = screen.getByLabelText('Add to values');
+
+    fireEvent.change(box, { target: { value: 'FINANCE' } });
+    fireEvent.keyDown(box, { key: 'Enter' });
+    fireEvent.change(box, { target: { value: 'RISK, AUDIT' } });
+
+    expect(seen.rule.attributes?.[0]).toEqual({
+      key: 'department',
+      operator: 'in',
+      values: ['FINANCE', 'RISK'],
+    });
+    // What follows the last comma is still being typed.
+    expect(box).toHaveValue('AUDIT');
+    expect(screen.getByRole('button', { name: 'Remove RISK' })).toBeInTheDocument();
+  });
+
+  it('shows a list saved the old way as the items it meant, and removes one', () => {
+    const seen = renderLive({
+      attributes: [{ key: 'department', operator: 'notIn', value: 'FINANCE, RISK' }],
+    });
+
+    expect(screen.getByRole('button', { name: 'Remove FINANCE' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Remove RISK' }));
+
+    expect(seen.rule.attributes?.[0]).toEqual({
+      key: 'department',
+      operator: 'notIn',
+      values: ['FINANCE'],
+    });
+    expect(
+      screen.queryByRole('button', { name: 'Remove RISK' })
+    ).not.toBeInTheDocument();
+  });
+
+  it('points to "is one of" for either value of one attribute', () => {
+    renderWith(filled);
+
+    expect(screen.getByText(/use "is one of"/)).toBeInTheDocument();
+  });
+});

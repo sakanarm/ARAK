@@ -12,7 +12,8 @@ import {
   validateExpression,
   type ExpressionVerdict,
 } from "../../api/expressions";
-import { Field, Select, TextField } from "./controls";
+import { Field, Select, TextField, ValueList } from "./controls";
+import { isListOperator, listOf, withOperator } from "./conditionValues";
 import { PurposeChecklist } from "./purposePickers";
 
 /**
@@ -183,7 +184,9 @@ export default function SubjectBuilder({
         <p className="tw:mt-0.5 tw:text-xs tw:text-tertiary">
           All of these must hold. The keys and values come from the identity
           cache, so a condition on an attribute nobody carries is visible here
-          rather than at the first denied query.
+          rather than at the first denied query. For either of several values
+          of one attribute, use "is one of"; for either of two attributes,
+          write it in the expression below with ||.
         </p>
         <div className="tw:mt-3 tw:flex tw:flex-col tw:gap-2">
           {attributeRows.map((row, index) => (
@@ -620,7 +623,7 @@ function AttributeRow({
         ariaLabel="Operator"
         className="tw:w-40"
         onChange={(next) =>
-          onChange({ ...row, operator: next as AttributeCondition["operator"] })
+          onChange(withOperator(row, next as AttributeCondition["operator"]))
         }
         options={ATTRIBUTE_OPERATORS.map((operator) => ({
           value: operator.value,
@@ -631,14 +634,26 @@ function AttributeRow({
 
       {row.operator !== "exists" && row.operator !== "notExists" && (
         <>
-          <TextField
-            ariaLabel="Value"
-            className="tw:w-56"
-            list={known ? `attribute-values-${known.key}` : undefined}
-            onChange={(next) => onChange({ ...row, value: next })}
-            placeholder="FINANCE"
-            value={String(row.value ?? "")}
-          />
+          {isListOperator(row.operator) ? (
+            <ValueList
+              className="tw:w-72"
+              list={known ? `attribute-values-${known.key}` : undefined}
+              onChange={(next) =>
+                onChange({ ...row, value: undefined, values: next })
+              }
+              placeholder="FINANCE, then Enter"
+              values={listOf(row)}
+            />
+          ) : (
+            <TextField
+              ariaLabel="Value"
+              className="tw:w-56"
+              list={known ? `attribute-values-${known.key}` : undefined}
+              onChange={(next) => onChange({ ...row, value: next })}
+              placeholder="FINANCE"
+              value={String(row.value ?? "")}
+            />
+          )}
           {known && (
             <datalist id={`attribute-values-${known.key}`}>
               {known.values.map((value) => (
