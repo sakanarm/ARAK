@@ -254,7 +254,7 @@ export default function SettingsPage() {
             <p className="tw:text-sm tw:font-semibold tw:text-primary">ARAK · Data Access Control Platform</p>
             <dl className="tw:mt-3 tw:grid tw:grid-cols-[auto_1fr] tw:gap-x-6 tw:gap-y-1.5 tw:text-sm">
               <dt className="tw:text-tertiary">Designed and built by</dt>
-              <dd className="tw:text-secondary">Sakan Punyanon</dd>
+              <dd className="tw:text-secondary">Sakan Punyanon, Peerawan Chaiyasith</dd>
               <dt className="tw:text-tertiary">For</dt>
               <dd className="tw:text-secondary">MFEC</dd>
             </dl>

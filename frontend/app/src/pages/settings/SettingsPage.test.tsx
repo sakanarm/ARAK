@@ -46,7 +46,7 @@ describe('SettingsPage', () => {
     renderAs();
     const credits = screen.getByRole('region', { name: 'Credits' });
     expect(credits).toHaveTextContent('Designed and built by');
-    expect(credits).toHaveTextContent('Sakan Punyanon');
+    expect(credits).toHaveTextContent('Sakan Punyanon, Peerawan Chaiyasith');
     expect(credits).toHaveTextContent('All rights reserved');
   });
 
