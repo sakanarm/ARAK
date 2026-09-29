@@ -65,13 +65,18 @@ final class ConditionValues {
    * engine filters on both when it is given both, which is safe but is not
    * what anybody writing one of them meant; and a selector on a kind that
    * compares no column would be ignored without a word.
+   *
+   * <p>A lookup compares a column too, with the values its mapping gives, so
+   * it may pick that column by tag. Each column picked gets a lookup of its
+   * own, and the query proxy refuses the query if any of them cannot be bound.
    */
   private static void rowFilterColumn(RowFilter filter) {
     if (filter.getColumns() == null) {
       return;
     }
     if (filter.getKind() != RowFilter.Kind.ATTRIBUTE_COMPARE
-        && filter.getKind() != RowFilter.Kind.IN_LIST) {
+        && filter.getKind() != RowFilter.Kind.IN_LIST
+        && filter.getKind() != RowFilter.Kind.LOOKUP) {
       throw new IllegalArgumentException(
           "A row filter of kind " + (filter.getKind() == null ? "none" : filter.getKind().value())
               + " compares no column, so a column selector on it would be ignored");

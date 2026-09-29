@@ -80,6 +80,8 @@ class LookupRowFilterIT {
 
   private final DecisionService decisions = mock(DecisionService.class);
   private final AtomicReference<RowLookup> lookup = new AtomicReference<>();
+  /** When set, the filter picks its column by this selector instead of naming division. */
+  private final AtomicReference<AssetSelector> byTag = new AtomicReference<>();
   private final Map<String, Principal> people =
       Map.of(
           "reader_aa", person("reader_aa", "AA"),
@@ -270,14 +272,14 @@ class LookupRowFilterIT {
     AssetContext asset =
         AssetContext.of(assetFqn)
             .physicalFromFqn()
-            .column(ColumnContext.named("division").dataType("VARCHAR"))
+            .column(
+                ColumnContext.named("division")
+                    .dataType("VARCHAR")
+                    .facet(FacetType.TAGS, "Org", "Org.Division"))
             .column(ColumnContext.named("value").dataType("INTEGER"))
             .build();
-    RowFilter filter =
-        new RowFilter()
-            .withKind(RowFilter.Kind.LOOKUP)
-            .withColumn("division")
-            .withLookup(lookup.get());
+    RowFilter filter = new RowFilter().withKind(RowFilter.Kind.LOOKUP).withLookup(lookup.get());
+    filter = byTag.get() == null ? filter.withColumn("division") : filter.withColumns(byTag.get());
     List<Policy> policies =
         List.of(
             policy("door", Policy.PolicyType.SUBSCRIPTION),
@@ -381,6 +383,46 @@ class LookupRowFilterIT {
       QueryService.Result emptied = run("reader_aa");
       assertThat(emptied.rows()).as(mode.name()).isEmpty();
       assertThat(emptied.cached()).as(mode.name()).isFalse();
+    }
+  }
+
+  // ------------------------------------------------------ the column by tag
+
+  private static AssetSelector tagged(String tag) {
+    return new AssetSelector()
+        .withCondition(
+            new FacetCondition()
+                .withFacet(FacetType.TAGS)
+                .withOperator(FacetOperator.CONTAINS)
+                .withValue(tag));
+  }
+
+  @Test
+  @DisplayName("the column picked by its tag is filtered the same way, joined or read first")
+  void theColumnCanBePickedByTag() throws Exception {
+    byTag.set(tagged("Org.Division"));
+    for (RowLookup.Mode mode : RowLookup.Mode.values()) {
+      lookup.set(mapping(fqn("lk-pg", "ref", "department_division"), mode));
+
+      QueryService.Result result = run("reader_aa");
+
+      assertThat(result.rows()).as(mode.name()).containsExactly(List.of("A", 123));
+      assertThat(result.explanations().get(0).rowFilters())
+          .as(mode.name())
+          .singleElement()
+          .asString()
+          .startsWith("division is one of the division values in ");
+    }
+  }
+
+  @Test
+  @DisplayName("a tag that no column of the table carries shows no rows, in both modes")
+  void aTagNoColumnCarriesShowsNothing() throws Exception {
+    byTag.set(tagged("Org.Region"));
+    for (RowLookup.Mode mode : RowLookup.Mode.values()) {
+      lookup.set(mapping(fqn("lk-pg", "ref", "department_division"), mode));
+
+      assertThat(rows("reader_aa")).as(mode.name()).isEmpty();
     }
   }
 
@@ -573,5 +615,20 @@ class LookupRowFilterIT {
                         mapping(table, RowLookup.Mode.SUBQUERY)
                             .withKeys(List.of(new LookupKey().withColumn("department"))))))
         .hasMessageContaining("needs a column and an attribute");
+  }
+
+  @Test
+  @DisplayName("a lookup that picks its column by tag saves; one with neither name nor tag does not")
+  void saveTimeCheckByTag() {
+    Policy pickedByTag = saving(mapping(fqn("lk-pg", "ref", "department_division"), null));
+    pickedByTag.getData().getRowFilters().get(0).withColumn(null).withColumns(tagged("Org.Division"));
+
+    assertThatCode(() -> ConditionValues.check(pickedByTag)).doesNotThrowAnyException();
+    assertThatCode(() -> LookupCheck.check(jdbi, pickedByTag)).doesNotThrowAnyException();
+
+    Policy neither = saving(mapping(fqn("lk-pg", "ref", "department_division"), null));
+    neither.getData().getRowFilters().get(0).withColumn(null);
+    assertThatThrownBy(() -> LookupCheck.check(jdbi, neither))
+        .hasMessageContaining("by name or by tag");
   }
 }
