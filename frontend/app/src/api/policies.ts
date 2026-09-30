@@ -1,5 +1,6 @@
 import { apiClient } from './client';
 import type { Policy } from '../generated/entity/policy/policy';
+import type { EnforcementMode } from './sources';
 
 /**
  * The policy API (FR-3, FR-9).
@@ -25,6 +26,39 @@ export interface StoredPolicy {
   updatedBy: string;
   updatedAt: string;
 }
+
+/**
+ * One connection a policy is confined to, as the list reads it.
+ *
+ * `sourceId`, `engine` and `mode` are null when no registered source carries
+ * the service the policy names. The mode is the source's today: a policy does
+ * not store one.
+ */
+export interface PolicyConnection {
+  service: string;
+  sourceId: string | null;
+  name: string;
+  engine: string | null;
+  mode: EnforcementMode | null;
+}
+
+/**
+ * Where a policy applies: every connection, or the ones it is confined to.
+ * Neither, with no connections listed, is a policy confined to two different
+ * services at once, which covers nothing.
+ */
+export interface PolicyReach {
+  everyConnection: boolean;
+  connections: PolicyConnection[];
+}
+
+/** A row of the policy list: the policy, and where it applies. */
+export interface ListedPolicy extends StoredPolicy {
+  reach: PolicyReach;
+}
+
+/** The connection filter's value for policies written for every connection. */
+export const EVERY_CONNECTION = 'any';
 
 /** One table or column a policy resolved onto. */
 export interface PolicyTarget {
@@ -93,17 +127,22 @@ export async function fetchPolicies(query: {
   type?: string;
   scopeLevel?: string;
   q?: string;
+  /** A source id, or {@link EVERY_CONNECTION}. */
+  source?: string;
+  mode?: string;
   limit?: number;
   offset?: number;
-} = {}): Promise<StoredPolicy[]> {
+} = {}): Promise<ListedPolicy[]> {
   const params = new URLSearchParams();
   if (query.state) params.set('state', query.state);
   if (query.type) params.set('type', query.type);
   if (query.scopeLevel) params.set('scopeLevel', query.scopeLevel);
   if (query.q?.trim()) params.set('q', query.q.trim());
+  if (query.source) params.set('source', query.source);
+  if (query.mode) params.set('mode', query.mode);
   params.set('limit', String(query.limit ?? 100));
   params.set('offset', String(query.offset ?? 0));
-  const { data } = await apiClient.get<StoredPolicy[]>(`/v1/policies?${params}`);
+  const { data } = await apiClient.get<ListedPolicy[]>(`/v1/policies?${params}`);
   return data;
 }
 
@@ -119,12 +158,16 @@ export async function countPolicies(query: {
   type?: string;
   scopeLevel?: string;
   q?: string;
+  source?: string;
+  mode?: string;
 } = {}): Promise<number> {
   const params = new URLSearchParams();
   if (query.state) params.set('state', query.state);
   if (query.type) params.set('type', query.type);
   if (query.scopeLevel) params.set('scopeLevel', query.scopeLevel);
   if (query.q?.trim()) params.set('q', query.q.trim());
+  if (query.source) params.set('source', query.source);
+  if (query.mode) params.set('mode', query.mode);
   const { data } = await apiClient.get<{ total: number }>(
     `/v1/policies/count?${params}`
   );

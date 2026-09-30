@@ -578,6 +578,28 @@ public class PolicyStore {
   }
 
   /**
+   * Every policy the filter matches, newest first, for a filter SQL cannot
+   * apply.
+   *
+   * <p>Which connection a policy is for is read from its selector and the
+   * sources registered now (see {@link PolicyReach}), so a caller narrowing by
+   * connection filters this list and pages the result itself. It goes through
+   * the same {@link #filter} as {@link #list}, so the two orders agree.
+   */
+  public List<StoredPolicy> listAll(
+      String lifecycleState, String policyType, String scopeLevel, String search) {
+    Filter filter = filter(lifecycleState, policyType, scopeLevel, search);
+    String sql = "SELECT * FROM policy " + filter.where() + " ORDER BY updated_at DESC";
+
+    return jdbi.withHandle(
+        handle -> {
+          var query = handle.createQuery(sql);
+          filter.bind(query);
+          return query.map(this::map).list();
+        });
+  }
+
+  /**
    * How many policies the same filter matches, for the pager.
    *
    * <p>Separate from {@link #list} rather than returned with it, because the

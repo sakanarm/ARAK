@@ -641,7 +641,31 @@ M36 → M14 · M21 · M29 · M30 (ทุกตัวต้องมี principal
 
 ---
 
-## รอบนี้ — **ข้อ CV: step 3 แสดง table ที่ policy จะครอบ · subscription เลือกได้ทุกระดับ · connection เดียวเลือกได้แค่โหมดของมัน**
+## รอบนี้ — **ข้อ CW: หน้า Policies บอกว่าแต่ละ policy รันที่ connection ไหน ด้วยโหมดอะไร และ filter ได้**
+
+ผู้ใช้ขอ *"หน้า ภาพรวม policy ต่างๆ อาจจะต้องแสดงว่า policy เป็น Type ไหน สำหรับ source ไหน Every หรือ connection ไหน ต้อง Filter ได้"*
+
+**policy ไม่ได้เก็บ connection หรือโหมด** — เลยอ่านจากตัว policy ทุกครั้ง (`PolicyReach` ใหม่ ใน `com.mfec.dac.policy`):
+- anchor ระดับ SERVICE ลงไป → segment แรกของ `scopeFqn` คือ service
+- selector: `service eq x` (ที่หน้า picker เขียน) · `in` หลายตัว · database/schema/table ที่เป็น FQN เต็ม (อย่างน้อย 2 segment) → confine · `and` = intersect · `or` confine ก็ต่อเมื่อทุก branch confine (union) · `not` / `ne` / ชื่อ leaf เปล่า (`schema eq 'dbo'` ซึ่งมีได้ทุก service) → **Every connection**
+- anchor ∩ selector ว่าง = policy ที่ครอบอะไรไม่ได้ → แสดง *No connection*
+- หลักคือ **บอกแคบก็ต่อเมื่อแน่ใจ** — ถ้าบอกว่าอยู่ connection เดียวแต่จริงๆ ไปถึงที่อื่นด้วย คนอ่านจะเข้าใจว่า policy แคบกว่าความจริง
+- service → source ใช้ `SourceCatalogImporter.serviceOf` (เปลี่ยนเป็น `public static`) เทียบแบบไม่สนตัวพิมพ์ · service ที่ไม่มี source → `sourceId`/`engine`/`mode` เป็น null (*Not a registered connection*)
+- โหมดคือ `defaultEnforcementMode` ของ source **ณ ตอนนี้**
+
+**API** — `GET /v1/policies` คืน `ListedPolicy` = field ของ `StoredPolicy` เดิม (ผ่าน `@JsonUnwrapped` ผู้เรียกเดิมไม่ต้องแก้) + `reach: {everyConnection, connections:[{service, sourceId, name, engine, mode}]}` · ไม่มี host/credential ออกไป
+- query param ใหม่ทั้ง list และ `/count`: `source=<uuid>` (policy ที่ confine อยู่ที่ source นั้น) · `source=any` (เฉพาะ policy ที่เป็น every connection) · `mode=PROXY|SECURE_VIEW|NATIVE_CONFIG|NONE` (policy ที่ confine อยู่บน connection ที่ตั้งโหมดนั้นตอนนี้ — every connection **ไม่นับ** เพราะโหมดขึ้นกับ connection ให้ตรงกับที่คอลัมน์แสดง) · uuid/โหมดผิด → 400
+- ถ้ามี source/mode → `PolicyStore.listAll` (filter เดิมใน SQL) แล้วกรองใน Java ค่อย skip/limit · count นับจากชุดเดียวกัน pager เลยไม่เจอหน้าว่าง · ⚠️ ถ้า policy เกิน ~10k ควรย้ายไปเป็น column ที่ derive ไว้ตอน save
+- `DacApplication`: ย้าย `DataSourceStore sources` ขึ้นมาก่อน register `PolicyResource` แล้วส่ง `new PolicyReach(sources::list)` · constructor 5 arg เดิมยังใช้ได้ (`new PolicyReach(List::of)` = ทุกอันเป็น service ที่ไม่ได้ลงทะเบียน)
+
+**หน้า** `PolicyListPage` — คอลัมน์ **Connection** ใหม่ (ชื่อ connection + badge โหมด · *Every connection / Each in its own mode* · *Not a registered connection* · *No connection*) · badge *Subscription* / *Data* ข้างชื่อ · filter **Connection** (Any · Every connection · ทุก source จาก `fetchSources`) และ **Enforcement mode** อยู่ใน URL (`?source=&mode=`) · query key รวม source/mode · Clear ล้างด้วย (เหลือแค่ tab)
+
+**test** — `PolicyReachTest` 13 (confine 7 · every 6 รวม contradiction) · `PolicyListReachTest` 6 (ไม่มี filter ไม่เรียก `listAll` · ต่อ connection + paging · `any` · โหมด · 400 · JSON แบน + มี `reach` ไม่มี `policy`/host) · backend unit ผ่าน · jest 86 suites / 875 ผ่าน (+3 ใน `PolicyListPage.test`) · type-check สะอาด · lint ไม่มีในไฟล์ที่แก้
+- docs: `user-guide.md` (section ใหม่ *The policy list*) · DESIGN M4
+
+**PR** — branch `sakan/policy-list-target` ซ้อนบน `sakan/scope-levels-preview` (PR #8) · ต้อง retarget เป็น main ก่อน merge PR #8 · ยังไม่ขึ้น prod
+
+## รอบก่อน — **ข้อ CV: step 3 แสดง table ที่ policy จะครอบ · subscription เลือกได้ทุกระดับ · connection เดียวเลือกได้แค่โหมดของมัน**
 
 ผู้ใช้ขอ *"ตอนที่เลือก Which assets it covers ต้องแสดง Table หรือ Asset ที่อยู่ใน Scope ให้เห็นด้วยว่า มีอันไหนโดนบ้าง ออกแบบให้สวยหน่อย"* · *"Where it sits เอา Level อื่นของ table กลับมา … เพราะเรามีไป Filter ข้อ 3 Which assets it covers อยู่แล้วหนิ"* · และจาก screenshot: *"ถ้า Source ไม่รองรับ ทำไมมีให้เลือกอะ มันต้องเทาไปไม่ใช่หรอ"* (connection ตั้งเป็น Query proxy แต่ Secure view ยังกดได้)
 
