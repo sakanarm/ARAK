@@ -641,7 +641,34 @@ M36 → M14 · M21 · M29 · M30 (ทุกตัวต้องมี principal
 
 ---
 
-## รอบนี้ — **ข้อ CW: หน้า Policies บอกว่าแต่ละ policy รันที่ connection ไหน ด้วยโหมดอะไร และ filter ได้**
+## รอบนี้ — **ข้อ CX: เพิ่ม local account จากหน้า People · server บังคับเปลี่ยนรหัสผ่านจริง · empty state ของหน้า Policies ตาม filter**
+
+ผู้ใช้ขอ *"add local account -> เอาใส่ใน People & attributes ด้วย เวลาจะสร้าง local user"* และ *"แก้ไข Bug ด้วยนะ"*
+
+**หน้า People** (`PrincipalsPage`) — ปุ่ม **Add local account** (เฉพาะ `PLATFORM_ADMIN`) ข้างลิงก์ Settings → Roles · เปิดฟอร์มเดียวกับ Settings → Roles
+- ย้ายฟอร์มออกมาเป็น `settings/LocalAccountForm.tsx` และ `ROLES` เป็น `settings/appRoles.ts` · `AppRolesPage` ใช้ของเดียวกัน (ไม่มีพฤติกรรมเปลี่ยน)
+- สร้างเสร็จ → ข้อความเขียวพร้อมลิงก์ `/principals/{id}` + invalidate `['principals']` ให้ list โหลดใหม่
+
+**บั๊ก 1 (security) — `must_change` บังคับแค่ใน UI** · token ของคนที่ admin ตั้งรหัสให้ยังเรียก API อื่นได้ครบ (ข้าม UI ด้วย curl ได้)
+- `JwtService`: claim `pwc=true` เฉพาะตอน login ด้วยรหัสที่ต้องเปลี่ยน · `verifySession` คืน `Session(user, passwordChangePending)` · `verify` เดิมยังใช้ได้
+- `AuthFilter(tokens, mustChangePassword)`: token ที่มี `pwc` + endpoint ไม่มี `@PasswordChangeExempt` (ใหม่) + DB ยังบอก `must_change` → **403** *choose a new password before using the rest of the API* · admin ก็โดน
+- เช็ค DB (`LocalIdentityDao.mustChangePassword`) เฉพาะ token ที่มี `pwc` → token ปกติไม่เสีย query เพิ่ม · เปลี่ยนรหัสแล้ว token เดิมใช้ต่อได้ทันที ไม่ต้อง login ใหม่
+- exempt: `GET /v1/auth/me` และ `POST /v1/auth/password` เท่านั้น
+- ⚠️ script ที่ login ด้วย bootstrap admin (`scripts/seed-example-policies.mjs`, `scripts/demo-time-window.py`) จะได้ 403 ถ้า admin คนนั้นยังไม่เคยเปลี่ยนรหัส → เปลี่ยนรหัสใน Profile ก่อน
+
+**บั๊ก 2 — หน้า Policies ว่างเพราะ filter แต่บอกว่า "No policies yet … deny by default"** ทำให้เข้าใจว่า platform ไม่มี policy
+- มี search → *No policy matches "…"* · มี filter/tab → *No policy matches these filters* + บอกว่า policy ที่ถูกซ่อนยังมีผล · ไม่มีอะไรเลยจริงๆ → ข้อความ deny-by-default เดิม
+
+**ไม่ใช่บั๊ก** — `GET /v1/policies` อ่านได้ทุกคนที่ login · ตั้งใจ (FR-3.1.5: ทุกคนต้องเห็นว่า policy ไหนมีผลกับตารางของตัวเอง) · ไม่ได้แก้
+
+**test** — `AuthFilterTest` ใหม่ 7 · `JwtServiceTest` +1 · backend unit 864 ผ่าน · jest 86 suites / 878 ผ่าน (`PrincipalsPage.test` +2 · `PolicyListPage.test` +1 และขยาย 2) · type-check ผ่าน · lint มีแต่ของเดิม
+- live local (:8150): account ใหม่ได้ `pwc` → 403 ที่ `/v1/policies/count` และ `/v1/catalog/assets` · 200 ที่ `/v1/auth/me` · เปลี่ยนรหัสแล้ว token เดิมใช้ได้ · login รอบถัดไปไม่มี `pwc` · account ที่ไม่ต้องเปลี่ยนไม่กระทบ (11/11)
+- ไม่มี migration
+- docs: `user-guide.md` (Signing in · The policy list · People) · DESIGN M2
+
+**PR** — branch `sakan/people-add-account` · ผู้ใช้สั่ง *"เอาขึ้น main + prod ทั้งหมด"* → merge แล้ว deploy prod พร้อมข้อ CU–CW
+
+## รอบก่อน — **ข้อ CW: หน้า Policies บอกว่าแต่ละ policy รันที่ connection ไหน ด้วยโหมดอะไร และ filter ได้**
 
 ผู้ใช้ขอ *"หน้า ภาพรวม policy ต่างๆ อาจจะต้องแสดงว่า policy เป็น Type ไหน สำหรับ source ไหน Every หรือ connection ไหน ต้อง Filter ได้"*
 
@@ -663,9 +690,9 @@ M36 → M14 · M21 · M29 · M30 (ทุกตัวต้องมี principal
 **test** — `PolicyReachTest` 13 (confine 7 · every 6 รวม contradiction) · `PolicyListReachTest` 6 (ไม่มี filter ไม่เรียก `listAll` · ต่อ connection + paging · `any` · โหมด · 400 · JSON แบน + มี `reach` ไม่มี `policy`/host) · backend unit ผ่าน · jest 86 suites / 875 ผ่าน (+3 ใน `PolicyListPage.test`) · type-check สะอาด · lint ไม่มีในไฟล์ที่แก้
 - docs: `user-guide.md` (section ใหม่ *The policy list*) · DESIGN M4
 
-**PR** — branch `sakan/policy-list-target` ซ้อนบน `sakan/scope-levels-preview` (PR #8) · ต้อง retarget เป็น main ก่อน merge PR #8 · ยังไม่ขึ้น prod
+**PR** — branch `sakan/policy-list-target` ซ้อนบน `sakan/scope-levels-preview` (PR #8) · ต้อง retarget เป็น main ก่อน merge PR #8 · merge แล้ว (`c4787bf`) · ขึ้น prod พร้อมข้อ CX
 
-## รอบก่อน — **ข้อ CV: step 3 แสดง table ที่ policy จะครอบ · subscription เลือกได้ทุกระดับ · connection เดียวเลือกได้แค่โหมดของมัน**
+## รอบก่อนหน้า — **ข้อ CV: step 3 แสดง table ที่ policy จะครอบ · subscription เลือกได้ทุกระดับ · connection เดียวเลือกได้แค่โหมดของมัน**
 
 ผู้ใช้ขอ *"ตอนที่เลือก Which assets it covers ต้องแสดง Table หรือ Asset ที่อยู่ใน Scope ให้เห็นด้วยว่า มีอันไหนโดนบ้าง ออกแบบให้สวยหน่อย"* · *"Where it sits เอา Level อื่นของ table กลับมา … เพราะเรามีไป Filter ข้อ 3 Which assets it covers อยู่แล้วหนิ"* · และจาก screenshot: *"ถ้า Source ไม่รองรับ ทำไมมีให้เลือกอะ มันต้องเทาไปไม่ใช่หรอ"* (connection ตั้งเป็น Query proxy แต่ Secure view ยังกดได้)
 

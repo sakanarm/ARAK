@@ -197,6 +197,22 @@ public class LocalIdentityDao {
                 .execute());
   }
 
+  /**
+   * Whether this principal still has to replace a password someone else set.
+   * An account with no local credential has nothing to change.
+   */
+  public boolean mustChangePassword(UUID principalId) {
+    return jdbi.withHandle(
+        handle ->
+            handle
+                .createQuery(
+                    "SELECT must_change FROM local_credential WHERE principal_id = :id")
+                .bind("id", principalId)
+                .mapTo(Boolean.class)
+                .findOne()
+                .orElse(false));
+  }
+
   /** Upserts a password; used by the bootstrap and by an administrator reset. */
   public void setPassword(UUID principalId, String passwordHash, boolean mustChange) {
     jdbi.useHandle(

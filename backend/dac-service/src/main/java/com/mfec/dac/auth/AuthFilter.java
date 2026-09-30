@@ -16,6 +16,8 @@ import java.util.Arrays;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.UUID;
+import java.util.function.Predicate;
 
 /**
  * Turns a bearer token into a {@link SecurityContext}, or refuses the request.
@@ -26,6 +28,11 @@ import java.util.Set;
  * should send the user back to the login screen; 403 means the token is fine
  * and this person simply may not do this, and sending them to login again would
  * be an infinite loop.
+ *
+ * <p>A token issued while its holder still had to choose a new password
+ * reaches only the endpoints marked {@link PasswordChangeExempt}. The database,
+ * not the token, says whether the change is still pending, so the same token
+ * works everywhere once the password has been changed.
  */
 @Provider
 @Secured
@@ -35,11 +42,17 @@ public class AuthFilter implements ContainerRequestFilter {
   private static final String BEARER = "Bearer ";
 
   private final JwtService tokens;
+  private final Predicate<UUID> mustChangePassword;
 
   @Context private ResourceInfo resourceInfo;
 
-  public AuthFilter(JwtService tokens) {
+  /**
+   * @param mustChangePassword whether a principal still has to replace a
+   *     password someone else set; asked only for tokens marked as pending
+   */
+  public AuthFilter(JwtService tokens, Predicate<UUID> mustChangePassword) {
     this.tokens = tokens;
+    this.mustChangePassword = mustChangePassword;
   }
 
   @Override
@@ -50,13 +63,27 @@ public class AuthFilter implements ContainerRequestFilter {
       return;
     }
 
-    Optional<AuthenticatedUser> user = tokens.verify(header.substring(BEARER.length()).trim());
-    if (user.isEmpty()) {
+    Optional<JwtService.Session> session =
+        tokens.verifySession(header.substring(BEARER.length()).trim());
+    if (session.isEmpty()) {
       request.abortWith(unauthorized("the session token is invalid or has expired"));
       return;
     }
 
-    AuthenticatedUser caller = user.get();
+    AuthenticatedUser caller = session.get().user();
+    // 403 rather than 401: the token is good, and the UI already shows the
+    // password form for it. A 401 would send the user back to a login that
+    // hands out the same kind of token.
+    if (session.get().passwordChangePending()
+        && !passwordChangeExempt()
+        && mustChangePassword.test(caller.id())) {
+      request.abortWith(
+          error(
+              Response.Status.FORBIDDEN,
+              "choose a new password before using the rest of the API"));
+      return;
+    }
+
     Set<String> required = requiredRoles();
     if (!required.isEmpty() && !caller.isPlatformAdmin()
         && required.stream().noneMatch(caller.appRoles()::contains)) {
@@ -97,6 +124,12 @@ public class AuthFilter implements ContainerRequestFilter {
             ? null
             : resourceInfo.getResourceClass().getAnnotation(Secured.class);
     return onClass == null ? Set.of() : Set.copyOf(Arrays.asList(onClass.value()));
+  }
+
+  private boolean passwordChangeExempt() {
+    return resourceInfo != null
+        && resourceInfo.getResourceMethod() != null
+        && resourceInfo.getResourceMethod().isAnnotationPresent(PasswordChangeExempt.class);
   }
 
   private static SecurityContext securityContext(AuthenticatedUser caller, String scheme) {

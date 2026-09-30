@@ -316,12 +316,19 @@ export default function PolicyListPage() {
           <p className="tw:mt-3 tw:text-md tw:font-medium tw:text-primary">
             {search
               ? `No policy matches “${search}”`
-              : 'No policy matches these filters'}
+              : filtered || type
+                ? 'No policy matches these filters'
+                : 'No policies yet'}
           </p>
+          {/* An empty filtered list says nothing about what the engine does,
+              so it must not borrow the words for an empty platform: a reader
+              would take "denies by default" as the effect of their filter. */}
           <p className="tw:mt-1 tw:text-sm tw:text-tertiary">
-            With nothing active, the engine denies by default — assets are not
-            exposed while this list is empty, they are simply unreachable
-            through us.
+            {filtered
+              ? 'This only narrows the list — policies outside these filters still apply. Clear the filters to see every policy.'
+              : type
+                ? 'Policies of the other kind still apply. All policies shows every one.'
+                : 'With nothing active, the engine denies by default — assets are not exposed while this list is empty, they are simply unreachable through us.'}
           </p>
         </div>
       ) : (

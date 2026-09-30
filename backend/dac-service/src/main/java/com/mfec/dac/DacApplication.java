@@ -613,7 +613,7 @@ public class DacApplication extends Application<DacConfiguration> {
             environment.getObjectMapper(),
             applier,
             () -> omConnection.credentials().webhookSecret()));
-    environment.jersey().register(new AuthFilter(tokens));
+    environment.jersey().register(new AuthFilter(tokens, identities::mustChangePassword));
 
     startCatalogSync(
         environment,
