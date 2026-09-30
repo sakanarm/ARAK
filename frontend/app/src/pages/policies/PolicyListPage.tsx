@@ -8,9 +8,18 @@ import { Input } from '@openmetadata/ui-core-components/components/base/input/in
 import { apiErrorMessage } from '../../api/client';
 import {
   countPolicies,
+  EVERY_CONNECTION,
   fetchPolicies,
+  type ListedPolicy,
+  type PolicyReach,
   type StoredPolicy,
 } from '../../api/policies';
+import {
+  ENFORCEMENT_MODES,
+  type EnforcementMode,
+  fetchSources,
+} from '../../api/sources';
+import { engineLabel, useSourceEngines } from '../../engines';
 import { PAGE_SIZES, Pager } from '../../components/Pager';
 import { relativeTime } from '../../components/widgets';
 import { shortFqn } from '../../lib/fqn';
@@ -70,7 +79,24 @@ const KINDS = [
 
 /** The columns of the list, shared by its heading and its rows. */
 const ROW_GRID =
-  'tw:md:grid tw:md:grid-cols-[minmax(0,1fr)_13rem_9rem_9rem] tw:md:items-center tw:md:gap-4';
+  'tw:md:grid tw:md:grid-cols-[minmax(0,1fr)_12rem_10rem_8rem_8rem] tw:md:items-center tw:md:gap-4';
+
+function modeLabel(mode: EnforcementMode): string {
+  return ENFORCEMENT_MODES.find((entry) => entry.value === mode)?.label ?? mode;
+}
+
+function modeColor(mode: EnforcementMode) {
+  switch (mode) {
+    case 'NATIVE_CONFIG':
+      return 'warning' as const;
+    case 'SECURE_VIEW':
+      return 'blue' as const;
+    case 'PROXY':
+      return 'purple' as const;
+    default:
+      return 'gray' as const;
+  }
+}
 
 export default function PolicyListPage() {
   const [params, setParams] = useSearchParams();
@@ -79,15 +105,18 @@ export default function PolicyListPage() {
   const type = params.get('type') ?? '';
   const scopeLevel = params.get('scopeLevel') ?? '';
   const search = params.get('q') ?? '';
+  const source = params.get('source') ?? '';
+  const mode = params.get('mode') ?? '';
   const [searchDraft, setSearchDraft] = useState(search);
+  const sources = useQuery({ queryKey: ['sources'], queryFn: fetchSources, retry: false });
 
   const offset = Math.max(0, Number(params.get('offset') ?? 0) || 0);
   const sized = Number(params.get('size') ?? PAGE_SIZE);
   const pageSize = PAGE_SIZES.includes(sized) ? sized : PAGE_SIZE;
-  const filter = { state, type, scopeLevel, q: search };
+  const filter = { state, type, scopeLevel, q: search, source, mode };
 
   const { data, isLoading, isFetching, error } = useQuery({
-    queryKey: ['policies', state, type, scopeLevel, search, offset, pageSize],
+    queryKey: ['policies', state, type, scopeLevel, search, source, mode, offset, pageSize],
     queryFn: () => fetchPolicies({ ...filter, limit: pageSize, offset }),
     // The page being left stays on screen while the next one is fetched.
     // Without this the list empties for the length of a request and the page
@@ -100,11 +129,22 @@ export default function PolicyListPage() {
   // belongs to the filter, not to the page, so clicking through pages must not
   // make the server count the same rows again.
   const { data: total = 0 } = useQuery({
-    queryKey: ['policies-count', state, type, scopeLevel, search],
+    queryKey: ['policies-count', state, type, scopeLevel, search, source, mode],
     queryFn: () => countPolicies(filter),
   });
 
-  const filtered = Boolean(state || scopeLevel || search);
+  const filtered = Boolean(state || scopeLevel || search || source || mode);
+
+  // A source the list was linked to keeps its option even when the sources
+  // cannot be read, so the select never shows a value it has no label for.
+  const sourceOptions = [
+    { value: '', label: 'Any connection' },
+    { value: EVERY_CONNECTION, label: 'Every connection' },
+    ...(sources.data ?? []).map((entry) => ({ value: entry.id, label: entry.name })),
+    ...(source && source !== EVERY_CONNECTION && !sources.data?.some((entry) => entry.id === source)
+      ? [{ value: source, label: 'This connection' }]
+      : []),
+  ];
 
   function update(key: string, value: string) {
     const draft = new URLSearchParams(params);
@@ -208,6 +248,26 @@ export default function PolicyListPage() {
             ]}
             value={scopeLevel}
           />
+          {/* Where it runs. A policy stores no connection and no mode: the
+              connection is read from what its anchor and selector confine it
+              to, and the mode is that connection's own, as it is set today. */}
+          <Select
+            ariaLabel="Connection"
+            className="tw:w-48"
+            onChange={(next) => update('source', next)}
+            options={sourceOptions}
+            value={source}
+          />
+          <Select
+            ariaLabel="Enforcement mode"
+            className="tw:w-48"
+            onChange={(next) => update('mode', next)}
+            options={[
+              { value: '', label: 'Any mode' },
+              ...ENFORCEMENT_MODES.map((entry) => ({ value: entry.value, label: entry.label })),
+            ]}
+            value={mode}
+          />
           <Button size="md" type="submit">
             Search
           </Button>
@@ -270,6 +330,7 @@ export default function PolicyListPage() {
             aria-hidden
             className={`tw:hidden tw:border-b tw:border-secondary tw:bg-secondary tw:px-4 tw:py-2.5 tw:text-xs tw:font-semibold tw:text-tertiary ${ROW_GRID}`}>
             <span>Policy</span>
+            <span>Connection</span>
             <span>Scope</span>
             <span>State</span>
             <span>Updated</span>
@@ -308,7 +369,7 @@ export default function PolicyListPage() {
   );
 }
 
-function PolicyRow({ policy }: { policy: StoredPolicy }) {
+function PolicyRow({ policy }: { policy: ListedPolicy }) {
   const document = policy.document;
   const data = document.policyType === 'DATA';
   const readback = data
@@ -335,6 +396,9 @@ function PolicyRow({ policy }: { policy: StoredPolicy }) {
             <span className="tw:truncate tw:text-sm tw:font-semibold tw:text-primary">
               {document.displayName || document.name}
             </span>
+            <Badge color={data ? 'indigo' : 'brand'} size="sm" type="pill-color">
+              {data ? 'Data' : 'Subscription'}
+            </Badge>
             {document.effect === 'DENY' && (
               <Badge color="error" size="sm" type="pill-color">
                 Deny
@@ -347,6 +411,8 @@ function PolicyRow({ policy }: { policy: StoredPolicy }) {
           </p>
         </div>
       </div>
+
+      <Reach reach={policy.reach} />
 
       <div className="tw:mt-2 tw:min-w-0 tw:pl-12 tw:md:mt-0 tw:md:pl-0">
         <p className="tw:text-sm tw:text-secondary">
@@ -377,6 +443,56 @@ function PolicyRow({ policy }: { policy: StoredPolicy }) {
         <p className="tw:truncate tw:text-quaternary">by {policy.updatedBy}</p>
       </div>
     </Link>
+  );
+}
+
+/**
+ * Where a policy runs: the connections it is confined to and the mode each
+ * enforces it with, or every connection, where each runs it its own way.
+ */
+function Reach({ reach }: { reach: PolicyReach | undefined }) {
+  const { data: engines } = useSourceEngines();
+  const cell = 'tw:mt-2 tw:min-w-0 tw:pl-12 tw:md:mt-0 tw:md:pl-0';
+  if (!reach) return <div className={cell} />;
+  if (reach.everyConnection) {
+    return (
+      <div className={cell}>
+        <p className="tw:text-sm tw:text-secondary">Every connection</p>
+        <p className="tw:text-xs tw:text-quaternary">Each in its own mode</p>
+      </div>
+    );
+  }
+  if (reach.connections.length === 0) {
+    return (
+      <div className={cell}>
+        <p className="tw:text-sm tw:text-warning-primary">No connection</p>
+        <p className="tw:text-xs tw:text-quaternary">
+          Anchored on one service, selecting another
+        </p>
+      </div>
+    );
+  }
+  return (
+    <ul className={`${cell} tw:space-y-1`}>
+      {reach.connections.map((connection) => (
+        <li className="tw:min-w-0" key={connection.service}>
+          <p
+            className="tw:truncate tw:text-sm tw:text-secondary"
+            title={connection.engine ? engineLabel(engines, connection.engine) : undefined}>
+            {connection.name}
+          </p>
+          {connection.mode ? (
+            <Badge color={modeColor(connection.mode)} size="sm" type="pill-color">
+              {modeLabel(connection.mode)}
+            </Badge>
+          ) : (
+            <Badge color="gray" size="sm" type="modern">
+              Not a registered connection
+            </Badge>
+          )}
+        </li>
+      ))}
+    </ul>
   );
 }
 

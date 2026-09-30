@@ -769,6 +769,37 @@ A data policy can mask a column with:
 Columns are chosen by metadata: name or pattern, classification, tag, glossary
 term, data type or custom property.
 
+## The policy list
+
+**Policies** lists every policy, a page at a time. Each row shows:
+
+- its name, its kind (*Subscription* or *Data*) and, for a subscription, a
+  *Deny* mark when it denies, with a one-line readback of what it says;
+- **Connection**: where it runs. This is either the connection it is confined
+  to, with the mode that connection enforces it by today (*Query proxy*,
+  *Secure view*, *Native source config* or *Not enforced yet*), or **Every
+  connection**, where each connection enforces it in its own mode. A service
+  that no registered connection carries is marked *Not a registered
+  connection*. *No connection* means the policy is anchored on one service but
+  selects assets on another, so it covers nothing;
+- its level and anchor, its state and environment, and when and by whom it was
+  last changed.
+
+A policy does not store a connection. The list reads it from the policy: a
+level of service or below anchors it on one service, and a selector requiring
+*service equals x*, which is what choosing a connection writes, confines it to
+*x*. Anything that could reach a second service, such as an *or* with one
+branch open, a *not*, or a bare schema name that every service may have, reads
+as **Every connection**.
+
+Narrow the list with the tabs (*All policies*, *Subscription*, *Data*), a
+search, and the **state**, **level**, **connection** and **mode** filters.
+*Every connection* in the connection filter shows only the policies written
+for every connection. A mode shows the policies confined to a connection set
+to that mode today; policies for every connection are not included, since
+their mode depends on the connection. **Clear** resets everything but the
+tab.
+
 ## Writing a policy (policy builder)
 
 **Policies → New policy** first asks **where the policy runs**, on a page of
