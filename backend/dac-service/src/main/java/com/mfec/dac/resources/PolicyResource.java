@@ -1,5 +1,6 @@
 package com.mfec.dac.resources;
 
+import com.fasterxml.jackson.annotation.JsonUnwrapped;
 import com.mfec.dac.auth.AuthenticatedUser;
 import com.mfec.dac.auth.Secured;
 import com.mfec.dac.common.Fqns;
@@ -7,8 +8,10 @@ import com.mfec.dac.policy.DecisionService;
 import com.mfec.dac.policy.ImpactAnalysis;
 import com.mfec.dac.policy.PolicyBindingMaterializer;
 import com.mfec.dac.policy.PolicyOverview;
+import com.mfec.dac.policy.PolicyReach;
 import com.mfec.dac.policy.PolicyStore;
 import com.mfec.dac.purpose.PurposeStore;
+import com.mfec.dac.source.DataSourceStore;
 import com.mfec.dac.schema.entity.policy.Policy;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.ws.rs.BadRequestException;
@@ -51,6 +54,7 @@ public class PolicyResource {
   private final PolicyOverview overview;
   private final ImpactAnalysis impact;
   private final PurposeStore purposes;
+  private final PolicyReach reach;
 
   public PolicyResource(
       PolicyStore policies,
@@ -70,23 +74,113 @@ public class PolicyResource {
       PolicyOverview overview,
       ImpactAnalysis impact,
       PurposeStore purposes) {
+    this(policies, materializer, overview, impact, purposes, new PolicyReach(List::of));
+  }
+
+  /**
+   * @param reach reads which connections a policy is for, against the sources
+   *     registered now, for the list and its connection and mode filters
+   */
+  public PolicyResource(
+      PolicyStore policies,
+      PolicyBindingMaterializer materializer,
+      PolicyOverview overview,
+      ImpactAnalysis impact,
+      PurposeStore purposes,
+      PolicyReach reach) {
     this.policies = policies;
     this.materializer = materializer;
     this.overview = overview;
     this.impact = impact;
     this.purposes = purposes;
+    this.reach = reach;
   }
 
+  /**
+   * A page of policies, each with the connections it is written for.
+   *
+   * <p>{@code source} is a source id, or {@code any} for the policies written
+   * for every connection; {@code mode} keeps the policies written for a
+   * connection that mode enforces today. Neither is a column: both are read
+   * from the policy and the sources as they are now, so with either set the
+   * page is cut from the filtered list here rather than by the database.
+   */
   @GET
-  public List<PolicyStore.StoredPolicy> list(
+  public List<ListedPolicy> list(
       @QueryParam("state") String lifecycleState,
       @QueryParam("type") String policyType,
       @QueryParam("scopeLevel") String scopeLevel,
       @QueryParam("q") String search,
+      @QueryParam("source") String source,
+      @QueryParam("mode") String mode,
       @QueryParam("limit") @DefaultValue("50") int limit,
       @QueryParam("offset") @DefaultValue("0") int offset) {
-    return policies.list(
-        lifecycleState, policyType, scopeLevel, search, Math.min(limit, 200), offset);
+    int size = Math.min(limit, 200);
+    int from = Math.max(offset, 0);
+    ReachFilter filter = reachFilter(source, mode);
+    List<DataSourceStore.Source> sources = reach.sources();
+    if (filter == null) {
+      return policies.list(lifecycleState, policyType, scopeLevel, search, size, from).stream()
+          .map(policy -> listed(policy, sources))
+          .toList();
+    }
+    return policies.listAll(lifecycleState, policyType, scopeLevel, search).stream()
+        .map(policy -> listed(policy, sources))
+        .filter(filter::keeps)
+        .skip(from)
+        .limit(size)
+        .toList();
+  }
+
+  /** A stored policy and where it applies, flattened so the list keeps its shape. */
+  public record ListedPolicy(
+      @JsonUnwrapped PolicyStore.StoredPolicy policy, PolicyReach.Reach reach) {}
+
+  private ListedPolicy listed(
+      PolicyStore.StoredPolicy policy, List<DataSourceStore.Source> sources) {
+    return new ListedPolicy(policy, reach.of(policy.document(), sources));
+  }
+
+  /** The connection and mode a caller narrowed to; either may be null. */
+  private record ReachFilter(String source, String mode) {
+    boolean keeps(ListedPolicy listed) {
+      PolicyReach.Reach where = listed.reach();
+      if (EVERY.equals(source) && !where.everyConnection()) {
+        return false;
+      }
+      if (source != null
+          && !EVERY.equals(source)
+          && where.connections().stream()
+              .noneMatch(c -> c.sourceId() != null && c.sourceId().toString().equals(source))) {
+        return false;
+      }
+      return mode == null || where.connections().stream().anyMatch(c -> mode.equals(c.mode()));
+    }
+  }
+
+  private static final String EVERY = "any";
+
+  private static ReachFilter reachFilter(String source, String mode) {
+    String s = source == null || source.isBlank() ? null : source.strip();
+    String m = mode == null || mode.isBlank() ? null : mode.strip();
+    if (s == null && m == null) {
+      return null;
+    }
+    if (s != null && !EVERY.equals(s)) {
+      try {
+        s = UUID.fromString(s).toString();
+      } catch (IllegalArgumentException e) {
+        throw new BadRequestException("source is a source id, or any for every connection");
+      }
+    }
+    if (m != null) {
+      try {
+        m = DataSourceStore.EnforcementMode.valueOf(m).name();
+      } catch (IllegalArgumentException e) {
+        throw new BadRequestException("mode is one of PROXY, SECURE_VIEW, NATIVE_CONFIG, NONE");
+      }
+    }
+    return new ReachFilter(s, m);
   }
 
   /**
@@ -108,12 +202,42 @@ public class PolicyResource {
       @QueryParam("state") String lifecycleState,
       @QueryParam("type") String policyType,
       @QueryParam("scopeLevel") String scopeLevel,
-      @QueryParam("q") String search) {
-    return new PolicyCount(policies.count(lifecycleState, policyType, scopeLevel, search));
+      @QueryParam("q") String search,
+      @QueryParam("source") String source,
+      @QueryParam("mode") String mode) {
+    ReachFilter filter = reachFilter(source, mode);
+    if (filter == null) {
+      return new PolicyCount(policies.count(lifecycleState, policyType, scopeLevel, search));
+    }
+    List<DataSourceStore.Source> sources = reach.sources();
+    long total =
+        policies.listAll(lifecycleState, policyType, scopeLevel, search).stream()
+            .map(policy -> listed(policy, sources))
+            .filter(filter::keeps)
+            .count();
+    return new PolicyCount((int) total);
   }
 
   /** An object rather than a bare number, so a field can be added without a new shape. */
   public record PolicyCount(int total) {}
+
+  /**
+   * The tables a draft would cover, asked while it is being written.
+   *
+   * <p>Nothing is saved or bound: the answer comes from the same matcher the
+   * binding uses, run over the catalog and thrown away. It names tables and
+   * columns only -- metadata the catalog already shows every signed-in caller
+   * -- and never a row, so it is open to the same callers as the catalog.
+   */
+  @POST
+  @Path("/scope-preview")
+  public PolicyBindingMaterializer.Preview scopePreview(
+      Policy document, @QueryParam("limit") @DefaultValue("100") int limit) {
+    if (document == null) {
+      throw new BadRequestException("Give the draft policy to preview");
+    }
+    return materializer.preview(document, limit);
+  }
 
   @GET
   @Path("/{id}")

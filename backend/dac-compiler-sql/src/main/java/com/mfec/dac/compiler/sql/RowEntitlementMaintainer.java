@@ -242,6 +242,9 @@ public final class RowEntitlementMaintainer {
           // written into the view itself. There is nothing per-principal to
           // store, and storing something would be a second copy to keep true.
           case RAW_PREDICATE -> {}
+          // The compiler refused to build a view over a lookup, so the view
+          // returns no rows to anybody and there is nothing here to grant.
+          case LOOKUP -> {}
           case ENTITLEMENT_JOIN -> {
             String key = gate(shape, predicate, principal);
             for (String value : list(source.valuesFor(principal, assetKey, key))) {

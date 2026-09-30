@@ -492,6 +492,112 @@ class PolicyEngineTest {
                     .withUserAttribute("branch")));
   }
 
+  /** Rows where the column tagged Org.Branch equals the reader's branch. */
+  private static DataPolicy taggedBranchFilter() {
+    return new DataPolicy()
+        .withRowFilters(
+            List.of(
+                new RowFilter()
+                    .withKind(RowFilter.Kind.ATTRIBUTE_COMPARE)
+                    .withColumns(
+                        new AssetSelector()
+                            .withCondition(
+                                new FacetCondition()
+                                    .withFacet(FacetType.TAGS)
+                                    .withOperator(FacetOperator.CONTAINS)
+                                    .withValue("Org.Branch")))
+                    .withOperator(FacetOperator.EQ)
+                    .withUserAttribute("branch")));
+  }
+
+  private static AssetContext tableWith(String fqn, ColumnContext.Builder... columns) {
+    AssetContext.Builder builder = AssetContext.of(fqn).physicalFromFqn();
+    for (ColumnContext.Builder column : columns) {
+      builder.column(column);
+    }
+    return builder.build();
+  }
+
+  private static ColumnContext.Builder branchColumn(String name) {
+    return ColumnContext.named(name).dataType("VARCHAR").facet(FacetType.TAGS, "Org", "Org.Branch");
+  }
+
+  /** Decided on another table, so every policy is widened from customer to all of dbo. */
+  private static PolicyDecision decideOn(AssetContext asset, List<Policy> policies) {
+    for (Policy policy : policies) {
+      policy.setSelector(
+          new AssetSelector()
+              .withCondition(
+                  new FacetCondition()
+                      .withFacet(FacetType.SCHEMA)
+                      .withOperator(FacetOperator.EQ)
+                      .withValue("dbo")));
+    }
+    Principal branched =
+        Principal.withId("analyst_a").roles("analyst").attribute("branch", "BKK-01").build();
+    return ENGINE.evaluate(branched, asset, NOW, policies);
+  }
+
+  @Test
+  @DisplayName("a row filter can pick its column by tag, whatever each table calls it")
+  void rowFilterColumnByTag() {
+    List<Policy> policies = withAccess(dataPolicy("org-rls", ScopeLevel.ORG, taggedBranchFilter()));
+
+    PolicyDecision customer =
+        decideOn(
+            tableWith(
+                "prod-mssql.SalesDB.dbo.customer",
+                ColumnContext.named("email").dataType("VARCHAR"),
+                branchColumn("branch_code")),
+            policies);
+    PolicyDecision orders =
+        decideOn(tableWith("prod-mssql.SalesDB.dbo.orders", branchColumn("sale_branch")), policies);
+
+    assertThat(customer.getRowPredicates())
+        .extracting(ResolvedRowPredicate::getColumn)
+        .containsExactly("branch_code");
+    assertThat(customer.getRowPredicates().get(0).getKind())
+        .isEqualTo(ResolvedRowPredicate.Kind.ATTRIBUTE_COMPARE);
+    assertThat(customer.getRowPredicates().get(0).getValues()).containsExactly("BKK-01");
+    assertThat(orders.getRowPredicates())
+        .extracting(ResolvedRowPredicate::getColumn)
+        .containsExactly("sale_branch");
+  }
+
+  @Test
+  @DisplayName("a table with no column the selector picks shows no rows, not every row")
+  void rowFilterColumnByTagWithNoMatchIsAlwaysFalse() {
+    PolicyDecision decision =
+        decideOn(
+            tableWith(
+                "prod-mssql.SalesDB.dbo.product", ColumnContext.named("sku").dataType("VARCHAR")),
+            withAccess(dataPolicy("org-rls", ScopeLevel.ORG, taggedBranchFilter())));
+
+    assertThat(decision.getRowPredicates()).hasSize(1);
+    assertThat(decision.getRowPredicates().get(0).getKind())
+        .isEqualTo(ResolvedRowPredicate.Kind.ALWAYS_FALSE);
+    assertThat(explanations(decision)).contains("no column of this table matches");
+  }
+
+  @Test
+  @DisplayName("a table with two columns the selector picks is filtered on both")
+  void rowFilterColumnByTagFiltersEveryMatch() {
+    PolicyDecision decision =
+        decideOn(
+            tableWith(
+                "prod-mssql.SalesDB.dbo.transfer",
+                branchColumn("from_branch"),
+                branchColumn("to_branch")),
+            withAccess(dataPolicy("org-rls", ScopeLevel.ORG, taggedBranchFilter())));
+
+    assertThat(decision.getRowPredicates())
+        .extracting(ResolvedRowPredicate::getColumn)
+        .containsExactlyInAnyOrder("from_branch", "to_branch");
+    assertThat(decision.getRowPredicates())
+        .allSatisfy(
+            p -> assertThat(p.getKind()).isEqualTo(ResolvedRowPredicate.Kind.ATTRIBUTE_COMPARE));
+  }
+
   @Test
   @DisplayName("a denied decision carries no masks and no filters to compile")
   void deniedDecisionCarriesNothingToEnforce() {

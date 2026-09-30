@@ -52,13 +52,16 @@ you. Your platform roles decide which pages you see in the left-hand menu.
   password** before anything else. Enter the password you were given and one
   only you know; the page you were going to opens once it is saved. **Sign out
   instead** leaves without changing it, and you will be asked again next time.
+  Until the new password is saved the account can do nothing else in ARAK:
+  every other request is refused, whether it comes from the browser or from
+  a script signing in with the same account.
 - A wrong current password counts as a failed sign-in. After too many in a row
   the account is locked for a while and both signing in and changing the
   password are refused until the lock ends. An administrator can reset the
   password if you have forgotten it.
-- An administrator creates local accounts under **Settings → Application
-  roles**. Attributes of a local account are set by an administrator under
-  **People**.
+- An administrator creates local accounts under **People** or **Settings →
+  Application roles**. Attributes of a local account are set by an
+  administrator under **People**.
 
 ## Platform roles: who can do what
 
@@ -338,7 +341,8 @@ Each purpose has:
   data* below);
 - who **answers for** it (for example the DPO or a steward);
 - the **longest access** a request for it may ask for, from 1 to 365 days.
-  A request for the purpose cannot ask for longer, or until revoked.
+  A request for the purpose cannot ask for longer, or until revoked, and a
+  grant given for it cannot last longer or go without an end.
 
 The page has three parts:
 
@@ -411,6 +415,16 @@ stewards give grants from the table's **Access** tab with **Grant access**.
 - A reason is always required, and the end date must be in the future.
 - You cannot grant to yourself.
 - A grant can start later. Grants end by themselves on their end date.
+- **What for** names a purpose from the register (see *Purposes*); it is
+  optional. Only purposes in use are offered. A purpose with a longest access
+  bounds the grant: it must have an end, no more than that many days after its
+  start, so the longer durations and *No expiry* disappear, the days are brought
+  within the limit, and the form says why when the dates you typed go past it.
+- A grant made from a request keeps the request's purpose. If the purpose was
+  retired, or its longest access was shortened, after the request was sent,
+  completing the request is refused until the grant fits.
+- Editing a grant keeps its purpose, and its longest access still counts from
+  the grant's original start.
 - Edit or revoke a grant from its **⋯** menu. Revoking needs a reason. Revoked
   grants are kept in the history (the **Audit** tab), never deleted.
 - A grant only opens the door. Masks, hidden columns and row filters from data
@@ -431,8 +445,10 @@ The **Access** tab answers "who can read this table, and how".
     covers, so it lets nobody in.
   - *Not started*: starts later.
   - *Expired*: ended (hidden by default).
-  Search by name, reason or granter, filter by state, and page through long
-  lists. Click a name or a reason for the full details, including **Lets in**:
+  A grant given for a purpose shows the purpose's name beside it. Search by
+  name, reason, purpose or granter, filter by state, and page through long
+  lists. Click a name or a reason for the full details, including the
+  **Purpose** and its legal basis (or *None named*) and **Lets in**:
   the people this grant actually lets in, which for a group answers who in it
   gets access.
 - **How it is decided**: the policies that apply.
@@ -606,6 +622,21 @@ database, schema, table or column, and a **selector** that picks the assets,
 usually by metadata (for example tags contains 'PII.Sensitive', or domains
 contains 'Finance'). Tables that match later are covered automatically.
 
+Both kinds can sit at any level. The level and its **anchor** (the fully
+qualified name it is measured from, such as a service, a database or a schema)
+only narrow where the policy looks: step 3, *Which assets it covers*, then
+picks among the assets under the anchor. An organisation-level policy looks on
+every source. Whatever the level, a policy with nothing selected in step 3
+covers nothing.
+
+Under step 3, **What this covers right now** lists the tables the draft would
+cover if it were saved now, grouped by schema, with how many of the tables in
+scope that is. For a data policy it also shows, on each table, the columns the
+column rules pick. A table's name opens its catalog page in a new tab. The
+panel follows your edits and saves nothing. A long list can be filtered by
+name; past 200 tables it shows the first 200 and says how many there are in
+all. It shows names only, never rows.
+
 A policy's **subject rule** says who it is for:
 
 - named principals: roles, teams, groups, users, or the asset's owners
@@ -622,6 +653,96 @@ A policy's **subject rule** says who it is for:
 
 Everything in a rule must hold at once, except the list of principals, where one
 match is enough. An empty rule matches nobody.
+
+**Several values.** *is one of* and *is none of* take a list, in the selector
+and in the attributes alike. Type a value and press **Enter** (or type a comma);
+each value becomes its own item, and × removes it. So:
+
+- *either of two values of one attribute*: department **is one of** FINANCE,
+  RISK;
+- *either of two attributes*: write it in the expression, for example
+  user.department == 'FINANCE' || user.clearance >= 'L2' (attribute rows are
+  always joined with *and*).
+
+*is none of* with no values, or *is not* with nothing after it, is refused when
+you save: either would match everybody. A policy saved before this change with
+its list typed into one box is shown as separate items and saved in the new
+form. Until it is saved again it is read the same way, so "FINANCE, RISK" means
+either department, not one department with a comma in its name.
+
+**Which rows they see.** A row filter that compares a column with the person
+(*Column matches their own attribute*, *Column is one of their values*, *Column
+is one of the values a mapping table gives them*) picks that column in one of
+two ways:
+
+- **Column named**: type its name, for example branch_code. It fits only the
+  tables that call the column that.
+- **Column tagged**: pick it by its metadata, as a column rule does, for
+  example tags contains Org.Branch. ARAK finds the column in each table when
+  it decides, so one policy covers a branch column called branch_code in one
+  table and sale_branch in another. Only tags put on the column itself count;
+  a tag on the table does not pass down to its columns here.
+
+A table with **no** column that matches shows **no rows**, rather than all of
+them. A table with **several** is filtered on each, so a row must pass every
+one (a transfer with from_branch and to_branch shows only transfers inside the
+person's own branch). A filter uses one way or the other, not both.
+
+**Rows given by a mapping table.** Sometimes what a person may see is not an
+attribute of theirs but a row in another table. A table holds sales by
+division; the person is in department AA; a mapping table says department AA
+belongs to division A. The kind *Column is one of the values a mapping table
+gives them* writes exactly that:
+
+- **Column**: the column of the filtered table, for example division. Pick it
+  by name (*Column named*) or by its tag (*Column tagged*, for example tags
+  contains Org.Division), as for the other filters above. By tag, every column
+  that carries the tag is filtered through the mapping, and a table with no
+  such column shows no rows.
+- **Value column** and **Mapping table**: which column of which table holds
+  the values a person may see, for example division in
+  warehouse.sales.ref.department_division. Write the table's full name
+  (service.database.schema.table). It must be in the catalog: saving a filter
+  whose mapping table, or one of its columns, is not there is refused.
+- **Keys**: how a person is matched to rows of the mapping. Each key compares a
+  column of the mapping with one of the person's attributes (department with
+  their department). With several keys, a mapping row counts only when every
+  key matches. A person without a value for one of the attributes sees no rows.
+
+It is read in one of two ways, chosen under *The mapping is*:
+
+- **Join it into the query**: the source reads the mapping as part of each
+  query, so a change to the mapping counts from the next query, and a person
+  may map to any number of values. The mapping table has to be on the same data
+  source, and in the same database, as the table it filters; otherwise the
+  query is refused with a message that says so.
+- **Read the values first**: ARAK reads the person's values from the mapping
+  when the query runs, then filters on that list. The mapping may be on another
+  data source. The query is refused, not cut short, when a person maps to more
+  than 1,000 values, and when the value column is not text, a whole number, a
+  decimal, a UUID or a date. The values read go into that one query only: they
+  are not kept, and no assistant is given them. The rewritten SQL the person
+  sees carries them, since they are the values that person may see.
+
+Things to know:
+
+- **The mapping table decides access.** Its own policies do not apply when ARAK
+  reads it for a filter, and whoever can change it decides who sees what. Keep
+  it where only the people who could write this policy can change it.
+- **The database compares the values**, so write them in the mapping exactly as
+  the tables hold them. Letter case follows each column's own rules: on most
+  columns it counts, on a case-insensitive one (citext, or a case-insensitive
+  SQL Server collation) it does not.
+- **A mapping that is missing, moved or unreadable refuses the query** rather
+  than showing no rows, so the fault reaches someone who can report it. A
+  person the mapping gives nothing to sees no rows.
+- **One step only.** A mapping from department to division to region is two
+  steps; put them in a view that gives department and region side by side, and
+  map on the view.
+- **Query API only.** A secure view over the table shows no rows to anybody,
+  and native source config does not carry the filter; the builder says so when
+  you choose a mode. The simulator names the mapping table and the person's own
+  key values, never the values the mapping gives them.
 
 ## How policies combine (conflicts)
 
@@ -665,9 +786,95 @@ A data policy can mask a column with:
 Columns are chosen by metadata: name or pattern, classification, tag, glossary
 term, data type or custom property.
 
+## The policy list
+
+**Policies** lists every policy, a page at a time. Each row shows:
+
+- its name, its kind (*Subscription* or *Data*) and, for a subscription, a
+  *Deny* mark when it denies, with a one-line readback of what it says;
+- **Connection**: where it runs. This is either the connection it is confined
+  to, with the mode that connection enforces it by today (*Query proxy*,
+  *Secure view*, *Native source config* or *Not enforced yet*), or **Every
+  connection**, where each connection enforces it in its own mode. A service
+  that no registered connection carries is marked *Not a registered
+  connection*. *No connection* means the policy is anchored on one service but
+  selects assets on another, so it covers nothing;
+- its level and anchor, its state and environment, and when and by whom it was
+  last changed.
+
+A policy does not store a connection. The list reads it from the policy: a
+level of service or below anchors it on one service, and a selector requiring
+*service equals x*, which is what choosing a connection writes, confines it to
+*x*. Anything that could reach a second service, such as an *or* with one
+branch open, a *not*, or a bare schema name that every service may have, reads
+as **Every connection**.
+
+Narrow the list with the tabs (*All policies*, *Subscription*, *Data*), a
+search, and the **state**, **level**, **connection** and **mode** filters.
+*Every connection* in the connection filter shows only the policies written
+for every connection. A mode shows the policies confined to a connection set
+to that mode today; policies for every connection are not included, since
+their mode depends on the connection. **Clear** resets everything but the
+tab.
+
+When nothing matches, the page says whether the filters or the platform are
+the reason. With filters set, the policies they hide still apply; clear the
+filters to see every policy. **No policies yet** appears only when there are
+none at all, and then every request is denied by default.
+
 ## Writing a policy (policy builder)
 
-**Policies → New policy** opens the builder:
+**Policies → New policy** opens a menu with two choices: **Subscription
+policy** (who gets in) and **Data policy** (what they see). The **Create** menu
+in the header offers the same two. The page that opens is titled with the kind
+you chose, and neither it nor the form offers the other kind; go back to
+**Policies** to start the other one. Each kind has its own address, which you
+can bookmark: `/policies/new/subscription` and `/policies/new/data`. It then
+asks **where the policy runs**, on a page of its own, before the form opens:
+
+- **What kind of policy**: asked here only when you arrive without choosing
+  one, for example from **New policy** on the home page.
+- **Which database**: first the database product, then the connection.
+  - Each product has a card with its logo: PostgreSQL, SQL Server, and any
+    other engine ARAK governs. The card shows how many connections run that
+    product, how many tables they hold, and the modes they are enforced by.
+    A product with no registered connection is shown greyed out.
+  - Choosing a product opens **Which <product> connection** below it, with a
+    card for each of its connections (version, tables, mode) and a search box
+    when there are more than six. A product with a single connection chooses
+    it for you.
+  - **Every connection** is the organisation-wide choice.
+  - **Databricks** opens a page of its own, because Databricks policies are
+    configured in a separate builder. That builder is not available yet, and
+    nothing can be saved there.
+
+  Choosing a connection starts step 3 (*Which assets it covers*) on that
+  connection's assets, which you can narrow further. A selector you write
+  yourself is kept if you go back and choose another connection. Choosing a
+  product does not by itself make a policy cover every connection of that
+  product; for that, choose **Every connection** and narrow it in step 3.
+- **How it will be enforced**: *Query API*, *Secure view* or *Native source
+  config*. On one connection only the mode that connection is set to can be
+  chosen, and choosing the connection chooses it; the other modes are greyed
+  out and marked *Not set on this connection*. **Every connection** keeps all
+  three, since each connection is enforced by its own mode. The builder checks
+  the policy against this mode while you write it and marks it *Chosen* in the
+  rail. *Query API* is not offered on an engine it has nothing for. *Native
+  source config* is marked *Checked, not applied yet*: ARAK does not push
+  native config yet.
+
+The mode is **not saved in the policy**. A policy is always enforced by the mode
+its connection is set to under **Sources**, so a policy cannot quietly stop
+applying because somebody changed a connection's mode. To write a policy for
+another mode on one connection, an administrator first changes that
+connection's mode under **Sources**. The chosen connection and mode show as chips at the
+top of the form, and **Change** goes back to the page. *Configure the policy*
+stays disabled until a connection and a mode are chosen.
+
+A policy that arrives already written (suggested by an access request, or
+loaded from NokRak) skips this page and opens the form directly.
+
+Then, in the form:
 
 1. Choose the **kind** (subscription or data), the **level** and its
    **anchor** (which service, database, schema or table), and the **effect**.
@@ -774,6 +981,13 @@ by attribute, and open a group to see its members. **Settings → Local groups**
 creates groups and manages their members. **Settings → Application roles**
 creates local accounts and assigns or withdraws platform roles (a data owner role
 takes a scope). Every change is audited.
+
+Administrators can also add a local account from **People** itself: **Add local
+account** opens the same form as Settings → Application roles (username,
+display name, kind, email, a first password and a role to start with). The new
+account appears in the list at once, with a link to its page. No sync touches
+a local account. A person chooses their own password the first time they sign
+in, and can use nothing else until they do.
 
 ## Data sources and enforcement (administrators)
 

@@ -1,6 +1,6 @@
 # HANDOFF — ARAK (Data Access Control Platform)
 
-> อัปเดต: 2026-09-30 · ข้อ CP (**MySQL เป็น engine ตัวที่ 3 (M18)** — ลงทะเบียน · import · Query proxy · FQN `service.default.db.table` · secure view / direct-access check ยังไม่รองรับ · **gate ที่ 3 ของ proxy `LexicalGate`** ปิดช่อง lexer ของ database อ่านต่างจาก parser ซึ่งมีอยู่บน PostgreSQL / SQL Server ก่อนรอบนี้ · ⚠️ license ของ Connector/J ยังไม่ตัดสิน) · ข้อ CO (**อะไรนับเป็นข้อมูลอ่อนไหว (M31b slice 1)** — Settings → Purposes · รายการรวม / ยกเว้น · กติกา built-in · วัด coverage · ประวัติ · Off / **Warn** / Enforce ที่ Query และคำขอสิทธิ์ · review บอก purpose ที่ไม่อนุญาต) · ข้อ CN (**ทะเบียน Purpose (M31a · FR-21)** — Settings → Purposes · ฐานกฎหมาย PDPA · ข้อมูลอ่อนไหว · ระยะสิทธิ์สูงสุด · ปลดแทนลบ + ประวัติ · picker ใน policy / template / ฟอร์มขอ / Pre-authorize / Query / Simulator · server ตรวจทุกที่ · เหลือ M31b) · ข้อ CM (**เลือก column ให้ NokRak ร่าง description ได้** — ติ๊กทีละ column หรือทั้งหมดที่เห็น · ร่างใหม่ทับ column ที่มีคำอธิบายแล้วได้ในฟอร์ม · **roadmap M31–M36: object ที่ ARAK ควรเก็บเพิ่มนอกจาก policy** · **NokRak ไม่ตอบ "ไม่พบ" เมื่อตารางที่ตรงถูกกันสิทธิ์ — บอกจำนวนแทน** · คำอธิบายตัวอย่าง PO 49 column ขึ้น prod แล้ว) · ข้อ CL (**All rows** — ดาวน์โหลดทุกแถวเป็น CSV ผ่าน policy เดิม · audit บอกว่าเป็นการดาวน์โหลด · hover column บอก description · คลิกขวาไป Data Catalog · ลากขนาด editor ขึ้นลง / explanation ซ้ายขวา · FR-6.3) · ข้อ CK (**Find data** — NokRak หาตารางจากประโยคในหน้า Query · ตรวจสิทธิ์ก่อนโมเดลเห็นตาราง · อ่านได้ → เติม SQL · ขอได้ → ฟอร์มขอสิทธิ์ · M16) · ข้อ CJ.1 (ยิง explain-dashboard กับ LLM จริงแล้วผ่าน · ภาษาไทยแยก query กับ คำขอสิทธิ์) · ข้อ CJ (NokRak อธิบาย dashboard — panel **Ask NokRak** ใต้ key figures เลือกหัวข้อได้ · ชื่อคนเป็น `[P1]` ก่อนส่ง · M15 (ข) · M15 ครบ) · ข้อ CI (NokRak อธิบาย policy — ปุ่ม **Explain with NokRak** ในหน้า policy · M15 (ก)) · ข้อ CH (ปุ่ม **Query** ที่หัวหน้าตาราง สำหรับคนที่อ่านได้แล้ว — เปิดหน้า Query บน source ของตารางพร้อม SQL · FR-1.6d) · ข้อ CG (เปลี่ยนรหัสผ่านเอง — Profile → Password · หน้าบังคับเปลี่ยนเมื่อรหัสถูก admin ตั้ง · M2 / FR-2.2) · ข้อ CF (NokRak ตอบคำถามวิธีใช้ ARAK จากคู่มือที่แพ็กเข้า jar — `search_docs`) · ข้อ CE (สร้าง classification / tag ของ ARAK เองในหน้า Governance — provenance local · sync ไม่ทับ · ไม่เขียนกลับ OM) · ข้อ CD (Column description เขียนใน ARAK · NokRak ร่าง · แสดงใน ticket) · ข้อ CC (tab Access รับ list ยาว — แถบสรุป · chip · ค้น · แบ่งหน้า · กดดูรายละเอียดเต็ม) · ข้อ CB (NokRak ช่วยแก้ policy ที่มีอยู่ — คน review แล้วกด Save เอง) · ข้อ CA (ประวัติ policy · diff · rollback) · ข้อ BW (tag จาก OM ผ่าน webhook/poller ย้าย policy binding ทันที) · ข้อ BV (tab Access เฉพาะผู้ดูแล + Diagram แบบ canvas) · ข้อ BU (FR-1.7 local tag + demo group บน prod) · push ขึ้น origin/main แล้ว · repo https://github.com/sakanarm/ARAK (**public**)
+> อัปเดต: 2026-09-30 · ข้อ CU (**หน้า *Where it runs* ก่อนฟอร์ม policy** — เลือก kind · connection · Query API / Secure view / Native config ก่อนเข้า Configure · `LOOKUP` เลือก column ด้วย tag ได้ · Credits เพิ่มชื่อผู้ร่วมพัฒนา) · ข้อ CT (**row filter อ่านค่าจาก mapping table (`LOOKUP`)** — department AA เห็น division A เพราะ mapping บอก · Join it into the query / Read the values first · query API เท่านั้น) · ข้อ CS (**grant เก็บ purpose (M31b slice 2a)** — ช่อง *What for* ในฟอร์ม Grant access · อายุ grant ไม่เกินระยะสูงสุดของ purpose · grant จากคำขอคง purpose ของคำขอ · tab Access แสดง / ค้นด้วย purpose ได้) · ข้อ CO (**อะไรนับเป็นข้อมูลอ่อนไหว (M31b slice 1)** — Settings → Purposes · รายการรวม / ยกเว้น · กติกา built-in · วัด coverage · ประวัติ · Off / **Warn** / Enforce ที่ Query และคำขอสิทธิ์ · review บอก purpose ที่ไม่อนุญาต) · ข้อ CN (**ทะเบียน Purpose (M31a · FR-21)** — Settings → Purposes · ฐานกฎหมาย PDPA · ข้อมูลอ่อนไหว · ระยะสิทธิ์สูงสุด · ปลดแทนลบ + ประวัติ · picker ใน policy / template / ฟอร์มขอ / Pre-authorize / Query / Simulator · server ตรวจทุกที่ · เหลือ M31b) · ข้อ CM (**เลือก column ให้ NokRak ร่าง description ได้** — ติ๊กทีละ column หรือทั้งหมดที่เห็น · ร่างใหม่ทับ column ที่มีคำอธิบายแล้วได้ในฟอร์ม · **roadmap M31–M36: object ที่ ARAK ควรเก็บเพิ่มนอกจาก policy** · **NokRak ไม่ตอบ "ไม่พบ" เมื่อตารางที่ตรงถูกกันสิทธิ์ — บอกจำนวนแทน** · คำอธิบายตัวอย่าง PO 49 column ขึ้น prod แล้ว) · ข้อ CL (**All rows** — ดาวน์โหลดทุกแถวเป็น CSV ผ่าน policy เดิม · audit บอกว่าเป็นการดาวน์โหลด · hover column บอก description · คลิกขวาไป Data Catalog · ลากขนาด editor ขึ้นลง / explanation ซ้ายขวา · FR-6.3) · ข้อ CK (**Find data** — NokRak หาตารางจากประโยคในหน้า Query · ตรวจสิทธิ์ก่อนโมเดลเห็นตาราง · อ่านได้ → เติม SQL · ขอได้ → ฟอร์มขอสิทธิ์ · M16) · ข้อ CJ.1 (ยิง explain-dashboard กับ LLM จริงแล้วผ่าน · ภาษาไทยแยก query กับ คำขอสิทธิ์) · ข้อ CJ (NokRak อธิบาย dashboard — panel **Ask NokRak** ใต้ key figures เลือกหัวข้อได้ · ชื่อคนเป็น `[P1]` ก่อนส่ง · M15 (ข) · M15 ครบ) · ข้อ CI (NokRak อธิบาย policy — ปุ่ม **Explain with NokRak** ในหน้า policy · M15 (ก)) · ข้อ CH (ปุ่ม **Query** ที่หัวหน้าตาราง สำหรับคนที่อ่านได้แล้ว — เปิดหน้า Query บน source ของตารางพร้อม SQL · FR-1.6d) · ข้อ CG (เปลี่ยนรหัสผ่านเอง — Profile → Password · หน้าบังคับเปลี่ยนเมื่อรหัสถูก admin ตั้ง · M2 / FR-2.2) · ข้อ CF (NokRak ตอบคำถามวิธีใช้ ARAK จากคู่มือที่แพ็กเข้า jar — `search_docs`) · ข้อ CE (สร้าง classification / tag ของ ARAK เองในหน้า Governance — provenance local · sync ไม่ทับ · ไม่เขียนกลับ OM) · ข้อ CD (Column description เขียนใน ARAK · NokRak ร่าง · แสดงใน ticket) · ข้อ CC (tab Access รับ list ยาว — แถบสรุป · chip · ค้น · แบ่งหน้า · กดดูรายละเอียดเต็ม) · ข้อ CB (NokRak ช่วยแก้ policy ที่มีอยู่ — คน review แล้วกด Save เอง) · ข้อ CA (ประวัติ policy · diff · rollback) · ข้อ BW (tag จาก OM ผ่าน webhook/poller ย้าย policy binding ทันที) · ข้อ BV (tab Access เฉพาะผู้ดูแล + Diagram แบบ canvas) · ข้อ BU (FR-1.7 local tag + demo group บน prod) · push ขึ้น origin/main แล้ว · repo https://github.com/sakanarm/ARAK (**public**)
 >
 > อ่านคู่กับ **[docs/DESIGN.md](docs/DESIGN.md)** — ไฟล์นั้นคือ requirement + feature catalogue + สถานะครบทุกข้อ
 > ไฟล์นี้บอกเฉพาะ "ทำถึงไหน จะไปต่อยังไง อะไรที่ลองแล้วไม่เวิร์ค"
@@ -631,7 +631,7 @@ M10 → M23 (ใช้ query log ของ M10 · ส่วน "ปลอดภ�
 M10 → M24 (ข้อ 1–3 ทำได้เลยหลัง query log · ข้อ 4 ต้องมี M11 · ข้อ 5 ต้องมี M19)
 M25 ทำแยกได้ (profile ผ่าน proxy ที่มีแล้ว · sandbox ใช้ source registry ของ M18)
 M31 → M32 → M33  (Purpose ก่อน: รอบทบทวนและ project อ้าง purpose · M33 รวม M27)
-                  M31a ✅ (ข้อ CN) · M31b slice 1 ✅ (ข้อ CO · ม.26) · slice 2 (grant purpose · รายงาน PII) ต่อได้เลย
+                  M31a ✅ (ข้อ CN) · M31b slice 1 ✅ (ข้อ CO · ม.26) · slice 2a ✅ (ข้อ CS · grant purpose) · slice 2b (รายงาน PII) ต่อได้เลย
 M34 · M35 ทำแยกได้ (M35 ก่อน M30b — `arak test` ใช้ไฟล์ชุดเดียวกัน)
 M36 → M14 · M21 · M29 · M30 (ทุกตัวต้องมี principal ที่ไม่ใช่คนก่อน)
 
@@ -641,78 +641,271 @@ M36 → M14 · M21 · M29 · M30 (ทุกตัวต้องมี principal
 
 ---
 
-## รอบนี้ — **ข้อ CP: MySQL เป็น engine ตัวที่ 3 (M18) + gate ที่ 3 ของ Query proxy (FR-6.3)**
+## รอบนี้ — **ข้อ CZ: ปุ่ม New policy เป็นเมนูเลือกชนิด · เลือกชนิดมาแล้ว หน้าไม่ถามซ้ำ · แยกหน้า Subscription / Data Access Policy เป็นไฟล์และ route ของตัวเอง**
 
-ผู้ใช้ขอ *"add connector in register a source page … add mySQL connector"* — หน้า Register a source มี PostgreSQL กับ SQL Server อยู่แล้ว ขอเพิ่ม MySQL
+ผู้ใช้ขอ *"ตอนกด new policy ให้มี sub menu 1. Subscription 2. Data"* และ *"ถ้าเลือก Subscription Policy ชื่อหน้าต้อง Subscription policy และ ไม่ต้องให้เห็น option data policy"*
 
-**ขอบเขตที่ทำ** — ลงทะเบียน · test connection · import catalog · **Query proxy (5.2) ครบ 4 capability** · **ไม่ทำ** secure view (5.1.2) และ direct-access check (FR-6.3.1) บน MySQL — ทั้งสองอย่างปฏิเสธพร้อมบอกทางออก ไม่ใช่เงียบ
+**หน้า Policies** (`PolicyListPage`) — ปุ่ม **New policy** เปิด dropdown แบบเดียวกับเมนู Create บน header: *Subscription policy* → `/policies/new?kind=SUBSCRIPTION` · *Data policy* → `/policies/new?kind=DATA`
 
-**การตัดสินใจที่ควรอ่านก่อนแก้**
+**เมื่อมี `?kind=` มาแล้ว** (`kindChosen` ใน `PolicyBuilderPage` ส่งต่อให้ `PolicyTargetPicker`)
+- หัวหน้า *Where it runs* และหัวฟอร์ม = **Subscription policy** / **Data policy** (แทน *New policy*)
+- ซ่อน section *What kind of policy* ในหน้า Where it runs และช่อง **Kind** ในฟอร์ม (เฉพาะ policy ใหม่ · แก้ policy เดิมยังเห็นช่อง Kind เหมือนเดิม)
+- เข้าแบบไม่มี kind (ปุ่ม New policy ในหน้า Home · draft จาก access request / NokRak) → ยังถามชนิดเหมือนเดิม
 
-1. **FQN ของ MySQL = `service.default.<database>.<table>` (4 ชั้นเท่าเดิม)** — MySQL ไม่มีชั้น schema (`supportsSchemas() = false`) · comment เดิมใน `SourceEngine` เขียนว่า FQN จะสั้นลงหนึ่งชั้น แต่ **OpenMetadata ตั้งชื่อ MySQL เป็น `service.default.db.table`** · ถ้า import ของเราสั้นกว่า table เดียวกันจะได้ asset สองตัว (bug เดียวกับที่ `serviceOf()` เคยแก้) → database ของ MySQL อยู่ชั้น schema · ชั้น database เป็น `SourceEngine.PLACEHOLDER_DATABASE` (`default`) · `asset_fqn_map` = (`default`, `<db>`, `<table>`) · proxy resolve ด้วย `db.table` เหมือน `schema.table` ของ engine อื่น ไม่ต้องแก้ `QueryService`
-2. **ช่อง Database ของ MySQL** — connection เดียวเห็นทุก database ที่ login เห็น · ระบุ = import อ่านเฉพาะ database นั้น · เว้นว่าง = อ่านทุก database ยกเว้นของ server เอง (`mysql` · `information_schema` · `performance_schema` · `sys`) · กติกานี้อยู่ที่เดียวคือ `JdbcIntrospector.schemaToRead()` (public — importer ใช้ค่าเดียวกันตอนตัดสินว่า table ไหน "หาย" ไม่งั้น database ที่ไม่ได้อ่านจะถูก mark `ORPHANED`)
-3. **driver = `com.mysql:mysql-connector-j` 26.7.0** — ⚠️ **GPL-2.0 + Universal FOSS Exception และถูก pack เข้า fat jar** · ตัด `protobuf-java` ออก (ใช้เฉพาะ X DevAPI) · ทางเลือกคือ MariaDB Connector/J (LGPL) — **ยังไม่ได้ตัดสินใจเรื่อง license ให้ผู้ดูแลตัดสิน**
-4. **secure view บน MySQL ไม่ทำ** — ใน view ของ MySQL `CURRENT_USER()` คือ definer ไม่ใช่คนอ่าน · account เป็น `name@host` · ไม่มี schema แยกให้วาง object · `MySqlDialect` โยน `UnsupportedOperationException` ทุก method ฝั่ง DDL · `DataSourceStore.validate` ปฏิเสธ mode `SECURE_VIEW` ตั้งแต่ตอนเลือก · `SecureViewService.prepare` ปฏิเสธก่อนอ่านอะไร · wizard ไม่เสนอ mode นี้
-5. **direct-access check บน MySQL ไม่ทำ** — grant อยู่ใน `mysql.*` ที่ login read-only มักอ่านไม่ได้ · รายการที่อ่านได้บางส่วนจะตอบว่า "ไม่มีใครเข้าได้" ซึ่งผิด → `DirectAccessReader` ปฏิเสธพร้อมข้อความ แทนที่จะตอบสั้น
+**แยกหน้าจอ Subscription / Data Access Policy แล้ว** (ผู้ใช้สั่ง *"แยกให้เลย ให้พร้อมทำงานสองคน สองเครื่องได้"*)
+- route ใหม่: `/policies/new/subscription` → `subscription/SubscriptionPolicyPage.tsx` · `/policies/new/data` → `data-access/DataAccessPolicyPage.tsx`
+- step ที่เป็นของแต่ละชนิด (step 4 เป็นต้นไป) ย้ายออกจาก `PolicyBuilderPage.tsx` ไปอยู่ในไฟล์ของชนิดนั้น:
+  - `subscription/subscriptionPolicy.tsx` — Effect + SubjectBuilder · ชื่อหน้า · icon · ค่าเริ่มต้น
+  - `data-access/dataAccessPolicy.tsx` — SubjectBuilder (optional) + DataPolicyBuilder · ชื่อหน้า · icon · ค่าเริ่มต้น (ORG)
+  - `DataPolicyBuilder.tsx` + test ย้ายไป `data-access/` (git mv)
+- `PolicyBuilderPage.tsx` = ส่วนที่ใช้ร่วม (step 1–3, save, lifecycle, NokRak, rail, dialog) · รับ `kind` เป็น prop (`PolicyKind` ใน `policyKind.ts`) · หน้าแก้ policy เดิม (`/policies/:id/edit`) เลือก step ตาม `policyType` ของเอกสาร
+- `/policies/new` (ไม่มี kind — ปุ่มหน้า Home, draft จาก access request / NokRak) ยังถามชนิดเหมือนเดิม · เลือกแล้วไปหน้าของชนิดนั้น · ลิงก์เก่า `?kind=` redirect ไปหน้าใหม่ (เก็บ source/mode ไว้)
+- เมนู New policy / Create / ปุ่มกลับของ Databricks ใช้ `NEW_POLICY_PATH`
 
-### CP.1 🔒 ของที่เจอระหว่างทาง — lexer ของ database อ่าน statement ไม่เหมือน parser
+**การแบ่งงาน (branch)** — หลังข้อนี้เข้า main:
+- **Subscription Policy** — ผู้ใช้ · branch `sakan/subscription-policy` · แก้เฉพาะ `pages/policies/subscription/`
+- **Data Access Policy** — เพื่อน · branch `<github-user ของเพื่อน>/data-access-policy` · แก้เฉพาะ `pages/policies/data-access/`
+- ไฟล์ร่วม (`PolicyBuilderPage.tsx`, `policyKind.ts`, `SubjectBuilder.tsx`, `SelectorBuilder.tsx`, `controls.tsx`, `App.tsx`) — ถ้าต้องแก้ ให้ตกลงกันก่อน แล้วเข้า main เป็น PR เล็ก ๆ แยก ให้อีกฝั่ง pull
 
-`QueryRewriter` ส่ง `statement.toString()` ไปที่ source · token ที่เป็น string / ชื่อ / hint ถูกส่ง**ตามตัวอักษร** · สอง gate เดิมเชื่อ tree ของ JSqlParser แต่ source อ่านข้อความด้วย lexer ของตัวเอง · จุดที่เห็นขอบ string ไม่ตรงกัน = table ที่ไม่มี policy หลุดไปกับสิ่งที่ parser นึกว่าเป็น string
+**test** — `PolicyListPage.test` +1 (เมนูไปหน้าของ kind) · `PolicyBuilderPage.test` +5 (kind มาแล้ว: หัวหน้า + ไม่มีตัวเลือก Data + ไม่มีช่อง Kind · หน้า Data มี step "What they see" · ลิงก์ `?kind=` เก่า redirect · เลือกชนิดบน `/policies/new` แล้วไปหน้าของชนิดนั้น · ไม่มี kind: ยังถาม) · jest ทั้งชุด 86 suites / 887 ผ่าน · type-check ผ่าน · lint ของไฟล์ที่แก้ผ่าน (error ที่เหลือเป็นของ `shot-*.mjs` ในเครื่อง ไม่ได้ commit)
+- ไม่มี migration · ไม่แตะ backend
+- docs: `user-guide.md` (Writing a policy)
 
-| statement (ทุกตัวอ่าน `sales.secret` ที่ไม่มี policy) | engine | ทำไม |
-|---|---|---|
-| `SELECT E'a\'' , token FROM sales.secret -- ' FROM sales.customer` | **PostgreSQL (มีอยู่ก่อนรอบนี้)** | `E'..'` มี backslash escape · parser จบ string เร็วกว่า server หนึ่ง quote |
-| `SELECT /*+ /* */ id, ' */ 1, token FROM sales.secret -- ' FROM sales.customer` | **PostgreSQL · SQL Server (มีอยู่ก่อนรอบนี้)** | parser เก็บ hint `/*+ */` ไว้ใน output · server nest comment parser ไม่ nest |
-| `SELECT 'a\'' UNION SELECT token FROM sales.secret -- ' FROM sales.customer` | MySQL | MySQL ปกติอ่าน `\'` เป็น escape |
-| `SELECT 1 #a, '⏎ , token FROM sales.secret -- ' FROM sales.customer` | MySQL | `#` เป็น comment ของ MySQL · parser อ่านเป็นส่วนของชื่อ |
+**PR** — branch `sakan/policy-kind-menu` · ผู้ใช้สั่ง *"จะ push ขึ้น main แล้วแจ้งเพื่อนให้ Pull"*
 
-**สองตัวแรกยืนยันด้วยมือกับ PostgreSQL 16 แล้ว — ได้แถวจาก `sales.secret` จริง** · ตัวที่สามยืนยันใน `MySqlProxyIT` (connection ปกติได้แถว · connection ของเราไม่ได้)
+## รอบก่อน — **ข้อ CY: *Where it runs* เลือกยี่ห้อ database ก่อน แล้วค่อยเลือก connection · โลโก้จริง · การ์ด Databricks ไปหน้าแยก**
 
-**ที่แก้**
-- `dac-proxy/LexicalGate` ⭐ ใหม่ — gate ที่ 3 · เรียกใน `QueryRewriter.verify()` หลัง round-trip parse · อ่านข้อความที่จะส่งแบบที่ source อ่าน แล้วปฏิเสธ: `--` / `/*` / `*/` นอก quote (comment ที่ผู้ใช้เขียนถูก parser ทิ้งไปแล้ว เหลือแต่ hint) · string ที่มี prefix นอกจาก `N` / `X` / `B` · `#` (MySQL) · `$` (PostgreSQL) · backtick บน engine ที่ไม่ใช่ MySQL · `@` (MySQL / SQL Server) · `{` `}` · `;` · `\` นอก quote · quote ที่ไม่ปิด · engine ที่ไม่รู้จัก = ใช้ทุกกติกา
-- `SourceEngine.sessionSetup()` ⭐ ใหม่ — statement ที่ `JdbcTargets` รันบน**ทุก** connection ก่อนส่งให้ใคร · ล้มเหลว = ปิด connection · MySQL: `SET SESSION sql_mode = CONCAT_WS(',', NULLIF(@@SESSION.sql_mode, ''), 'NO_BACKSLASH_ESCAPES')` (เก็บ mode เดิมของ server) + `SET SESSION time_zone = '+00:00'` (ดู CP.2) · **PostgreSQL: `SET standard_conforming_strings = on`** (เดิมพึ่ง default ของ server) · `SourceProbe` เปิดผ่าน `JdbcTargets.connect()` แล้ว เพื่อให้ probe ล้มถ้า session setup ล้ม
-- ⚠️ **ห้ามเปิด connection ไป source ด้วย `DriverManager` ตรงๆ** — การอ่าน statement ของ proxy ถูกต้องเฉพาะบน session ที่ `JdbcTargets` เปิด · `MySqlDialect.literal()` ก็พึ่งเรื่องเดียวกัน (ไม่ escape backslash)
+ผู้ใช้ขอ *"Which connection เปลี่ยนเป็นชื่อ ชื่อยี่ห้อสิ แล้วอาจจะค่อยสามารถเลือก Connection ได้อีกที"* · *"ออกแบบดีๆให้หน่อย"* · *"ต้องใส่ logo จริง ของยี่ห้อนั้นๆด้วยสิ"* และ *"ให้เลือกเพิ่ม Databrick ด้วยนะ ทำเป็นหน้าไว้ก่อน … ทำหน้ากากไว้ให้เขาเชื่อม"*
 
-**พฤติกรรมที่ตั้งใจเปลี่ยน (ทุก engine)** — optimizer hint `/*+ ... */` ถูกปฏิเสธ · `E'...'` ถูกปฏิเสธ · `@var` ใน WHERE / `@x := 1` ถูกปฏิเสธ (gate แรกเคยจับได้เฉพาะใน select list) · JDBC escape `{d '...'}` ถูกปฏิเสธ · `$` นอก string บน PostgreSQL ถูกปฏิเสธ · comment ธรรมดายังใช้ได้เหมือนเดิม
+**`PolicyTargetPicker`** — section *Which connection* → **Which database**
+- การ์ด: Every connection · หนึ่งใบต่อ engine จาก `/v1/sources/engines` (ตามลำดับของ server · engine ที่ยังไม่มี connection แสดงแต่กดไม่ได้ *No connection registered yet*) · engine ที่ server ไม่รู้จักแต่มี source อยู่ได้การ์ดของตัวเอง (`engineGroups()`)
+- การ์ดยี่ห้อบอก จำนวน connection · จำนวน table · โหมดที่ใช้ (badge ไม่ซ้ำ)
+- กดยี่ห้อ → แผง **Which &lt;ยี่ห้อ&gt; connection** ด้านล่าง (การ์ด connection เดิม: version · tables · โหมด · Disabled) · มีช่องค้นหาเมื่อเกิน 6 ตัว · ยี่ห้อที่มี connection เดียวเลือกให้เลย · เปลี่ยนยี่ห้อแล้ว connection เดิมที่ไม่ใช่ยี่ห้อนั้นถูกล้าง
+- ปุ่ม *Change* จากฟอร์มกลับมาแล้วเปิดยี่ห้อของ connection เดิมให้
+- แถบล่าง: *on demo-pg (PostgreSQL)*
+- ⚠️ เลือกยี่ห้อ ≠ policy คลุมทุก connection ของยี่ห้อนั้น — selector ไม่มี facet engine (มีแค่ `service`) · ถ้าจะเอาแบบนั้นต้องเพิ่ม facet ใหม่ · ตอนนี้ใช้ Every connection + step 3
 
-### CP.2 backend
+**โลโก้** — `EngineMark.tsx` + `src/assets/engines/*.svg` (มี README บอกที่มา/license/หมายเหตุเครื่องหมายการค้า)
+- PostgreSQL · SQL Server · MySQL จาก devicon 2.17.0 (MIT) · Databricks จาก Simple Icons 16.33.0 (CC0, เติมสี `#FF3621`)
+- engine ที่ไม่มีไฟล์โลโก้ → ตัวอักษร 2 ตัวบนกล่องเทา
 
-| โมดูล | ของ |
-|---|---|
-| `dac-common` | `MySqlEngine` (MYSQL · 3306 · `com.mysql.cj.jdbc.Driver` · url ระบุ `databaseTerm=SCHEMA` · `allowMultiQueries=false` · `allowLoadLocalInfile=false` · `useCursorFetch=true` · `zeroDateTimeBehavior=CONVERT_TO_NULL` · `characterEncoding=UTF-8` · `sslMode=PREFERRED` · `connectionTimeZone=UTC` · `connectionAttributes=program_name:arak-dac`) · 🐛 **เวลา**: driver ปกติถือว่า session ของ server อยู่ zone เดียวกับ JVM → `TIMESTAMP` เพี้ยนเท่าส่วนต่างของสอง zone (เจอตอนลองจริง: ค่าเพี้ยน 7 ชั่วโมง) → session ถูกตั้งเป็น UTC ด้วย offset (ไม่ต้องมี time zone table) และ driver อ่านเป็น UTC · ผลคือ **`NOW()` / `CURDATE()` บน MySQL source เป็น UTC** · `DATETIME` คืนตามที่เขียนไว้ ไม่มี `Z` · 🐛 `SourceEngines.REGISTRY` เคยใช้ `Map.copyOf` ทำให้ลำดับ engine บนหน้าจอสุ่มทุกครั้งที่ start (comment บอกว่าเรียงตามที่ลงทะเบียน) → `Collections.unmodifiableMap` · `SourceEngine` เพิ่ม `sessionSetup()` / `systemSchemas()` / `supportsSecureViews()` / `PLACEHOLDER_DATABASE` |
-| `dac-compiler-sql` | `MySqlDialect` — backtick · `CAST(x AS CHAR)` · HASH = `SHA2(CONCAT(...), 256)` · PARTIAL ด้วย `CONCAT` / `REPEAT` (ไม่ใช้ `\|\|` เพราะเป็น OR บน MySQL) · `REGEXP_REPLACE` (ต้อง 8.0+) · ROUNDING = `MAKEDATE` / `DATE_FORMAT` / `CAST AS DATE` · `SqlDialects` ลงทะเบียน `MYSQL` |
-| `dac-connector-source` | `JdbcTargets.connect()` + session setup · `JdbcIntrospector` อ่าน `systemSchemas()` ของ engine · filter schema แบบตรงตัว (driver รับเป็น LIKE pattern — `sales_db` เคยดึง `salesXdb` มาด้วย) · `CostEstimate` MySQL: `EXPLAIN FORMAT=JSON` รวม `query_cost` ทุก block · **คิดราคาเฉพาะ download ทั้งตาราง** เพราะ `query_cost` ของ MySQL ไม่นับ LIMIT (ถ้าคิดตอนมี row cap จะปฏิเสธ `SELECT *` บนตารางใหญ่ที่จริงๆ ถูกที่สุด) |
-| `dac-proxy` | `LexicalGate` · `ProxyFunctions` allow-list ของ MySQL (ไม่มี `SLEEP` / `BENCHMARK` / `LOAD_FILE` / `GET_LOCK` / `USER` / `DATABASE` / `VERSION`) |
-| `dac-service` | `DataSourceStore.Engine.MYSQL` · default port อ่านจาก registry (เลิก ternary 1433 / 5432 ทั้งใน store และ `SourceResource`) · **V45** `source_engine` เพิ่มแถว `MYSQL` (ไม่ใส่ `engine_capability` — ยังไม่มีใครทดสอบ native / secure view บน MySQL) · `GET /v1/sources/engines` เพิ่ม `supportsSecureViews` · `SourceCatalogImporter` ใช้ `default` เป็นชั้น database · `QueryLimitsConfiguration.maxCostMySql` (`QUERY_MAX_COST_MYSQL` default 10,000,000) · `AssistPrompts` บอก NokRak ว่า proxy ปฏิเสธอะไร |
+**Databricks** — การ์ดคงที่ในหน้า (backend ยังไม่มี engine นี้) → `/policies/new/databricks?kind=…` (`pages/policies/databricks/DatabricksPolicyPage.tsx`)
+- เป็นหน้ากากรอ builder ที่อีกคนกำลังทำ · ไม่บันทึกอะไร · เชื่อมโดยวาง builder แทน `<BuilderPending />` · รับ `kind` ทาง query string
 
-### CP.3 frontend
+**test** — `PolicyBuilderPage.test` 32 ผ่าน (+3: ยี่ห้อก่อนแล้วค่อย connection · ยี่ห้อที่ไม่มี connection กดไม่ได้ · Databricks ไปหน้าของตัวเอง) · jest ทั้งชุด 86 suites / 881 ผ่าน · type-check ผ่าน · lint มีแต่ของเดิม · ลองจริงใน local (:8150) ไม่มี page error
+- ไม่มี migration · ไม่แตะ backend
+- docs: `user-guide.md` (Writing a policy → Which database) · DESIGN M4
 
-- `api/sources.ts` — `SourceEngineInfo.supportsSecureViews`
-- `ConnectionWizard` — MySQL ขึ้นใน step แรกเอง (อ่านจาก API) · hint ของช่อง Database เปลี่ยนตาม engine · Advanced config ไม่เสนอ *Secure view* บน engine ที่ไม่มี · เปลี่ยน engine แล้ว mode `SECURE_VIEW` ที่ค้างอยู่กลับเป็น `NONE`
-- `policies/enforcement.ts` — `MODE_UNAVAILABLE` (MySQL: Secure view / Native = `none` พร้อมเหตุผล)
-- `query/FindData.tsx` — MySQL เก็บตัวพิมพ์ของชื่อ column เหมือน SQL Server
+**PR** — branch `sakan/connection-by-engine` · ผู้ใช้สั่ง *"เอาขึ้น main และ Prod เลย"*
 
-### CP.4 dev / docs
+## รอบก่อนหน้า — **ข้อ CX: เพิ่ม local account จากหน้า People · server บังคับเปลี่ยนรหัสผ่านจริง · empty state ของหน้า Policies ตาม filter**
 
-- `deploy/docker-compose.yml` เพิ่ม `srcmysql` (mysql:8.4 · host port 3307 · seed `deploy/seed/mysql/01-seed.sql`) · `.env.example` เพิ่ม `SRC_MYSQL_*`
-- `docs/user-guide.md` — วิธีลงทะเบียน MySQL · สิ่งที่ทำได้ / ไม่ได้ · สิ่งที่ Query ปฏิเสธเพิ่ม
+ผู้ใช้ขอ *"add local account -> เอาใส่ใน People & attributes ด้วย เวลาจะสร้าง local user"* และ *"แก้ไข Bug ด้วยนะ"*
 
-### CP.5 test
+**หน้า People** (`PrincipalsPage`) — ปุ่ม **Add local account** (เฉพาะ `PLATFORM_ADMIN`) ข้างลิงก์ Settings → Roles · เปิดฟอร์มเดียวกับ Settings → Roles
+- ย้ายฟอร์มออกมาเป็น `settings/LocalAccountForm.tsx` และ `ROLES` เป็น `settings/appRoles.ts` · `AppRolesPage` ใช้ของเดียวกัน (ไม่มีพฤติกรรมเปลี่ยน)
+- สร้างเสร็จ → ข้อความเขียวพร้อมลิงก์ `/principals/{id}` + invalidate `['principals']` ให้ list โหลดใหม่
 
-- backend unit (`./mvnw -B verify -DskipITs`): **1,329 ผ่าน** · ใหม่: `MySqlDialectTest` 10 · `LexicalGateTest` 24 (ทั้ง 3 dialect) · `QueryRewriterMySqlTest` 34 · `SourceEngineConformanceTest` +17 · `JdbcTargetsTest` +1
-- integration (`-Pintegration` · PostgreSQL 16 · SQL Server 2022 · **MySQL 8.4** จริง): **469 ผ่าน** · ใหม่: `MySqlSourceIT` 18 (`TIMESTAMP` ได้ moment ที่ถูกแม้ JVM อยู่ Asia/Bangkok · session mode เก็บ mode เดิม + server ที่ `sql_mode = ''` · read-only ที่ server · `program_name` · probe · introspection ตาม database / ทุก database / ตรงตัว · page + cursor 5,000 แถว · ราคา) · `MySqlProxyIT` 7 (mask 5 แบบ + row filter + hide ได้ค่าตรง · filter ที่มี backslash · **statement ที่พา `sales.secret` ไปกับ backslash: connection ของเราไม่ได้แถว / connection ปกติได้แถว**) · `SourceCatalogImporterIT` +2 · `DataSourceStoreIT` +1 · `SourceEngineRegistryIT` ผ่านกับ V45
-- ⚠️ IT รอบเต็ม (469) รันก่อนแก้ 4 จุดสุดท้าย: ข้อความปฏิเสธของ `DirectAccessReader` บน MySQL · บรรทัดใหม่ใน `AssistPrompts` · time zone ของ MySQL · ลำดับของ registry — หลังจากนั้นรันซ้ำ unit ทั้งหมด + IT ของ MySQL สองตัว (ผ่าน) **ไม่ได้รัน IT ของ PostgreSQL / SQL Server ซ้ำ**
-- **ลองจริงผ่าน REST API** กับ service ที่ build จาก branch นี้ (app DB + MySQL 8.4 ชั่วคราว ไม่แตะ `.env` ของเครื่อง): V1–V45 migrate ผ่าน · `GET /v1/sources/engines` มี MySQL · `POST /v1/sources/test` (ผ่าน / รหัสผิด) · ลงทะเบียนด้วย `SECURE_VIEW` → 400 · ลงทะเบียนด้วย `PROXY` ไม่ใส่ port → 3306 · scope preview · import → `demo_mysql.default.sales.customer` · query ก่อนมี policy → 403 · หลัง activate policy → email / citizen_id ถูก mask · salary ไม่มา · backtick + `GROUP_CONCAT` + string ใน double quote ทำงาน · statement ที่พา `sales.secret` ไปกับ backslash ได้ string เฉยๆ ไม่ได้แถว · hint / `#` / `@x` ถูกปฏิเสธพร้อมข้อความ
-- แก้ test เดิม 2 ตัวที่ใช้ `MYSQL` เป็นตัวอย่าง "engine ที่ไม่รู้จัก" → `ORACLE` (`CostEstimateIT.otherEngine` · `policyLanguage.test.ts`)
-- jest: **826 ผ่าน / 83 suites** (`enforcement.test.ts` ใหม่ 3 · `ConnectionWizard.test` +2 · `FindData.test` +1) · `yarn type-check` · `yarn lint` (0 error) · `yarn build` ผ่าน
-- **ไม่ได้รัน**: `gitleaks` (ไม่ได้ติดตั้งบนเครื่องนี้) · Playwright e2e · **ยังไม่ได้เปิดหน้าจอจริงใน browser** (wizard ทดสอบด้วย jest เท่านั้น)
+**บั๊ก 1 (security) — `must_change` บังคับแค่ใน UI** · token ของคนที่ admin ตั้งรหัสให้ยังเรียก API อื่นได้ครบ (ข้าม UI ด้วย curl ได้)
+- `JwtService`: claim `pwc=true` เฉพาะตอน login ด้วยรหัสที่ต้องเปลี่ยน · `verifySession` คืน `Session(user, passwordChangePending)` · `verify` เดิมยังใช้ได้
+- `AuthFilter(tokens, mustChangePassword)`: token ที่มี `pwc` + endpoint ไม่มี `@PasswordChangeExempt` (ใหม่) + DB ยังบอก `must_change` → **403** *choose a new password before using the rest of the API* · admin ก็โดน
+- เช็ค DB (`LocalIdentityDao.mustChangePassword`) เฉพาะ token ที่มี `pwc` → token ปกติไม่เสีย query เพิ่ม · เปลี่ยนรหัสแล้ว token เดิมใช้ต่อได้ทันที ไม่ต้อง login ใหม่
+- exempt: `GET /v1/auth/me` และ `POST /v1/auth/password` เท่านั้น
+- ⚠️ script ที่ login ด้วย bootstrap admin (`scripts/seed-example-policies.mjs`, `scripts/demo-time-window.py`) จะได้ 403 ถ้า admin คนนั้นยังไม่เคยเปลี่ยนรหัส → เปลี่ยนรหัสใน Profile ก่อน
 
-**ที่ยังค้าง**
-- **license ของ Connector/J** (ข้อ 3 ข้างบน) — ต้องตัดสินก่อน merge
-- secure view บน MySQL · direct-access check บน MySQL · cost guard ตอนมี row cap บน MySQL
-- MySQL 5.7 / MariaDB **ยังไม่ได้ทดสอบ** (ทดสอบกับ 8.4 เท่านั้น · `REGEXP_REPLACE` ไม่มีใน 5.7)
-- `RESERVED` ใน `FindData.tsx` เป็นคำสงวนร่วม ยังไม่มีของ MySQL โดยเฉพาะ (`rank` · `groups` …) — ร่างที่ได้จะ error ที่ source ไม่ใช่รั่ว
-- Testcontainers 1.20.4 คุยกับ Docker Engine 29 ไม่ได้ (API 1.32 ถูกปฏิเสธ) — รัน IT บนเครื่องที่ Docker ใหม่ต้องส่ง `-DargLine="-Dapi.version=1.44"` หรือ bump เป็น 1.21.4+
+**บั๊ก 2 — หน้า Policies ว่างเพราะ filter แต่บอกว่า "No policies yet … deny by default"** ทำให้เข้าใจว่า platform ไม่มี policy
+- มี search → *No policy matches "…"* · มี filter/tab → *No policy matches these filters* + บอกว่า policy ที่ถูกซ่อนยังมีผล · ไม่มีอะไรเลยจริงๆ → ข้อความ deny-by-default เดิม
+
+**ไม่ใช่บั๊ก** — `GET /v1/policies` อ่านได้ทุกคนที่ login · ตั้งใจ (FR-3.1.5: ทุกคนต้องเห็นว่า policy ไหนมีผลกับตารางของตัวเอง) · ไม่ได้แก้
+
+**test** — `AuthFilterTest` ใหม่ 7 · `JwtServiceTest` +1 · backend unit 864 ผ่าน · jest 86 suites / 878 ผ่าน (`PrincipalsPage.test` +2 · `PolicyListPage.test` +1 และขยาย 2) · type-check ผ่าน · lint มีแต่ของเดิม
+- live local (:8150): account ใหม่ได้ `pwc` → 403 ที่ `/v1/policies/count` และ `/v1/catalog/assets` · 200 ที่ `/v1/auth/me` · เปลี่ยนรหัสแล้ว token เดิมใช้ได้ · login รอบถัดไปไม่มี `pwc` · account ที่ไม่ต้องเปลี่ยนไม่กระทบ (11/11)
+- ไม่มี migration
+- docs: `user-guide.md` (Signing in · The policy list · People) · DESIGN M2
+
+**PR** — branch `sakan/people-add-account` · ผู้ใช้สั่ง *"เอาขึ้น main + prod ทั้งหมด"* → merge แล้ว deploy prod พร้อมข้อ CU–CW
+
+## รอบก่อนหน้า — **ข้อ CW: หน้า Policies บอกว่าแต่ละ policy รันที่ connection ไหน ด้วยโหมดอะไร และ filter ได้**
+
+ผู้ใช้ขอ *"หน้า ภาพรวม policy ต่างๆ อาจจะต้องแสดงว่า policy เป็น Type ไหน สำหรับ source ไหน Every หรือ connection ไหน ต้อง Filter ได้"*
+
+**policy ไม่ได้เก็บ connection หรือโหมด** — เลยอ่านจากตัว policy ทุกครั้ง (`PolicyReach` ใหม่ ใน `com.mfec.dac.policy`):
+- anchor ระดับ SERVICE ลงไป → segment แรกของ `scopeFqn` คือ service
+- selector: `service eq x` (ที่หน้า picker เขียน) · `in` หลายตัว · database/schema/table ที่เป็น FQN เต็ม (อย่างน้อย 2 segment) → confine · `and` = intersect · `or` confine ก็ต่อเมื่อทุก branch confine (union) · `not` / `ne` / ชื่อ leaf เปล่า (`schema eq 'dbo'` ซึ่งมีได้ทุก service) → **Every connection**
+- anchor ∩ selector ว่าง = policy ที่ครอบอะไรไม่ได้ → แสดง *No connection*
+- หลักคือ **บอกแคบก็ต่อเมื่อแน่ใจ** — ถ้าบอกว่าอยู่ connection เดียวแต่จริงๆ ไปถึงที่อื่นด้วย คนอ่านจะเข้าใจว่า policy แคบกว่าความจริง
+- service → source ใช้ `SourceCatalogImporter.serviceOf` (เปลี่ยนเป็น `public static`) เทียบแบบไม่สนตัวพิมพ์ · service ที่ไม่มี source → `sourceId`/`engine`/`mode` เป็น null (*Not a registered connection*)
+- โหมดคือ `defaultEnforcementMode` ของ source **ณ ตอนนี้**
+
+**API** — `GET /v1/policies` คืน `ListedPolicy` = field ของ `StoredPolicy` เดิม (ผ่าน `@JsonUnwrapped` ผู้เรียกเดิมไม่ต้องแก้) + `reach: {everyConnection, connections:[{service, sourceId, name, engine, mode}]}` · ไม่มี host/credential ออกไป
+- query param ใหม่ทั้ง list และ `/count`: `source=<uuid>` (policy ที่ confine อยู่ที่ source นั้น) · `source=any` (เฉพาะ policy ที่เป็น every connection) · `mode=PROXY|SECURE_VIEW|NATIVE_CONFIG|NONE` (policy ที่ confine อยู่บน connection ที่ตั้งโหมดนั้นตอนนี้ — every connection **ไม่นับ** เพราะโหมดขึ้นกับ connection ให้ตรงกับที่คอลัมน์แสดง) · uuid/โหมดผิด → 400
+- ถ้ามี source/mode → `PolicyStore.listAll` (filter เดิมใน SQL) แล้วกรองใน Java ค่อย skip/limit · count นับจากชุดเดียวกัน pager เลยไม่เจอหน้าว่าง · ⚠️ ถ้า policy เกิน ~10k ควรย้ายไปเป็น column ที่ derive ไว้ตอน save
+- `DacApplication`: ย้าย `DataSourceStore sources` ขึ้นมาก่อน register `PolicyResource` แล้วส่ง `new PolicyReach(sources::list)` · constructor 5 arg เดิมยังใช้ได้ (`new PolicyReach(List::of)` = ทุกอันเป็น service ที่ไม่ได้ลงทะเบียน)
+
+**หน้า** `PolicyListPage` — คอลัมน์ **Connection** ใหม่ (ชื่อ connection + badge โหมด · *Every connection / Each in its own mode* · *Not a registered connection* · *No connection*) · badge *Subscription* / *Data* ข้างชื่อ · filter **Connection** (Any · Every connection · ทุก source จาก `fetchSources`) และ **Enforcement mode** อยู่ใน URL (`?source=&mode=`) · query key รวม source/mode · Clear ล้างด้วย (เหลือแค่ tab)
+
+**test** — `PolicyReachTest` 13 (confine 7 · every 6 รวม contradiction) · `PolicyListReachTest` 6 (ไม่มี filter ไม่เรียก `listAll` · ต่อ connection + paging · `any` · โหมด · 400 · JSON แบน + มี `reach` ไม่มี `policy`/host) · backend unit ผ่าน · jest 86 suites / 875 ผ่าน (+3 ใน `PolicyListPage.test`) · type-check สะอาด · lint ไม่มีในไฟล์ที่แก้
+- docs: `user-guide.md` (section ใหม่ *The policy list*) · DESIGN M4
+
+**PR** — branch `sakan/policy-list-target` ซ้อนบน `sakan/scope-levels-preview` (PR #8) · ต้อง retarget เป็น main ก่อน merge PR #8 · merge แล้ว (`c4787bf`) · ขึ้น prod พร้อมข้อ CX
+
+## รอบก่อนหน้า — **ข้อ CV: step 3 แสดง table ที่ policy จะครอบ · subscription เลือกได้ทุกระดับ · connection เดียวเลือกได้แค่โหมดของมัน**
+
+ผู้ใช้ขอ *"ตอนที่เลือก Which assets it covers ต้องแสดง Table หรือ Asset ที่อยู่ใน Scope ให้เห็นด้วยว่า มีอันไหนโดนบ้าง ออกแบบให้สวยหน่อย"* · *"Where it sits เอา Level อื่นของ table กลับมา … เพราะเรามีไป Filter ข้อ 3 Which assets it covers อยู่แล้วหนิ"* · และจาก screenshot: *"ถ้า Source ไม่รองรับ ทำไมมีให้เลือกอะ มันต้องเทาไปไม่ใช่หรอ"* (connection ตั้งเป็น Query proxy แต่ Secure view ยังกดได้)
+
+**Preview ของ step 3** — `POST /v1/policies/scope-preview?limit=` (`PolicyResource.scopePreview`) รับ draft ที่ยังไม่ save แล้วเรียก `PolicyBindingMaterializer.preview(policy, limit)` ซึ่งใช้ `loader.forEachInScope` + `SelectorMatcher.matches` ตัวเดียวกับตอน save (ผลต้องไม่ต่างจาก binding จริง) · **ไม่เขียนอะไรลง DB** · ตอบแค่ชื่อ: `scanned` · `matched` (ไม่ถูก cap) · `tables[{fqn, columns}]` (cap 1..500) · `truncated` · `columns` = column ที่ column rule ของ data policy เลือก · selector ว่างได้ 0 เสมอ (เหมือน matcher)
+- `ScopePreview.tsx` ใหม่ ใต้ `SelectorBuilder` ใน step 3: หัว *What this covers right now* + บอก scope (ทั้ง estate / *Inside X only*) · 3 stat (Tables covered · Tables in scope · Columns picked หรือ Share of scope) + progress bar · จัดกลุ่มตาม schema · ชื่อ table เป็นลิงก์ไป catalog (tab ใหม่) · data policy แสดง badge column ต่อ table · ช่อง filter เมื่อรายการยาว · เกิน 200 บอก *Showing the first 200 of N*
+- debounce 400ms ที่ตัว draft (`useSettled`) แล้ว key ด้วย `scopeKey` (type · level · anchor · selector · column rules) · selector ที่ยังไม่มีค่า (`hasCondition`) ไม่ยิง API · 🐛 ที่เจอตอนเทสต์: รอบแรกยิงด้วย selector `{}` ของ EMPTY ก่อน draft จาก NokRak จะมาถึง และ queryFn ส่ง draft สด ไม่ใช่ตัวที่ settle → แก้ให้ส่งตัวที่ settle
+
+**ทุกระดับกลับมาให้ subscription** — ลบ `SUBSCRIPTION_LEVELS` / `levelOptions()` · Level ใช้ `SCOPE_LEVELS` ทั้ง 7 ชั้นทั้งสอง kind · anchor แค่ทำให้แคบลง ไม่เคยทำให้กว้างขึ้น (step 3 เลือกต่อจากใต้ anchor) · placeholder ของ Anchor ตามชั้น (`ANCHOR_EXAMPLES`) + hint อธิบาย · เปลี่ยน kind ไม่รีเซ็ต level อีกแล้ว
+
+**Connection เดียว → เลือกได้แค่โหมดของมัน** (`PolicyTargetPicker.lockedMode`) — `defaultEnforcementMode` ของ source (ไม่นับ `NONE`) คือโหมดเดียวที่กดได้ · กด connection = เลือกโหมดนั้นให้เลย · โหมดอื่นเทา + badge *Not set on this connection* + ข้อความ `mode-locked` ว่าต้องให้ admin เปลี่ยนที่ Sources · *Every connection* เลือกได้ทั้ง 3 · `ready` ต้องตรงกับโหมดที่ล็อก · เหตุผล: โหมดไม่ถูกเก็บใน policy และ policy ถูก enforce ด้วยโหมดของ source เสมอ การให้เลือกโหมดอื่นเท่ากับให้เขียน policy ที่ check กับโหมดที่ไม่มีวันถูกใช้
+
+**test** — `PolicyBindingMaterializerIT` 15/15 บน Postgres จริง (+5 ใน `// preview`: ผลตรงกับที่ save จะ bind และไม่เขียน `policy_binding` · อยู่ใน scope · ไม่มี selector = 0 · column ที่ column rule เลือก · truncated ที่ limit) · backend unit ผ่าน · jest 86 suites / 872 ผ่าน (`ScopePreview.test` 7 ใหม่ · `PolicyBuilderPage.test`: connection เดียวโหมดอื่นกดไม่ได้ · Every connection มีครบ 3 · step 3 แสดง table ของ draft จาก NokRak ก่อน save · subscription มีครบ 7 ระดับ + placeholder/hint) · type-check ผ่าน · lint: error เฉพาะ `shot-*.mjs` (ของ local)
+- docs: `user-guide.md` (ระดับของ policy + panel *What this covers right now* · หน้า where it runs ล็อกโหมด) · DESIGN M4
+
+**prod** — ข้อ CU (`4db034d`) deploy แล้ว 2026-09-30 (ไม่มี migration · dist ใหม่มีหน้า picker) · smoke ผ่าน API ยังค้าง (tunnel ไม่ได้รับอนุญาต) · ข้อ CV ยังไม่ขึ้น prod
+
+**ยังไม่ทำ / ข้อควรรู้**
+- ผู้ใช้ขอแล้ว ทำต่อ: หน้ารายการ policy แสดง kind · connection (Every / ชื่อ) · โหมด และ filter ได้ (ต้องทำฝั่ง server เพราะรายการแบ่งหน้า)
+- draft จาก NokRak / access request ยังข้ามหน้า picker (connection = Every · ไม่มีโหมด) — เสนอให้มีตัวเลือก *where it runs* ในฟอร์ม ยังไม่ได้รับคำตอบ
+- connection ที่ตั้ง Query proxy บน engine ที่ไม่มี proxy capabilities: โหมดเดียวที่ล็อกไว้กดไม่ได้ → เลือก connection นั้นไม่ได้ (ถือว่า config ของ source ผิด ต้องแก้ที่ Sources)
+- DBeaver / pgwire (M29 · FR-19)
+
+## รอบก่อนหน้า — **ข้อ CU: หน้า *Where it runs* ก่อนฟอร์ม policy · `LOOKUP` เลือก column ด้วย tag · Credits**
+
+ผู้ใช้ขอ *"หน้าที่ให้เลือก Connection, Query API, Native config, Secure view ที่จะสร้าง Policy ทำให้สวยๆหน่อยนะ ก่อนเข้าหน้า Configure policy"* · ก่อนหน้านั้นถามว่าควรแยกไหมว่า policy นี้สำหรับโหมดไหนของ connection อะไร โดยให้เลือก connection ก่อนแล้วเลือกโหมดที่ connection นั้นรองรับ · และตอบ *"yes"* ให้แก้ `ConditionValues` เพื่อให้ `LOOKUP` เลือก column ด้วย tag ได้ (ค้างจากข้อ CT) · และขอเพิ่มชื่อผู้ร่วมพัฒนาใน *Designed and built*
+
+**หน้า *Where it runs* (`PolicyTargetPicker.tsx` ใหม่)** — `/policies/new` ที่ยังไม่มี `mode` ใน URL เปิดหน้านี้ก่อนฟอร์ม
+- 3 ส่วนเป็น card กดเลือก (`<button aria-pressed>`): **What kind of policy** (Subscription / Data) · **Which connection** (*Every connection* + card ต่อ source: engine + version · จำนวน table · badge โหมดปัจจุบัน · Disabled) · **How it will be enforced** (Query API / Secure view / Native source config · badge *In use on this connection* · Native = *Checked, not applied yet* เพราะ M6 on hold · Query API ปิดถ้า engine ไม่มี `proxyCapabilities`)
+- แถบล่าง sticky สรุปคำตอบ + ปุ่ม *Configure the policy* (ปิดจนกว่าจะเลือก connection และโหมด) → เขียน `?kind=&source=<id|any>&mode=` ลง URL (reload / Back กลับมาที่คำตอบเดิม)
+- เลือก connection → selector ของ step 3 เริ่มที่ `service eq <omServiceFqn ?? name>` (ชื่อ service แบบเดียวกับ `SourceCatalogImporter.serviceOf`) · ถ้าผู้เขียนแก้ selector เองแล้ว เปลี่ยน connection จะไม่ทับ · *Every connection* ล้างเฉพาะ selector ที่มาจากการเลือก connection
+- **โหมดไม่ถูกเก็บลง policy** (schema `additionalProperties: false` และตั้งใจแบบนั้น) — policy ถูก enforce ด้วยโหมดของ source เสมอ (FR-6.0a) · ถ้าเก็บโหมดไว้ใน policy วันที่มีคนเปลี่ยนโหมดของ source policy จะหยุดทำงานเงียบๆ = รั่ว · โหมดที่เลือกใช้แค่ขับ capability matrix ใน rail (block ที่เลือกมี badge *Chosen*) · เลือกโหมดไม่ตรงกับ source → ขึ้นข้อความว่า source ยังใช้โหมดเดิม ต้องให้ admin เปลี่ยนที่ Sources
+- ฟอร์ม: หัวมี chip connection · engine และโหมด + ปุ่ม **Change** (ลบ `mode` ออกจาก URL กลับไปหน้าเลือก โดยคำตอบเดิมยังเลือกอยู่) · rail แสดง engine เป็น badge แทน Select เมื่อเลือก connection
+- policy ที่มาแบบเขียนไว้แล้ว (suggest จาก access request ผ่าน location state · NokRak ใน chat/dock) ข้ามหน้านี้ — มี flag `tookDraft` เพราะ `takePolicy()` ล้าง store ก่อน render รอบถัดไป (ไม่มี flag ฟอร์มที่ NokRak เติมจะถูกหน้าเลือกบัง — บั๊กที่เจอระหว่างทดสอบ มี test แล้ว)
+
+**`LOOKUP` เลือก column ด้วย tag** — `ConditionValues.rowFilterColumn` รับ `columns` selector บน `LOOKUP` ด้วย (engine + `LookupCheck` รองรับตั้งแต่ข้อ CT) · `DataPolicyBuilder` แสดง *Pick the column by* (Column named / Column tagged) ใน kind mapping เหมือน kind อื่น · เปลี่ยนมา LOOKUP ไม่ทิ้ง tag ที่เลือกไว้แล้ว · ไม่มี column ที่ติด tag → 0 แถว
+
+**Credits** — Settings → Credits และ README เพิ่มชื่อผู้ร่วมพัฒนาใน *Designed and built* (ผู้ใช้ขอ · repo public จึงเป็นข้อมูลสาธารณะ)
+
+**test** — backend unit 837 ผ่าน (`ConditionValuesTest` +2) · `LookupRowFilterIT` 18/18 บน Postgres จริง (+3: เลือกด้วย tag ทั้ง join / read-first · tag ที่ไม่มี column ติด = 0 แถวทั้งสองโหมด · save ด้วย tag ผ่าน ไม่มีทั้งชื่อและ tag ไม่ผ่าน) · frontend jest 85 suites / 862 ผ่าน (`PolicyBuilderPage.test` +9 ใน *where a new policy runs*: ต้องเลือกก่อน · selector = service ของ source และไม่มีโหมดใน document · source ที่ link OM ใช้ omServiceFqn · Change กลับไปพร้อมคำตอบเดิม · เตือนโหมดไม่ตรง · Native not applied yet · Query API ปิดบน engine ที่ไม่รองรับ · NokRak draft ข้ามหน้าเลือก · data policy เริ่มที่ Organisation · `DataPolicyBuilder.test` +1) · type-check ผ่าน · lint: error เฉพาะไฟล์ `shot-*.mjs` ที่ gitignore (ของ local ไม่ได้ commit)
+- docs: `user-guide.md` (*Writing a policy* — หน้า where it runs · *Rows given by a mapping table* — Column tagged) · `policy-spec.md` (LOOKUP ใช้ `columns` ได้) · DESIGN FR-4.1 + M4
+
+**ยังไม่ทำ / ข้อควรรู้**
+- ผู้ใช้ขอไว้แล้วยังไม่ทำ: (b) step 3 *Which assets it covers* แสดงรายการ table ที่เข้า scope แบบสวยๆ · (c) *Where it sits* เอา level อื่นกลับมา (ตอนนี้ subscription มี ORG / TABLE) · DBeaver / pgwire (M29 · FR-19)
+- Edit policy เดิมไม่ผ่านหน้าเลือก (ไม่มีโหมดใน document ให้ย้อนอ่าน)
+
+## รอบก่อนหน้า — **ข้อ CT: Row filter อ่านค่าที่เห็นได้จาก mapping table (`LOOKUP` · ทั้ง SUBQUERY และ READ_VALUES · FR-4.1)**
+
+ผู้ใช้ขอ *"สิทธิที่ต้องไปตรวจสอบ Table เพิ่ม … อาจจะ Join ได้ด้วย"* พร้อมตัวอย่าง: ตาราง A มี division / value (A 123 · B 456) · คนอยู่ department AA · master table บอกว่า AA อยู่ division A → เห็นแค่ A 123 · สั่ง *"เอาทั้ง 2 แบบ เลย ทำให้ดีนะ อย่าให้มี Bug"* · ก่อนหน้านี้ row filter เอาค่าจาก attribute ของคนได้อย่างเดียว
+
+**spec**
+- `dataPolicy.json` — kind ใหม่ `LOOKUP` + `rowFilter.lookup`: `table` (service.database.schema.table) · `keys[]` ≥ 1 (`column` ของ mapping × `userAttribute` ของคน · หลาย key = AND) · `valueColumn` · `mode` = `SUBQUERY` (ค่าเริ่มต้น) / `READ_VALUES`
+- `policyDecision.json` — `ResolvedRowPredicate.lookup` (`ResolvedLookup`: table · keys พร้อม `values` ของคนนั้น · valueColumn · mode · `schemaName` / `tableName` ที่ proxy เติมตอน bind)
+
+**engine** — `PolicyEngine` resolve ค่า key ของคน · ไม่มี attribute ตัวไหน หรือ lookup ไม่ครบ → `ALWAYS_FALSE` พร้อมเหตุผล (fail-closed) · column เลือกผ่าน `filteredColumns` เหมือน kind อื่น แต่ละ predicate ได้ lookup ของตัวเอง (ไม่แชร์ เพราะ proxy bind แยกต่อตาราง)
+
+**proxy (`QueryService.govern` → `LookupBinder.bind` บน deep copy ของ decision — decision ที่ cache ไว้ไม่ถูกแก้)**
+- ทั้งสองโหมด: mapping ต้องอยู่ใน catalog และยังอยู่ที่ source · ชื่อ column ถูกเทียบกับ catalog (ตัวพิมพ์ตาม catalog · ชื่อซ้ำ → ปฏิเสธ) · อะไรก็ตามที่ bind ไม่ได้ → **ปฏิเสธ query** (ไม่ใช่ 0 แถว — 0 แถวจะซ่อนความผิดพลาดจากคนที่รายงานได้)
+- `SUBQUERY` — `DecisionSql` render `column IN (SELECT value FROM schema.table WHERE key IN (...) AND ...)` · mapping ต้องอยู่ source + database เดียวกับตารางที่กรอง ไม่งั้นปฏิเสธพร้อมบอกให้ใช้ READ_VALUES · **ไม่ใช้ result cache** (mapping เปลี่ยนได้ระหว่าง query เดียวกันสองครั้ง)
+- `READ_VALUES` — อ่าน `SELECT DISTINCT` บน source ของ mapping ก่อน (ใช้ admission slot · timeout 15 วิ · cost ceiling เดียวกับ query) แล้วเป็น `IN` list ธรรมดา · ข้าม source ได้ · > 1,000 ค่า → ปฏิเสธ (ไม่ตัด) · type ที่ไม่ใช่ text / integer / numeric / uuid / date → ปฏิเสธ · char ที่ถูก pad ถูก trim · ไม่ได้ค่าเลย → `ALWAYS_FALSE` · error ของ source ลง log เท่านั้น (ข้อความอาจเอ่ยชื่อที่คนถามไม่ควรรู้) · เรียงค่าให้คงที่เพื่อให้ cache เจอซ้ำได้
+- **ค่าที่อ่านมาไม่ถูกเก็บ ไม่ถูก describe ไม่ถึง LLM** · policy ของ mapping table เองไม่ใช้กับการอ่านนี้ (เป็น control table — ARAK อ่าน ไม่ใช่คนถาม)
+
+**ที่อื่น** — `ViewCompiler`: LOOKUP → view คืน 0 แถว + `unenforceable` แนะนำ PROXY · `RowEntitlementMaintainer` ข้าม LOOKUP · `AccessReview` / `ImpactAnalysis` บอกว่าแถวมาจาก mapping ไหน (key ของ impact รวม table / mode / key → mapping เปลี่ยน = ผลเปลี่ยน) · `LookupCheck` ตอน save: ต้องมี column · mapping table 4 ส่วน · valueColumn · key ครบ · อยู่ใน catalog · มี column ตามที่อ้าง (ไม่ตรวจว่าอยู่ source เดียวกัน เพราะ policy เดียวครอบหลาย source ได้ — proxy บอกต่อตาราง)
+
+**frontend**
+- `DataPolicyBuilder` — kind *Column is one of the values a mapping table gives them* · ช่อง Column / Value column / Mapping table · key ทีละแถว (Add a key / Remove key N · เหลือตัวสุดท้ายลบไม่ได้) · Select *The mapping is*: **Join it into the query** / **Read the values first** พร้อมคำอธิบายข้อจำกัด · เปลี่ยนเป็น kind อื่น → ทิ้ง `lookup` · เปลี่ยนมา LOOKUP → ทิ้ง `columns` (เลือก column ได้ตามชื่ออย่างเดียว ดูข้างล่าง)
+- `policyLanguage.describeRowFilter` · `SimulatorPage.describePredicate` (บอก mapping + ค่า key ของคนนั้น **ไม่บอกค่าที่ mapping ให้**) · `enforcement.ts` เตือนใน capability matrix ว่า secure view / native ไม่รองรับ
+- docs: `user-guide.md` (*Rows given by a mapping table*) · `policy-spec.md` (6 kinds) · DESIGN FR-4.1
+
+**test** — backend unit ผ่านทั้ง reactor 1,282 (ใหม่ `LookupRowFilterTest` 7 · `LookupBinderTest` 10 · เพิ่มเคส LOOKUP ใน `DecisionSqlRowFilterTest` · `ViewCompilerTest` · `RowEntitlementMaintainerTest`) · IT ใหม่ `LookupRowFilterIT` 15 บน Postgres จริง (join / read-first เห็นแค่ division ที่ map · mapping เปลี่ยนมีผลทันที · ไม่มี department เห็น 0 · ค่าที่มี quote เป็นแค่ค่า · join ข้าม source ปฏิเสธ · read ข้าม source ได้ · source ของ mapping ถูกปิด / ไม่อยู่ใน catalog ปฏิเสธ · > 1,000 ค่าปฏิเสธแต่ join ผ่าน · char pad match · timestamp ไม่ถูก list · decision ที่ cache ไม่ถูกแก้ · save-time check) · jest 852 ผ่าน · type-check สะอาด · lint: error เฉพาะ `shot-*.mjs` ที่ไม่ได้ commit
+
+**ยังไม่ทำ / ข้อควรรู้**
+- ~~LOOKUP เลือก column ด้วย tag ไม่ได้~~ → ทำแล้วในข้อ CU
+- prod: deploy 2026-09-30 ที่ `45cad24` · V45 ลงแล้ว · smoke 17/17 (LOOKUP ถูกปฏิเสธถูกต้อง 4 เคส · จำนวน policy ไม่เปลี่ยน · grants / purposes 200 · ไม่ POST grant)
+- mapping หลายทอด (department → division → region) ให้ทำเป็น view แล้ว map บน view
+- ตัวพิมพ์ใหญ่เล็กตาม collation ของ column (citext / SQL Server CI ไม่สนตัวพิมพ์)
+- secure view / native ไม่รองรับ — enforce ผ่าน query API เท่านั้น
+
+## รอบก่อนหน้า — **ข้อ CS: grant เก็บ purpose และอายุไม่เกินของ purpose (M31b slice 2a · FR-21)**
+
+ต่อจาก DESIGN FR-21 *"grant เก็บ `purpose_id` และมีอายุไม่เกินของ purpose"* — ก่อนหน้านี้คำขอสิทธิ์เก็บ purpose แต่พอ owner กด complete แล้ว grant ที่ได้ไม่รู้ว่าให้ไปเพื่ออะไร และ grant ที่ owner ให้ตรงไม่มีช่อง purpose เลย ระยะสิทธิ์สูงสุดของ purpose จึงบังคับได้แค่ตอนขอ
+
+**DB** — V45 `grant_access.purpose` (text · nullable) · เก็บ key ของทะเบียน หรือคำเดิมของ template ที่มีก่อนทะเบียน · อ่านผ่าน history ของ grant ด้วย (revoke / amend เป็น tombstone เหมือนเดิม)
+
+**กติกา (ตรวจใน `GrantStore` ที่เดียว ตาม `Origin`)**
+- `DIRECT` (ให้ตรงจาก tab Access) — ไม่ใส่ก็ได้ · ใส่แล้วต้องอยู่ในทะเบียนและยังใช้อยู่ (ไม่อยู่ / ถูกปลด → 400)
+- `REQUEST` (complete คำขอ) — ใช้คำที่คำขอเก็บไว้ · ไม่อยู่ในทะเบียนผ่านได้ (template เก่ามีคำของตัวเอง) · ถูกปลดหลังส่งคำขอ → ปฏิเสธ · `AccessRequestStore.complete` แปลงเป็น `INVALID` ทั้งก้อน คำขอยังอยู่ที่ `APPROVED` ไม่มี grant ถูกสร้าง
+- `EDIT` (แก้ grant) — คง purpose เดิม · ถูกปลดไปแล้วก็ยังแก้ได้ (แก้วันที่ของ grant เก่าได้โดยไม่ติดสิ่งที่คนแก้ไม่ได้ก่อ) แต่ระยะสูงสุดยังบังคับ
+- purpose มี `maxDays` → grant ต้องมีวันจบ · จบไม่เกิน `maxDays` วัน + 10 นาที นับจากวันเริ่ม (แก้ grant = นับจากวันเริ่มเดิม ยืดออกไปเรื่อยๆ ไม่ได้) · ระยะถูกลดหลังส่งคำขอ → complete ด้วยระยะเดิมไม่ได้ ต้องย่อ
+
+**API** — `GrantRequest.purpose` (POST grant) · `purpose` ใน `GrantAccess` / grant ที่เก็บ / history entry
+
+**frontend**
+- `GrantDialog` — ช่อง *What for* (`PurposeSelect` เฉพาะตัวที่ใช้อยู่) · เลือก purpose ที่มีระยะสูงสุด → ชิป *No expiry* / ระยะที่ยาวกว่าหายไป · วันถูกตัดด้วย `fitDays` · โหมดวันที่บอกเหตุผลก่อนส่ง (*lasts at most N days; end it by …* / *give the grant an end*) · ปุ่ม Grant ปิดจนกว่าจะพอดี
+- `AccessTab` — badge ชื่อ purpose ข้าง grant · รายละเอียดมี **Purpose** + ฐานกฎหมาย หรือ *None named* · ค้นด้วย purpose ได้ (`accessLists.filterGrants`)
+
+**test** — backend unit ผ่านทั้ง reactor · IT ใหม่ `GrantCompositionIT.Purposes` 5 (เก็บ key · ไม่ใส่ · ไม่อยู่ในทะเบียน → ปฏิเสธ · ระยะเกิน → ปฏิเสธ · แก้แล้วคง purpose) · `AccessRequestIT.Purposes` +4 (grant คง purpose ของคำขอ · ระยะถูกลดหลังขอ · ถูกปลดหลังขอ · คำเดิมของ template ผ่าน) · IT ของ GrantCompositionIT + AccessRequestIT ผ่านทั้งหมด 129 (Testcontainers) · jest ทั้งหมด 848 ผ่าน (`GrantDialog.test` +6 · `AccessTab.test` +1 · `accessLists.test` +1) · type-check สะอาด · lint: error มีเฉพาะไฟล์ scratch `shot-*.mjs` ที่ไม่ได้ commit
+
+**ยังไม่ทำ (slice 2b)** — รายงาน *"ข้อมูล PII ถูกใช้เพื่ออะไร"* บน Dashboard จาก `audit_decision.sensitive` · ปลด purpose แล้วส่ง grant เข้ารอบทบทวน (ต้องมี M32)
+
+## รอบก่อนหน้า — **ข้อ CR: ติด label `integration` ที่ PR ที่เปิดอยู่แล้ว CI รัน Integration ทันที**
+
+ตอน merge CP / CQ เจอว่า Integration (Testcontainers) ขึ้น *skipped* ทั้งที่ติด label `integration` แล้ว — `ci.yml` ฟัง `pull_request` แค่ type ค่าเริ่มต้น (opened / synchronize / reopened) การติด label หลังเปิด PR จึงไม่สั่งรันใหม่ ต้องปิด-เปิด PR หรือ push commit ใหม่ ขณะที่ CONTRIBUTING.md บอกว่าติด label แล้วจะรัน
+
+**แก้** — `pull_request: types: [opened, synchronize, reopened, labeled]` · ติด label ใดก็ตามจะรัน CI ทั้งชุดใหม่ (concurrency ยกเลิกรอบที่ค้าง) ไม่ได้กรองเฉพาะ label `integration` เพราะถ้า job อื่น skip ในรอบที่มายกเลิกรอบเดิม required check จะดูเหมือนผ่านทั้งที่ไม่ได้รัน
+
+**ตรวจเพิ่ม (อ่านอย่างเดียว)** — เงื่อนไข `in` / `notIn` / `ne` ใน policy ที่เก็บอยู่ทั้งหมดไม่มีตัวไหนความหมายเปลี่ยนจากข้อ CP: `in` / `notIn` ใช้ `values` ครบทุกตัว · `ne` มีค่าให้เทียบทุกตัว
+
+## รอบก่อนหน้า — **ข้อ CQ: Row filter เลือก column ด้วย tag ได้ (Column tagged)**
+
+ผู้ใช้ถาม *"ทำไม Column ไม่มีให้เลือก Column tag เวลา scope column ใน data policy"* — ช่อง Column ของ row filter (Which rows they see) เป็นชื่อ column ตายตัวชื่อเดียว ขณะที่ column rule เลือกด้วย tag ได้อยู่แล้ว · policy เดียวจึงใช้กับตารางที่ตั้งชื่อ column สาขาต่างกันไม่ได้
+
+**spec** — `dataPolicy.json` `rowFilter.columns` (assetSelector) ใช้กับ `ATTRIBUTE_COMPARE` / `IN_LIST` เท่านั้น · ใช้แทน `column` ไม่ใช่ใช้คู่กัน
+
+**engine** — `PolicyEngine.filteredColumns` resolve selector กับ `asset.columns()` ตอนตัดสินใจ (`SelectorMatcher.matches`)
+- ไม่มี column ไหน match → `ALWAYS_FALSE` พร้อมเหตุผล *no column of this table matches it* (fail-closed ไม่ใช่ปล่อยทุกแถว)
+- match หลาย column → predicate ต่อ column แล้ว AND กัน (ไม่เดาว่าผู้เขียนหมายถึงตัวไหน)
+- compiler / proxy / AccessReview ไม่ต้องแก้ เพราะได้ `ResolvedRowPredicate` ที่มีชื่อ column จริงอยู่แล้ว
+- tag ของตารางไม่ตกทอดลง column (ตาม FacetInheritance) → นับเฉพาะ tag ที่ติดที่ column เอง
+
+**server** — `ConditionValues.rowFilterColumn` ปฏิเสธ (400): selector บน kind อื่น · มีทั้ง `column` และ `columns` · selector ว่าง · ค่าใน selector ว่าง/ผิดรูป (ตามกติกาข้อ CP)
+
+**frontend**
+- `DataPolicyBuilder` `RowFilterRow` — Select *Pick the column by*: **Column named** (ช่องพิมพ์เดิม) / **Column tagged** (`SelectorBuilder subject="column"` + vocabulary) · เปลี่ยน kind เป็นแบบที่ไม่เทียบ column แล้วทิ้ง `columns` · hint บอกกรณีไม่มี / มีหลาย column
+- `conditionValues.normaliseConditionValues` normalise selector ของ row filter ด้วย
+- `policyLanguage.describeRowFilter` — *only rows where the column (tag under Org.Branch) …*
+
+**test** — backend unit ผ่านทั้ง reactor (`PolicyEngineTest` +3: 2 ตารางชื่อ column ต่างกัน · ไม่มี column → ALWAYS_FALSE · 2 column → 2 predicate · `ConditionValuesTest` +4) · jest `DataPolicyBuilder.test` ใหม่ 3 · `conditionValues.test` +1 · `policyLanguage.test` +1 · IT ไม่ได้รัน (Docker ไม่ขึ้น)
+
+**พฤติกรรมเดิมไม่เปลี่ยน** — policy ที่ใช้ `column` ตามชื่ออยู่แล้วทำงานเหมือนเดิมทุกอย่าง
+
+## รอบก่อนหน้า — **ข้อ CP: "is one of" ใส่ได้หลายค่า (และบั๊ก fail-open ของ "is none of") · subscription เลือกระดับ Organisation ได้**
+
+ผู้ใช้ถาม *"attribute ยังไม่มี or เลย"* แล้วถามต่อ *"หน้าจอไม่เห็นมีให้ใส่หลายอันเลย is one of"* และสั่ง *"เปิดระดับ Org หน่อย เพราะยังไงเรา Filter asset ได้ ในข้อนี้อยู่แล้ว Which assets it covers"*
+
+**คำตอบเรื่อง or** — attribute ต่อกันด้วย AND ตั้งใจ (ตรงกับ `SubjectMatcher`) · OR ภายใน key เดียวใช้ *is one of* · OR ข้าม key เขียนใน expression ด้วย `||` · hint บนฟอร์มบอกแล้ว
+
+**บั๊กที่เจอระหว่างดู (ความปลอดภัย)** — editor เขียนสิ่งที่พิมพ์ลง `value` เสมอ แต่ engine อ่าน `in` / `notIn` จาก `values` → *is one of* "FINANCE, RISK" ไม่ match ใครเลย และ **_is none of_ match ทุกคน (fail-open)** · *is not* ที่ว่างก็ match ทุกคนเช่นกัน
+
+**engine** — `Operators`
+- `IN` / `NOT_IN` อ่านจาก `listOf(value, values)` · policy เก่าที่เก็บ list เป็น string เดียวถูกแยกที่จุลภาค (อ่านได้ตามที่ผู้เขียนตั้งใจ ไม่ต้อง migrate)
+- `NOT_IN` ที่ list ว่าง = false · `NE` ที่ไม่มีค่า = false (fail-closed)
+
+**server** — `policy/ConditionValues.check` (เรียกจาก `PolicyStore.validate` ทั้ง create / update / rollback)
+- ไล่ selector (and / or / not) · `data.columnRules[].columns` · `subject.attributes`
+- `in` / `notIn` ไม่มี `values` → 400 · มี `value` ที่ไม่ว่างอยู่ข้าง `values` → 400 (*would be ignored*) · operator อื่น (ยกเว้น exists / notExists) ที่ไม่มีค่า → 400
+- rollback ไป version ที่เป็นรูปแบบเก่า → ปฏิเสธพร้อมข้อความ *Version N can no longer be saved as it is: …*
+
+**frontend**
+- `policies/conditionValues.ts` — `isListOperator` · `splitValues` · `listOf` · `withOperator` (เปลี่ยน operator แล้วย้ายค่าไปช่องที่ถูก · ออกจาก list เก็บตัวแรก ไม่ join) · `normaliseConditionValues` (เรียกตอน save ทุกครั้ง ทำให้ policy เก่าที่เปิดแล้วกด Save เฉยๆ ผ่าน server)
+- `controls.tsx` `ValueList` — ชิปทีละค่า: พิมพ์แล้ว **Enter** หรือ **จุลภาค** · × ลบ · Backspace ในช่องว่างลบตัวสุดท้าย · ไม่รับค่าซ้ำ · datalist เดิมยังใช้ได้
+- ใช้ใน `SelectorBuilder` (Which assets it covers + column rules) และ `SubjectBuilder` (attributes)
+- `PolicyBuilderPage` — `SUBSCRIPTION_LEVELS = ['ORG', 'TABLE']` · hint ของ ORG: *Every asset step 3 selects, on every source. With nothing selected it covers nothing.* · **อัปเดต (ข้อ CV):** `SUBSCRIPTION_LEVELS` ถูกลบแล้ว subscription เลือกได้ทุกระดับ
+
+**test** — backend unit ผ่านทั้ง reactor (`SelectorMatcherTest` 13 · `SubjectMatcherTest` 15 · `ConditionValuesTest` 7 ใหม่) · jest **836 ผ่าน / 84 suites** (`conditionValues.test` · `SelectorBuilder.test` ใหม่ · `SubjectBuilder.test` +3 · `PolicyBuilderPage.test` +2: เมนู Level มี Organisation / Table เท่านั้น · policy เก่ากด Save แล้วส่ง `values`) · type-check · lint (ไฟล์ที่ track) ผ่าน · IT ไม่ได้รัน (Docker ไม่ขึ้น)
+
+**พฤติกรรมที่เปลี่ยนหลัง deploy (ต้องบอก maintainer)** — policy ที่ใช้ *is one of* แบบเก่าจะเริ่ม match ค่าที่ระบุจริง · *is none of* จะเลิก match ทุกคน · *is not* ที่ว่างจะไม่ match ใคร · ควรไล่ดู policy ACTIVE ที่ใช้ `in` / `notIn` / `ne` บน prod ก่อนหรือหลัง deploy ทันที
 
 ## รอบก่อนหน้า — **ข้อ CO: อะไรนับเป็นข้อมูลอ่อนไหว + Off / Warn / Enforce (M31b slice 1 · FR-21 · PDPA ม.26)**
 
@@ -1331,7 +1524,7 @@ proxy / secure view กันได้เฉพาะคนที่ยอมผ
 - ผู้ใช้สั่ง 2026-09-27: เอาชื่อออกจาก footer ใส่ *All rights reserved* แทน แล้วย้ายชื่อไปไว้ section ผู้จัดทำใน Settings
 - `AppShell` footer: `© 2026 MFEC` / `All rights reserved` (tooltip `© 2026 MFEC. All rights reserved.`)
 - `SettingsPage` section **Credits** ท้ายหน้า — ไม่ใช่ tile ไม่ลิงก์ไปไหน ทุก role เห็น · README ยังมีเครดิตเหมือนเดิม
-- ชื่อ "Sakan Punyanon" ในโค้ดตอนนี้อยู่ที่ Settings → Credits กับ README เท่านั้น (secret scan allowlist ตามนี้)
+- ชื่อ "Sakan Punyanon" และ "Peerawan Chaiyasith" (ผู้ใช้ขอเพิ่ม 2026-09-30) ในโค้ดตอนนี้อยู่ที่ Settings → Credits กับ README เท่านั้น (secret scan allowlist ตามนี้)
 - ผ่าน: jest `Rail` + `SettingsPage` 20/20 · tsc
 
 ### BT.12 Grant ที่หมดไปแล้วตั้งแต่ตอนสร้าง — ไม่รับอีกต่อไป
@@ -4253,6 +4446,10 @@ private static boolean mayImpersonate(AuthenticatedUser user) {
 ### AI.5 Subscription policy — เลือกได้แค่ระดับ **Table**
 
 คำสั่งผู้ใช้: `ปรับ Subscription Policy ให้ มีให้เลือกแค่ระดับ table ก่อน ระดับอื่น hide ไปก่อน`
+
+> **อัปเดต (ข้อ CP):** เปิดระดับ **Organisation** กลับแล้ว — `SUBSCRIPTION_LEVELS = ['ORG', 'TABLE']` · ชั้นกลางยังซ่อนอยู่
+>
+> **อัปเดต (ข้อ CV):** ผู้ใช้ขอให้เอาทุกระดับกลับมา (step 3 กรองต่อได้อยู่แล้ว) — ลบ `SUBSCRIPTION_LEVELS` / `levelOptions()` ออก โค้ดข้างล่างเป็นของเก่า
 
 `src/pages/policies/PolicyBuilderPage.tsx`:
 

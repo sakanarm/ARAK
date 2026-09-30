@@ -39,6 +39,16 @@ public class JwtService {
   public static final String CLAIM_NAME = "name";
   public static final String CLAIM_SCOPES = "scopes";
 
+  /**
+   * Present, and true, only on a token issued to someone who still has to
+   * choose a new password. {@link AuthFilter} then admits the token only to the
+   * endpoints that let them do that, until the database says it is done.
+   */
+  public static final String CLAIM_PASSWORD_CHANGE = "pwc";
+
+  /** A verified token: who it names, and whether a password change was pending. */
+  public record Session(AuthenticatedUser user, boolean passwordChangePending) {}
+
   private final Algorithm algorithm;
   private final JWTVerifier verifier;
   private final String issuer;
@@ -65,8 +75,16 @@ public class JwtService {
   }
 
   public String issue(AuthenticatedUser user) {
+    return issue(user, false);
+  }
+
+  /**
+   * Issues a token; {@code passwordChangePending} marks it for an account whose
+   * password was set by someone else and not yet replaced by its holder.
+   */
+  public String issue(AuthenticatedUser user, boolean passwordChangePending) {
     Instant now = Instant.now();
-    return JWT.create()
+    var builder = JWT.create()
         .withIssuer(issuer)
         .withSubject(user.id().toString())
         .withIssuedAt(now)
@@ -77,8 +95,11 @@ public class JwtService {
         .withClaim(CLAIM_SOURCE, user.source())
         .withClaim("preferred_username", user.username())
         .withArrayClaim(CLAIM_ROLES, user.appRoles().toArray(String[]::new))
-        .withArrayClaim(CLAIM_SCOPES, user.scopes().toArray(String[]::new))
-        .sign(algorithm);
+        .withArrayClaim(CLAIM_SCOPES, user.scopes().toArray(String[]::new));
+    if (passwordChangePending) {
+      builder.withClaim(CLAIM_PASSWORD_CHANGE, true);
+    }
+    return builder.sign(algorithm);
   }
 
   /**
@@ -89,6 +110,11 @@ public class JwtService {
    * those it was tells an attacker which part of the forgery to fix.
    */
   public Optional<AuthenticatedUser> verify(String token) {
+    return verifySession(token).map(Session::user);
+  }
+
+  /** As {@link #verify}, keeping the pending-password-change mark as well. */
+  public Optional<Session> verifySession(String token) {
     try {
       DecodedJWT jwt = verifier.verify(token);
       UUID id = UUID.fromString(jwt.getSubject());
@@ -96,7 +122,7 @@ public class JwtService {
       List<String> scopes = jwt.getClaim(CLAIM_SCOPES).asList(String.class);
       Set<String> roleSet =
           roles == null ? Set.of() : new LinkedHashSet<>(roles);
-      return Optional.of(
+      AuthenticatedUser user =
           new AuthenticatedUser(
               id,
               jwt.getClaim("preferred_username").asString(),
@@ -104,7 +130,9 @@ public class JwtService {
               jwt.getClaim(CLAIM_NAME).asString(),
               jwt.getClaim(CLAIM_SOURCE).asString(),
               roleSet,
-              scopes == null ? List.of() : List.copyOf(scopes)));
+              scopes == null ? List.of() : List.copyOf(scopes));
+      Boolean pending = jwt.getClaim(CLAIM_PASSWORD_CHANGE).asBoolean();
+      return Optional.of(new Session(user, Boolean.TRUE.equals(pending)));
     } catch (JWTVerificationException | IllegalArgumentException | NullPointerException e) {
       return Optional.empty();
     }

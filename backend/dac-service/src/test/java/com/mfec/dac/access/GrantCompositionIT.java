@@ -18,6 +18,7 @@ import com.mfec.dac.policy.DecisionService;
 import com.mfec.dac.policy.PolicyBindingMaterializer;
 import com.mfec.dac.policy.PolicyStore;
 import com.mfec.dac.policy.PrincipalLoader;
+import com.mfec.dac.purpose.PurposeStore;
 import com.mfec.dac.schema.api.MaskingSpec;
 import com.mfec.dac.schema.api.PolicyDecision;
 import com.mfec.dac.schema.api.ResolvedColumnMask;
@@ -668,6 +669,155 @@ class GrantCompositionIT {
 
       assertThat(decisions.decide(DecisionService.Ask.of("analyst_a", CUSTOMER)).getAllowed())
           .isTrue();
+    }
+  }
+
+  // ------------------------------------------------------------ purposes
+
+  @Nested
+  @DisplayName("what a grant was given for")
+  class Purposes {
+
+    private PurposeStore register;
+
+    @BeforeEach
+    void registerOfThree() {
+      jdbi.useHandle(
+          handle -> {
+            handle.execute("DELETE FROM purpose WHERE created_by <> 'system'");
+            handle.execute("UPDATE purpose SET status = 'ACTIVE', max_days = NULL");
+          });
+      register = new PurposeStore(jdbi);
+    }
+
+    private GrantStore.StoredGrant give(String purpose, Instant from, Instant until) {
+      return grants.grant(
+          new GrantStore.NewGrant(
+              LEDGER, idOf("analyst_a"), from, until, "Quarter-end", "owner_o", purpose));
+    }
+
+    private void cap(String key, String name, int days) {
+      register.update(key, new PurposeStore.Details(name, null, null, false, null, days), "admin");
+    }
+
+    @Test
+    @DisplayName("a purpose from the register is stored by its key, on the grant and in the trail")
+    void storesTheKey() {
+      GrantStore.StoredGrant given = give("  Reporting ", null, null);
+
+      assertThat(given.purpose()).isEqualTo("reporting");
+      assertThat(grants.find(given.id()).orElseThrow().purpose()).isEqualTo("reporting");
+      assertThat(grants.historyFor(LEDGER, 10))
+          .singleElement()
+          .satisfies(
+              entry -> {
+                assertThat(entry.action()).isEqualTo("GRANT");
+                assertThat(entry.purpose()).isEqualTo("reporting");
+              });
+    }
+
+    @Test
+    @DisplayName("without a purpose, a grant is what it always was")
+    void none() {
+      assertThat(give(null, null, null).purpose()).isNull();
+      assertThat(
+              grants.grant(
+                      new GrantStore.NewGrant(
+                          LEDGER, idOf("analyst_b"), null, null, "Quarter-end", "owner_o", " "))
+                  .purpose())
+          .isNull();
+    }
+
+    @Test
+    @DisplayName("one the register lacks, or one retired, is refused before anything is written")
+    void refusesUnlisted() {
+      assertThatThrownBy(() -> give("marketing", null, null))
+          .isInstanceOf(IllegalArgumentException.class)
+          .hasMessageContaining("not in the register");
+      register.retire("support", "Merged into reporting", "admin");
+      assertThatThrownBy(() -> give("support", null, null))
+          .isInstanceOf(IllegalArgumentException.class)
+          .hasMessageContaining("retired");
+
+      assertThat(grants.onAsset(LEDGER)).isEmpty();
+      assertThat(grants.historyFor(LEDGER, 10)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("a purpose with a longest access needs an end, within that many days of the start")
+    void capsTheWindow() {
+      cap("reporting", "Reporting", 30);
+      Instant now = Instant.now();
+
+      assertThatThrownBy(() -> give("reporting", null, null))
+          .isInstanceOf(IllegalArgumentException.class)
+          .hasMessageContaining("at most 30 days")
+          .hasMessageContaining("give the grant an end");
+      assertThatThrownBy(() -> give("reporting", null, now.plus(31, ChronoUnit.DAYS)))
+          .isInstanceOf(IllegalArgumentException.class)
+          .hasMessageContaining("at most 30 days");
+      // Measured from the start, not from today: a grant that starts next week
+      // may end thirty days after that.
+      Instant later = now.plus(7, ChronoUnit.DAYS);
+      assertThatThrownBy(
+              () -> give("reporting", later, later.plus(30, ChronoUnit.DAYS).plus(1, ChronoUnit.HOURS)))
+          .isInstanceOf(IllegalArgumentException.class);
+      assertThat(grants.onAsset(LEDGER)).isEmpty();
+
+      assertThat(give("reporting", later, later.plus(30, ChronoUnit.DAYS)).purpose())
+          .isEqualTo("reporting");
+      // The screen counts thirty days from its own clock, which may run a few
+      // minutes ahead of the server's; the grant is not refused for that.
+      assertThat(
+              grants
+                  .grant(
+                      new GrantStore.NewGrant(
+                          LEDGER,
+                          idOf("analyst_b"),
+                          null,
+                          Instant.now().plus(30, ChronoUnit.DAYS).plus(5, ChronoUnit.MINUTES),
+                          "Quarter-end",
+                          "owner_o",
+                          "reporting"))
+                  .purpose())
+          .isEqualTo("reporting");
+    }
+
+    @Test
+    @DisplayName("an edit keeps the purpose, and its limit counts from when the grant started")
+    void editKeepsIt() {
+      Instant started = Instant.now().minus(20, ChronoUnit.DAYS);
+      GrantStore.StoredGrant given =
+          give("reporting", started, Instant.now().plus(5, ChronoUnit.DAYS));
+      cap("reporting", "Reporting", 30);
+
+      assertThatThrownBy(
+              () ->
+                  grants.amend(
+                      given.id(), null, Instant.now().plus(15, ChronoUnit.DAYS), "Longer", "owner_o"))
+          .isInstanceOf(IllegalArgumentException.class)
+          .hasMessageContaining("from when the grant started");
+      assertThatThrownBy(() -> grants.amend(given.id(), null, null, "Open it up", "owner_o"))
+          .isInstanceOf(IllegalArgumentException.class)
+          .hasMessageContaining("give the grant an end");
+      // Both refusals rolled back: the grant stands as it was.
+      assertThat(grants.find(given.id()).orElseThrow().revokedAt()).isNull();
+
+      GrantStore.StoredGrant next =
+          grants
+              .amend(given.id(), null, Instant.now().plus(9, ChronoUnit.DAYS), "Ran long", "owner_o")
+              .orElseThrow();
+      assertThat(next.purpose()).isEqualTo("reporting");
+
+      // Retiring the purpose does not stop an existing grant from being edited;
+      // what happens to those grants is a review's question.
+      register.retire("reporting", "Folded into analytics", "admin");
+      assertThat(
+              grants
+                  .amend(next.id(), null, Instant.now().plus(8, ChronoUnit.DAYS), "Shorter", "owner_o")
+                  .orElseThrow()
+                  .purpose())
+          .isEqualTo("reporting");
     }
   }
 

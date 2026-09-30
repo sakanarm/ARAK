@@ -178,6 +178,83 @@ public class PolicyBindingMaterializer {
     return results;
   }
 
+  // ------------------------------------------------------------------ preview
+
+  /** One table a draft would cover, with the columns its column rules pick out. */
+  public record PreviewTable(String fqn, List<String> columns) {}
+
+  /**
+   * What a draft would cover, before it is saved.
+   *
+   * @param scanned the tables in the draft's scope that were looked at
+   * @param matched how many of them the selector picks, counted in full
+   * @param tables the first {@code limit} of those, in FQN order
+   * @param truncated whether {@code tables} stops short of {@code matched}
+   */
+  public record Preview(int scanned, int matched, List<PreviewTable> tables, boolean truncated) {}
+
+  /**
+   * Resolves a draft's selector without writing anything.
+   *
+   * <p>The same scope narrowing and the same {@link SelectorMatcher} as {@link
+   * #materialize}, so the list the author sees while writing is the list the
+   * policy binds to once saved. Nothing is staged and nothing is stored: a
+   * preview is asked on every edit and must not leave rows behind, even ones a
+   * transaction would drop.
+   */
+  public Preview preview(Policy document, int limit) {
+    int cap = Math.max(1, Math.min(limit, 500));
+    String scopeFqn =
+        document.getScopeLevel() == null || "ORG".equals(document.getScopeLevel().value())
+            ? null
+            : document.getScopeFqn();
+    List<ColumnRule> rules =
+        document.getData() == null || document.getData().getColumnRules() == null
+            ? List.of()
+            : document.getData().getColumnRules();
+    return jdbi.withHandle(
+        handle -> {
+          int[] scanned = {0};
+          int[] matched = {0};
+          List<PreviewTable> tables = new ArrayList<>();
+          if (document.getSelector() == null) {
+            return new Preview(0, 0, List.of(), false);
+          }
+          loader.forEachInScope(
+              handle,
+              scopeFqn,
+              batch -> {
+                scanned[0] += batch.size();
+                for (AssetContext asset : batch) {
+                  if (!SelectorMatcher.matches(document.getSelector(), asset)) {
+                    continue;
+                  }
+                  matched[0]++;
+                  if (tables.size() < cap) {
+                    tables.add(new PreviewTable(asset.fqn(), columnsPicked(rules, asset)));
+                  }
+                }
+              });
+          return new Preview(scanned[0], matched[0], tables, matched[0] > tables.size());
+        });
+  }
+
+  private static List<String> columnsPicked(List<ColumnRule> rules, AssetContext asset) {
+    if (rules.isEmpty()) {
+      return List.of();
+    }
+    List<String> picked = new ArrayList<>();
+    for (ColumnContext column : asset.columns()) {
+      for (ColumnRule rule : rules) {
+        if (rule.getColumns() != null && SelectorMatcher.matches(rule.getColumns(), column)) {
+          picked.add(column.name());
+          break;
+        }
+      }
+    }
+    return picked;
+  }
+
   // ------------------------------------------------------------------ staging
 
   /**

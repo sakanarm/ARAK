@@ -258,4 +258,43 @@ class SubjectMatcherTest {
                 .matched())
         .isFalse();
   }
+
+  @Test
+  @DisplayName("is one of and is none of compare an attribute against the listed values")
+  void attributeInAndNotIn() throws Exception {
+    AttributeCondition oneOf =
+        new AttributeCondition()
+            .withKey("department")
+            .withOperator(FacetOperator.IN)
+            .withValues(List.<Object>of("RISK", "FINANCE"));
+    assertThat(match(new SubjectRule().withAttributes(List.of(oneOf)), analyst()).matched())
+        .isTrue();
+
+    AttributeCondition noneOf =
+        new AttributeCondition()
+            .withKey("department")
+            .withOperator(FacetOperator.NOT_IN)
+            .withValues(List.<Object>of("RISK", "FINANCE"));
+    assertThat(match(new SubjectRule().withAttributes(List.of(noneOf)), analyst()).matched())
+        .isFalse();
+  }
+
+  @Test
+  @DisplayName("an is none of with nothing listed admits nobody")
+  void emptyNotInAdmitsNobody() throws Exception {
+    // Saved by the old editor as one value and no list, this admitted everyone
+    // an ALLOW reached. Nothing to compare against is not a rule about everyone.
+    AttributeCondition noneOf =
+        new AttributeCondition().withKey("department").withOperator(FacetOperator.NOT_IN);
+    assertThat(match(new SubjectRule().withAttributes(List.of(noneOf)), analyst()).matched())
+        .isFalse();
+
+    AttributeCondition isNot =
+        new AttributeCondition()
+            .withKey("department")
+            .withOperator(FacetOperator.NE)
+            .withValue("");
+    assertThat(match(new SubjectRule().withAttributes(List.of(isNot)), analyst()).matched())
+        .isFalse();
+  }
 }

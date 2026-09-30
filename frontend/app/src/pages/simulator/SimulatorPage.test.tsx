@@ -288,6 +288,42 @@ describe('describePredicate', () => {
     ).toMatch(/No rows/);
   });
 
+  test('a lookup names the mapping and this person’s own keys, never what it gives', () => {
+    const joined = describePredicate({
+      kind: 'LOOKUP',
+      column: 'division',
+      operator: 'in',
+      lookup: {
+        table: 'warehouse.sales.ref.department_division',
+        valueColumn: 'division',
+        mode: 'SUBQUERY',
+        keys: [
+          { column: 'department', userAttribute: 'department', values: ['AA', 'AB'] },
+          { column: 'region', userAttribute: 'region', values: ['North'] },
+        ],
+      },
+    });
+    expect(joined).toBe(
+      'Only rows where division is one of the division values in' +
+        ' warehouse.sales.ref.department_division for department AA, AB and region North;' +
+        ' the source reads them as part of the query.'
+    );
+
+    const read = describePredicate({
+      kind: 'LOOKUP',
+      column: 'division',
+      lookup: {
+        table: 'warehouse.sales.ref.department_division',
+        valueColumn: 'division',
+        mode: 'READ_VALUES',
+        keys: [{ column: 'department', values: ['AA'] }],
+      },
+    });
+    expect(read).toMatch(/ARAK reads them when the query runs\.$/);
+
+    expect(describePredicate({ kind: 'LOOKUP', column: 'division' })).toMatch(/^No rows/);
+  });
+
   test('ALWAYS_FALSE says the shape survives and the contents do not', () => {
     expect(describePredicate({ kind: 'ALWAYS_FALSE' })).toMatch(
       /shape of the table stays visible/

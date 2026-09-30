@@ -174,4 +174,4 @@ when a mode is chosen rather than dropping a policy silently.
 
 ## Credits
 
-Designed and built by Sakan Punyanon (MFEC).
+Designed and built by Sakan Punyanon and Peerawan Chaiyasith (MFEC).

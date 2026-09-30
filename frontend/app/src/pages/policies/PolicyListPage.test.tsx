@@ -6,11 +6,24 @@ import type { StoredPolicy } from '../../api/policies';
 
 const fetchPolicies = jest.fn();
 const countPolicies = jest.fn();
+const mockNavigate = jest.fn();
+
+jest.mock('react-router-dom', () => ({
+  ...jest.requireActual('react-router-dom'),
+  useNavigate: () => mockNavigate,
+}));
 
 jest.mock('../../api/policies', () => ({
   ...jest.requireActual('../../api/policies'),
   fetchPolicies: (...args: unknown[]) => fetchPolicies(...args),
   countPolicies: (...args: unknown[]) => countPolicies(...args),
+}));
+
+jest.mock('../../api/sources', () => ({
+  ...jest.requireActual('../../api/sources'),
+  fetchSources: () =>
+    Promise.resolve([{ id: 'src-pg', name: 'demo-pg', defaultEnforcementMode: 'PROXY' }]),
+  fetchEngines: () => Promise.resolve([]),
 }));
 
 function policy(extra: Partial<StoredPolicy['document']> = {}): StoredPolicy {
@@ -81,6 +94,7 @@ describe('the policy list', () => {
     );
     expect(screen.getByRole('button', { name: 'Data' })).toHaveAttribute('aria-current', 'page');
     expect(await screen.findByText('No policy matches these filters')).toBeInTheDocument();
+    expect(screen.getByText(/Policies of the other kind still apply/)).toBeInTheDocument();
   });
 
   it('marks a deny, and names a data policy for what it restricts', async () => {
@@ -102,5 +116,108 @@ describe('the policy list', () => {
 
     expect(await screen.findByText('Deny')).toBeInTheDocument();
     expect(screen.getByText(/1 column rule/)).toBeInTheDocument();
+  });
+
+  it('says where each policy runs, and in which mode', async () => {
+    fetchPolicies.mockResolvedValue([
+      {
+        ...policy(),
+        reach: {
+          everyConnection: false,
+          connections: [
+            { service: 'demo-pg', sourceId: 'src-pg', name: 'demo-pg', engine: 'POSTGRES', mode: 'SECURE_VIEW' },
+          ],
+        },
+      },
+      {
+        ...policy({ name: 'everywhere', displayName: 'Everywhere' }),
+        id: 'p-2',
+        reach: { everyConnection: true, connections: [] },
+      },
+      {
+        ...policy({ name: 'om-only', displayName: 'Catalogue only' }),
+        id: 'p-3',
+        reach: {
+          everyConnection: false,
+          connections: [{ service: 'om-only', sourceId: null, name: 'om-only', engine: null, mode: null }],
+        },
+      },
+    ]);
+    countPolicies.mockResolvedValue(3);
+    renderPage();
+
+    const confined = await screen.findByRole('link', { name: /PO readers/ });
+    expect(within(confined).getByText('demo-pg')).toBeInTheDocument();
+    expect(within(confined).getByText('Secure view')).toBeInTheDocument();
+    expect(within(confined).getByText('Subscription')).toBeInTheDocument();
+
+    const every = screen.getByRole('link', { name: /Everywhere/ });
+    expect(within(every).getByText('Every connection')).toBeInTheDocument();
+    expect(within(every).getByText('Each in its own mode')).toBeInTheDocument();
+
+    const unregistered = screen.getByRole('link', { name: /Catalogue only/ });
+    expect(within(unregistered).getByText('Not a registered connection')).toBeInTheDocument();
+  });
+
+  it('asks the server for one connection and one mode, and clears them', async () => {
+    fetchPolicies.mockResolvedValue([]);
+    countPolicies.mockResolvedValue(0);
+    renderPage('/policies?source=src-pg&mode=PROXY&offset=15');
+
+    await waitFor(() =>
+      expect(fetchPolicies).toHaveBeenLastCalledWith(
+        expect.objectContaining({ source: 'src-pg', mode: 'PROXY', offset: 15 })
+      )
+    );
+    expect(countPolicies).toHaveBeenLastCalledWith(
+      expect.objectContaining({ source: 'src-pg', mode: 'PROXY' })
+    );
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Clear' }));
+
+    await waitFor(() =>
+      expect(fetchPolicies).toHaveBeenLastCalledWith(
+        expect.objectContaining({ source: '', mode: '', offset: 0 })
+      )
+    );
+  });
+
+  it('asks for the policies written for every connection', async () => {
+    fetchPolicies.mockResolvedValue([]);
+    countPolicies.mockResolvedValue(0);
+    renderPage('/policies?source=any');
+
+    await waitFor(() =>
+      expect(fetchPolicies).toHaveBeenLastCalledWith(expect.objectContaining({ source: 'any' }))
+    );
+    expect(await screen.findByText('No policy matches these filters')).toBeInTheDocument();
+    // A filter that finds nothing is not an empty platform, and must not say
+    // what an empty platform means for enforcement.
+    expect(screen.getByText(/policies outside these filters still apply/)).toBeInTheDocument();
+    expect(screen.queryByText(/denies by default/)).toBeNull();
+  });
+
+  it('explains an empty platform as deny by default only when nothing narrows the list', async () => {
+    fetchPolicies.mockResolvedValue([]);
+    countPolicies.mockResolvedValue(0);
+    renderPage();
+
+    expect(await screen.findByText('No policies yet')).toBeInTheDocument();
+    expect(screen.getByText(/denies by default/)).toBeInTheDocument();
+  });
+
+  it('asks which kind of policy before the builder opens', async () => {
+    fetchPolicies.mockResolvedValue([]);
+    countPolicies.mockResolvedValue(0);
+    renderPage();
+
+    fireEvent.click(screen.getByRole('button', { name: 'New policy' }));
+    expect(await screen.findByRole('menuitem', { name: 'Subscription policy' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Data policy' }));
+    expect(mockNavigate).toHaveBeenCalledWith('/policies/new/data');
+
+    fireEvent.click(screen.getByRole('button', { name: 'New policy' }));
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Subscription policy' }));
+    expect(mockNavigate).toHaveBeenLastCalledWith('/policies/new/subscription');
   });
 });

@@ -5,7 +5,8 @@ import type {
   FacetCondition,
 } from '../../generated/entity/policy/policy';
 import { flatten, type Vocabulary } from '../../api/governance';
-import { Select, TextField } from './controls';
+import { Select, TextField, ValueList } from './controls';
+import { isListOperator, listOf, withOperator } from './conditionValues';
 
 /**
  * The facet condition builder, used for both halves of a policy.
@@ -166,13 +167,16 @@ export default function SelectorBuilder({
             className="tw:w-52"
             onChange={(next) => {
               const copy = [...rows];
-              copy[index] = {
-                ...row,
-                facet: next as FacetCondition['facet'],
-                value: '',
-                property: undefined,
-                operator: HIERARCHICAL.has(next) ? row.operator : coerce(row.operator),
-              };
+              copy[index] = withOperator(
+                {
+                  ...row,
+                  facet: next as FacetCondition['facet'],
+                  value: '',
+                  values: undefined,
+                  property: undefined,
+                },
+                HIERARCHICAL.has(next) ? row.operator : coerce(row.operator)
+              );
               update(copy);
             }}
             options={FACETS.map((facet) => ({
@@ -207,10 +211,7 @@ export default function SelectorBuilder({
             className="tw:w-44"
             onChange={(next) => {
               const copy = [...rows];
-              copy[index] = {
-                ...row,
-                operator: next as FacetCondition['operator'],
-              };
+              copy[index] = withOperator(row, next as FacetCondition['operator']);
               update(copy);
             }}
             options={OPERATORS.filter(
@@ -230,7 +231,9 @@ export default function SelectorBuilder({
             <ValueField
               onChange={(next) => {
                 const copy = [...rows];
-                copy[index] = { ...row, value: next };
+                copy[index] = Array.isArray(next)
+                  ? { ...row, value: undefined, values: next }
+                  : { ...row, value: next };
                 update(copy);
               }}
               row={row}
@@ -291,21 +294,31 @@ function ValueField({
 }: {
   row: FacetCondition;
   vocabulary?: Vocabulary;
-  onChange: (value: string) => void;
+  onChange: (value: string | string[]) => void;
 }) {
   const listId = `values-${row.facet}-${row.property ?? 'x'}`;
   const options = valueOptions(row, vocabulary);
 
   return (
     <>
-      <TextField
-        ariaLabel="Value"
-        className="tw:w-72"
-        list={options.length ? listId : undefined}
-        onChange={onChange}
-        placeholder={placeholderFor(row.facet)}
-        value={String(row.value ?? '')}
-      />
+      {isListOperator(row.operator) ? (
+        <ValueList
+          className="tw:w-72"
+          list={options.length ? listId : undefined}
+          onChange={onChange}
+          placeholder="type, then Enter"
+          values={listOf(row)}
+        />
+      ) : (
+        <TextField
+          ariaLabel="Value"
+          className="tw:w-72"
+          list={options.length ? listId : undefined}
+          onChange={onChange}
+          placeholder={placeholderFor(row.facet)}
+          value={String(row.value ?? '')}
+        />
+      )}
       {options.length > 0 && (
         <datalist id={listId}>
           {options.map((option) => (

@@ -181,6 +181,7 @@ public class QueryService {
   private final QueryCostGuard costs;
   private final Clock clock;
   private final SensitiveData sensitive;
+  private final LookupBinder lookups;
 
   public QueryService(
       Jdbi jdbi,
@@ -259,6 +260,7 @@ public class QueryService {
     this.costs = costs == null ? QueryCostGuard.off() : costs;
     this.clock = clock == null ? Clock.systemUTC() : clock;
     this.sensitive = sensitive == null ? SensitiveData.off() : sensitive;
+    this.lookups = new LookupBinder(jdbi, json, sources, this::readLookup);
   }
 
   /** As the eight-argument form, with a held result allowed. */
@@ -313,7 +315,12 @@ public class QueryService {
             rewritten.sql(),
             rows);
     long started = System.nanoTime();
-    if (!fresh) {
+    // A mapping joined into the statement is read by the source each time, so
+    // a change to it has to count from the next query: holding the rows would
+    // keep showing what the mapping no longer allows. A list ARAK read itself
+    // is in the statement, so a changed mapping is a different key anyway.
+    boolean holdable = !joinsMapping(rewritten.governed());
+    if (!fresh && holdable) {
       Optional<QueryResultCache.Hit> hit = results.get(key, clock.instant());
       if (hit.isPresent()) {
         QueryExecutor.Page held = hit.get().page();
@@ -398,7 +405,9 @@ public class QueryService {
           page.unpricedBecause());
     }
 
-    results.put(key, page, readAt, generation);
+    if (holdable) {
+      results.put(key, page, readAt, generation);
+    }
 
     return new Result(
         page.columns(),
@@ -658,7 +667,9 @@ public class QueryService {
           rewriter.rewrite(
               sql,
               (schema, table) ->
-                  govern(source, schema, table, principal, clientIp, purpose, touched, warnings));
+                  govern(
+                      source, schema, table, principal, runBy, clientIp, purpose, touched,
+                      warnings));
     } catch (QueryRewriter.RefusedException e) {
       if (e instanceof QueryRewriter.DeniedException denied && denied.assetFqn() != null) {
         touched.add(denied.assetFqn());
@@ -747,6 +758,36 @@ public class QueryService {
     LOG.warn("Query against {} failed: {}", source.name(), e.toString());
     return new RejectedException(
         "The source rejected the enforced statement: " + e.getMessage(), null, true);
+  }
+
+  /**
+   * Reads a lookup's mapping table for {@link LookupBinder}, as any other read:
+   * in a slot of its own, charged to whoever sent the statement, and priced
+   * against the same ceiling.
+   */
+  private QueryExecutor.Page readLookup(
+      DataSourceStore.Source mapping, String sql, int maxRows, String caller) throws Exception {
+    try (QueryAdmission.Permit slot = admission.admit(mapping.id(), caller)) {
+      return executor.run(
+          target(mapping),
+          mapping.credentialRef(),
+          sql,
+          maxRows,
+          LookupBinder.TIMEOUT_SECONDS,
+          costs.ceilingFor(mapping.engine().name()));
+    } catch (QueryAdmission.BusyException full) {
+      throw new BusyException(busy(full, mapping), full.retryAfterSeconds());
+    }
+  }
+
+  /** Whether any of these decisions joins a mapping table into the statement. */
+  private static boolean joinsMapping(List<QueryRewriter.Governed> governed) {
+    for (QueryRewriter.Governed asset : governed) {
+      if (LookupBinder.hasLookup(asset.decision())) {
+        return true;
+      }
+    }
+    return false;
   }
 
   private static SourceProbe.Target target(DataSourceStore.Source source) {
@@ -858,6 +899,12 @@ public class QueryService {
   private static String describe(ResolvedRowPredicate predicate) {
     ResolvedRowPredicate.Kind kind =
         predicate.getKind() == null ? ResolvedRowPredicate.Kind.ALWAYS_FALSE : predicate.getKind();
+    // Before the values are read: a lookup that ARAK read for itself carries
+    // them, and they are said as where they came from, never as a list.
+    String lookedUp = LookupBinder.describe(predicate);
+    if (lookedUp != null) {
+      return lookedUp;
+    }
     String column = predicate.getColumn() == null ? "the row" : predicate.getColumn();
     List<Object> values =
         predicate.getValues() == null ? List.of() : List.copyOf(predicate.getValues());
@@ -880,6 +927,7 @@ public class QueryService {
       case RAW_PREDICATE -> predicate.getRawPredicate() == null
           ? "a policy-supplied condition"
           : predicate.getRawPredicate();
+      case LOOKUP -> column + " is one of the values of a mapping table";
     };
   }
 
@@ -910,6 +958,7 @@ public class QueryService {
       String schema,
       String table,
       String principal,
+      String runBy,
       String clientIp,
       String purpose,
       Set<String> touched,
@@ -1002,7 +1051,11 @@ public class QueryService {
     // same answer whichever engine it lives on.
     ProxyCapabilities.require(SourceEngines.of(source.engine().name()), fqn.get(), decision);
 
-    return new QueryRewriter.Governed(fqn.get(), decision, columns);
+    // Last, on a copy: what was recorded is the policy's decision, and the
+    // values a mapping gave this person belong to this statement alone.
+    PolicyDecision bound =
+        lookups.bind(source, fqn.get(), decision, runBy == null ? principal : runBy);
+    return new QueryRewriter.Governed(fqn.get(), bound, columns);
   }
 
   /**

@@ -113,7 +113,8 @@ export function filterGrants(
         has(grant.principal, text) ||
         has(grant.displayName, text) ||
         has(grant.reason, text) ||
-        has(grant.grantedBy, text)
+        has(grant.grantedBy, text) ||
+        has(grant.purpose, text)
       );
     })
     .sort((a, b) => STATUS_RANK[a.status] - STATUS_RANK[b.status] || a.index - b.index)

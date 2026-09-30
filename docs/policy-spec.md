@@ -129,10 +129,33 @@ model.
 
 ## Data policies
 
-Row filters come in five kinds: `ATTRIBUTE_COMPARE`, `IN_LIST`,
-`ENTITLEMENT_JOIN`, `ALWAYS_FALSE`, `RAW_PREDICATE`. The first four are
-structural and get validated; `RAW_PREDICATE` is an escape hatch that requires
-elevated rights precisely because it is not.
+Row filters come in six kinds: `ATTRIBUTE_COMPARE`, `IN_LIST`,
+`ENTITLEMENT_JOIN`, `LOOKUP`, `ALWAYS_FALSE`, `RAW_PREDICATE`. The first five
+are structural and get validated; `RAW_PREDICATE` is an escape hatch that
+requires elevated rights precisely because it is not.
+
+`LOOKUP` takes the allowed values from a mapping table instead of from the
+person: `column IN (SELECT valueColumn FROM table WHERE key1 IN (their attr1)
+AND …)`. The engine resolves the person's key values; a person without one of
+them gets `ALWAYS_FALSE`. Like `ATTRIBUTE_COMPARE` and `IN_LIST`, it names its
+column (`column`) or picks it by a column selector (`columns`), never both;
+each column the selector picks gets a lookup of its own, and a table with no
+such column gets `ALWAYS_FALSE`. Only the query proxy enforces it, in one of two
+modes:
+
+- `SUBQUERY` renders the subquery into the rewritten statement. The mapping must
+  be on the same source and database as the filtered table. Results are not
+  cached, since the mapping can change between two identical queries.
+- `READ_VALUES` reads the distinct values first, on the mapping's own source,
+  and renders an ordinary `IN` list. More than 1,000 values, or a value type
+  that cannot be written as an exact literal, refuses the query rather than
+  cutting the list.
+
+Anything that stops a lookup from being bound (a mapping no longer catalogued,
+a column gone, an unreadable source) refuses the query. The mapping is a
+control table: its own policies do not apply to this read, and the values read
+are never described or sent to an LLM. A secure view renders a `LOOKUP` filter
+as no rows; the native row-entitlement table skips it.
 
 `ALWAYS_FALSE` means the schema stays visible and no rows are — different from a
 subscription denial, which hides the table entirely.

@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, type ReactNode } from 'react';
 import { Select as DesignSelect } from '@openmetadata/ui-core-components/components/base/select/select';
+import { splitValues } from './conditionValues';
 
 /**
  * The small form controls the policy builder is made of.
@@ -127,6 +128,92 @@ export function TextField({
       type={type}
       value={value}
     />
+  );
+}
+
+/**
+ * A list of values, typed one at a time.
+ *
+ * "Is one of" needs several values, and a single text box cannot show where one
+ * ends and the next begins: "FINANCE, RISK" looks like two to the author and
+ * was saved as one. Here each item becomes its own chip the moment it is
+ * entered -- on Enter, at a comma, or when the box loses focus -- so what the
+ * screen shows is what the policy holds. A pasted "A, B, C" becomes three.
+ */
+export function ValueList({
+  values,
+  onChange,
+  placeholder,
+  className,
+  ariaLabel = 'Values',
+  list,
+}: {
+  values: (string | number | boolean)[];
+  onChange: (values: string[]) => void;
+  placeholder?: string;
+  className?: string;
+  ariaLabel?: string;
+  list?: string;
+}) {
+  const [draft, setDraft] = useState('');
+  const items = values.map(String);
+
+  function add(text: string) {
+    const typed = splitValues(text).filter((item) => !items.includes(item));
+    setDraft('');
+    if (typed.length) {
+      onChange([...items, ...new Set(typed)]);
+    }
+  }
+
+  return (
+    <div
+      aria-label={ariaLabel}
+      className={`tw:flex tw:flex-wrap tw:items-center tw:gap-1.5 ${className ?? ''}`}
+      role="group">
+      {items.map((item) => (
+        <span
+          className="tw:flex tw:items-center tw:gap-1 tw:rounded-full tw:border tw:border-secondary tw:bg-secondary tw:py-0.5 tw:pr-1 tw:pl-2.5 tw:text-xs tw:text-secondary"
+          key={item}>
+          {item}
+          <button
+            aria-label={`Remove ${item}`}
+            className="tw:cursor-pointer tw:rounded-full tw:px-1 tw:text-tertiary tw:hover:bg-primary tw:hover:text-primary"
+            onClick={() => onChange(items.filter((other) => other !== item))}
+            type="button">
+            ×
+          </button>
+        </span>
+      ))}
+      <input
+        aria-label={`Add to ${ariaLabel.toLowerCase()}`}
+        className={`${FIELD} tw:w-40 tw:py-1`}
+        list={list}
+        onBlur={() => add(draft)}
+        onChange={(event) => {
+          const text = event.target.value;
+          // A comma closes an item, as Enter does; what follows it stays in
+          // the box for the next one.
+          if (text.includes(',')) {
+            const cut = text.lastIndexOf(',');
+            add(text.slice(0, cut));
+            setDraft(text.slice(cut + 1).trimStart());
+          } else {
+            setDraft(text);
+          }
+        }}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter') {
+            event.preventDefault();
+            add(draft);
+          } else if (event.key === 'Backspace' && draft === '' && items.length) {
+            onChange(items.slice(0, -1));
+          }
+        }}
+        placeholder={items.length ? 'add another' : placeholder}
+        value={draft}
+      />
+    </div>
   );
 }
 

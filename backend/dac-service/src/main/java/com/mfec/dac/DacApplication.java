@@ -95,6 +95,7 @@ import com.mfec.dac.web.SpaServlet;
 import com.mfec.dac.policy.AssetContextLoader;
 import com.mfec.dac.policy.PolicyBindingMaterializer;
 import com.mfec.dac.policy.PolicyOverview;
+import com.mfec.dac.policy.PolicyReach;
 import com.mfec.dac.policy.PolicyStore;
 import com.mfec.dac.resources.CatalogResource;
 import com.mfec.dac.resources.GovernanceResource;
@@ -360,6 +361,9 @@ public class DacApplication extends Application<DacConfiguration> {
     // the request form and a reviewer's reading of a request.
     SensitiveData sensitiveData = new SensitiveData(jdbi, environment.getObjectMapper());
     environment.jersey().register(new SensitiveDataResource(sensitiveData));
+    // Registered sources, read by the policy list to say which connection each
+    // policy is for and the mode that enforces it today.
+    DataSourceStore sources = new DataSourceStore(jdbi);
     environment
         .jersey()
         .register(
@@ -368,7 +372,8 @@ public class DacApplication extends Application<DacConfiguration> {
                 materializer,
                 policyOverview,
                 new ImpactAnalysis(jdbi, contexts, principalLoader, policyStore, engine),
-                purposes));
+                purposes,
+                new PolicyReach(sources::list)));
 
     // Tags attached in ARAK (FR-1.7). The resource re-resolves the table's
     // bindings itself; the store's notifier is on the invalidation list below,
@@ -407,7 +412,6 @@ public class DacApplication extends Application<DacConfiguration> {
     // person writes one row instead of a selector.
     GrantStore grants = new GrantStore(jdbi);
 
-    DataSourceStore sources = new DataSourceStore(jdbi);
     // One resolver for everything that opens a connection to a source. Built
     // once rather than defaulted per user, because a second one without the
     // opener would read a sealed credential as unresolvable -- a source that
@@ -609,7 +613,7 @@ public class DacApplication extends Application<DacConfiguration> {
             environment.getObjectMapper(),
             applier,
             () -> omConnection.credentials().webhookSecret()));
-    environment.jersey().register(new AuthFilter(tokens));
+    environment.jersey().register(new AuthFilter(tokens, identities::mustChangePassword));
 
     startCatalogSync(
         environment,

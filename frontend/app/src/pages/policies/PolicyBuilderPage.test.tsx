@@ -2,12 +2,17 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import PolicyBuilderPage from './PolicyBuilderPage';
+import DatabricksPolicyPage from './databricks/DatabricksPolicyPage';
+import SubscriptionPolicyPage from './subscription/SubscriptionPolicyPage';
+import DataAccessPolicyPage from './data-access/DataAccessPolicyPage';
+import { useAssistStore } from '../../assist/assistStore';
 
 const createPolicy = jest.fn();
 const fetchPolicy = jest.fn();
 const resolveBindings = jest.fn();
 const transitionPolicy = jest.fn();
 const updatePolicy = jest.fn();
+const previewPolicyScope = jest.fn();
 
 jest.mock('../../api/policies', () => ({
   ENFORCED_ENVIRONMENT: 'prod',
@@ -16,6 +21,7 @@ jest.mock('../../api/policies', () => ({
   resolveBindings: (...args: unknown[]) => resolveBindings(...args),
   transitionPolicy: (...args: unknown[]) => transitionPolicy(...args),
   updatePolicy: (...args: unknown[]) => updatePolicy(...args),
+  previewPolicyScope: (...args: unknown[]) => previewPolicyScope(...args),
 }));
 
 jest.mock('../../api/governance', () => ({
@@ -46,15 +52,75 @@ jest.mock('../../api/client', () => ({
   apiErrorMessage: (_error: unknown, fallback: string) => fallback,
 }));
 
-function renderNew() {
+const fetchSources = jest.fn();
+const fetchEngines = jest.fn();
+
+jest.mock('../../api/sources', () => ({
+  ...jest.requireActual('../../api/sources'),
+  fetchSources: () => fetchSources(),
+  fetchEngines: () => fetchEngines(),
+}));
+
+const engines = [
+  {
+    id: 'POSTGRES',
+    displayName: 'PostgreSQL',
+    defaultPort: 5432,
+    supportsSchemas: true,
+    proxyCapabilities: ['ROW_FILTER', 'COLUMN_MASK'],
+  },
+  // An engine the query API has nothing for.
+  { id: 'MYSQL', displayName: 'MySQL', defaultPort: 3306, supportsSchemas: false, proxyCapabilities: [] },
+];
+
+function source(overrides: Record<string, unknown>) {
+  return {
+    id: 'src-pg',
+    name: 'demo-pg',
+    engine: 'POSTGRES',
+    engineVersion: '16',
+    host: 'db.example.test',
+    port: 5432,
+    defaultDatabase: null,
+    credentialRef: 'env:DEMO_PG',
+    defaultEnforcementMode: 'PROXY',
+    omServiceFqn: null,
+    secureSchema: 'sec',
+    secureObjectPattern: '{table}',
+    tableScope: { mode: 'ALL', include: [], exclude: [] },
+    enabled: true,
+    createdAt: '2026-09-01T00:00:00Z',
+    updatedAt: '2026-09-01T00:00:00Z',
+    assetCount: 3,
+    ...overrides,
+  };
+}
+
+const sources = [
+  source({}),
+  source({
+    id: 'src-my',
+    name: 'demo-my',
+    engine: 'MYSQL',
+    defaultEnforcementMode: 'SECURE_VIEW',
+    omServiceFqn: 'catalog-my',
+    assetCount: 1,
+  }),
+];
+
+/** A new policy past the page that asks where it runs: every connection, the query API. */
+function renderNew(entry = '/policies/new?source=any&mode=PROXY') {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
   return render(
     <QueryClientProvider client={client}>
-      <MemoryRouter initialEntries={['/policies/new']}>
+      <MemoryRouter initialEntries={[entry]}>
         <Routes>
           <Route element={<PolicyBuilderPage />} path="/policies/new" />
+          <Route element={<SubscriptionPolicyPage />} path="/policies/new/subscription" />
+          <Route element={<DataAccessPolicyPage />} path="/policies/new/data" />
+          <Route element={<DatabricksPolicyPage />} path="/policies/new/databricks" />
         </Routes>
       </MemoryRouter>
     </QueryClientProvider>
@@ -67,6 +133,321 @@ beforeEach(() => {
   // No assistant unless a test says so, so the form reads as it always has.
   fetchMyLlmSetting.mockRejectedValue(new Error('403'));
   fetchOfferedFeatures.mockResolvedValue([]);
+  fetchSources.mockResolvedValue(sources);
+  fetchEngines.mockResolvedValue(engines);
+  previewPolicyScope.mockResolvedValue({ scanned: 0, matched: 0, tables: [], truncated: false });
+});
+
+/*
+ * A new policy is asked where it runs before the form opens: the kind, the
+ * connection and the mode it will be enforced by. The connection narrows the
+ * selector; the mode is what the builder checks against, and is not saved --
+ * the source's own mode is what enforces it.
+ */
+describe('where a new policy runs', () => {
+  const configure = () => screen.getByRole('button', { name: /Configure the policy/ });
+
+  test('is asked before the form, which waits for a connection and a mode', async () => {
+    renderNew('/policies/new');
+
+    expect(await screen.findByRole('region', { name: 'Which database' })).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'How it will be enforced' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /environment/i })).not.toBeInTheDocument();
+    expect(configure()).toBeDisabled();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Every connection' }));
+    expect(configure()).toBeDisabled();
+    // PostgreSQL has one connection here, so choosing the database chooses it.
+    fireEvent.click(screen.getByRole('button', { name: 'PostgreSQL' }));
+    expect(screen.getByRole('button', { name: 'demo-pg' })).toHaveAttribute('aria-pressed', 'true');
+
+    // The connection is set to the query API, so choosing it chose that too.
+    expect(screen.getByRole('button', { name: 'Query API' })).toHaveAttribute(
+      'aria-pressed',
+      'true'
+    );
+    expect(configure()).toBeEnabled();
+    expect(screen.getByTestId('target-summary')).toHaveTextContent(
+      'Subscription policy on demo-pg (PostgreSQL), enforced by Query API'
+    );
+  });
+
+  test('covers the chosen connection and saves no mode', async () => {
+    renderNew('/policies/new');
+
+    fireEvent.click(await screen.findByRole('button', { name: 'PostgreSQL' }));
+    fireEvent.click(screen.getByRole('button', { name: 'demo-pg' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Query API' }));
+    fireEvent.click(configure());
+
+    await screen.findByRole('button', { name: /environment/i });
+    const target = await screen.findByTestId('policy-target');
+    await waitFor(() => expect(target).toHaveTextContent('demo-pg · PostgreSQL'));
+    expect(target).toHaveTextContent('Query API');
+
+    fireEvent.change(screen.getByPlaceholderText('mask-pii-outside-clearance'), {
+      target: { value: 'pg-readers' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Create draft' }));
+    await waitFor(() => expect(createPolicy).toHaveBeenCalledTimes(1));
+    const saved = createPolicy.mock.calls[0][0];
+    expect(saved.selector).toEqual({
+      condition: { facet: 'service', operator: 'eq', value: 'demo-pg' },
+    });
+    expect(JSON.stringify(saved)).not.toMatch(/PROXY/);
+  });
+
+  test('a connection linked to the catalog is selected by its service', async () => {
+    renderNew('/policies/new');
+
+    fireEvent.click(await screen.findByRole('button', { name: 'MySQL' }));
+    fireEvent.click(screen.getByRole('button', { name: 'demo-my' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Secure view' }));
+    fireEvent.click(configure());
+
+    fireEvent.change(await screen.findByPlaceholderText('mask-pii-outside-clearance'), {
+      target: { value: 'my-readers' },
+    });
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Create draft' })).toBeEnabled());
+    fireEvent.click(screen.getByRole('button', { name: 'Create draft' }));
+    await waitFor(() => expect(createPolicy).toHaveBeenCalledTimes(1));
+    expect(createPolicy.mock.calls[0][0].selector).toEqual({
+      condition: { facet: 'service', operator: 'eq', value: 'catalog-my' },
+    });
+  });
+
+  test('the database comes first, then which of its connections', async () => {
+    fetchSources.mockResolvedValue([
+      ...sources,
+      source({ id: 'src-pg-2', name: 'demo-pg-2', assetCount: 4 }),
+    ]);
+    renderNew('/policies/new');
+
+    const postgres = await screen.findByRole('button', { name: 'PostgreSQL' });
+    expect(postgres).toHaveTextContent('2 connections · 7 tables');
+    expect(postgres.querySelector('[data-engine-logo="POSTGRES"]')).not.toBeNull();
+    expect(screen.queryByRole('region', { name: 'Which connection' })).not.toBeInTheDocument();
+
+    fireEvent.click(postgres);
+    const panel = screen.getByRole('region', { name: 'Which connection' });
+    expect(panel).toHaveTextContent('Which PostgreSQL connection');
+    expect(within(panel).queryByRole('button', { name: 'demo-my' })).not.toBeInTheDocument();
+    expect(configure()).toBeDisabled();
+
+    fireEvent.click(within(panel).getByRole('button', { name: 'demo-pg-2' }));
+    expect(configure()).toBeEnabled();
+    expect(screen.getByTestId('target-summary')).toHaveTextContent('on demo-pg-2 (PostgreSQL)');
+
+    // Another database closes the panel and forgets a connection it does not run.
+    fireEvent.click(screen.getByRole('button', { name: 'Every connection' }));
+    expect(screen.queryByRole('region', { name: 'Which connection' })).not.toBeInTheDocument();
+  });
+
+  test('a database with no connection is shown but cannot be chosen', async () => {
+    fetchEngines.mockResolvedValue([
+      ...engines,
+      { id: 'SQLSERVER', displayName: 'SQL Server', defaultPort: 1433, supportsSchemas: true, proxyCapabilities: [] },
+    ]);
+    renderNew('/policies/new');
+
+    const sqlServer = await screen.findByRole('button', { name: 'SQL Server' });
+    expect(sqlServer).toBeDisabled();
+    expect(sqlServer).toHaveTextContent('No connection registered yet');
+  });
+
+  test('Databricks opens a builder of its own, keeping the kind', async () => {
+    renderNew('/policies/new/data');
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Databricks' }));
+
+    expect(
+      await screen.findByRole('heading', { name: 'New Databricks policy' })
+    ).toBeInTheDocument();
+    expect(screen.getByTestId('databricks-target')).toHaveTextContent('Data policy');
+    expect(screen.getByRole('region', { name: 'Databricks builder' })).toHaveTextContent(
+      'Nothing can be written or saved here yet'
+    );
+    expect(createPolicy).not.toHaveBeenCalled();
+  });
+
+  test('Change goes back to the question, keeping the answer', async () => {
+    renderNew('/policies/new/subscription?source=src-pg&mode=PROXY');
+
+    const target = await screen.findByTestId('policy-target');
+    fireEvent.click(within(target).getByRole('button', { name: 'Change' }));
+
+    expect(await screen.findByRole('button', { name: 'demo-pg' })).toHaveAttribute(
+      'aria-pressed',
+      'true'
+    );
+    expect(screen.getByRole('button', { name: 'Query API' })).toHaveAttribute(
+      'aria-pressed',
+      'false'
+    );
+  });
+
+  test('a kind chosen from the menu titles the page and is not asked again', async () => {
+    renderNew('/policies/new/subscription');
+
+    expect(
+      await screen.findByRole('heading', { name: 'Subscription policy' })
+    ).toBeInTheDocument();
+    expect(screen.queryByText('What kind of policy')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Data policy' })).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Every connection' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Query API' }));
+    fireEvent.click(configure());
+
+    expect(
+      await screen.findByRole('heading', { name: 'Subscription policy' })
+    ).toBeInTheDocument();
+    expect(screen.queryByText('Kind')).toBeNull();
+  });
+
+  test('each kind has its own page, which writes that kind', async () => {
+    renderNew('/policies/new/data?source=any&mode=PROXY');
+
+    expect(await screen.findByRole('heading', { name: 'Data policy' })).toBeInTheDocument();
+    expect(screen.getByText('What they see')).toBeInTheDocument();
+    expect(screen.queryByText('Effect')).toBeNull();
+    expect(screen.queryByText('Kind')).toBeNull();
+  });
+
+  test('an old ?kind= link lands on that kind\'s page, answers kept', async () => {
+    renderNew('/policies/new?kind=DATA&source=src-pg&mode=PROXY');
+
+    expect(await screen.findByRole('heading', { name: 'Data policy' })).toBeInTheDocument();
+    const target = await screen.findByTestId('policy-target');
+    await waitFor(() => expect(target).toHaveTextContent('demo-pg · PostgreSQL'));
+  });
+
+  test('a kind picked on /policies/new goes on to that kind\'s page', async () => {
+    renderNew('/policies/new');
+
+    fireEvent.click(await screen.findByRole('button', { name: /Data policy/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Every connection' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Query API' }));
+    fireEvent.click(configure());
+
+    expect(await screen.findByRole('heading', { name: 'Data policy' })).toBeInTheDocument();
+    expect(screen.getByText('What they see')).toBeInTheDocument();
+  });
+
+  test('without a kind, the page still asks for one', async () => {
+    renderNew('/policies/new');
+
+    expect(await screen.findByRole('heading', { name: 'New policy' })).toBeInTheDocument();
+    expect(screen.getByText('What kind of policy')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Data policy' })).toBeInTheDocument();
+  });
+
+  test('on one connection, a mode it is not set to cannot be chosen', async () => {
+    renderNew('/policies/new');
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Secure view' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'PostgreSQL' }));
+
+    // Checking a policy against a mode the connection will never use would
+    // pass checks that mean nothing, so the other two are greyed out.
+    expect(screen.getByRole('button', { name: 'Secure view' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Native source config' })).toBeDisabled();
+    expect(screen.getAllByText('Not set on this connection')).toHaveLength(2);
+    expect(screen.getByRole('button', { name: 'Query API' })).toHaveAttribute(
+      'aria-pressed',
+      'true'
+    );
+    expect(screen.getByTestId('mode-locked')).toHaveTextContent(
+      'demo-pg is enforced by query proxy'
+    );
+  });
+
+  test('every connection keeps all three modes', async () => {
+    renderNew('/policies/new');
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Every connection' }));
+
+    for (const name of ['Query API', 'Secure view', 'Native source config']) {
+      expect(screen.getByRole('button', { name })).toBeEnabled();
+    }
+    expect(screen.queryByText('Not set on this connection')).not.toBeInTheDocument();
+  });
+
+  test('native config is checked but not applied yet', async () => {
+    renderNew('/policies/new');
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Every connection' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Native source config' }));
+
+    expect(screen.getByText('Checked, not applied yet')).toBeInTheDocument();
+    expect(screen.getByText(/does not push native config to a source yet/)).toBeInTheDocument();
+  });
+
+  test('the query API is not offered on an engine it has nothing for', async () => {
+    renderNew('/policies/new');
+
+    fireEvent.click(await screen.findByRole('button', { name: 'MySQL' }));
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Query API' })).toBeDisabled());
+    expect(screen.getByText('Not on MySQL')).toBeInTheDocument();
+  });
+
+  test('a policy drafted in the chat opens the form, not the question', async () => {
+    // "Load into the builder" hands the document over and then navigates here.
+    useAssistStore.getState().deliverPolicy(
+      JSON.stringify({
+        name: 'drafted-in-chat',
+        policyType: 'SUBSCRIPTION',
+        scopeLevel: 'ORG',
+        selector: { condition: { facet: 'tags', operator: 'contains', value: 'PII' } },
+      })
+    );
+    renderNew('/policies/new');
+
+    expect(await screen.findByDisplayValue('drafted-in-chat')).toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Which database' })).not.toBeInTheDocument();
+    expect(useAssistStore.getState().policy).toBeNull();
+  });
+
+  test('step 3 shows the tables the draft covers before it is saved', async () => {
+    previewPolicyScope.mockResolvedValue({
+      scanned: 5,
+      matched: 1,
+      tables: [{ fqn: 'svc.db.sales.customer', columns: [] }],
+      truncated: false,
+    });
+    useAssistStore.getState().deliverPolicy(
+      JSON.stringify({
+        name: 'drafted-in-chat',
+        policyType: 'SUBSCRIPTION',
+        scopeLevel: 'ORG',
+        selector: { condition: { facet: 'tags', operator: 'contains', value: 'PII' } },
+      })
+    );
+    renderNew('/policies/new');
+
+    const panel = await screen.findByRole('region', { name: 'Tables this policy covers' });
+    expect(await within(panel).findByRole('link', { name: 'customer' })).toBeInTheDocument();
+    expect(previewPolicyScope.mock.calls[0][0].selector).toEqual({
+      condition: { facet: 'tags', operator: 'contains', value: 'PII' },
+    });
+    expect(createPolicy).not.toHaveBeenCalled();
+  });
+
+  test('a data policy starts on the organisation', async () => {
+    renderNew('/policies/new');
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Data policy' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Every connection' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Secure view' }));
+    fireEvent.click(configure());
+
+    expect(await screen.findByTestId('policy-target')).toHaveTextContent('Every connection');
+    fireEvent.change(screen.getByPlaceholderText('mask-pii-outside-clearance'), {
+      target: { value: 'org-masks' },
+    });
+    expect(screen.getByRole('button', { name: /level/i })).toHaveTextContent('Organisation');
+  });
 });
 
 /*
@@ -196,6 +577,95 @@ test('editing a policy says which version it is, when it was last edited and by 
     `/policies/${id}?tab=history`
   );
   expect(fetchPolicy).toHaveBeenCalledWith(id);
+});
+
+/*
+ * A subscription may sit on any layer. What a layer gates is what step 3
+ * selects under its anchor, so no layer is wider than the selector.
+ */
+test('a subscription is offered every level', async () => {
+  renderNew();
+
+  fireEvent.click(await screen.findByRole('button', { name: /level/i }));
+
+  for (const name of [
+    'Organisation',
+    'Domain or sub-domain',
+    'Service',
+    'Database',
+    'Schema',
+    'Table',
+    'Column',
+  ]) {
+    expect(await screen.findByRole('option', { name })).toBeInTheDocument();
+  }
+
+  fireEvent.click(screen.getByRole('option', { name: 'Schema' }));
+
+  expect(await screen.findByPlaceholderText('prod-mssql.SalesDB.dbo')).toBeInTheDocument();
+  expect(screen.getByText(/step 3 then picks among them/)).toBeInTheDocument();
+});
+
+test('the organisation level says it covers what step 3 selects', async () => {
+  renderNew();
+
+  fireEvent.click(await screen.findByRole('button', { name: /level/i }));
+  fireEvent.click(await screen.findByRole('option', { name: 'Organisation' }));
+
+  expect(await screen.findByText(/Every asset step 3 selects/)).toBeInTheDocument();
+});
+
+/*
+ * "Is one of" used to be saved with its list typed into one value. The server
+ * now refuses that shape, so a policy opened and saved unchanged has to leave
+ * with the list where the engine reads it -- or it could never be saved again.
+ */
+test('saving a policy stored with an old-style list writes the items as values', async () => {
+  const id = '55555555-5555-5555-5555-555555555555';
+  const stored = {
+    id,
+    document: {
+      name: 'finance-reads-customer',
+      policyType: 'SUBSCRIPTION',
+      scopeLevel: 'TABLE',
+      scopeFqn: 'demo-pg.salesdb.sales.customer',
+      selector: {
+        condition: { facet: 'table', operator: 'eq', value: 'demo-pg.salesdb.sales.customer' },
+      },
+      subject: {
+        anyOf: [{ team: 'Finance' }],
+        attributes: [{ key: 'department', operator: 'in', value: 'FINANCE, RISK' }],
+      },
+      effect: 'ALLOW',
+    },
+    lifecycleState: 'DRAFT',
+    environment: 'prod',
+    version: 2,
+  };
+  fetchPolicy.mockResolvedValue(stored);
+  updatePolicy.mockResolvedValue({ ...stored, version: 3 });
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(
+    <QueryClientProvider client={client}>
+      <MemoryRouter initialEntries={[`/policies/${id}/edit`]}>
+        <Routes>
+          <Route element={<PolicyBuilderPage />} path="/policies/:id/edit" />
+        </Routes>
+      </MemoryRouter>
+    </QueryClientProvider>
+  );
+
+  // Shown as the two items it meant, before anybody touches it.
+  expect(await screen.findByRole('button', { name: 'Remove RISK' })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+  await waitFor(() => expect(updatePolicy).toHaveBeenCalled());
+  const [sentId, document, version] = updatePolicy.mock.calls[0];
+  expect(sentId).toBe(id);
+  expect(version).toBe(2);
+  expect(JSON.parse(JSON.stringify(document.subject.attributes))).toEqual([
+    { key: 'department', operator: 'in', values: ['FINANCE', 'RISK'] },
+  ]);
 });
 
 test('a plain new policy carries no note about a request', async () => {

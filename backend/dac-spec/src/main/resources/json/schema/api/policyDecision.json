@@ -5,13 +5,41 @@
   "description": "The contract between the engine and every enforcement mode. ViewCompiler (5.1.2), NativeCompiler (5.1.1) and RewriteCompiler (5.2) all consume exactly this and nothing else, which is the only reason three enforcement modes can be built in parallel and still agree byte for byte (FR-6.0c). Nothing in here mentions SQL: the engine does not know which mode will run.",
   "type": "object",
   "definitions": {
+    "resolvedLookupKey": {
+      "type": "object",
+      "properties": {
+        "column": { "type": "string" },
+        "userAttribute": { "type": "string" },
+        "values": {
+          "description": "The person's values of userAttribute, already resolved. Never empty: a person without a value gets ALWAYS_FALSE instead.",
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      },
+      "required": ["column", "values"],
+      "additionalProperties": false
+    },
+    "resolvedLookup": {
+      "description": "LOOKUP after resolution. The engine fills table, keys, valueColumn and mode; the query proxy binds schemaName and tableName to the physical mapping table on the same source before SUBQUERY can be rendered. A lookup that was never bound renders as no rows.",
+      "type": "object",
+      "properties": {
+        "table": { "$ref": "../type/basic.json#/definitions/fullyQualifiedName" },
+        "keys": { "type": "array", "items": { "$ref": "#/definitions/resolvedLookupKey" } },
+        "valueColumn": { "type": "string" },
+        "mode": { "type": "string", "enum": ["SUBQUERY", "READ_VALUES"] },
+        "schemaName": { "type": "string" },
+        "tableName": { "type": "string" }
+      },
+      "required": ["table", "valueColumn", "mode"],
+      "additionalProperties": false
+    },
     "resolvedRowPredicate": {
       "description": "A row restriction after composition, still structural rather than SQL text so each dialect can render it its own way.",
       "type": "object",
       "properties": {
         "kind": {
           "type": "string",
-          "enum": ["ATTRIBUTE_COMPARE", "IN_LIST", "ENTITLEMENT_JOIN", "ALWAYS_FALSE", "RAW_PREDICATE"]
+          "enum": ["ATTRIBUTE_COMPARE", "IN_LIST", "ENTITLEMENT_JOIN", "ALWAYS_FALSE", "RAW_PREDICATE", "LOOKUP"]
         },
         "column": { "type": "string" },
         "operator": { "$ref": "../type/facet.json#/definitions/facetOperator" },
@@ -22,6 +50,10 @@
         },
         "entitlementKey": { "type": "string" },
         "rawPredicate": { "type": "string" },
+        "lookup": {
+          "description": "LOOKUP, or IN_LIST read from a lookup with READ_VALUES, kept so the decision can still say where the values came from.",
+          "$ref": "#/definitions/resolvedLookup"
+        },
         "sourcePolicyId": { "$ref": "../type/basic.json#/definitions/uuid" }
       },
       "required": ["kind"],

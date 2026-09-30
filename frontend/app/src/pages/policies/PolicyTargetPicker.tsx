@@ -1,0 +1,702 @@
+import { type ComponentType, type ReactNode, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { Link, useNavigate } from 'react-router-dom';
+import {
+  AlertTriangle,
+  ArrowLeft,
+  ArrowRight,
+  CheckCircle,
+  Code02,
+  Database01,
+  EyeOff,
+  Globe01,
+  Key01,
+  SearchLg,
+  Settings02,
+  Table,
+} from '@untitledui/icons';
+import { Button } from '@openmetadata/ui-core-components/components/base/buttons/button';
+import { Chip as Badge } from '../../components/chips';
+import { apiErrorMessage } from '../../api/client';
+import {
+  ENFORCEMENT_MODES,
+  fetchSources,
+  type EnforcementMode as SourceMode,
+  type Source,
+  type SourceEngineInfo,
+} from '../../api/sources';
+import type { Policy } from '../../generated/entity/policy/policy';
+import type { AssetSelector } from '../../generated/type/facet';
+import { engineLabel, useSourceEngines } from '../../engines';
+import { MODES, type EnforcementMode } from './enforcement';
+import { databricksPath } from './databricks/DatabricksPolicyPage';
+import EngineMark from './EngineMark';
+
+/**
+ * Where a new policy runs, chosen before the form opens.
+ *
+ * The kind, the connection and the enforcement mode are three questions the
+ * form used to leave to the side: the kind was a menu inside step one, the
+ * connection was whatever step three happened to select, and the mode was a
+ * panel in the rail with an engine menu of its own. Asked here first, each
+ * answer does one plain thing to what follows:
+ *
+ * - the kind is the document's policyType;
+ * - the connection narrows the selector to that source's service, so the policy
+ *   cannot reach a table on another source by accident;
+ * - the mode is what the builder checks the policy against as it is written.
+ *
+ * The mode is not written into the policy. A policy is enforced by the mode its
+ * source is set to, and one that only held in a single mode would stop holding
+ * the day somebody switched the source -- quietly, which is the failure the
+ * capability matrix exists to prevent. So the choice drives the warnings.
+ *
+ * On one connection only the mode it is set to can be chosen, and choosing the
+ * connection chooses it: offering another would let an author check a policy
+ * against a mode that will never carry it. Every connection keeps all three,
+ * because each connection there brings its own.
+ */
+
+export type PolicyKind = Policy['policyType'];
+
+export interface PolicyTarget {
+  kind: PolicyKind;
+  /** Null for every connection: the selector alone decides. */
+  source: Source | null;
+  mode: EnforcementMode;
+}
+
+/** The service a source's assets are catalogued under, as the importer names it. */
+export function serviceOf(source: Source): string {
+  const linked = source.omServiceFqn?.trim();
+  return linked ? linked : source.name;
+}
+
+/** The selector that covers every asset of one source and nothing else. */
+export function sourceSelector(source: Source): AssetSelector {
+  return { condition: { facet: 'service', operator: 'eq', value: serviceOf(source) } };
+}
+
+/**
+ * Whether a selector is still exactly what choosing a connection wrote.
+ *
+ * Only then may choosing another connection replace it. Anything the author
+ * added since is theirs, and swapping it for a new source would throw it away.
+ */
+export function isSourceSelector(selector: AssetSelector | undefined): boolean {
+  const condition = selector?.condition;
+  return (
+    Boolean(selector) &&
+    Object.keys(selector!).length === 1 &&
+    condition?.facet === 'service' &&
+    condition.operator === 'eq' &&
+    typeof condition.value === 'string'
+  );
+}
+
+const KINDS: {
+  kind: PolicyKind;
+  title: string;
+  summary: string;
+  icon: ComponentType<{ className?: string }>;
+  tone: string;
+}[] = [
+  {
+    kind: 'SUBSCRIPTION',
+    title: 'Subscription',
+    summary: 'Who gets in: whether somebody reaches the table at all.',
+    icon: Key01,
+    tone: 'tw:bg-utility-brand-50 tw:text-utility-brand-600',
+  },
+  {
+    kind: 'DATA',
+    title: 'Data',
+    summary: 'What they see: row filters, masked and hidden columns.',
+    icon: EyeOff,
+    tone: 'tw:bg-utility-purple-50 tw:text-utility-purple-600',
+  },
+];
+
+const MODE_ICONS: Record<EnforcementMode, ComponentType<{ className?: string }>> = {
+  PROXY: Code02,
+  SECURE_VIEW: Table,
+  NATIVE_CONFIG: Settings02,
+};
+
+/** One database product and the registered connections that run it. */
+export interface EngineGroup {
+  id: string;
+  label: string;
+  sources: Source[];
+}
+
+/**
+ * The connections grouped by database product, in the server's engine order.
+ *
+ * Every engine the build governs gets a card, with or without a connection, so
+ * an author sees what ARAK can reach as well as what it reaches today. A source
+ * stored with an engine the server no longer lists still gets a group of its
+ * own: hiding it would hide a connection policies may already run on.
+ */
+export function engineGroups(
+  sources: Source[],
+  engines: SourceEngineInfo[] | undefined
+): EngineGroup[] {
+  const groups: EngineGroup[] = (engines ?? []).map((engine) => ({
+    id: engine.id,
+    label: engine.displayName,
+    sources: [],
+  }));
+  for (const source of sources) {
+    let group = groups.find((entry) => entry.id === source.engine);
+    if (!group) {
+      group = { id: source.engine, label: engineLabel(engines, source.engine), sources: [] };
+      groups.push(group);
+    }
+    group.sources.push(source);
+  }
+  for (const group of groups) {
+    group.sources.sort((a, b) => a.name.localeCompare(b.name));
+  }
+  return groups;
+}
+
+/** How a source's current mode reads on its card. */
+function modeLabel(mode: SourceMode): string {
+  return ENFORCEMENT_MODES.find((entry) => entry.value === mode)?.label ?? mode;
+}
+
+function modeColor(mode: SourceMode) {
+  switch (mode) {
+    case 'NATIVE_CONFIG':
+      return 'warning' as const;
+    case 'SECURE_VIEW':
+      return 'blue' as const;
+    case 'PROXY':
+      return 'purple' as const;
+    default:
+      return 'gray' as const;
+  }
+}
+
+/**
+ * The one mode a connection allows here, or null when it allows any.
+ *
+ * A connection set to nothing yet allows any: the policy is written ahead of
+ * the day an administrator picks its mode.
+ */
+export function lockedMode(source: Source | null): EnforcementMode | null {
+  const current = source?.defaultEnforcementMode;
+  return current && current !== 'NONE' ? current : null;
+}
+
+/**
+ * What choosing this mode on this source means, or null when it means nothing
+ * more than what the card says.
+ */
+export function modeNote(source: Source | null, mode: EnforcementMode): string | null {
+  const planned =
+    mode === 'NATIVE_CONFIG'
+      ? 'ARAK does not push native config to a source yet. The policy is written and checked for it, and enforced meanwhile by the mode its source is set to.'
+      : null;
+  if (!source) {
+    return (
+      planned ??
+      'Each connection enforces with its own mode. This is the one the policy is checked against while you write it.'
+    );
+  }
+  const current = source.defaultEnforcementMode;
+  if (current === 'NONE') {
+    return `Nothing is enforced on ${source.name} yet. Until an administrator sets its mode under Sources, this policy is written but not applied.`;
+  }
+  if (current !== mode) {
+    return `${source.name} is enforced by ${modeLabel(current).toLowerCase()} today, and stays that way: writing the policy for another mode does not switch the connection. An administrator changes it under Sources.`;
+  }
+  return planned;
+}
+
+export default function PolicyTargetPicker({
+  initial,
+  kindChosen = false,
+  onPick,
+}: {
+  initial: { kind: PolicyKind; sourceId: string | null; mode: EnforcementMode | null };
+  // The kind was answered before this page, in a New policy or Create menu.
+  // Asking it again would offer the other kind to somebody who has just
+  // turned it down, so the page is titled with the kind instead.
+  kindChosen?: boolean;
+  onPick: (target: PolicyTarget) => void;
+}) {
+  const [kind, setKind] = useState<PolicyKind>(initial.kind);
+  // Undefined until chosen; null is "every connection", which is a choice.
+  const [sourceId, setSourceId] = useState<string | null | undefined>(
+    initial.sourceId === null && initial.mode === null ? undefined : initial.sourceId
+  );
+  const [mode, setMode] = useState<EnforcementMode | null>(initial.mode);
+  // The database product whose connections are open below its card. Undefined
+  // follows the chosen connection, so coming back to change one reopens it.
+  const [engineId, setEngineId] = useState<string | null | undefined>(undefined);
+  const [search, setSearch] = useState('');
+  const navigate = useNavigate();
+
+  const sources = useQuery({ queryKey: ['sources'], queryFn: fetchSources, retry: false });
+  const { data: engines } = useSourceEngines();
+
+  const source =
+    sourceId === undefined || sourceId === null
+      ? null
+      : (sources.data?.find((entry) => entry.id === sourceId) ?? null);
+  const chosen = sourceId === null || source !== null;
+  const groups = engineGroups(sources.data ?? [], engines);
+  const openId = engineId === undefined ? (source?.engine ?? null) : engineId;
+  const open = groups.find((group) => group.id === openId) ?? null;
+  const needle = search.trim().toLowerCase();
+  const listed = (open?.sources ?? []).filter(
+    (entry) =>
+      !needle ||
+      entry.name.toLowerCase().includes(needle) ||
+      serviceOf(entry).toLowerCase().includes(needle)
+  );
+
+  function pickSource(entry: Source) {
+    setSourceId(entry.id);
+    const only = lockedMode(entry);
+    const noProxy =
+      engines?.find((known) => known.id === entry.engine)?.proxyCapabilities.length === 0;
+    if (only && !(only === 'PROXY' && noProxy)) setMode(only);
+    else if (only) setMode(null);
+  }
+
+  function pickEngine(group: EngineGroup) {
+    setEngineId(group.id);
+    setSearch('');
+    // A product with one connection has nothing left to ask.
+    if (group.sources.length === 1) pickSource(group.sources[0]);
+    else if (source?.engine !== group.id) setSourceId(undefined);
+  }
+  const engine = source ? engines?.find((entry) => entry.id === source.engine) : undefined;
+  // The query API refuses a policy it cannot express on the engine, so an
+  // engine it has nothing for is not offered as a place to write for it.
+  const proxyMissing = Boolean(engine && engine.proxyCapabilities.length === 0);
+  const locked = lockedMode(source);
+  const ready =
+    chosen &&
+    mode !== null &&
+    !(mode === 'PROXY' && proxyMissing) &&
+    (locked === null || mode === locked);
+
+  return (
+    <>
+      <Link
+        className="tw:inline-flex tw:items-center tw:gap-1 tw:text-sm tw:text-tertiary tw:hover:text-primary"
+        to="/policies">
+        <ArrowLeft className="tw:size-4" />
+        Policies
+      </Link>
+
+      <header className="tw:mt-4 tw:rounded-xl tw:border tw:border-secondary tw:bg-primary tw:p-5 tw:shadow-xs">
+        <h1 className="tw:text-xl tw:font-semibold tw:text-primary">
+          {kindChosen ? `${kind === 'DATA' ? 'Data' : 'Subscription'} policy` : 'New policy'}
+        </h1>
+        <p className="tw:mt-0.5 tw:text-sm tw:text-tertiary">
+          {kindChosen
+            ? 'Say where it runs and how it will be enforced.'
+            : 'Say what kind of policy it is, where it runs and how it will be enforced.'}{' '}
+          The form opens after that, with its checks already pointed at the right place.
+        </p>
+        <ol aria-label="Progress" className="tw:mt-4 tw:flex tw:flex-wrap tw:items-center tw:gap-2 tw:text-sm">
+          <li aria-current="step" className="tw:flex tw:items-center tw:gap-2 tw:font-medium tw:text-primary">
+            <span className="tw:flex tw:size-6 tw:items-center tw:justify-center tw:rounded-full tw:bg-brand-solid tw:text-xs tw:font-semibold tw:text-white">
+              1
+            </span>
+            Where it runs
+          </li>
+          <li aria-hidden className="tw:h-px tw:w-8 tw:bg-border-secondary" />
+          <li className="tw:flex tw:items-center tw:gap-2 tw:text-tertiary">
+            <span className="tw:flex tw:size-6 tw:items-center tw:justify-center tw:rounded-full tw:border tw:border-secondary tw:text-xs tw:font-semibold">
+              2
+            </span>
+            Configure the policy
+          </li>
+        </ol>
+      </header>
+
+      <div className="tw:mt-6 tw:flex tw:flex-col tw:gap-6 tw:pb-28">
+        {!kindChosen && (
+        <Section
+          description="Subscription and data policies are different jobs, written by different people."
+          title="What kind of policy">
+          <div className="tw:grid tw:gap-3 tw:sm:grid-cols-2">
+            {KINDS.map((entry) => (
+              <Choice
+                icon={<IconTile icon={entry.icon} tone={entry.tone} />}
+                key={entry.kind}
+                label={`${entry.title} policy`}
+                onSelect={() => setKind(entry.kind)}
+                selected={kind === entry.kind}>
+                <p className="tw:text-sm tw:font-semibold tw:text-primary">{entry.title}</p>
+                <p className="tw:mt-0.5 tw:text-sm tw:text-tertiary">{entry.summary}</p>
+              </Choice>
+            ))}
+          </div>
+        </Section>
+        )}
+
+        <Section
+          description="Choose the database product first, then which of its connections. The policy covers that connection's assets, and step 3 narrows them down. Every connection leaves it to step 3 alone."
+          title="Which database">
+          {sources.isError ? (
+            <p className="tw:rounded-lg tw:border tw:border-error tw:bg-error-primary tw:p-4 tw:text-sm tw:text-error-primary">
+              {apiErrorMessage(sources.error, 'The connections could not be listed.')}
+            </p>
+          ) : (
+            <div className="tw:grid tw:gap-3 tw:sm:grid-cols-2 tw:xl:grid-cols-3">
+              <Choice
+                icon={<IconTile icon={Globe01} tone="tw:bg-utility-gray-50 tw:text-utility-gray-600" />}
+                label="Every connection"
+                onSelect={() => {
+                  setSourceId(null);
+                  setEngineId(null);
+                }}
+                selected={sourceId === null}>
+                <p className="tw:text-sm tw:font-semibold tw:text-primary">Every connection</p>
+                <p className="tw:mt-0.5 tw:text-sm tw:text-tertiary">
+                  Organisation-wide. Whatever step 3 selects, on any database.
+                </p>
+              </Choice>
+              {sources.isPending
+                ? [0, 1].map((index) => (
+                    <div
+                      aria-hidden
+                      className="tw:h-28 tw:animate-pulse tw:rounded-xl tw:border tw:border-secondary tw:bg-secondary"
+                      key={index}
+                    />
+                  ))
+                : groups.map((group) => (
+                    <EngineCard
+                      group={group}
+                      key={group.id}
+                      onSelect={() => pickEngine(group)}
+                      selected={sourceId !== null && openId === group.id}
+                    />
+                  ))}
+              {/* Not one of the server's engines: Databricks is governed on a
+                  page of its own, so its card leaves this one. */}
+              <Choice
+                icon={<EngineMark id="DATABRICKS" label="Databricks" />}
+                label="Databricks"
+                onSelect={() => navigate(databricksPath(kind))}
+                selected={false}>
+                <p className="tw:truncate tw:text-sm tw:font-semibold tw:text-primary">Databricks</p>
+                <p className="tw:mt-0.5 tw:text-sm tw:text-tertiary">
+                  Configured on a page of its own.
+                </p>
+                <div className="tw:mt-2 tw:flex tw:flex-wrap tw:gap-1.5">
+                  <Badge color="gray" size="sm" type="pill-color">
+                    Separate builder
+                  </Badge>
+                </div>
+              </Choice>
+            </div>
+          )}
+
+          {open && sourceId !== null && open.sources.length > 0 && (
+            <section
+              aria-label="Which connection"
+              className="tw:mt-4 tw:rounded-xl tw:border tw:border-secondary tw:bg-secondary tw:p-4">
+              <div className="tw:flex tw:flex-wrap tw:items-center tw:justify-between tw:gap-3">
+                <div className="tw:flex tw:min-w-0 tw:items-center tw:gap-3">
+                  <EngineMark id={open.id} label={open.label} size="sm" />
+                  <div className="tw:min-w-0">
+                    <h3 className="tw:text-sm tw:font-semibold tw:text-primary">
+                      Which {open.label} connection
+                    </h3>
+                    <p className="tw:text-xs tw:text-tertiary">
+                      {open.sources.length === 1
+                        ? 'The only one registered, so it is chosen.'
+                        : `${open.sources.length} registered. Pick the one this policy runs on.`}
+                    </p>
+                  </div>
+                </div>
+                {open.sources.length > 6 && (
+                  <label className="tw:relative tw:w-full tw:sm:w-64">
+                    <span className="tw:sr-only">Find a connection</span>
+                    <SearchLg className="tw:pointer-events-none tw:absolute tw:top-1/2 tw:left-3 tw:size-4 tw:-translate-y-1/2 tw:text-quaternary" />
+                    <input
+                      className="tw:w-full tw:rounded-lg tw:border tw:border-primary tw:bg-primary tw:py-2 tw:pr-3 tw:pl-9 tw:text-sm tw:text-primary tw:shadow-xs tw:outline-focus-ring tw:placeholder:text-placeholder tw:focus-visible:outline-2"
+                      onChange={(event) => setSearch(event.target.value)}
+                      placeholder="Find a connection"
+                      type="search"
+                      value={search}
+                    />
+                  </label>
+                )}
+              </div>
+              <div className="tw:mt-3 tw:grid tw:gap-3 tw:sm:grid-cols-2 tw:xl:grid-cols-3">
+                {listed.map((entry) => (
+                  <Choice
+                    icon={<IconTile icon={Database01} tone="tw:bg-utility-blue-50 tw:text-utility-blue-600" />}
+                    key={entry.id}
+                    label={entry.name}
+                    onSelect={() => pickSource(entry)}
+                    selected={sourceId === entry.id}>
+                    <p className="tw:truncate tw:text-sm tw:font-semibold tw:text-primary">{entry.name}</p>
+                    <p className="tw:mt-0.5 tw:truncate tw:text-sm tw:text-tertiary">
+                      {entry.engineVersion ? `Version ${entry.engineVersion} · ` : ''}
+                      {entry.assetCount} {entry.assetCount === 1 ? 'table' : 'tables'}
+                    </p>
+                    <div className="tw:mt-2 tw:flex tw:flex-wrap tw:gap-1.5">
+                      <Badge color={modeColor(entry.defaultEnforcementMode)} size="sm" type="pill-color">
+                        {modeLabel(entry.defaultEnforcementMode)}
+                      </Badge>
+                      {!entry.enabled && (
+                        <Badge color="warning" size="sm" type="pill-color">
+                          Disabled
+                        </Badge>
+                      )}
+                    </div>
+                  </Choice>
+                ))}
+              </div>
+              {listed.length === 0 && (
+                <p className="tw:mt-3 tw:text-sm tw:text-tertiary">No {open.label} connection matches “{search.trim()}”.</p>
+              )}
+            </section>
+          )}
+
+          {sources.data?.length === 0 && (
+            <p className="tw:mt-3 tw:text-sm tw:text-tertiary">
+              No connection is registered yet. An administrator adds one under{' '}
+              <Link className="tw:font-medium tw:text-brand-secondary tw:hover:underline" to="/sources">
+                Sources
+              </Link>
+              ; until then a policy can still be written for every connection.
+            </p>
+          )}
+        </Section>
+
+        <Section
+          description={
+            source
+              ? `What ${source.name} can carry. The builder checks the policy against the mode chosen here as you write it.`
+              : 'The builder checks the policy against the mode chosen here as you write it.'
+          }
+          title="How it will be enforced">
+          <div className="tw:grid tw:gap-3 tw:lg:grid-cols-3">
+            {MODES.map((entry) => {
+              const inUse = source?.defaultEnforcementMode === entry.mode;
+              const unavailable = entry.mode === 'PROXY' && proxyMissing;
+              const notSet = locked !== null && entry.mode !== locked;
+              return (
+                <Choice
+                  disabled={unavailable || notSet}
+                  icon={<IconTile icon={MODE_ICONS[entry.mode]} tone="tw:bg-utility-purple-50 tw:text-utility-purple-600" />}
+                  key={entry.mode}
+                  label={entry.title}
+                  onSelect={() => setMode(entry.mode)}
+                  selected={mode === entry.mode}>
+                  <div className="tw:flex tw:flex-wrap tw:items-center tw:gap-2">
+                    <p className="tw:text-sm tw:font-semibold tw:text-primary">{entry.title}</p>
+                    {inUse && (
+                      <Badge color="success" size="sm" type="pill-color">
+                        In use on this connection
+                      </Badge>
+                    )}
+                    {entry.mode === 'NATIVE_CONFIG' && (
+                      <Badge color="gray" size="sm" type="pill-color">
+                        Checked, not applied yet
+                      </Badge>
+                    )}
+                    {unavailable && (
+                      <Badge color="gray" size="sm" type="pill-color">
+                        Not on {engineLabel(engines, source?.engine)}
+                      </Badge>
+                    )}
+                    {notSet && !unavailable && (
+                      <Badge color="gray" size="sm" type="pill-color">
+                        Not set on this connection
+                      </Badge>
+                    )}
+                  </div>
+                  <p className="tw:mt-1 tw:text-sm tw:text-tertiary">{entry.summary}</p>
+                  <p className="tw:mt-2 tw:text-xs tw:text-quaternary">Needs: {entry.requirement}.</p>
+                </Choice>
+              );
+            })}
+          </div>
+          {source && locked && (
+            <p className="tw:mt-3 tw:text-sm tw:text-tertiary" data-testid="mode-locked">
+              {source.name} is enforced by {modeLabel(locked).toLowerCase()}, so that is the
+              mode this policy is written for. An administrator changes a connection's mode
+              under{' '}
+              <Link className="tw:font-medium tw:text-brand-secondary tw:hover:underline" to="/sources">
+                Sources
+              </Link>
+              .
+            </p>
+          )}
+          {chosen && mode && modeNote(source, mode) && (
+            <p className="tw:mt-3 tw:flex tw:gap-2 tw:rounded-lg tw:border tw:border-secondary tw:bg-secondary tw:p-3 tw:text-sm tw:text-tertiary">
+              <AlertTriangle className="tw:mt-0.5 tw:size-4 tw:flex-none tw:text-warning-primary" />
+              {modeNote(source, mode)}
+            </p>
+          )}
+        </Section>
+      </div>
+
+      {/* Held at the foot of the window, so the answer so far and the way on
+          stay in view however far down the connections run. */}
+      <div className="tw:sticky tw:bottom-0 tw:-mx-1 tw:mt-2 tw:flex tw:flex-wrap tw:items-center tw:justify-between tw:gap-3 tw:rounded-xl tw:border tw:border-secondary tw:bg-primary tw:p-4 tw:shadow-lg">
+        <p className="tw:min-w-0 tw:text-sm tw:text-tertiary" data-testid="target-summary">
+          {chosen ? (
+            <>
+              <span className="tw:font-medium tw:text-primary">
+                {kind === 'DATA' ? 'Data' : 'Subscription'} policy
+              </span>
+              {' on '}
+              <span className="tw:font-medium tw:text-primary">
+                {source ? source.name : 'every connection'}
+              </span>
+              {source && ` (${engineLabel(engines, source.engine)})`}
+              {mode && (
+                <>
+                  {', enforced by '}
+                  <span className="tw:font-medium tw:text-primary">
+                    {MODES.find((entry) => entry.mode === mode)?.title}
+                  </span>
+                </>
+              )}
+            </>
+          ) : (
+            open && sourceId !== null
+              ? `Choose which ${open.label} connection, and how it will be enforced.`
+              : 'Choose a database, then a connection and how it will be enforced.'
+          )}
+        </p>
+        <Button
+          iconTrailing={ArrowRight}
+          isDisabled={!ready}
+          onPress={() => ready && onPick({ kind, source, mode: mode! })}
+          size="md">
+          Configure the policy
+        </Button>
+      </div>
+    </>
+  );
+}
+
+function Section({
+  title,
+  description,
+  children,
+}: {
+  title: string;
+  description: string;
+  children: ReactNode;
+}) {
+  return (
+    <section aria-label={title}>
+      <h2 className="tw:text-md tw:font-semibold tw:text-primary">{title}</h2>
+      <p className="tw:mt-0.5 tw:text-sm tw:text-tertiary">{description}</p>
+      <div className="tw:mt-3">{children}</div>
+    </section>
+  );
+}
+
+function IconTile({
+  icon: Icon,
+  tone,
+}: {
+  icon: ComponentType<{ className?: string }>;
+  tone: string;
+}) {
+  return (
+    <span className={`tw:flex tw:size-10 tw:flex-none tw:items-center tw:justify-center tw:rounded-lg ${tone}`}>
+      <Icon className="tw:size-5" />
+    </span>
+  );
+}
+
+/** A database product: how many connections run it and how they are enforced. */
+function EngineCard({
+  group,
+  selected,
+  onSelect,
+}: {
+  group: EngineGroup;
+  selected: boolean;
+  onSelect: () => void;
+}) {
+  const count = group.sources.length;
+  const tables = group.sources.reduce((sum, entry) => sum + entry.assetCount, 0);
+  const modes = [...new Set(group.sources.map((entry) => entry.defaultEnforcementMode))];
+  return (
+    <Choice
+      disabled={count === 0}
+      icon={<EngineMark id={group.id} label={group.label} />}
+      label={group.label}
+      onSelect={onSelect}
+      selected={selected}>
+      <p className="tw:truncate tw:text-sm tw:font-semibold tw:text-primary">{group.label}</p>
+      <p className="tw:mt-0.5 tw:truncate tw:text-sm tw:text-tertiary">
+        {count === 0
+          ? 'No connection registered yet'
+          : `${count} ${count === 1 ? 'connection' : 'connections'} · ${tables} ${tables === 1 ? 'table' : 'tables'}`}
+      </p>
+      {modes.length > 0 && (
+        <div className="tw:mt-2 tw:flex tw:flex-wrap tw:gap-1.5">
+          {modes.map((entry) => (
+            <Badge color={modeColor(entry)} key={entry} size="sm" type="pill-color">
+              {modeLabel(entry)}
+            </Badge>
+          ))}
+        </div>
+      )}
+    </Choice>
+  );
+}
+
+/**
+ * One answer, as a card that is pressed rather than a radio beside a label.
+ *
+ * A button with aria-pressed: each group is a set of these, and a reader
+ * hears which one is chosen without a radio group's arrow-key handling, which
+ * would make a disabled card awkward to explain.
+ */
+function Choice({
+  label,
+  selected,
+  disabled,
+  onSelect,
+  icon,
+  children,
+}: {
+  label: string;
+  selected: boolean;
+  disabled?: boolean;
+  onSelect: () => void;
+  icon: ReactNode;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      aria-label={label}
+      aria-pressed={selected}
+      className={`tw:relative tw:flex tw:min-w-0 tw:items-start tw:gap-3 tw:rounded-xl tw:border tw:p-4 tw:text-left tw:outline-focus-ring tw:transition tw:focus-visible:outline-2 ${
+        disabled
+          ? 'tw:cursor-not-allowed tw:border-secondary tw:bg-secondary tw:opacity-60'
+          : selected
+            ? 'tw:cursor-pointer tw:border-brand tw:bg-brand-primary tw:shadow-md'
+            : 'tw:cursor-pointer tw:border-secondary tw:bg-primary tw:shadow-xs tw:hover:border-brand tw:hover:shadow-md'
+      }`}
+      disabled={disabled}
+      onClick={onSelect}
+      type="button">
+      {icon}
+      <div className="tw:min-w-0 tw:flex-1 tw:pr-5">{children}</div>
+      {selected && (
+        <CheckCircle className="tw:absolute tw:top-3 tw:right-3 tw:size-5 tw:text-brand-secondary" />
+      )}
+    </button>
+  );
+}

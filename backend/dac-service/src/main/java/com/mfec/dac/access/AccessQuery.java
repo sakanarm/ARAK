@@ -108,6 +108,7 @@ public class AccessQuery {
    * @param live whether the window is open and it is not revoked
    * @param effectiveFor how many of the evaluated people are allowed <em>by
    *     this grant</em>. Zero on a live grant means a policy is overruling it.
+   * @param purpose the register key it was given for; null when none was
    */
   public record GrantAccess(
       String id,
@@ -121,7 +122,8 @@ public class AccessQuery {
       String grantedBy,
       Instant grantedAt,
       boolean live,
-      int effectiveFor) {}
+      int effectiveFor,
+      String purpose) {}
 
   /**
    * The whole tab.
@@ -275,7 +277,8 @@ public class AccessQuery {
               grant.grantedBy(),
               grant.grantedAt(),
               grant.liveAt(now),
-              perGrant.getOrDefault(grant.id().toString(), 0)));
+              perGrant.getOrDefault(grant.id().toString(), 0),
+              grant.purpose()));
     }
     return List.copyOf(out);
   }

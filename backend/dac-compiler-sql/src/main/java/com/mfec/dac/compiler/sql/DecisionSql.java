@@ -3,6 +3,8 @@ package com.mfec.dac.compiler.sql;
 import com.mfec.dac.schema.api.MaskingSpec;
 import com.mfec.dac.schema.api.PolicyDecision;
 import com.mfec.dac.schema.api.ResolvedColumnMask;
+import com.mfec.dac.schema.api.ResolvedLookup;
+import com.mfec.dac.schema.api.ResolvedLookupKey;
 import com.mfec.dac.schema.api.ResolvedRowPredicate;
 import com.mfec.dac.schema.api.Unenforceable;
 import java.util.ArrayList;
@@ -54,6 +56,9 @@ public final class DecisionSql {
       return out.toString();
     }
   }
+
+  /** The mapping table's alias inside a lookup subquery. */
+  static final String LOOKUP_ALIAS = "arak_lookup";
 
   private final SqlDialect dialect;
 
@@ -180,7 +185,96 @@ public final class DecisionSql {
         yield "(1 = 0)";
       }
       case IN_LIST, ATTRIBUTE_COMPARE -> compare(predicate, alias, unenforceable);
+      case LOOKUP -> lookup(predicate, alias, unenforceable);
     };
+  }
+
+  /**
+   * A row filter whose allowed values live in a mapping table: the column must
+   * hold one of the values the mapping rows matching the reader give.
+   *
+   * <p>Rendered as {@code col IN (SELECT value FROM mapping WHERE key IN (...))}
+   * only once the proxy has bound the mapping table to a physical table on the
+   * same source. Anything short of that — unbound, read-values mode that was
+   * never read, a key with nothing to match — is no rows, because the only
+   * other reading is no filter.
+   */
+  private String lookup(
+      ResolvedRowPredicate predicate, String alias, List<Unenforceable> unenforceable) {
+
+    String column = require(predicate.getColumn(), "row filter column");
+    ResolvedLookup lookup = predicate.getLookup();
+    if (lookup == null
+        || lookup.getMode() != ResolvedLookup.Mode.SUBQUERY
+        || blank(lookup.getSchemaName())
+        || blank(lookup.getTableName())) {
+      unenforceable.add(
+          new Unenforceable()
+              .withPolicyId(predicate.getSourcePolicyId())
+              .withDetail(
+                  "row filter on "
+                      + column
+                      + " reads its values from the mapping table "
+                      + (lookup == null ? "(none)" : lookup.getTable())
+                      + ", which was not bound to a table on this source; no rows returned")
+              .withSuggestedMode(Unenforceable.SuggestedMode.PROXY));
+      return "(1 = 0)";
+    }
+    String valueColumn = require(lookup.getValueColumn(), "lookup value column");
+    List<ResolvedLookupKey> keys = lookup.getKeys() == null ? List.of() : lookup.getKeys();
+    if (keys.isEmpty()) {
+      unenforceable.add(
+          new Unenforceable()
+              .withPolicyId(predicate.getSourcePolicyId())
+              .withDetail(
+                  "row filter on " + column + " has a mapping table with no key; no rows returned"));
+      return "(1 = 0)";
+    }
+
+    // Its own alias, so a key column never resolves against the outer table —
+    // including when the mapping table is the filtered table itself.
+    String inner = dialect.quote(LOOKUP_ALIAS.equalsIgnoreCase(alias) ? LOOKUP_ALIAS + "2" : LOOKUP_ALIAS);
+    List<String> conditions = new ArrayList<>();
+    for (ResolvedLookupKey key : keys) {
+      List<Object> values =
+          key.getValues() == null ? List.of() : new ArrayList<Object>(key.getValues());
+      if (values.isEmpty()) {
+        unenforceable.add(
+            new Unenforceable()
+                .withPolicyId(predicate.getSourcePolicyId())
+                .withDetail(
+                    "row filter on "
+                        + column
+                        + " had no value to look up "
+                        + key.getColumn()
+                        + " with; no rows returned"));
+        return "(1 = 0)";
+      }
+      conditions.add(
+          inner + "." + dialect.quote(require(key.getColumn(), "lookup key column"))
+              + " IN (" + list(values) + ")");
+    }
+    String value = inner + "." + dialect.quote(valueColumn);
+    conditions.add(value + " IS NOT NULL");
+
+    String reference = (alias == null ? "" : dialect.quote(alias) + ".") + dialect.quote(column);
+    return "("
+        + reference
+        + " IN (SELECT "
+        + value
+        + " FROM "
+        + dialect.quote(lookup.getSchemaName())
+        + "."
+        + dialect.quote(lookup.getTableName())
+        + " "
+        + inner
+        + " WHERE "
+        + String.join(" AND ", conditions)
+        + "))";
+  }
+
+  private static boolean blank(String value) {
+    return value == null || value.isBlank();
   }
 
   private String compare(
@@ -307,6 +401,11 @@ public final class DecisionSql {
   private String value(Object value) {
     if (value == null) {
       return "NULL";
+    }
+    if (value instanceof java.math.BigDecimal decimal) {
+      // Read from a numeric column. Its own toString can say 1E-7, which SQL
+      // Server reads as a float and compares inexactly.
+      return decimal.toPlainString();
     }
     if (value instanceof Number || value instanceof Boolean) {
       return String.valueOf(value);
