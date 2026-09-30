@@ -95,4 +95,16 @@ class JwtServiceTest {
     assertThat(author().hasAnyRole("AUDITOR", "POLICY_AUTHOR")).isTrue();
     assertThat(author().hasAnyRole("AUDITOR")).isFalse();
   }
+
+  @Test
+  @DisplayName("only a token issued with a pending password change carries the mark")
+  void passwordChangeMark() {
+    assertThat(TOKENS.verifySession(TOKENS.issue(author())).orElseThrow()
+            .passwordChangePending())
+        .isFalse();
+    JwtService.Session pending =
+        TOKENS.verifySession(TOKENS.issue(author(), true)).orElseThrow();
+    assertThat(pending.passwordChangePending()).isTrue();
+    assertThat(pending.user().id()).isEqualTo(author().id());
+  }
 }

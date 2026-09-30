@@ -3,6 +3,7 @@ package com.mfec.dac.resources;
 import com.mfec.dac.auth.AuthenticatedUser;
 import com.mfec.dac.auth.JwtService;
 import com.mfec.dac.auth.LocalIdentityDao;
+import com.mfec.dac.auth.PasswordChangeExempt;
 import com.mfec.dac.auth.PasswordHasher;
 import com.mfec.dac.auth.Secured;
 import com.mfec.dac.config.IdentityConfiguration;
@@ -218,7 +219,7 @@ public class AuthResource {
 
       LOG.info("local login for {} with roles {}", user.username(), user.appRoles());
       return new LoginResponse(
-          tokens.issue(user),
+          tokens.issue(user, account.mustChange()),
           "Bearer",
           tokens.ttl().toSeconds(),
           account.mustChange(),
@@ -231,6 +232,7 @@ public class AuthResource {
   @GET
   @Path("/me")
   @Secured
+  @PasswordChangeExempt
   public Me me(@Context SecurityContext security) {
     AuthenticatedUser caller = caller(security);
     // Read through to the database rather than replay the token claims, so a
@@ -249,6 +251,7 @@ public class AuthResource {
   @POST
   @Path("/password")
   @Secured
+  @PasswordChangeExempt
   @Consumes(MediaType.APPLICATION_JSON)
   public Map<String, String> changePassword(
       @Context SecurityContext security,

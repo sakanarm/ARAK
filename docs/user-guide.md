@@ -52,13 +52,16 @@ you. Your platform roles decide which pages you see in the left-hand menu.
   password** before anything else. Enter the password you were given and one
   only you know; the page you were going to opens once it is saved. **Sign out
   instead** leaves without changing it, and you will be asked again next time.
+  Until the new password is saved the account can do nothing else in ARAK:
+  every other request is refused, whether it comes from the browser or from
+  a script signing in with the same account.
 - A wrong current password counts as a failed sign-in. After too many in a row
   the account is locked for a while and both signing in and changing the
   password are refused until the lock ends. An administrator can reset the
   password if you have forgotten it.
-- An administrator creates local accounts under **Settings → Application
-  roles**. Attributes of a local account are set by an administrator under
-  **People**.
+- An administrator creates local accounts under **People** or **Settings →
+  Application roles**. Attributes of a local account are set by an
+  administrator under **People**.
 
 ## Platform roles: who can do what
 
@@ -800,6 +803,11 @@ to that mode today; policies for every connection are not included, since
 their mode depends on the connection. **Clear** resets everything but the
 tab.
 
+When nothing matches, the page says whether the filters or the platform are
+the reason. With filters set, the policies they hide still apply; clear the
+filters to see every policy. **No policies yet** appears only when there are
+none at all, and then every request is denied by default.
+
 ## Writing a policy (policy builder)
 
 **Policies → New policy** first asks **where the policy runs**, on a page of
@@ -941,6 +949,13 @@ by attribute, and open a group to see its members. **Settings → Local groups**
 creates groups and manages their members. **Settings → Application roles**
 creates local accounts and assigns or withdraws platform roles (a data owner role
 takes a scope). Every change is audited.
+
+Administrators can also add a local account from **People** itself: **Add local
+account** opens the same form as Settings → Application roles (username,
+display name, kind, email, a first password and a role to start with). The new
+account appears in the list at once, with a link to its page. No sync touches
+a local account. A person chooses their own password the first time they sign
+in, and can use nothing else until they do.
 
 ## Data sources and enforcement (administrators)
 

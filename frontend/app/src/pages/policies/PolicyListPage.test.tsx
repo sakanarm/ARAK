@@ -88,6 +88,7 @@ describe('the policy list', () => {
     );
     expect(screen.getByRole('button', { name: 'Data' })).toHaveAttribute('aria-current', 'page');
     expect(await screen.findByText('No policy matches these filters')).toBeInTheDocument();
+    expect(screen.getByText(/Policies of the other kind still apply/)).toBeInTheDocument();
   });
 
   it('marks a deny, and names a data policy for what it restricts', async () => {
@@ -184,5 +185,18 @@ describe('the policy list', () => {
       expect(fetchPolicies).toHaveBeenLastCalledWith(expect.objectContaining({ source: 'any' }))
     );
     expect(await screen.findByText('No policy matches these filters')).toBeInTheDocument();
+    // A filter that finds nothing is not an empty platform, and must not say
+    // what an empty platform means for enforcement.
+    expect(screen.getByText(/policies outside these filters still apply/)).toBeInTheDocument();
+    expect(screen.queryByText(/denies by default/)).toBeNull();
+  });
+
+  it('explains an empty platform as deny by default only when nothing narrows the list', async () => {
+    fetchPolicies.mockResolvedValue([]);
+    countPolicies.mockResolvedValue(0);
+    renderPage();
+
+    expect(await screen.findByText('No policies yet')).toBeInTheDocument();
+    expect(screen.getByText(/denies by default/)).toBeInTheDocument();
   });
 });

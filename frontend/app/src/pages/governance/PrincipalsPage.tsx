@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { keepPreviousData, useQuery } from '@tanstack/react-query';
+import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router-dom';
 import { ChevronDown, FilterLines, SearchLg, Users01 } from '@untitledui/icons';
 import { Chip as Badge } from '../../components/chips';
@@ -13,14 +13,19 @@ import {
   type AttributeCondition,
   type AttributeKey,
   type Principal,
+  type PrincipalDetail,
 } from '../../api/governance';
+import { useAuthStore } from '../../auth/authStore';
+import { LocalAccountForm } from '../settings/LocalAccountForm';
 
 /**
  * People, groups and their attributes — the subject half of every policy.
  *
  * Read-only on purpose. Entra and OpenMetadata own this content and the next
  * sync would revert anything typed here, so an edit form would be a promise the
- * platform cannot keep. What this screen is for is the question that comes up
+ * platform cannot keep. The one exception is a new local account: nothing syncs
+ * over it, and this is the page an administrator is on when they find the
+ * person they need is missing. It is the same form as Settings → Roles. What this screen is for is the question that comes up
  * while writing a rule: does anybody actually carry the attribute I am about to
  * depend on, and what values does it take? A condition on an attribute nobody
  * has denies everyone, quietly and correctly, which is the hardest kind of
@@ -67,6 +72,10 @@ const KINDS = [
 export default function PrincipalsPage() {
   const [params, setParams] = useSearchParams();
   const [searchDraft, setSearchDraft] = useState(params.get('q') ?? '');
+  const isAdmin = useAuthStore((state) => state.hasRole('PLATFORM_ADMIN'));
+  const [adding, setAdding] = useState(false);
+  const [created, setCreated] = useState<PrincipalDetail | null>(null);
+  const queryClient = useQueryClient();
 
   const search = params.get('q') ?? '';
   const type = params.get('type') ?? '';
@@ -121,22 +130,61 @@ export default function PrincipalsPage() {
           <p className="tw:mt-2 tw:max-w-3xl tw:text-pretty tw:text-md tw:text-tertiary">
             The identity cache a subject rule is written against. Synced from
             Entra and OpenMetadata, and read-only here — an edit would be
-            reverted by the next sync.
+            reverted by the next sync. Administrators can add local accounts,
+            which no sync touches.
           </p>
         </div>
         {/* The other half of "who is this person": what they may do to the
             platform, which is a different question from what data they see and
             lives on a different screen. Said here because this is the page
             somebody is on when they start looking for it. */}
-        <p className="tw:text-sm tw:text-tertiary">
-          Platform roles are assigned in{' '}
-          <Link
-            className="tw:font-medium tw:text-brand-secondary tw:hover:underline"
-            to="/settings/roles">
-            Settings → Roles
-          </Link>
-        </p>
+        <div className="tw:flex tw:flex-wrap tw:items-center tw:gap-4">
+          <p className="tw:text-sm tw:text-tertiary">
+            Platform roles are assigned in{' '}
+            <Link
+              className="tw:font-medium tw:text-brand-secondary tw:hover:underline"
+              to="/settings/roles">
+              Settings → Roles
+            </Link>
+          </p>
+          {isAdmin && (
+            <Button
+              color="secondary"
+              onPress={() => {
+                setAdding(!adding);
+                setCreated(null);
+              }}
+              size="sm">
+              Add local account
+            </Button>
+          )}
+        </div>
       </header>
+
+      {isAdmin && adding && (
+        <div className="tw:mt-6 tw:overflow-hidden tw:rounded-xl tw:border tw:border-secondary">
+          <LocalAccountForm
+            onDone={() => setAdding(false)}
+            onSaved={(next) => {
+              setCreated(next);
+              queryClient.invalidateQueries({ queryKey: ['principals'] });
+            }}
+          />
+        </div>
+      )}
+      {created && (
+        <p className="tw:mt-6 tw:rounded-lg tw:border tw:border-success tw:bg-success-primary tw:p-3 tw:text-sm tw:text-success-primary">
+          Created{' '}
+          <Link
+            className="tw:font-medium tw:underline"
+            to={`/principals/${created.principal.id}`}>
+            {created.principal.displayName || created.principal.username}
+          </Link>
+          {created.principal.principalType === 'GROUP'
+            ? '.'
+            : ' — they choose their own password the first time they sign in.'}
+        </p>
+      )}
 
       <section className="tw:mt-6 tw:flex tw:flex-wrap tw:items-center tw:gap-3">
         <form

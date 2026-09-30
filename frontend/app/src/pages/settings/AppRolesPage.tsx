@@ -5,7 +5,6 @@ import { Chip as Badge } from '../../components/chips';
 import { Button } from '@openmetadata/ui-core-components/components/base/buttons/button';
 import { apiErrorMessage } from '../../api/client';
 import {
-  createLocalPrincipal,
   fetchPrincipals,
   fetchRoleGrants,
   grantAppRole,
@@ -15,6 +14,8 @@ import {
 } from '../../api/governance';
 import { useAuthStore } from '../../auth/authStore';
 import { Field, Select, TextField } from '../policies/controls';
+import { ROLES, type Role } from './appRoles';
+import { LocalAccountForm } from './LocalAccountForm';
 import { PrincipalPicker, ScopePicker } from './pickers';
 
 /**
@@ -44,113 +45,6 @@ import { PrincipalPicker, ScopePicker } from './pickers';
  * an administrator who does not know it will conclude the button is broken.
  */
 
-interface Capability {
-  text: string;
-  /** Where the server enforces it, as a file and line in the service. */
-  source: string;
-}
-
-interface Role {
-  id: string;
-  title: string;
-  /** The one sentence that decides whether somebody needs this role. */
-  purpose: string;
-  may: Capability[];
-  /** Kept short: only the limits somebody would otherwise assume away. */
-  mayNot: string[];
-}
-
-const ROLES: Role[] = [
-  {
-    id: 'PLATFORM_ADMIN',
-    title: 'Platform admin',
-    purpose:
-      'Runs the platform itself: the OpenMetadata connection, the crawls, and which databases are registered.',
-    may: [
-      {
-        text: 'Read and change the OpenMetadata connection settings',
-        source: 'OpenMetadataSettingsResource.java:36',
-      },
-      { text: 'Trigger a sync or a reconcile', source: 'SyncResource.java:31' },
-      {
-        text: 'Register a data source and edit its connection',
-        source: 'SourceResource.java:213',
-      },
-      {
-        text: 'Write a policy at any scope, including organisation-wide',
-        source: 'PolicyResource.java:187',
-      },
-      { text: 'Run a query through the platform', source: 'QueryResource.java:83' },
-    ],
-    mayNot: [
-      'Approve a policy they wrote themselves — the lifecycle step looks for a second pair of eyes whatever the role.',
-      'See data a policy withholds. Administering the platform is not an exemption from it.',
-    ],
-  },
-  {
-    id: 'POLICY_AUTHOR',
-    title: 'Policy author',
-    purpose:
-      'Writes policy for the whole organisation, without the keys to the platform it runs on.',
-    may: [
-      {
-        text: 'Create and edit a policy at any scope',
-        source: 'PolicyResource.java:187',
-      },
-      { text: 'Run a query through the platform', source: 'QueryResource.java:83' },
-    ],
-    mayNot: [
-      'Change the OpenMetadata connection, trigger a crawl, or register a source.',
-      'Activate a policy they wrote. Somebody else moves it out of PENDING_APPROVAL.',
-    ],
-  },
-  {
-    id: 'DATA_OWNER',
-    title: 'Data owner',
-    purpose:
-      'Writes policy for the assets they own, and only those. Ownership comes from OpenMetadata.',
-    may: [
-      {
-        text: 'Create and edit a policy whose scope is at or below something they own',
-        source: 'PolicyResource.java:197',
-      },
-      { text: 'Run a query through the platform', source: 'QueryResource.java:83' },
-    ],
-    mayNot: [
-      'Write an organisation-wide policy — one with no scope at all is refused outright.',
-      'Move a policy into their scope from outside it: an edit is authorised against both the old document and the new one, so neither end can be used as a way in.',
-    ],
-  },
-  {
-    id: 'AUDITOR',
-    title: 'Auditor',
-    purpose:
-      'Reads everything and changes nothing — the role that answers "who could see this, and why".',
-    may: [
-      {
-        text: 'Read policies, decisions and the audit log',
-        source: 'PolicyResource.java:41',
-      },
-      { text: 'Run a query through the platform', source: 'QueryResource.java:83' },
-    ],
-    mayNot: ['Write or activate a policy. Writing needs POLICY_AUTHOR or DATA_OWNER.'],
-  },
-  {
-    id: 'REQUESTER',
-    title: 'Requester',
-    purpose:
-      'Everyone else. Signs in, reads the catalog and their own access, and asks for more.',
-    may: [
-      {
-        text: 'Read the catalog, the governance vocabulary and their own grants',
-        source: 'CatalogResource.java:31',
-      },
-    ],
-    mayNot: [
-      'Write a policy, or run a query through the platform — the query endpoint turns this role away.',
-    ],
-  },
-];
 
 export default function AppRolesPage() {
   const isAdmin = useAuthStore((state) => state.hasRole('PLATFORM_ADMIN'));
@@ -403,7 +297,7 @@ function Assignments({
         <GrantForm onDone={() => setOpen('none')} onSaved={refresh} />
       )}
       {open === 'account' && (
-        <AccountForm onDone={() => setOpen('none')} onSaved={refresh} />
+        <LocalAccountForm onDone={() => setOpen('none')} onSaved={refresh} />
       )}
 
       {error !== null && error !== undefined && (
@@ -590,174 +484,6 @@ function GrantForm({
           onPress={() => grant.mutate()}
           size="sm">
           {grant.isPending ? 'Granting…' : 'Grant'}
-        </Button>
-        <Button color="tertiary" onPress={onDone} size="sm">
-          Cancel
-        </Button>
-      </div>
-    </div>
-  );
-}
-
-/**
- * Creates a local account.
- *
- * Local only, and the form says why rather than offering a directory choice
- * that would be a lie: an Entra account created here would exist until the
- * next sync and then not.
- */
-function AccountForm({
-  onDone,
-  onSaved,
-}: {
-  onDone: () => void;
-  onSaved: () => void;
-}) {
-  const [username, setUsername] = useState('');
-  const [displayName, setDisplayName] = useState('');
-  const [email, setEmail] = useState('');
-  const [principalType, setPrincipalType] = useState<'USER' | 'SERVICE' | 'GROUP'>('USER');
-  const [password, setPassword] = useState('');
-  const [appRole, setAppRole] = useState('');
-  const [scopeFqn, setScopeFqn] = useState<string | null>(null);
-
-  // A group is for policies and grants to point at. Nobody signs in as one,
-  // and an app role on it would act on nobody, so it takes neither.
-  const group = principalType === 'GROUP';
-  const scoped = !group && appRole === 'DATA_OWNER';
-
-  const create = useMutation({
-    mutationFn: () =>
-      createLocalPrincipal({
-        username: username.trim(),
-        displayName: displayName.trim(),
-        email: email.trim() || null,
-        principalType,
-        password: group ? null : password,
-        roles: !group && appRole ? [{ appRole, scopeFqn: scoped ? scopeFqn : null }] : [],
-      }),
-    onSuccess: () => {
-      onSaved();
-      onDone();
-    },
-  });
-
-  // The display name is required by the server, and every screen in this
-  // console lists people by it. Leaving it out of this check is how the form
-  // came to offer a Create button that could only answer 400.
-  const ready =
-    username.trim().length >= 2 &&
-    displayName.trim().length >= 2 &&
-    (group || password.length >= 10) &&
-    (!scoped || Boolean(scopeFqn));
-
-  return (
-    <div className="tw:border-b tw:border-secondary tw:bg-secondary tw:p-5">
-      <h3 className="tw:text-sm tw:font-semibold tw:text-primary">
-        Add a local account
-      </h3>
-      <p className="tw:mt-1 tw:max-w-3xl tw:text-pretty tw:text-sm tw:text-tertiary">
-        For service integrations, tests, and people no directory holds. The
-        password below is a first one only: the holder is asked to choose their
-        own the first time they sign in.
-      </p>
-
-      <div className="tw:mt-4 tw:grid tw:gap-4 tw:lg:grid-cols-2">
-        <Field
-          hint="Letters, digits, dot, dash, underscore or @. Case is ignored at sign-in."
-          label="Username">
-          <TextField onChange={setUsername} placeholder="analyst_a" value={username} />
-        </Field>
-        <Field
-          hint="What the console shows instead of the username. Required."
-          label="Display name">
-          <TextField
-            onChange={setDisplayName}
-            placeholder="Analyst A"
-            value={displayName}
-          />
-        </Field>
-        <Field label="Kind">
-          <Select
-            onChange={(next) => setPrincipalType(next as 'USER' | 'SERVICE' | 'GROUP')}
-            options={[
-              { value: 'USER', label: 'Person', hint: 'Somebody who signs in.' },
-              {
-                value: 'SERVICE',
-                label: 'Service account',
-                hint: 'A job or integration that calls the API.',
-              },
-              {
-                value: 'GROUP',
-                label: 'Group',
-                hint: 'People that policies and grants name together. No sign-in.',
-              },
-            ]}
-            value={principalType}
-          />
-        </Field>
-        <Field
-          hint="Optional. Only used to recognise the same person elsewhere."
-          label="Email">
-          <TextField
-            onChange={setEmail}
-            placeholder="analyst_a@example.com"
-            type="email"
-            value={email}
-          />
-        </Field>
-        {!group && (
-        <Field hint="Ten characters at least, and not the username." label="First password">
-          <TextField
-            onChange={setPassword}
-            placeholder="A passphrase they will replace"
-            type="password"
-            value={password}
-          />
-        </Field>
-        )}
-        {!group && (
-        <Field hint="Optional — more can be granted afterwards." label="Role to start with">
-          <Select
-            onChange={(next) => {
-              setAppRole(next);
-              if (next !== 'DATA_OWNER') {
-                setScopeFqn(null);
-              }
-            }}
-            options={[
-              { value: '', label: 'None', hint: 'Signs in and reads the catalog.' },
-              ...ROLES.map((role) => ({
-                value: role.id,
-                label: role.title,
-                hint: role.purpose,
-              })),
-            ]}
-            placeholder="None"
-            value={appRole}
-          />
-        </Field>
-        )}
-        {scoped && (
-          <Field hint="The asset this owner owns." label="Scope">
-            <ScopePicker onChange={setScopeFqn} value={scopeFqn} />
-          </Field>
-        )}
-      </div>
-
-      {create.error && (
-        <p className="tw:mt-4 tw:rounded-lg tw:border tw:border-error tw:bg-error-primary tw:p-3 tw:text-sm tw:text-error-primary">
-          {apiErrorMessage(create.error, 'Could not create that account.')}
-        </p>
-      )}
-
-      <div className="tw:mt-4 tw:flex tw:gap-2">
-        <Button
-          color="primary"
-          isDisabled={!ready || create.isPending}
-          onPress={() => create.mutate()}
-          size="sm">
-          {create.isPending ? 'Creating…' : group ? 'Create group' : 'Create account'}
         </Button>
         <Button color="tertiary" onPress={onDone} size="sm">
           Cancel

@@ -6,14 +6,24 @@ import type { Principal } from '../../api/governance';
 
 const fetchPrincipals = jest.fn();
 const fetchAttributeVocabulary = jest.fn();
+const createLocalPrincipal = jest.fn();
+
+let isAdmin = false;
 
 jest.mock('../../api/governance', () => ({
   fetchPrincipals: (...args: unknown[]) => fetchPrincipals(...args),
   fetchAttributeVocabulary: () => fetchAttributeVocabulary(),
+  createLocalPrincipal: (...args: unknown[]) => createLocalPrincipal(...args),
 }));
 
 jest.mock('../../api/client', () => ({
   apiErrorMessage: (_error: unknown, fallback: string) => fallback,
+  fetchAssets: jest.fn(),
+}));
+
+jest.mock('../../auth/authStore', () => ({
+  useAuthStore: (selector: (state: unknown) => unknown) =>
+    selector({ hasRole: () => isAdmin }),
 }));
 
 function principal(overrides: Partial<Principal>): Principal {
@@ -46,6 +56,8 @@ function renderPage() {
 }
 
 beforeEach(() => {
+  isAdmin = false;
+  createLocalPrincipal.mockReset();
   fetchPrincipals.mockReset();
   fetchAttributeVocabulary.mockReset();
   fetchAttributeVocabulary.mockResolvedValue({
@@ -244,4 +256,65 @@ test('somebody in more groups than fit falls back to a count that still opens', 
   // Three names beside four other columns is a wrapped row, so they are not
   // shown at all rather than shown partially and read as the whole list.
   expect(screen.queryByRole('link', { name: 'Finance' })).toBeNull();
+});
+
+describe('adding a local account', () => {
+  it('is not offered to somebody who is not an administrator', async () => {
+    renderPage();
+    await screen.findByText('Analyst A');
+    expect(screen.queryByRole('button', { name: 'Add local account' })).toBeNull();
+  });
+
+  it('creates the account from this page and says where to find it', async () => {
+    isAdmin = true;
+    createLocalPrincipal.mockResolvedValue({
+      principal: principal({
+        id: '33333333-3333-3333-3333-333333333333',
+        username: 'analyst_b',
+        displayName: 'Analyst B',
+      }),
+      attributes: [],
+      groups: [],
+      members: [],
+    });
+    renderPage();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Add local account' }));
+    const create = screen.getByRole('button', { name: 'Create account' });
+    expect(create).toBeDisabled();
+
+    fireEvent.change(screen.getByPlaceholderText('analyst_a'), {
+      target: { value: 'analyst_b' },
+    });
+    fireEvent.change(screen.getByPlaceholderText('Analyst A'), {
+      target: { value: 'Analyst B' },
+    });
+    fireEvent.change(screen.getByPlaceholderText('A passphrase they will replace'), {
+      target: { value: 'a-fake-first-passphrase' },
+    });
+    expect(create).toBeEnabled();
+    const listed = fetchPrincipals.mock.calls.length;
+    fireEvent.click(create);
+
+    await waitFor(() =>
+      expect(createLocalPrincipal).toHaveBeenCalledWith(
+        expect.objectContaining({
+          username: 'analyst_b',
+          displayName: 'Analyst B',
+          principalType: 'USER',
+          roles: [],
+        })
+      )
+    );
+    const link = await screen.findByRole('link', { name: 'Analyst B' });
+    expect(link).toHaveAttribute(
+      'href',
+      '/principals/33333333-3333-3333-3333-333333333333'
+    );
+    // The form closes, and the list is asked again so the new account is in it.
+    expect(screen.queryByRole('button', { name: 'Create account' })).toBeNull();
+    await waitFor(() =>
+      expect(fetchPrincipals.mock.calls.length).toBeGreaterThan(listed)
+    );
+  });
 });
