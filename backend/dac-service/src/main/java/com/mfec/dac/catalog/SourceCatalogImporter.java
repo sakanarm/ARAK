@@ -208,7 +208,7 @@ public class SourceCatalogImporter {
    * verified the other. Worse, the second one to arrive could not claim the
    * physical table, which only one FQN may map to.
    */
-  static String serviceOf(DataSourceStore.Source source) {
+  public static String serviceOf(DataSourceStore.Source source) {
     String linked = source.omServiceFqn();
     return linked == null || linked.isBlank() ? source.name() : linked.strip();
   }
