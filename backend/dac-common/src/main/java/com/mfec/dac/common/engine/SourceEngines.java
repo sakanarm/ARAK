@@ -1,5 +1,6 @@
 package com.mfec.dac.common.engine;
 
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -29,7 +30,8 @@ public final class SourceEngines {
 
   private static final Map<String, SourceEngine> REGISTRY = register(
       new PostgresEngine(),
-      new SqlServerEngine());
+      new SqlServerEngine(),
+      new MySqlEngine());
 
   private static Map<String, SourceEngine> register(SourceEngine... engines) {
     Map<String, SourceEngine> map = new LinkedHashMap<>();
@@ -39,7 +41,9 @@ public final class SourceEngines {
         throw new IllegalStateException("Two engines both claim the id " + engine.id());
       }
     }
-    return Map.copyOf(map);
+    // Not Map.copyOf, which forgets the order the engines were registered in:
+    // that order is the one the register page offers them in.
+    return Collections.unmodifiableMap(map);
   }
 
   /** Every engine this platform supports, in the order they are offered on screen. */

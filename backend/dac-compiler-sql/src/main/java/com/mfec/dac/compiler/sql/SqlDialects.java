@@ -33,6 +33,7 @@ public final class SqlDialects {
     Map<String, Supplier<SqlDialect>> map = new LinkedHashMap<>();
     map.put("POSTGRES", PostgresDialect::new);
     map.put("SQLSERVER", SqlServerDialect::new);
+    map.put("MYSQL", MySqlDialect::new);
     return Map.copyOf(map);
   }
 

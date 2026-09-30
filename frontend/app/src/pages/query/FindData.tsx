@@ -39,15 +39,19 @@ const RESERVED = new Set([
   'user', 'values', 'when', 'where', 'with',
 ]);
 
+// Engines where a bare column name means the column whatever its case.
+const KEEPS_CASE = new Set(['SQLSERVER', 'MYSQL']);
+
 /**
  * The statement a found table offers: its columns when every one can be
  * written bare, `*` otherwise -- a quoted name is the one thing this page
  * would have to get right per engine, and `*` is never wrong. Postgres folds
  * a bare name to lower case, so there a mixed-case name counts as not bare;
- * SQL Server does not care. Schema-qualified, as the explorer inserts it.
+ * SQL Server and MySQL do not care. Schema-qualified, as the explorer inserts
+ * it, which on MySQL is the database.
  */
 export function draftFor(table: Pick<FoundTable, 'fqn' | 'columns' | 'engine'>): string {
-  const bare = table.engine === 'SQLSERVER' ? /^[A-Za-z_][A-Za-z0-9_]*$/ : /^[a-z_][a-z0-9_]*$/;
+  const bare = KEEPS_CASE.has(table.engine ?? '') ? /^[A-Za-z_][A-Za-z0-9_]*$/ : /^[a-z_][a-z0-9_]*$/;
   const plain =
     table.columns.length > 0 &&
     table.columns.every((column) => bare.test(column) && !RESERVED.has(column.toLowerCase()));

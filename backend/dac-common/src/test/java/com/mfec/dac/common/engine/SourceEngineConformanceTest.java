@@ -110,6 +110,21 @@ class SourceEngineConformanceTest {
     assertThat(SourceEngines.of(id).dialectId()).isNotBlank();
   }
 
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("engineIds")
+  void saysWhatASessionNeedsAndWhichSchemasAreItsOwn(String id) {
+    SourceEngine engine = SourceEngines.of(id);
+    // Neither may be null: the connector runs the first on every connection
+    // and the introspector reads the second on every import, and a null in
+    // either is a source that cannot be opened at all.
+    assertThat(engine.sessionSetup()).isNotNull().doesNotContainNull();
+    assertThat(engine.systemSchemas()).isNotNull();
+    // Compared against names folded to lower case, so one spelled otherwise
+    // would never match and the engine's own tables would land in the catalog.
+    assertThat(engine.systemSchemas())
+        .allSatisfy(schema -> assertThat(schema).isEqualTo(schema.toLowerCase(Locale.ROOT)));
+  }
+
   @Test
   void refusesAnEngineItDoesNotHaveAndSaysWhatItDoesHave() {
     assertThatThrownBy(() -> SourceEngines.of("ORACLE"))
@@ -127,6 +142,84 @@ class SourceEngineConformanceTest {
   void stillCoversTheTwoEnginesPhaseOnePromised() {
     assertThat(SourceEngines.ids()).contains("POSTGRES", "SQLSERVER");
     assertThat(SourceEngines.all()).hasSameSizeAs(SourceEngines.ids());
+  }
+
+  @Test
+  void mySqlStatesWhatThePlatformReliesOnRatherThanInheritingIt() {
+    // Each property is one another class depends on: the introspector on
+    // databaseTerm, the download on useCursorFetch, the DBA on program_name.
+    assertThat(
+            SourceEngines.of("MYSQL")
+                .jdbcUrl(new SourceEngine.JdbcCoordinates("db.example.test", 3306, "sales")))
+        .isEqualTo(
+            "jdbc:mysql://db.example.test:3306/sales"
+                + "?databaseTerm=SCHEMA"
+                + "&allowMultiQueries=false"
+                + "&allowLoadLocalInfile=false"
+                + "&useCursorFetch=true"
+                + "&zeroDateTimeBehavior=CONVERT_TO_NULL"
+                + "&characterEncoding=UTF-8"
+                + "&connectionTimeZone=UTC"
+                + "&sslMode=PREFERRED"
+                + "&connectionAttributes=program_name:arak-dac");
+  }
+
+  @Test
+  void mySqlConnectsWithNoDefaultDatabaseWhenNoneIsNamed() {
+    assertThat(
+            SourceEngines.of("MYSQL")
+                .jdbcUrl(new SourceEngine.JdbcCoordinates("db.example.test", 3306, null)))
+        .startsWith("jdbc:mysql://db.example.test:3306/?");
+  }
+
+  @Test
+  void mySqlIsTheEngineWhoseDatabaseIsItsSchema() {
+    assertThat(SourceEngines.of("MYSQL").supportsSchemas()).isFalse();
+    assertThat(SourceEngines.of("POSTGRES").supportsSchemas()).isTrue();
+    assertThat(SourceEngines.of("SQLSERVER").supportsSchemas()).isTrue();
+    assertThat(SourceEngines.of("MYSQL").systemSchemas())
+        .containsExactlyInAnyOrder("mysql", "performance_schema");
+  }
+
+  @Test
+  void aBackslashIsMadeAnOrdinaryCharacterWhereverThatIsASetting() {
+    // The proxy's parser always reads a backslash in a string as a backslash.
+    // MySQL does not unless told to, and PostgreSQL only by default.
+    assertThat(SourceEngines.of("MYSQL").sessionSetup())
+        .first()
+        .asString()
+        .contains("NO_BACKSLASH_ESCAPES")
+        // Added to the modes the server already runs with, not put in their place.
+        .contains("@@SESSION.sql_mode");
+    assertThat(SourceEngines.of("POSTGRES").sessionSetup())
+        .containsExactly("SET standard_conforming_strings = on");
+    assertThat(SourceEngines.of("SQLSERVER").sessionSetup()).isEmpty();
+  }
+
+  @Test
+  void aMySqlSessionRunsInTheZoneTheDriverReadsItIn() {
+    // The two have to be one zone, or a TIMESTAMP is read as a different moment
+    // from the one it records. An offset, because a named zone needs tables a
+    // MySQL server may never have had loaded.
+    assertThat(SourceEngines.of("MYSQL").sessionSetup()).contains("SET SESSION time_zone = '+00:00'");
+    assertThat(
+            SourceEngines.of("MYSQL")
+                .jdbcUrl(new SourceEngine.JdbcCoordinates("db.example.test", 3306, "sales")))
+        .contains("connectionTimeZone=UTC");
+  }
+
+  @Test
+  void offersTheEnginesInTheOrderTheyWereRegistered() {
+    assertThat(SourceEngines.all())
+        .extracting(SourceEngine::id)
+        .containsExactly("POSTGRES", "SQLSERVER", "MYSQL");
+  }
+
+  @Test
+  void secureViewsAreOfferedOnlyWhereTheyHaveBeenWritten() {
+    assertThat(SourceEngines.of("POSTGRES").supportsSecureViews()).isTrue();
+    assertThat(SourceEngines.of("SQLSERVER").supportsSecureViews()).isTrue();
+    assertThat(SourceEngines.of("MYSQL").supportsSecureViews()).isFalse();
   }
 
   @Test

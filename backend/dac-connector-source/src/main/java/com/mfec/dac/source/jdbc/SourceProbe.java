@@ -4,7 +4,6 @@ import java.sql.Connection;
 import java.sql.DatabaseMetaData;
 import java.sql.DriverManager;
 import java.sql.SQLException;
-import java.util.Properties;
 
 /**
  * Opens one connection to a source database and reports what it found.
@@ -65,23 +64,21 @@ public final class SourceProbe {
       return new Result(false, null, null, e.getMessage(), elapsed(started));
     }
 
-    String url;
     try {
-      url = JdbcTargets.url(target);
+      JdbcTargets.url(target);
     } catch (IllegalArgumentException e) {
       return new Result(false, null, null, e.getMessage(), elapsed(started));
     }
 
-    // Named so a DBA reading sys.dm_exec_sessions or pg_stat_activity can tell
-    // who opened this, which matters because the proxy mode's identity rules
-    // depend on being able to distinguish our connections from a user's.
-    // Built by JdbcTargets rather than here, so the probe cannot announce
-    // itself differently from the connection that later runs the query.
-    Properties properties = JdbcTargets.properties(credential);
-
+    // Opened by JdbcTargets rather than here, so the probe cannot announce
+    // itself differently from the connection that later runs the query, or
+    // call a source reachable on a session the proxy could not use: a DBA
+    // reading sys.dm_exec_sessions or pg_stat_activity has to be able to tell
+    // our connections from a user's, and the session setup an engine asks for
+    // has to work for this login as it will for the query.
     int previousTimeout = DriverManager.getLoginTimeout();
     DriverManager.setLoginTimeout(timeoutSeconds);
-    try (Connection connection = DriverManager.getConnection(url, properties)) {
+    try (Connection connection = JdbcTargets.connect(target, credential)) {
       DatabaseMetaData metadata = connection.getMetaData();
       String version = metadata.getDatabaseProductVersion();
       String product = metadata.getDatabaseProductName();

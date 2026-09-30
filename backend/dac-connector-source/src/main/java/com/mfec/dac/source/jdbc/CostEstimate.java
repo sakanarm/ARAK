@@ -13,9 +13,10 @@ import java.util.regex.Pattern;
  * (FR-6.3 cost guard).
  *
  * <p>The number is the engine's, in the engine's units: arbitrary page-fetch
- * units on PostgreSQL, the optimiser's "subtree cost" on SQL Server. The two
- * are not comparable, so a ceiling is always set per engine, and nothing here
- * pretends to convert one into the other.
+ * units on PostgreSQL, the optimiser's "subtree cost" on SQL Server, the
+ * optimiser's "query cost" on MySQL. They are not comparable, so a ceiling is
+ * always set per engine, and nothing here pretends to convert one into
+ * another.
  *
  * <h2>Priced as it will run, row cap included</h2>
  *
@@ -31,6 +32,10 @@ import java.util.regex.Pattern;
  * <p>A download of every row has no cap, and is priced without one: that is
  * the read it will be, and a ceiling that let it through on the strength of a
  * cap it will not have would guard nothing.
+ *
+ * <p>MySQL's figure takes no account of a {@code LIMIT}: it prices the scan as
+ * if every row were read. So a capped read is not priced there at all, which
+ * leaves it to its timeout, and only the download is.
  *
  * <h2>When the planner cannot be asked</h2>
  *
@@ -67,11 +72,15 @@ public final class CostEstimate {
   private static final Pattern SQLSERVER_SUBTREE =
       Pattern.compile("StatementSubTreeCost=\"([0-9.]+(?:[eE][+-]?[0-9]+)?)\"");
 
+  /** One per query block of MySQL's JSON plan, each for that block's own work. */
+  private static final Pattern MYSQL_QUERY_COST =
+      Pattern.compile("\"query_cost\"\\s*:\\s*\"([0-9.]+(?:[eE][+-]?[0-9]+)?)\"");
+
   private CostEstimate() {}
 
   /**
-   * @param engine the source engine id, {@code POSTGRES} or {@code SQLSERVER};
-   *     any other engine is not priced
+   * @param engine the source engine id, {@code POSTGRES}, {@code SQLSERVER} or
+   *     {@code MYSQL}; any other engine is not priced
    * @param rowCap the most rows the statement will be read for; zero or less
    *     prices every row
    * @throws SQLException only when the connection has been left unsafe to use
@@ -85,6 +94,7 @@ public final class CostEstimate {
     return switch (engine) {
       case "POSTGRES" -> postgres(connection, sql, rowCap, timeoutSeconds);
       case "SQLSERVER" -> sqlServer(connection, sql, rowCap, timeoutSeconds);
+      case "MYSQL" -> mySql(connection, sql, rowCap, timeoutSeconds);
       default -> Price.unpriced(engine + " has no planner estimate ARAK knows how to read");
     };
   }
@@ -153,6 +163,26 @@ public final class CostEstimate {
     }
   }
 
+  private static Price mySql(Connection connection, String sql, int rowCap, int timeoutSeconds) {
+    if (rowCap > 0) {
+      return Price.unpriced("MySQL's planner does not price a row limit, so a capped read is not priced");
+    }
+    try (Statement statement = connection.createStatement()) {
+      statement.setQueryTimeout(timeoutSeconds);
+      try (ResultSet rs = statement.executeQuery("EXPLAIN FORMAT=JSON " + trimmed(sql))) {
+        // A derived table or a subquery the optimiser does not merge is a block
+        // of its own, priced apart from the block that reads its result, so
+        // the statement costs what its blocks cost together.
+        OptionalDouble cost = rs.next() ? sum(MYSQL_QUERY_COST, rs.getString(1)) : OptionalDouble.empty();
+        return cost.isPresent()
+            ? Price.of(cost.getAsDouble())
+            : Price.unpriced("the plan carried no query cost");
+      }
+    } catch (SQLException e) {
+      return Price.unpriced(e.getMessage());
+    }
+  }
+
   private static String trimmed(String sql) {
     String out = sql.strip();
     while (out.endsWith(";")) {
@@ -182,6 +212,23 @@ public final class CostEstimate {
       }
     }
     return highest < 0 ? OptionalDouble.empty() : OptionalDouble.of(highest);
+  }
+
+  private static OptionalDouble sum(Pattern pattern, String text) {
+    if (text == null) {
+      return OptionalDouble.empty();
+    }
+    Matcher m = pattern.matcher(text);
+    double total = 0;
+    boolean any = false;
+    while (m.find()) {
+      OptionalDouble value = parse(m.group(1));
+      if (value.isPresent()) {
+        total += value.getAsDouble();
+        any = true;
+      }
+    }
+    return any ? OptionalDouble.of(total) : OptionalDouble.empty();
   }
 
   private static OptionalDouble parse(String number) {

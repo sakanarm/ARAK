@@ -467,9 +467,22 @@ the statement before it reaches the database.
 - Masked columns come back masked, hidden columns are left out, and row filters
   are applied, exactly as your policies say. A statement ARAK cannot fully parse
   or resolve is refused rather than run (fail-closed).
+- A statement is also refused when the database could read it differently from
+  the way ARAK read it. That covers an optimizer hint (`/*+ ... */`), a string
+  written with a prefix such as `E'...'`, a JDBC escape (`{...}`), a session
+  variable (`@name`) on MySQL and SQL Server, `$` outside a string on
+  PostgreSQL, and `#` outside a string on MySQL. The refusal says which it was.
+  Ordinary comments are fine: they are taken out before the statement is sent.
+- On a MySQL source, name a table as `database.table`. A backslash inside a
+  string is an ordinary character there, so write a quote inside a string by
+  doubling it (`'it''s'`), not as `\'`. Double-quoted strings work as usual.
+  The session runs in UTC, so `NOW()` and `CURDATE()` are UTC there whatever
+  the server's own clock is set to, and a `TIMESTAMP` comes back in UTC.
 - Limits: a row limit (at most 5,000 rows), a time limit, a limit on how many
   queries run at once, and a cost guard that refuses a statement the database
-  estimates is too expensive. The refusal says which limit it was.
+  estimates is too expensive. The refusal says which limit it was. On a MySQL
+  source the cost guard applies to **All rows** downloads only, because
+  MySQL's estimate takes no account of the row limit.
 - The row limit is how many rows the screen shows. When a result has more, it is
   marked as cut short and an **All rows** button appears beside it: it runs the
   same statement again, with the same policy, and downloads every row as a CSV
@@ -643,6 +656,7 @@ A data policy can mask a column with:
   that column but not matched across columns.
 - **PARTIAL**: keep the last few characters (ID numbers, phone numbers, cards).
 - **REGEX_REPLACE**: replace a pattern, such as the part of an email before @.
+  Not available on SQL Server; on MySQL it needs version 8.0 or later.
 - **ROUNDING**: dates to a year, numbers to a band.
 - **CONDITIONAL**: mask unless a condition holds, which makes a cell mask.
   It ranks below every unconditional mask, so a plain mask on the same column
@@ -764,8 +778,24 @@ takes a scope). Every change is audited.
 ## Data sources and enforcement (administrators)
 
 - **Settings → Registered sources** (`/sources`) lists the databases ARAK queries
-  and enforces policy in: PostgreSQL and SQL Server today. A source's credential
+  and enforces policy in: PostgreSQL, SQL Server and MySQL. A source's credential
   is always a reference to a secret store, never a password typed into ARAK.
+- **Registering a MySQL source**: choose MySQL on the first step (port 3306 is
+  offered), then give the host and a login that can read the tables. In MySQL a
+  database is what the other engines call a schema, so **Database** works
+  differently: name one and the import reads that database; leave it blank and
+  the import reads every database the login can see, except MySQL's own
+  (`mysql`, `information_schema`, `performance_schema`, `sys`). A table is
+  named `source.default.database.table`, which is also how OpenMetadata names
+  a MySQL table, so linking the source to an OpenMetadata service gives one
+  asset per table rather than two.
+- **What MySQL sources can and cannot do**: policy on a MySQL source is
+  enforced on the Query page (the query proxy), with row filters, column
+  masks, cell masks and hidden columns. Secure views are not available on
+  MySQL, so that mode is not offered when registering one and **Enforcement**
+  refuses it. The check of who can read a table directly at the source is not
+  available on MySQL either, so restrict direct logins to the database
+  yourself. Tested with MySQL 8.4.
 - **Enforcement** reviews, applies and rolls back **secure views**: a view that
   applies the policy inside the database. **Dry run** shows exactly what would
   run and the rollback, **Apply** runs what was reviewed (and refuses if
@@ -817,5 +847,10 @@ forbid personal gateways, and decide per role which jobs the assistant may do
   owner or steward. A table with no owner goes to the platform administrators.
 - **How long can I ask for?** The request template for the table sets the
   longest duration.
+- **Why was my query refused for a hint, a prefix or a variable?** ARAK checks
+  the statement and the database then reads the text itself. Where the two
+  could read it differently, a table could slip past the policy, so the
+  statement is refused. Take out the hint, write the string as a plain
+  `'...'`, or put the value in the statement instead of a variable.
 - **Can the assistant give me access?** No. It can open the request form's page
   for you; a person decides.

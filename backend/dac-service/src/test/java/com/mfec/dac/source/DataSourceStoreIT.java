@@ -84,10 +84,41 @@ class DataSourceStoreIT {
             new DataSourceStore.SourceInput(
                 "ms", "sqlserver", null, "h", null, null, "env:MS", null, null, null, null, null));
 
+    DataSourceStore.Source mysql =
+        store.create(
+            new DataSourceStore.SourceInput(
+                "my", "mysql", null, "h", null, null, "env:MY", null, null, null, null, null));
+
     assertThat(postgres.port()).isEqualTo(5432);
     assertThat(mssql.port()).isEqualTo(1433);
+    assertThat(mysql.port()).isEqualTo(3306);
+    assertThat(mysql.engine()).isEqualTo(DataSourceStore.Engine.MYSQL);
     // Nothing is enforced until somebody chooses to enforce it.
     assertThat(postgres.defaultEnforcementMode()).isEqualTo(DataSourceStore.EnforcementMode.NONE);
+  }
+
+  @Test
+  @DisplayName("a mode that cannot be installed on an engine is refused when it is chosen")
+  void refusesASecureViewWhereNoneCanBeBuilt() {
+    assertThatThrownBy(
+            () ->
+                store.create(
+                    new DataSourceStore.SourceInput(
+                        "my", "MYSQL", null, "h", null, null, "env:MY", "SECURE_VIEW", null, null,
+                        null, null)))
+        .isInstanceOf(DataSourceStore.InvalidSourceException.class)
+        .hasMessageContaining("Secure views are not available on MySQL")
+        .hasMessageContaining("query proxy");
+
+    // The proxy is the mode MySQL has.
+    assertThat(
+            store
+                .create(
+                    new DataSourceStore.SourceInput(
+                        "my", "MYSQL", null, "h", null, null, "env:MY", "PROXY", null, null, null,
+                        null))
+                .defaultEnforcementMode())
+        .isEqualTo(DataSourceStore.EnforcementMode.PROXY);
   }
 
   @Test

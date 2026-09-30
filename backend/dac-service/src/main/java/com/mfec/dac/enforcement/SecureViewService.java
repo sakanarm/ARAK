@@ -1,5 +1,7 @@
 package com.mfec.dac.enforcement;
 
+import com.mfec.dac.common.engine.SourceEngine;
+import com.mfec.dac.common.engine.SourceEngines;
 import com.mfec.dac.compiler.sql.RowEntitlementMaintainer;
 import com.mfec.dac.compiler.sql.SqlDialect;
 import com.mfec.dac.compiler.sql.SqlDialects;
@@ -586,6 +588,17 @@ public final class SecureViewService {
 
   private Prepared prepare(Located at) {
     DataSourceStore.Source source = at.source();
+    SourceEngine engine = SourceEngines.of(source.engine().name());
+    if (!engine.supportsSecureViews()) {
+      // Said before anything is read or compiled, and in words that name the
+      // way that does work, so nobody takes a failed apply for a broken source.
+      throw new RefusedException(
+          "Secure views are not available on "
+              + engine.displayName()
+              + " sources. Enforce "
+              + at.fqn()
+              + " through the query proxy instead.");
+    }
     SqlDialect dialect = dialect(source);
     CredentialResolver.Credential credential = credential(source);
     SourceProbe.Target target = target(source);

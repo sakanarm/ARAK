@@ -1,5 +1,7 @@
 package com.mfec.dac.catalog;
 
+import com.mfec.dac.common.engine.SourceEngine;
+import com.mfec.dac.common.engine.SourceEngines;
 import com.mfec.dac.source.DataSourceStore;
 import com.mfec.dac.source.TableScope;
 import com.mfec.dac.source.jdbc.JdbcIntrospector;
@@ -79,18 +81,32 @@ public class SourceCatalogImporter {
   }
 
   /**
-   * @param schemaFilter one schema, or null for every non-system schema
+   * @param asked one schema, or null for every non-system schema. On an engine
+   *     with no schema level, null reads the database the source names, and
+   *     every database only when it names none.
    */
-  public Report importFrom(UUID sourceId, String schemaFilter) {
+  public Report importFrom(UUID sourceId, String asked) {
     DataSourceStore.Source source =
         sources
             .find(sourceId)
             .orElseThrow(() -> new IllegalArgumentException("No source " + sourceId));
 
+    // Where the database is the schema (MySQL), the introspector hands each
+    // database back as a schema, and the level above it takes the name
+    // OpenMetadata gives it, so an import and a crawl of one table agree on
+    // its FQN.
     String database =
-        source.defaultDatabase() == null || source.defaultDatabase().isBlank()
-            ? source.name()
-            : source.defaultDatabase();
+        !SourceEngines.of(source.engine().name()).supportsSchemas()
+            ? SourceEngine.PLACEHOLDER_DATABASE
+            : source.defaultDatabase() == null || source.defaultDatabase().isBlank()
+                ? source.name()
+                : source.defaultDatabase();
+
+    SourceProbe.Target target =
+        new SourceProbe.Target(
+            source.engine().name(), source.host(), source.port(), source.defaultDatabase());
+    // What is read, which decides what may be called missing further down.
+    String schemaFilter = JdbcIntrospector.schemaToRead(target, asked);
 
     TableScope scope = source.tableScope() == null ? TableScope.EVERYTHING : source.tableScope();
     int[] excluded = {0};
@@ -98,8 +114,7 @@ public class SourceCatalogImporter {
     try {
       tables =
           introspector.tables(
-              new SourceProbe.Target(
-                  source.engine().name(), source.host(), source.port(), source.defaultDatabase()),
+              target,
               source.credentialRef(),
               schemaFilter,
               (schema, name) -> {

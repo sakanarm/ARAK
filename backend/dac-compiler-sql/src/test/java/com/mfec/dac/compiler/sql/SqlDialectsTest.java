@@ -55,6 +55,7 @@ class SqlDialectsTest {
   void ignoresCaseAndSurroundingSpace() {
     assertThat(SqlDialects.of("postgres")).isInstanceOf(PostgresDialect.class);
     assertThat(SqlDialects.of("  SqlServer  ")).isInstanceOf(SqlServerDialect.class);
+    assertThat(SqlDialects.of("MySql")).isInstanceOf(MySqlDialect.class);
   }
 
   @Test

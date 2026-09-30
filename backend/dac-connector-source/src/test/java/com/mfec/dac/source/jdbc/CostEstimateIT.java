@@ -116,9 +116,9 @@ class CostEstimateIT {
   @Test
   @DisplayName("an engine without a known estimate is not priced, and says so")
   void otherEngine() throws SQLException {
-    CostEstimate.Price price = CostEstimate.price(null, "MYSQL", "SELECT 1", 201, 30);
+    CostEstimate.Price price = CostEstimate.price(null, "ORACLE", "SELECT 1", 201, 30);
 
     assertThat(price.cost()).isNull();
-    assertThat(price.unpricedBecause()).contains("MYSQL");
+    assertThat(price.unpricedBecause()).contains("ORACLE");
   }
 }

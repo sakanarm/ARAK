@@ -19,8 +19,9 @@ import java.util.Set;
  *
  * <p>A name is compared the way the engine would resolve it. Unquoted names fold
  * to lower case. A double-quoted name on PostgreSQL is case-sensitive, so it is
- * allowed only when it is spelled exactly as listed; SQL Server compares names
- * without regard to case either way. A schema-qualified name is never allowed:
+ * allowed only when it is spelled exactly as listed; SQL Server and MySQL
+ * compare names without regard to case either way. A schema-qualified name is
+ * never allowed:
  * the list is of built-ins, and a qualified call is the way to reach one that is
  * not.
  */
@@ -72,10 +73,38 @@ final class ProxyFunctions {
           "convert", "try_cast", "try_convert", "parse", "try_parse", "json_value", "json_query",
           "isjson");
 
+  /**
+   * What is left out on purpose matters as much as what is in. Nothing here
+   * waits or holds a lock ({@code SLEEP}, {@code BENCHMARK}, {@code GET_LOCK}),
+   * reads a file ({@code LOAD_FILE}), or says anything about the server or the
+   * account the statement runs as ({@code USER}, {@code DATABASE},
+   * {@code VERSION}, {@code CONNECTION_ID}).
+   */
+  private static final Set<String> MYSQL =
+      Set.of(
+          "group_concat", "std", "stddev", "stddev_pop", "stddev_samp", "variance", "var_pop",
+          "var_samp", "bit_and", "bit_or", "bit_xor", "json_arrayagg", "json_objectagg",
+          "nth_value", "greatest", "least", "ifnull", "if", "isnull", "length", "char_length",
+          "character_length", "octet_length", "bit_length", "substr", "mid", "lpad", "rpad",
+          "locate", "instr", "position", "substring_index", "repeat", "space", "strcmp", "field",
+          "find_in_set", "elt", "format", "hex", "lcase", "ucase", "char", "regexp_replace",
+          "regexp_like", "regexp_instr", "regexp_substr", "md5", "sha1", "sha2", "crc32", "ceil",
+          "truncate", "mod", "pow", "ln", "log2", "degrees", "radians", "now", "curdate",
+          "curtime", "sysdate", "utc_date", "utc_time", "utc_timestamp", "date", "time", "year",
+          "month", "day", "dayofmonth", "dayofweek", "dayofyear", "dayname", "monthname", "hour",
+          "minute", "second", "quarter", "week", "weekday", "weekofyear", "yearweek", "last_day",
+          "date_format", "time_format", "str_to_date", "datediff", "timediff", "timestampdiff",
+          "timestampadd", "date_add", "date_sub", "adddate", "subdate", "addtime", "subtime",
+          "makedate", "maketime", "from_unixtime", "unix_timestamp", "to_days", "from_days",
+          "cast", "convert", "json_extract", "json_unquote", "json_value", "json_length",
+          "json_type", "json_valid", "json_contains", "json_contains_path", "json_keys",
+          "json_object", "json_array");
+
   private ProxyFunctions() {}
 
   /**
-   * @param dialect {@code POSTGRES} or {@code SQLSERVER}, as {@code SqlDialect#name}
+   * @param dialect {@code POSTGRES}, {@code SQLSERVER} or {@code MYSQL}, as
+   *     {@code SqlDialect#name}
    * @param name the name as written, each part of a qualified name in turn
    */
   static boolean allowed(String dialect, List<String> name) {
@@ -96,6 +125,7 @@ final class ProxyFunctions {
 
   private static final Set<String> FOR_POSTGRES = union(COMMON, POSTGRES);
   private static final Set<String> FOR_SQLSERVER = union(COMMON, SQLSERVER);
+  private static final Set<String> FOR_MYSQL = union(COMMON, MYSQL);
 
   private static Set<String> listFor(String dialect) {
     if ("POSTGRES".equals(dialect)) {
@@ -103,6 +133,9 @@ final class ProxyFunctions {
     }
     if ("SQLSERVER".equals(dialect)) {
       return FOR_SQLSERVER;
+    }
+    if ("MYSQL".equals(dialect)) {
+      return FOR_MYSQL;
     }
     // An engine this list has not been written for gets the functions every
     // engine here spells the same way, and nothing it might mean differently.
