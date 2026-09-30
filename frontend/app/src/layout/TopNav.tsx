@@ -75,6 +75,7 @@ import { AUTH_SPLASH_MS, useAuthSplash } from '../auth/AuthSplash';
 import { useAuthStore } from '../auth/authStore';
 import { relativeTime } from '../components/widgets';
 import { plainText } from '../lib/text';
+import { NEW_POLICY_PATH } from '../pages/policies/policyKind';
 import {
   countLabel,
   noticeHref,
@@ -916,7 +917,7 @@ function CreateMenu() {
           <Dropdown.Item
             icon={ShieldTick}
             label="Subscription policy"
-            onAction={() => navigate('/policies/new?kind=SUBSCRIPTION')}
+            onAction={() => navigate(NEW_POLICY_PATH.SUBSCRIPTION)}
           />
           {/*
             Not the cylinder: that one means "a database" everywhere else in
@@ -928,7 +929,7 @@ function CreateMenu() {
           <Dropdown.Item
             icon={EyeOff}
             label="Data policy"
-            onAction={() => navigate('/policies/new?kind=DATA')}
+            onAction={() => navigate(NEW_POLICY_PATH.DATA)}
           />
           <Dropdown.Separator />
           <Dropdown.Item

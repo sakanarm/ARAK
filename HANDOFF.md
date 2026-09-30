@@ -641,7 +641,39 @@ M36 → M14 · M21 · M29 · M30 (ทุกตัวต้องมี principal
 
 ---
 
-## รอบนี้ — **ข้อ CY: *Where it runs* เลือกยี่ห้อ database ก่อน แล้วค่อยเลือก connection · โลโก้จริง · การ์ด Databricks ไปหน้าแยก**
+## รอบนี้ — **ข้อ CZ: ปุ่ม New policy เป็นเมนูเลือกชนิด · เลือกชนิดมาแล้ว หน้าไม่ถามซ้ำ · แยกหน้า Subscription / Data Access Policy เป็นไฟล์และ route ของตัวเอง**
+
+ผู้ใช้ขอ *"ตอนกด new policy ให้มี sub menu 1. Subscription 2. Data"* และ *"ถ้าเลือก Subscription Policy ชื่อหน้าต้อง Subscription policy และ ไม่ต้องให้เห็น option data policy"*
+
+**หน้า Policies** (`PolicyListPage`) — ปุ่ม **New policy** เปิด dropdown แบบเดียวกับเมนู Create บน header: *Subscription policy* → `/policies/new?kind=SUBSCRIPTION` · *Data policy* → `/policies/new?kind=DATA`
+
+**เมื่อมี `?kind=` มาแล้ว** (`kindChosen` ใน `PolicyBuilderPage` ส่งต่อให้ `PolicyTargetPicker`)
+- หัวหน้า *Where it runs* และหัวฟอร์ม = **Subscription policy** / **Data policy** (แทน *New policy*)
+- ซ่อน section *What kind of policy* ในหน้า Where it runs และช่อง **Kind** ในฟอร์ม (เฉพาะ policy ใหม่ · แก้ policy เดิมยังเห็นช่อง Kind เหมือนเดิม)
+- เข้าแบบไม่มี kind (ปุ่ม New policy ในหน้า Home · draft จาก access request / NokRak) → ยังถามชนิดเหมือนเดิม
+
+**แยกหน้าจอ Subscription / Data Access Policy แล้ว** (ผู้ใช้สั่ง *"แยกให้เลย ให้พร้อมทำงานสองคน สองเครื่องได้"*)
+- route ใหม่: `/policies/new/subscription` → `subscription/SubscriptionPolicyPage.tsx` · `/policies/new/data` → `data-access/DataAccessPolicyPage.tsx`
+- step ที่เป็นของแต่ละชนิด (step 4 เป็นต้นไป) ย้ายออกจาก `PolicyBuilderPage.tsx` ไปอยู่ในไฟล์ของชนิดนั้น:
+  - `subscription/subscriptionPolicy.tsx` — Effect + SubjectBuilder · ชื่อหน้า · icon · ค่าเริ่มต้น
+  - `data-access/dataAccessPolicy.tsx` — SubjectBuilder (optional) + DataPolicyBuilder · ชื่อหน้า · icon · ค่าเริ่มต้น (ORG)
+  - `DataPolicyBuilder.tsx` + test ย้ายไป `data-access/` (git mv)
+- `PolicyBuilderPage.tsx` = ส่วนที่ใช้ร่วม (step 1–3, save, lifecycle, NokRak, rail, dialog) · รับ `kind` เป็น prop (`PolicyKind` ใน `policyKind.ts`) · หน้าแก้ policy เดิม (`/policies/:id/edit`) เลือก step ตาม `policyType` ของเอกสาร
+- `/policies/new` (ไม่มี kind — ปุ่มหน้า Home, draft จาก access request / NokRak) ยังถามชนิดเหมือนเดิม · เลือกแล้วไปหน้าของชนิดนั้น · ลิงก์เก่า `?kind=` redirect ไปหน้าใหม่ (เก็บ source/mode ไว้)
+- เมนู New policy / Create / ปุ่มกลับของ Databricks ใช้ `NEW_POLICY_PATH`
+
+**การแบ่งงาน (branch)** — หลังข้อนี้เข้า main:
+- **Subscription Policy** — ผู้ใช้ · branch `sakan/subscription-policy` · แก้เฉพาะ `pages/policies/subscription/`
+- **Data Access Policy** — เพื่อน · branch `<github-user ของเพื่อน>/data-access-policy` · แก้เฉพาะ `pages/policies/data-access/`
+- ไฟล์ร่วม (`PolicyBuilderPage.tsx`, `policyKind.ts`, `SubjectBuilder.tsx`, `SelectorBuilder.tsx`, `controls.tsx`, `App.tsx`) — ถ้าต้องแก้ ให้ตกลงกันก่อน แล้วเข้า main เป็น PR เล็ก ๆ แยก ให้อีกฝั่ง pull
+
+**test** — `PolicyListPage.test` +1 (เมนูไปหน้าของ kind) · `PolicyBuilderPage.test` +5 (kind มาแล้ว: หัวหน้า + ไม่มีตัวเลือก Data + ไม่มีช่อง Kind · หน้า Data มี step "What they see" · ลิงก์ `?kind=` เก่า redirect · เลือกชนิดบน `/policies/new` แล้วไปหน้าของชนิดนั้น · ไม่มี kind: ยังถาม) · jest ทั้งชุด 86 suites / 887 ผ่าน · type-check ผ่าน · lint ของไฟล์ที่แก้ผ่าน (error ที่เหลือเป็นของ `shot-*.mjs` ในเครื่อง ไม่ได้ commit)
+- ไม่มี migration · ไม่แตะ backend
+- docs: `user-guide.md` (Writing a policy)
+
+**PR** — branch `sakan/policy-kind-menu` · ผู้ใช้สั่ง *"จะ push ขึ้น main แล้วแจ้งเพื่อนให้ Pull"*
+
+## รอบก่อน — **ข้อ CY: *Where it runs* เลือกยี่ห้อ database ก่อน แล้วค่อยเลือก connection · โลโก้จริง · การ์ด Databricks ไปหน้าแยก**
 
 ผู้ใช้ขอ *"Which connection เปลี่ยนเป็นชื่อ ชื่อยี่ห้อสิ แล้วอาจจะค่อยสามารถเลือก Connection ได้อีกที"* · *"ออกแบบดีๆให้หน่อย"* · *"ต้องใส่ logo จริง ของยี่ห้อนั้นๆด้วยสิ"* และ *"ให้เลือกเพิ่ม Databrick ด้วยนะ ทำเป็นหน้าไว้ก่อน … ทำหน้ากากไว้ให้เขาเชื่อม"*
 
@@ -666,7 +698,7 @@ M36 → M14 · M21 · M29 · M30 (ทุกตัวต้องมี principal
 
 **PR** — branch `sakan/connection-by-engine` · ผู้ใช้สั่ง *"เอาขึ้น main และ Prod เลย"*
 
-## รอบก่อน — **ข้อ CX: เพิ่ม local account จากหน้า People · server บังคับเปลี่ยนรหัสผ่านจริง · empty state ของหน้า Policies ตาม filter**
+## รอบก่อนหน้า — **ข้อ CX: เพิ่ม local account จากหน้า People · server บังคับเปลี่ยนรหัสผ่านจริง · empty state ของหน้า Policies ตาม filter**
 
 ผู้ใช้ขอ *"add local account -> เอาใส่ใน People & attributes ด้วย เวลาจะสร้าง local user"* และ *"แก้ไข Bug ด้วยนะ"*
 

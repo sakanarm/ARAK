@@ -217,9 +217,14 @@ export function modeNote(source: Source | null, mode: EnforcementMode): string |
 
 export default function PolicyTargetPicker({
   initial,
+  kindChosen = false,
   onPick,
 }: {
   initial: { kind: PolicyKind; sourceId: string | null; mode: EnforcementMode | null };
+  // The kind was answered before this page, in a New policy or Create menu.
+  // Asking it again would offer the other kind to somebody who has just
+  // turned it down, so the page is titled with the kind instead.
+  kindChosen?: boolean;
   onPick: (target: PolicyTarget) => void;
 }) {
   const [kind, setKind] = useState<PolicyKind>(initial.kind);
@@ -290,9 +295,13 @@ export default function PolicyTargetPicker({
       </Link>
 
       <header className="tw:mt-4 tw:rounded-xl tw:border tw:border-secondary tw:bg-primary tw:p-5 tw:shadow-xs">
-        <h1 className="tw:text-xl tw:font-semibold tw:text-primary">New policy</h1>
+        <h1 className="tw:text-xl tw:font-semibold tw:text-primary">
+          {kindChosen ? `${kind === 'DATA' ? 'Data' : 'Subscription'} policy` : 'New policy'}
+        </h1>
         <p className="tw:mt-0.5 tw:text-sm tw:text-tertiary">
-          Say what kind of policy it is, where it runs and how it will be enforced.
+          {kindChosen
+            ? 'Say where it runs and how it will be enforced.'
+            : 'Say what kind of policy it is, where it runs and how it will be enforced.'}{' '}
           The form opens after that, with its checks already pointed at the right place.
         </p>
         <ol aria-label="Progress" className="tw:mt-4 tw:flex tw:flex-wrap tw:items-center tw:gap-2 tw:text-sm">
@@ -313,6 +322,7 @@ export default function PolicyTargetPicker({
       </header>
 
       <div className="tw:mt-6 tw:flex tw:flex-col tw:gap-6 tw:pb-28">
+        {!kindChosen && (
         <Section
           description="Subscription and data policies are different jobs, written by different people."
           title="What kind of policy">
@@ -330,6 +340,7 @@ export default function PolicyTargetPicker({
             ))}
           </div>
         </Section>
+        )}
 
         <Section
           description="Choose the database product first, then which of its connections. The policy covers that connection's assets, and step 3 narrows them down. Every connection leaves it to step 3 alone."
