@@ -815,12 +815,25 @@ its own, before the form opens:
 
 - **What kind of policy**: *Subscription* (who gets in) or *Data* (what they
   see).
-- **Which connection**: one of the registered data sources, each card showing
-  its engine, how many tables it has and the mode it is enforced by today; or
-  **Every connection**. Choosing a connection starts step 3 (*Which assets it
-  covers*) on that connection's assets, which you can narrow further. A
-  selector you write yourself is kept if you go back and choose another
-  connection.
+- **Which database**: first the database product, then the connection.
+  - Each product has a card with its logo: PostgreSQL, SQL Server, and any
+    other engine ARAK governs. The card shows how many connections run that
+    product, how many tables they hold, and the modes they are enforced by.
+    A product with no registered connection is shown greyed out.
+  - Choosing a product opens **Which <product> connection** below it, with a
+    card for each of its connections (version, tables, mode) and a search box
+    when there are more than six. A product with a single connection chooses
+    it for you.
+  - **Every connection** is the organisation-wide choice.
+  - **Databricks** opens a page of its own, because Databricks policies are
+    configured in a separate builder. That builder is not available yet, and
+    nothing can be saved there.
+
+  Choosing a connection starts step 3 (*Which assets it covers*) on that
+  connection's assets, which you can narrow further. A selector you write
+  yourself is kept if you go back and choose another connection. Choosing a
+  product does not by itself make a policy cover every connection of that
+  product; for that, choose **Every connection** and narrow it in step 3.
 - **How it will be enforced**: *Query API*, *Secure view* or *Native source
   config*. On one connection only the mode that connection is set to can be
   chosen, and choosing the connection chooses it; the other modes are greyed

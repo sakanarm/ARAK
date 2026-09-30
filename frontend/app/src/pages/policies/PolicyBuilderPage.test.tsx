@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import PolicyBuilderPage from './PolicyBuilderPage';
+import DatabricksPolicyPage from './databricks/DatabricksPolicyPage';
 import { useAssistStore } from '../../assist/assistStore';
 
 const createPolicy = jest.fn();
@@ -115,6 +116,7 @@ function renderNew(entry = '/policies/new?source=any&mode=PROXY') {
       <MemoryRouter initialEntries={[entry]}>
         <Routes>
           <Route element={<PolicyBuilderPage />} path="/policies/new" />
+          <Route element={<DatabricksPolicyPage />} path="/policies/new/databricks" />
         </Routes>
       </MemoryRouter>
     </QueryClientProvider>
@@ -144,14 +146,16 @@ describe('where a new policy runs', () => {
   test('is asked before the form, which waits for a connection and a mode', async () => {
     renderNew('/policies/new');
 
-    expect(await screen.findByRole('region', { name: 'Which connection' })).toBeInTheDocument();
+    expect(await screen.findByRole('region', { name: 'Which database' })).toBeInTheDocument();
     expect(screen.getByRole('region', { name: 'How it will be enforced' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /environment/i })).not.toBeInTheDocument();
     expect(configure()).toBeDisabled();
 
     fireEvent.click(await screen.findByRole('button', { name: 'Every connection' }));
     expect(configure()).toBeDisabled();
-    fireEvent.click(screen.getByRole('button', { name: 'demo-pg' }));
+    // PostgreSQL has one connection here, so choosing the database chooses it.
+    fireEvent.click(screen.getByRole('button', { name: 'PostgreSQL' }));
+    expect(screen.getByRole('button', { name: 'demo-pg' })).toHaveAttribute('aria-pressed', 'true');
 
     // The connection is set to the query API, so choosing it chose that too.
     expect(screen.getByRole('button', { name: 'Query API' })).toHaveAttribute(
@@ -160,14 +164,15 @@ describe('where a new policy runs', () => {
     );
     expect(configure()).toBeEnabled();
     expect(screen.getByTestId('target-summary')).toHaveTextContent(
-      'Subscription policy on demo-pg, enforced by Query API'
+      'Subscription policy on demo-pg (PostgreSQL), enforced by Query API'
     );
   });
 
   test('covers the chosen connection and saves no mode', async () => {
     renderNew('/policies/new');
 
-    fireEvent.click(await screen.findByRole('button', { name: 'demo-pg' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'PostgreSQL' }));
+    fireEvent.click(screen.getByRole('button', { name: 'demo-pg' }));
     fireEvent.click(screen.getByRole('button', { name: 'Query API' }));
     fireEvent.click(configure());
 
@@ -191,7 +196,8 @@ describe('where a new policy runs', () => {
   test('a connection linked to the catalog is selected by its service', async () => {
     renderNew('/policies/new');
 
-    fireEvent.click(await screen.findByRole('button', { name: 'demo-my' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'MySQL' }));
+    fireEvent.click(screen.getByRole('button', { name: 'demo-my' }));
     fireEvent.click(screen.getByRole('button', { name: 'Secure view' }));
     fireEvent.click(configure());
 
@@ -204,6 +210,60 @@ describe('where a new policy runs', () => {
     expect(createPolicy.mock.calls[0][0].selector).toEqual({
       condition: { facet: 'service', operator: 'eq', value: 'catalog-my' },
     });
+  });
+
+  test('the database comes first, then which of its connections', async () => {
+    fetchSources.mockResolvedValue([
+      ...sources,
+      source({ id: 'src-pg-2', name: 'demo-pg-2', assetCount: 4 }),
+    ]);
+    renderNew('/policies/new');
+
+    const postgres = await screen.findByRole('button', { name: 'PostgreSQL' });
+    expect(postgres).toHaveTextContent('2 connections · 7 tables');
+    expect(postgres.querySelector('[data-engine-logo="POSTGRES"]')).not.toBeNull();
+    expect(screen.queryByRole('region', { name: 'Which connection' })).not.toBeInTheDocument();
+
+    fireEvent.click(postgres);
+    const panel = screen.getByRole('region', { name: 'Which connection' });
+    expect(panel).toHaveTextContent('Which PostgreSQL connection');
+    expect(within(panel).queryByRole('button', { name: 'demo-my' })).not.toBeInTheDocument();
+    expect(configure()).toBeDisabled();
+
+    fireEvent.click(within(panel).getByRole('button', { name: 'demo-pg-2' }));
+    expect(configure()).toBeEnabled();
+    expect(screen.getByTestId('target-summary')).toHaveTextContent('on demo-pg-2 (PostgreSQL)');
+
+    // Another database closes the panel and forgets a connection it does not run.
+    fireEvent.click(screen.getByRole('button', { name: 'Every connection' }));
+    expect(screen.queryByRole('region', { name: 'Which connection' })).not.toBeInTheDocument();
+  });
+
+  test('a database with no connection is shown but cannot be chosen', async () => {
+    fetchEngines.mockResolvedValue([
+      ...engines,
+      { id: 'SQLSERVER', displayName: 'SQL Server', defaultPort: 1433, supportsSchemas: true, proxyCapabilities: [] },
+    ]);
+    renderNew('/policies/new');
+
+    const sqlServer = await screen.findByRole('button', { name: 'SQL Server' });
+    expect(sqlServer).toBeDisabled();
+    expect(sqlServer).toHaveTextContent('No connection registered yet');
+  });
+
+  test('Databricks opens a builder of its own, keeping the kind', async () => {
+    renderNew('/policies/new?kind=DATA');
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Databricks' }));
+
+    expect(
+      await screen.findByRole('heading', { name: 'New Databricks policy' })
+    ).toBeInTheDocument();
+    expect(screen.getByTestId('databricks-target')).toHaveTextContent('Data policy');
+    expect(screen.getByRole('region', { name: 'Databricks builder' })).toHaveTextContent(
+      'Nothing can be written or saved here yet'
+    );
+    expect(createPolicy).not.toHaveBeenCalled();
   });
 
   test('Change goes back to the question, keeping the answer', async () => {
@@ -226,7 +286,7 @@ describe('where a new policy runs', () => {
     renderNew('/policies/new');
 
     fireEvent.click(await screen.findByRole('button', { name: 'Secure view' }));
-    fireEvent.click(await screen.findByRole('button', { name: 'demo-pg' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'PostgreSQL' }));
 
     // Checking a policy against a mode the connection will never use would
     // pass checks that mean nothing, so the other two are greyed out.
@@ -266,7 +326,7 @@ describe('where a new policy runs', () => {
   test('the query API is not offered on an engine it has nothing for', async () => {
     renderNew('/policies/new');
 
-    fireEvent.click(await screen.findByRole('button', { name: 'demo-my' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'MySQL' }));
 
     await waitFor(() => expect(screen.getByRole('button', { name: 'Query API' })).toBeDisabled());
     expect(screen.getByText('Not on MySQL')).toBeInTheDocument();
@@ -285,7 +345,7 @@ describe('where a new policy runs', () => {
     renderNew('/policies/new');
 
     expect(await screen.findByDisplayValue('drafted-in-chat')).toBeInTheDocument();
-    expect(screen.queryByRole('region', { name: 'Which connection' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Which database' })).not.toBeInTheDocument();
     expect(useAssistStore.getState().policy).toBeNull();
   });
 

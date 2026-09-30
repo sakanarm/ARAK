@@ -14,6 +14,7 @@ import ProfilePage from './pages/ProfilePage';
 import PrincipalDetailPage from './pages/governance/PrincipalDetailPage';
 import PrincipalsPage from './pages/governance/PrincipalsPage';
 import PolicyBuilderPage from './pages/policies/PolicyBuilderPage';
+import DatabricksPolicyPage from './pages/policies/databricks/DatabricksPolicyPage';
 import PolicyDetailPage from './pages/policies/PolicyDetailPage';
 import PolicyListPage from './pages/policies/PolicyListPage';
 import QueryPage from './pages/query/QueryPage';
@@ -79,6 +80,7 @@ export default function App() {
           <Route element={<PrincipalDetailPage />} path="/principals/:id" />
           <Route element={<PolicyListPage />} path="/policies" />
           <Route element={<PolicyBuilderPage />} path="/policies/new" />
+          <Route element={<DatabricksPolicyPage />} path="/policies/new/databricks" />
           {/*
             Opening a policy shows it; /edit opens the form. Reading is by far
             the commoner errand, and the builder is not a safe place to land
