@@ -4,6 +4,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { EyeOff, Plus, SearchLg, ShieldTick } from '@untitledui/icons';
 import { Chip as Badge } from '../../components/chips';
 import { Button } from '@openmetadata/ui-core-components/components/base/buttons/button';
+import { Dropdown } from '@openmetadata/ui-core-components/components/base/dropdown/dropdown';
 import { Input } from '@openmetadata/ui-core-components/components/base/input/input';
 import { apiErrorMessage } from '../../api/client';
 import {
@@ -25,6 +26,7 @@ import { relativeTime } from '../../components/widgets';
 import { shortFqn } from '../../lib/fqn';
 import { Select } from './controls';
 import { describeSelector, describeSubject } from './policyLanguage';
+import { NEW_POLICY_PATH } from './policyKind';
 
 /**
  * Every policy in the platform, with what it says rather than what it is called.
@@ -179,12 +181,27 @@ export default function PolicyListPage() {
             removes them.
           </p>
         </div>
-        <Button
-          iconLeading={Plus}
-          onPress={() => navigate('/policies/new')}
-          size="md">
-          New policy
-        </Button>
+        {/* The kind is asked here, as in the header's Create menu: the two
+            kinds are different jobs, and the builder opens on the one chosen. */}
+        <Dropdown.Root>
+          <Button iconLeading={Plus} size="md">
+            New policy
+          </Button>
+          <Dropdown.Popover>
+            <Dropdown.Menu selectionMode="none">
+              <Dropdown.Item
+                icon={ShieldTick}
+                label="Subscription policy"
+                onAction={() => navigate(NEW_POLICY_PATH.SUBSCRIPTION)}
+              />
+              <Dropdown.Item
+                icon={EyeOff}
+                label="Data policy"
+                onAction={() => navigate(NEW_POLICY_PATH.DATA)}
+              />
+            </Dropdown.Menu>
+          </Dropdown.Popover>
+        </Dropdown.Root>
       </header>
 
       <nav

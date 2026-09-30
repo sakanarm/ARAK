@@ -15,6 +15,8 @@ import PrincipalDetailPage from './pages/governance/PrincipalDetailPage';
 import PrincipalsPage from './pages/governance/PrincipalsPage';
 import PolicyBuilderPage from './pages/policies/PolicyBuilderPage';
 import DatabricksPolicyPage from './pages/policies/databricks/DatabricksPolicyPage';
+import SubscriptionPolicyPage from './pages/policies/subscription/SubscriptionPolicyPage';
+import DataAccessPolicyPage from './pages/policies/data-access/DataAccessPolicyPage';
 import PolicyDetailPage from './pages/policies/PolicyDetailPage';
 import PolicyListPage from './pages/policies/PolicyListPage';
 import QueryPage from './pages/query/QueryPage';
@@ -80,6 +82,8 @@ export default function App() {
           <Route element={<PrincipalDetailPage />} path="/principals/:id" />
           <Route element={<PolicyListPage />} path="/policies" />
           <Route element={<PolicyBuilderPage />} path="/policies/new" />
+          <Route element={<SubscriptionPolicyPage />} path="/policies/new/subscription" />
+          <Route element={<DataAccessPolicyPage />} path="/policies/new/data" />
           <Route element={<DatabricksPolicyPage />} path="/policies/new/databricks" />
           {/*
             Opening a policy shows it; /edit opens the form. Reading is by far

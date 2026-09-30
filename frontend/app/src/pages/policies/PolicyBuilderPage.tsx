@@ -7,14 +7,12 @@ import {
   ModalOverlay,
 } from 'react-aria-components';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { Link, Navigate, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
   AlertTriangle,
   ArrowLeft,
   ArrowRight,
   CheckCircle,
-  EyeOff,
-  Key01,
   XCircle,
   XClose,
 } from '@untitledui/icons';
@@ -42,12 +40,10 @@ import {
 import type { Policy } from '../../generated/entity/policy/policy';
 import { normaliseConditionValues } from './conditionValues';
 import { Field, Select, Step, TextField, useViewMode, ViewToggle } from './controls';
-import DataPolicyBuilder from './DataPolicyBuilder';
 import PolicyFlowChart from './PolicyFlowChart';
 import PolicyDiagram from './PolicyDiagram';
 import SelectorBuilder from './SelectorBuilder';
 import ScopePreview from './ScopePreview';
-import SubjectBuilder from './SubjectBuilder';
 import { capabilities, MODES, type Engine, type EnforcementMode } from './enforcement';
 import { engineLabel, engineOptions, useSourceEngines } from '../../engines';
 import { fetchSources } from '../../api/sources';
@@ -59,6 +55,9 @@ import PolicyTargetPicker, {
 } from './PolicyTargetPicker';
 import { describePolicy } from './policyLanguage';
 import { diffPolicies, type PolicyFieldChange } from './policyDiff';
+import { NEW_POLICY_PATH, type PolicyKind, type PolicyType } from './policyKind';
+import { SUBSCRIPTION_POLICY } from './subscription/subscriptionPolicy';
+import { DATA_ACCESS_POLICY } from './data-access/dataAccessPolicy';
 
 /**
  * The policy builder (FR-3, FR-4, M4).
@@ -70,7 +69,16 @@ import { diffPolicies, type PolicyFieldChange } from './policyDiff';
  * document back as a sentence, says how many assets it will reach, and says
  * which of the three enforcement modes can actually carry it — before anyone
  * presses apply, not after.
+ *
+ * This file is the part every policy shares. The steps that belong to one kind
+ * live with that kind -- subscription/ and data-access/ -- and so does the page
+ * a new one of that kind opens on, so the two can be built separately.
  */
+
+const KINDS: Record<PolicyType, PolicyKind> = {
+  SUBSCRIPTION: SUBSCRIPTION_POLICY,
+  DATA: DATA_ACCESS_POLICY,
+};
 
 /*
  * A new policy opens on the environment the engine decides in, not on `dev`.
@@ -120,17 +128,44 @@ const ANCHOR_EXAMPLES: Partial<Record<Policy['scopeLevel'], string>> = {
   COLUMN: 'demo-pg.salesdb.sales.customer.email',
 };
 
-export default function PolicyBuilderPage() {
+/**
+ * `kind` is set by the kind's own page (/policies/new/subscription or
+ * /policies/new/data). Without it -- /policies/new, or editing a stored
+ * policy -- the kind is the document's own.
+ */
+export default function PolicyBuilderPage({ kind }: { kind?: PolicyKind }) {
+  const { id } = useParams();
+  const [params] = useSearchParams();
+  const location = useLocation();
+  // The kind used to be asked for with `?kind=`; an old link lands on the
+  // kind's own page, with the rest of its answers.
+  const asked = params.get('kind');
+  if (!kind && !id && (asked === 'DATA' || asked === 'SUBSCRIPTION')) {
+    const rest = new URLSearchParams(params);
+    rest.delete('kind');
+    const query = rest.toString();
+    return (
+      <Navigate
+        replace
+        state={location.state}
+        to={`${NEW_POLICY_PATH[asked]}${query ? `?${query}` : ''}`}
+      />
+    );
+  }
+  return <PolicyBuilder kind={kind} />;
+}
+
+function PolicyBuilder({ kind }: { kind?: PolicyKind }) {
   const { id } = useParams();
   const [params, setParams] = useSearchParams();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const isNew = !id;
 
-  // `?kind=` lets the header's Create menu ask for the kind before the form
-  // opens. Subscription and data policies are different jobs; choosing between
-  // them inside step one of a form is where that distinction goes to be missed.
-  const kind = params.get('kind');
+  // Subscription and data policies are different jobs; choosing between them
+  // inside step one of a form is where that distinction goes to be missed. A
+  // kind's own page has answered it, so neither offers the other kind again.
+  const kindChosen = Boolean(kind);
   // A draft suggested by an access request's review arrives in the
   // navigation state. It fills the form and nothing more: it is saved only
   // when the author presses "Create draft", and activated only through the
@@ -138,13 +173,8 @@ export default function PolicyBuilderPage() {
   const location = useLocation();
   const suggested = isNew ? suggestedDraft(location.state) : null;
   const [draft, setDraft] = useState<Policy>(() => {
-    if (suggested) return { ...EMPTY, ...suggested.draft };
-    // A data policy still opens on the organisation, where masking by tag is
-    // written once and covers everything. Only the subscription default moved
-    // down to the table.
-    if (kind === 'DATA') return { ...EMPTY, policyType: 'DATA', scopeLevel: 'ORG' };
-    if (kind === 'SUBSCRIPTION') return { ...EMPTY, policyType: 'SUBSCRIPTION' };
-    return EMPTY;
+    if (suggested) return { ...EMPTY, ...kind?.initial, ...suggested.draft };
+    return kind ? { ...EMPTY, ...kind.initial } : EMPTY;
   });
   const [loaded, setLoaded] = useState<StoredPolicy | null>(null);
   // Which reading of the draft the form column shows. It defaults to the form
@@ -402,6 +432,8 @@ export default function PolicyBuilderPage() {
   );
 
   const incomplete = !draft.name.trim() || !hasCondition(draft);
+  // The kind the form is showing, which the header wears.
+  const shown = KINDS[draft.policyType];
 
   if (loadError) {
     return (
@@ -417,21 +449,21 @@ export default function PolicyBuilderPage() {
   if (isNew && !suggested && !drafted && !tookDraft && !modeParam) {
     return (
       <PolicyTargetPicker
+        kindChosen={kindChosen}
         initial={{
           kind: draft.policyType,
           sourceId: sourceParam === 'any' ? null : sourceParam,
           mode: modeParam,
         }}
         onPick={(picked: PolicyTarget) => {
-          if (picked.kind !== draft.policyType) {
-            // As the Create menu would have opened it: a data policy on the
-            // organisation, a subscription on the table.
-            patch({
-              policyType: picked.kind,
-              scopeLevel: picked.kind === 'DATA' ? 'ORG' : 'TABLE',
-            });
+          const answers = { source: picked.source?.id ?? 'any', mode: picked.mode };
+          if (kind) {
+            setParams(answers);
+          } else {
+            // On to the page of the kind picked, which opens its document as
+            // that kind's own page would.
+            navigate(`${NEW_POLICY_PATH[picked.kind]}?${new URLSearchParams(answers)}`);
           }
-          setParams({ kind: picked.kind, source: picked.source?.id ?? 'any', mode: picked.mode });
         }}
       />
     );
@@ -464,6 +496,7 @@ export default function PolicyBuilderPage() {
                 value={draft.displayName ?? ''}
               />
             </Field>
+            {!(isNew && kindChosen) && (
             <Field
               hint="Subscription decides who reaches the table at all. Data decides what they see inside it. They are authored by different people at different times, which is why they are separate documents."
               label="Kind">
@@ -478,6 +511,7 @@ export default function PolicyBuilderPage() {
                 value={draft.policyType}
               />
             </Field>
+            )}
             <Field
               hint={
                 // Shown only when it matters. Saying "this one is enforced"
@@ -600,74 +634,10 @@ export default function PolicyBuilderPage() {
         </>
       ),
     },
-    ...(draft.policyType === 'SUBSCRIPTION'
-      ? [
-          {
-            step: 4,
-            title: 'Who it is about',
-            description:
-              'Roles, attributes, an expression across both sides, and the hours it holds — all ANDed into one predicate.',
-            body: (
-              <>
-                <div className="tw:mb-5">
-                  <Field
-                    hint="A deny always beats an allow, anywhere in the stack, and no match at all is already a deny."
-                    label="Effect">
-                    <Select
-                      className="tw:w-56"
-                      onChange={(next) => patch({ effect: next as Policy['effect'] })}
-                      options={[
-                        { value: 'ALLOW', label: 'Allow' },
-                        { value: 'DENY', label: 'Deny' },
-                      ]}
-                      value={draft.effect ?? 'ALLOW'}
-                    />
-                  </Field>
-                </div>
-                <SubjectBuilder
-                  attributes={attributes}
-                  onChange={(next) => patch({ subject: next })}
-                  principals={principals}
-                  value={draft.subject}
-                />
-              </>
-            ),
-          },
-        ]
-      : [
-          {
-            step: 4,
-            title: 'Who it is about',
-            description:
-              'Optional. Leave it empty and the restrictions below apply to everyone who gets past the subscription policies.',
-            body: (
-              <>
-                <SubjectBuilder
-                  attributes={attributes}
-                  onChange={(next) => patch({ subject: next })}
-                  principals={principals}
-                  value={draft.subject}
-                />
-              </>
-            ),
-          },
-          {
-            step: 5,
-            title: 'What they see',
-            description:
-              'Row filters and column rules — the RLS and masking half of the policy.',
-            body: (
-              <>
-                <DataPolicyBuilder
-                  attributes={attributes}
-                  onChange={(next) => patch({ data: next })}
-                  value={draft.data}
-                  vocabulary={vocabulary}
-                />
-              </>
-            ),
-          },
-        ]),
+    // The rest is the kind's own, numbered on from the shared steps.
+    ...KINDS[draft.policyType]
+      .steps({ draft, patch, vocabulary, attributes, principals })
+      .map((entry, index) => ({ ...entry, step: 4 + index })),
   ];
 
   return (
@@ -682,17 +652,17 @@ export default function PolicyBuilderPage() {
       <header className="tw:mt-4 tw:flex tw:flex-wrap tw:items-center tw:justify-between tw:gap-4 tw:rounded-xl tw:border tw:border-secondary tw:bg-primary tw:p-5 tw:shadow-xs">
         <div className="tw:flex tw:min-w-0 tw:items-center tw:gap-4">
           <span
-            className={`tw:flex tw:size-12 tw:shrink-0 tw:items-center tw:justify-center tw:rounded-xl ${
-              draft.policyType === 'DATA'
-                ? 'tw:bg-utility-purple-50 tw:text-utility-purple-600'
-                : 'tw:bg-utility-brand-50 tw:text-utility-brand-600'
-            }`}>
-            {draft.policyType === 'DATA' ? <EyeOff className="tw:size-6" /> : <Key01 className="tw:size-6" />}
+            className={`tw:flex tw:size-12 tw:shrink-0 tw:items-center tw:justify-center tw:rounded-xl ${shown.tone}`}>
+            <shown.icon className="tw:size-6" />
           </span>
           <div className="tw:min-w-0">
             <div className="tw:flex tw:flex-wrap tw:items-center tw:gap-2">
               <h1 className="tw:text-xl tw:font-semibold tw:text-primary">
-                {isNew ? 'New policy' : draft.displayName || draft.name}
+                {isNew
+                  ? kindChosen
+                    ? shown.title
+                    : 'New policy'
+                  : draft.displayName || draft.name}
               </h1>
               {loaded && (
                 <Badge color="gray" size="sm" type="pill-color">

@@ -3,6 +3,8 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import PolicyBuilderPage from './PolicyBuilderPage';
 import DatabricksPolicyPage from './databricks/DatabricksPolicyPage';
+import SubscriptionPolicyPage from './subscription/SubscriptionPolicyPage';
+import DataAccessPolicyPage from './data-access/DataAccessPolicyPage';
 import { useAssistStore } from '../../assist/assistStore';
 
 const createPolicy = jest.fn();
@@ -116,6 +118,8 @@ function renderNew(entry = '/policies/new?source=any&mode=PROXY') {
       <MemoryRouter initialEntries={[entry]}>
         <Routes>
           <Route element={<PolicyBuilderPage />} path="/policies/new" />
+          <Route element={<SubscriptionPolicyPage />} path="/policies/new/subscription" />
+          <Route element={<DataAccessPolicyPage />} path="/policies/new/data" />
           <Route element={<DatabricksPolicyPage />} path="/policies/new/databricks" />
         </Routes>
       </MemoryRouter>
@@ -252,7 +256,7 @@ describe('where a new policy runs', () => {
   });
 
   test('Databricks opens a builder of its own, keeping the kind', async () => {
-    renderNew('/policies/new?kind=DATA');
+    renderNew('/policies/new/data');
 
     fireEvent.click(await screen.findByRole('button', { name: 'Databricks' }));
 
@@ -267,7 +271,7 @@ describe('where a new policy runs', () => {
   });
 
   test('Change goes back to the question, keeping the answer', async () => {
-    renderNew('/policies/new?kind=SUBSCRIPTION&source=src-pg&mode=PROXY');
+    renderNew('/policies/new/subscription?source=src-pg&mode=PROXY');
 
     const target = await screen.findByTestId('policy-target');
     fireEvent.click(within(target).getByRole('button', { name: 'Change' }));
@@ -280,6 +284,62 @@ describe('where a new policy runs', () => {
       'aria-pressed',
       'false'
     );
+  });
+
+  test('a kind chosen from the menu titles the page and is not asked again', async () => {
+    renderNew('/policies/new/subscription');
+
+    expect(
+      await screen.findByRole('heading', { name: 'Subscription policy' })
+    ).toBeInTheDocument();
+    expect(screen.queryByText('What kind of policy')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Data policy' })).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Every connection' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Query API' }));
+    fireEvent.click(configure());
+
+    expect(
+      await screen.findByRole('heading', { name: 'Subscription policy' })
+    ).toBeInTheDocument();
+    expect(screen.queryByText('Kind')).toBeNull();
+  });
+
+  test('each kind has its own page, which writes that kind', async () => {
+    renderNew('/policies/new/data?source=any&mode=PROXY');
+
+    expect(await screen.findByRole('heading', { name: 'Data policy' })).toBeInTheDocument();
+    expect(screen.getByText('What they see')).toBeInTheDocument();
+    expect(screen.queryByText('Effect')).toBeNull();
+    expect(screen.queryByText('Kind')).toBeNull();
+  });
+
+  test('an old ?kind= link lands on that kind\'s page, answers kept', async () => {
+    renderNew('/policies/new?kind=DATA&source=src-pg&mode=PROXY');
+
+    expect(await screen.findByRole('heading', { name: 'Data policy' })).toBeInTheDocument();
+    const target = await screen.findByTestId('policy-target');
+    await waitFor(() => expect(target).toHaveTextContent('demo-pg · PostgreSQL'));
+  });
+
+  test('a kind picked on /policies/new goes on to that kind\'s page', async () => {
+    renderNew('/policies/new');
+
+    fireEvent.click(await screen.findByRole('button', { name: /Data policy/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Every connection' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Query API' }));
+    fireEvent.click(configure());
+
+    expect(await screen.findByRole('heading', { name: 'Data policy' })).toBeInTheDocument();
+    expect(screen.getByText('What they see')).toBeInTheDocument();
+  });
+
+  test('without a kind, the page still asks for one', async () => {
+    renderNew('/policies/new');
+
+    expect(await screen.findByRole('heading', { name: 'New policy' })).toBeInTheDocument();
+    expect(screen.getByText('What kind of policy')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Data policy' })).toBeInTheDocument();
   });
 
   test('on one connection, a mode it is not set to cannot be chosen', async () => {

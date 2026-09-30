@@ -3,6 +3,7 @@ import { ArrowLeft, CheckCircle, Tool02 } from '@untitledui/icons';
 import { Chip as Badge } from '../../../components/chips';
 import type { Policy } from '../../../generated/entity/policy/policy';
 import EngineMark from '../EngineMark';
+import { NEW_POLICY_PATH } from '../policyKind';
 
 /**
  * Where a new Databricks policy is configured.
@@ -31,7 +32,7 @@ export default function DatabricksPolicyPage() {
     <>
       <Link
         className="tw:inline-flex tw:items-center tw:gap-1 tw:text-sm tw:text-tertiary tw:hover:text-primary"
-        to={`/policies/new?kind=${kind}`}>
+        to={NEW_POLICY_PATH[kind]}>
         <ArrowLeft className="tw:size-4" />
         Where it runs
       </Link>
@@ -96,7 +97,7 @@ function BuilderPending({ kind }: { kind: PolicyKind }) {
       <div className="tw:mt-5 tw:flex tw:flex-wrap tw:justify-center tw:gap-3">
         <Link
           className="tw:rounded-lg tw:border tw:border-primary tw:bg-primary tw:px-3.5 tw:py-2 tw:text-sm tw:font-semibold tw:text-secondary tw:shadow-xs tw:hover:bg-primary_hover"
-          to={`/policies/new?kind=${kind}`}>
+          to={NEW_POLICY_PATH[kind]}>
           Choose another database
         </Link>
         <Link

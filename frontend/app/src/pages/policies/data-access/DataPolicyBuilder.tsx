@@ -7,10 +7,10 @@ import type {
   MaskingSpec,
   RowFilter,
   RowLookup,
-} from '../../generated/entity/policy/policy';
-import type { AttributeVocabulary, Vocabulary } from '../../api/governance';
-import { Field, Select, TextField } from './controls';
-import SelectorBuilder from './SelectorBuilder';
+} from '../../../generated/entity/policy/policy';
+import type { AttributeVocabulary, Vocabulary } from '../../../api/governance';
+import { Field, Select, TextField } from '../controls';
+import SelectorBuilder from '../SelectorBuilder';
 
 /**
  * What a reader sees inside a table they are allowed to reach: row filters

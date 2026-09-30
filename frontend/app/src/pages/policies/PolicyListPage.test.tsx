@@ -6,6 +6,12 @@ import type { StoredPolicy } from '../../api/policies';
 
 const fetchPolicies = jest.fn();
 const countPolicies = jest.fn();
+const mockNavigate = jest.fn();
+
+jest.mock('react-router-dom', () => ({
+  ...jest.requireActual('react-router-dom'),
+  useNavigate: () => mockNavigate,
+}));
 
 jest.mock('../../api/policies', () => ({
   ...jest.requireActual('../../api/policies'),
@@ -198,5 +204,20 @@ describe('the policy list', () => {
 
     expect(await screen.findByText('No policies yet')).toBeInTheDocument();
     expect(screen.getByText(/denies by default/)).toBeInTheDocument();
+  });
+
+  it('asks which kind of policy before the builder opens', async () => {
+    fetchPolicies.mockResolvedValue([]);
+    countPolicies.mockResolvedValue(0);
+    renderPage();
+
+    fireEvent.click(screen.getByRole('button', { name: 'New policy' }));
+    expect(await screen.findByRole('menuitem', { name: 'Subscription policy' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Data policy' }));
+    expect(mockNavigate).toHaveBeenCalledWith('/policies/new/data');
+
+    fireEvent.click(screen.getByRole('button', { name: 'New policy' }));
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Subscription policy' }));
+    expect(mockNavigate).toHaveBeenLastCalledWith('/policies/new/subscription');
   });
 });

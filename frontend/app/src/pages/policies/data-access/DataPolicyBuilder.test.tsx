@@ -1,9 +1,9 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { useState } from 'react';
 import DataPolicyBuilder from './DataPolicyBuilder';
-import type { DataPolicy, RowLookup } from '../../generated/entity/policy/policy';
+import type { DataPolicy, RowLookup } from '../../../generated/entity/policy/policy';
 
-jest.mock('../../api/client', () => ({
+jest.mock('../../../api/client', () => ({
   apiClient: {},
   apiErrorMessage: (_error: unknown, fallback: string) => fallback,
 }));

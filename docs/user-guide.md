@@ -810,11 +810,16 @@ none at all, and then every request is denied by default.
 
 ## Writing a policy (policy builder)
 
-**Policies → New policy** first asks **where the policy runs**, on a page of
-its own, before the form opens:
+**Policies → New policy** opens a menu with two choices: **Subscription
+policy** (who gets in) and **Data policy** (what they see). The **Create** menu
+in the header offers the same two. The page that opens is titled with the kind
+you chose, and neither it nor the form offers the other kind; go back to
+**Policies** to start the other one. Each kind has its own address, which you
+can bookmark: `/policies/new/subscription` and `/policies/new/data`. It then
+asks **where the policy runs**, on a page of its own, before the form opens:
 
-- **What kind of policy**: *Subscription* (who gets in) or *Data* (what they
-  see).
+- **What kind of policy**: asked here only when you arrive without choosing
+  one, for example from **New policy** on the home page.
 - **Which database**: first the database product, then the connection.
   - Each product has a card with its logo: PostgreSQL, SQL Server, and any
     other engine ARAK governs. The card shows how many connections run that
