@@ -1,6 +1,6 @@
 import { type ComponentType, type ReactNode, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import {
   AlertTriangle,
   ArrowLeft,
@@ -11,6 +11,7 @@ import {
   EyeOff,
   Globe01,
   Key01,
+  SearchLg,
   Settings02,
   Table,
 } from '@untitledui/icons';
@@ -22,11 +23,14 @@ import {
   fetchSources,
   type EnforcementMode as SourceMode,
   type Source,
+  type SourceEngineInfo,
 } from '../../api/sources';
 import type { Policy } from '../../generated/entity/policy/policy';
 import type { AssetSelector } from '../../generated/type/facet';
 import { engineLabel, useSourceEngines } from '../../engines';
 import { MODES, type EnforcementMode } from './enforcement';
+import { databricksPath } from './databricks/DatabricksPolicyPage';
+import EngineMark from './EngineMark';
 
 /**
  * Where a new policy runs, chosen before the form opens.
@@ -119,6 +123,44 @@ const MODE_ICONS: Record<EnforcementMode, ComponentType<{ className?: string }>>
   NATIVE_CONFIG: Settings02,
 };
 
+/** One database product and the registered connections that run it. */
+export interface EngineGroup {
+  id: string;
+  label: string;
+  sources: Source[];
+}
+
+/**
+ * The connections grouped by database product, in the server's engine order.
+ *
+ * Every engine the build governs gets a card, with or without a connection, so
+ * an author sees what ARAK can reach as well as what it reaches today. A source
+ * stored with an engine the server no longer lists still gets a group of its
+ * own: hiding it would hide a connection policies may already run on.
+ */
+export function engineGroups(
+  sources: Source[],
+  engines: SourceEngineInfo[] | undefined
+): EngineGroup[] {
+  const groups: EngineGroup[] = (engines ?? []).map((engine) => ({
+    id: engine.id,
+    label: engine.displayName,
+    sources: [],
+  }));
+  for (const source of sources) {
+    let group = groups.find((entry) => entry.id === source.engine);
+    if (!group) {
+      group = { id: source.engine, label: engineLabel(engines, source.engine), sources: [] };
+      groups.push(group);
+    }
+    group.sources.push(source);
+  }
+  for (const group of groups) {
+    group.sources.sort((a, b) => a.name.localeCompare(b.name));
+  }
+  return groups;
+}
+
 /** How a source's current mode reads on its card. */
 function modeLabel(mode: SourceMode): string {
   return ENFORCEMENT_MODES.find((entry) => entry.value === mode)?.label ?? mode;
@@ -186,6 +228,11 @@ export default function PolicyTargetPicker({
     initial.sourceId === null && initial.mode === null ? undefined : initial.sourceId
   );
   const [mode, setMode] = useState<EnforcementMode | null>(initial.mode);
+  // The database product whose connections are open below its card. Undefined
+  // follows the chosen connection, so coming back to change one reopens it.
+  const [engineId, setEngineId] = useState<string | null | undefined>(undefined);
+  const [search, setSearch] = useState('');
+  const navigate = useNavigate();
 
   const sources = useQuery({ queryKey: ['sources'], queryFn: fetchSources, retry: false });
   const { data: engines } = useSourceEngines();
@@ -195,6 +242,33 @@ export default function PolicyTargetPicker({
       ? null
       : (sources.data?.find((entry) => entry.id === sourceId) ?? null);
   const chosen = sourceId === null || source !== null;
+  const groups = engineGroups(sources.data ?? [], engines);
+  const openId = engineId === undefined ? (source?.engine ?? null) : engineId;
+  const open = groups.find((group) => group.id === openId) ?? null;
+  const needle = search.trim().toLowerCase();
+  const listed = (open?.sources ?? []).filter(
+    (entry) =>
+      !needle ||
+      entry.name.toLowerCase().includes(needle) ||
+      serviceOf(entry).toLowerCase().includes(needle)
+  );
+
+  function pickSource(entry: Source) {
+    setSourceId(entry.id);
+    const only = lockedMode(entry);
+    const noProxy =
+      engines?.find((known) => known.id === entry.engine)?.proxyCapabilities.length === 0;
+    if (only && !(only === 'PROXY' && noProxy)) setMode(only);
+    else if (only) setMode(null);
+  }
+
+  function pickEngine(group: EngineGroup) {
+    setEngineId(group.id);
+    setSearch('');
+    // A product with one connection has nothing left to ask.
+    if (group.sources.length === 1) pickSource(group.sources[0]);
+    else if (source?.engine !== group.id) setSourceId(undefined);
+  }
   const engine = source ? engines?.find((entry) => entry.id === source.engine) : undefined;
   // The query API refuses a policy it cannot express on the engine, so an
   // engine it has nothing for is not offered as a place to write for it.
@@ -258,8 +332,8 @@ export default function PolicyTargetPicker({
         </Section>
 
         <Section
-          description="The policy covers the assets of the connection chosen here, and step 3 narrows that down. Every connection leaves it to step 3 alone."
-          title="Which connection">
+          description="Choose the database product first, then which of its connections. The policy covers that connection's assets, and step 3 narrows them down. Every connection leaves it to step 3 alone."
+          title="Which database">
           {sources.isError ? (
             <p className="tw:rounded-lg tw:border tw:border-error tw:bg-error-primary tw:p-4 tw:text-sm tw:text-error-primary">
               {apiErrorMessage(sources.error, 'The connections could not be listed.')}
@@ -269,11 +343,14 @@ export default function PolicyTargetPicker({
               <Choice
                 icon={<IconTile icon={Globe01} tone="tw:bg-utility-gray-50 tw:text-utility-gray-600" />}
                 label="Every connection"
-                onSelect={() => setSourceId(null)}
+                onSelect={() => {
+                  setSourceId(null);
+                  setEngineId(null);
+                }}
                 selected={sourceId === null}>
                 <p className="tw:text-sm tw:font-semibold tw:text-primary">Every connection</p>
                 <p className="tw:mt-0.5 tw:text-sm tw:text-tertiary">
-                  Organisation-wide. Whatever step 3 selects, on any source.
+                  Organisation-wide. Whatever step 3 selects, on any database.
                 </p>
               </Choice>
               {sources.isPending
@@ -284,42 +361,98 @@ export default function PolicyTargetPicker({
                       key={index}
                     />
                   ))
-                : (sources.data ?? []).map((entry) => (
-                    <Choice
-                      icon={<IconTile icon={Database01} tone="tw:bg-utility-blue-50 tw:text-utility-blue-600" />}
-                      key={entry.id}
-                      label={entry.name}
-                      onSelect={() => {
-                        setSourceId(entry.id);
-                        const only = lockedMode(entry);
-                        const noProxy =
-                          engines?.find((known) => known.id === entry.engine)?.proxyCapabilities
-                            .length === 0;
-                        if (only && !(only === 'PROXY' && noProxy)) setMode(only);
-                        else if (only) setMode(null);
-                      }}
-                      selected={sourceId === entry.id}>
-                      <p className="tw:truncate tw:text-sm tw:font-semibold tw:text-primary">{entry.name}</p>
-                      <p className="tw:mt-0.5 tw:truncate tw:text-sm tw:text-tertiary">
-                        {engineLabel(engines, entry.engine)}
-                        {entry.engineVersion ? ` ${entry.engineVersion}` : ''}
-                        {' · '}
-                        {entry.assetCount} {entry.assetCount === 1 ? 'table' : 'tables'}
-                      </p>
-                      <div className="tw:mt-2 tw:flex tw:flex-wrap tw:gap-1.5">
-                        <Badge color={modeColor(entry.defaultEnforcementMode)} size="sm" type="pill-color">
-                          {modeLabel(entry.defaultEnforcementMode)}
-                        </Badge>
-                        {!entry.enabled && (
-                          <Badge color="warning" size="sm" type="pill-color">
-                            Disabled
-                          </Badge>
-                        )}
-                      </div>
-                    </Choice>
+                : groups.map((group) => (
+                    <EngineCard
+                      group={group}
+                      key={group.id}
+                      onSelect={() => pickEngine(group)}
+                      selected={sourceId !== null && openId === group.id}
+                    />
                   ))}
+              {/* Not one of the server's engines: Databricks is governed on a
+                  page of its own, so its card leaves this one. */}
+              <Choice
+                icon={<EngineMark id="DATABRICKS" label="Databricks" />}
+                label="Databricks"
+                onSelect={() => navigate(databricksPath(kind))}
+                selected={false}>
+                <p className="tw:truncate tw:text-sm tw:font-semibold tw:text-primary">Databricks</p>
+                <p className="tw:mt-0.5 tw:text-sm tw:text-tertiary">
+                  Configured on a page of its own.
+                </p>
+                <div className="tw:mt-2 tw:flex tw:flex-wrap tw:gap-1.5">
+                  <Badge color="gray" size="sm" type="pill-color">
+                    Separate builder
+                  </Badge>
+                </div>
+              </Choice>
             </div>
           )}
+
+          {open && sourceId !== null && open.sources.length > 0 && (
+            <section
+              aria-label="Which connection"
+              className="tw:mt-4 tw:rounded-xl tw:border tw:border-secondary tw:bg-secondary tw:p-4">
+              <div className="tw:flex tw:flex-wrap tw:items-center tw:justify-between tw:gap-3">
+                <div className="tw:flex tw:min-w-0 tw:items-center tw:gap-3">
+                  <EngineMark id={open.id} label={open.label} size="sm" />
+                  <div className="tw:min-w-0">
+                    <h3 className="tw:text-sm tw:font-semibold tw:text-primary">
+                      Which {open.label} connection
+                    </h3>
+                    <p className="tw:text-xs tw:text-tertiary">
+                      {open.sources.length === 1
+                        ? 'The only one registered, so it is chosen.'
+                        : `${open.sources.length} registered. Pick the one this policy runs on.`}
+                    </p>
+                  </div>
+                </div>
+                {open.sources.length > 6 && (
+                  <label className="tw:relative tw:w-full tw:sm:w-64">
+                    <span className="tw:sr-only">Find a connection</span>
+                    <SearchLg className="tw:pointer-events-none tw:absolute tw:top-1/2 tw:left-3 tw:size-4 tw:-translate-y-1/2 tw:text-quaternary" />
+                    <input
+                      className="tw:w-full tw:rounded-lg tw:border tw:border-primary tw:bg-primary tw:py-2 tw:pr-3 tw:pl-9 tw:text-sm tw:text-primary tw:shadow-xs tw:outline-focus-ring tw:placeholder:text-placeholder tw:focus-visible:outline-2"
+                      onChange={(event) => setSearch(event.target.value)}
+                      placeholder="Find a connection"
+                      type="search"
+                      value={search}
+                    />
+                  </label>
+                )}
+              </div>
+              <div className="tw:mt-3 tw:grid tw:gap-3 tw:sm:grid-cols-2 tw:xl:grid-cols-3">
+                {listed.map((entry) => (
+                  <Choice
+                    icon={<IconTile icon={Database01} tone="tw:bg-utility-blue-50 tw:text-utility-blue-600" />}
+                    key={entry.id}
+                    label={entry.name}
+                    onSelect={() => pickSource(entry)}
+                    selected={sourceId === entry.id}>
+                    <p className="tw:truncate tw:text-sm tw:font-semibold tw:text-primary">{entry.name}</p>
+                    <p className="tw:mt-0.5 tw:truncate tw:text-sm tw:text-tertiary">
+                      {entry.engineVersion ? `Version ${entry.engineVersion} · ` : ''}
+                      {entry.assetCount} {entry.assetCount === 1 ? 'table' : 'tables'}
+                    </p>
+                    <div className="tw:mt-2 tw:flex tw:flex-wrap tw:gap-1.5">
+                      <Badge color={modeColor(entry.defaultEnforcementMode)} size="sm" type="pill-color">
+                        {modeLabel(entry.defaultEnforcementMode)}
+                      </Badge>
+                      {!entry.enabled && (
+                        <Badge color="warning" size="sm" type="pill-color">
+                          Disabled
+                        </Badge>
+                      )}
+                    </div>
+                  </Choice>
+                ))}
+              </div>
+              {listed.length === 0 && (
+                <p className="tw:mt-3 tw:text-sm tw:text-tertiary">No {open.label} connection matches “{search.trim()}”.</p>
+              )}
+            </section>
+          )}
+
           {sources.data?.length === 0 && (
             <p className="tw:mt-3 tw:text-sm tw:text-tertiary">
               No connection is registered yet. An administrator adds one under{' '}
@@ -413,6 +546,7 @@ export default function PolicyTargetPicker({
               <span className="tw:font-medium tw:text-primary">
                 {source ? source.name : 'every connection'}
               </span>
+              {source && ` (${engineLabel(engines, source.engine)})`}
               {mode && (
                 <>
                   {', enforced by '}
@@ -423,7 +557,9 @@ export default function PolicyTargetPicker({
               )}
             </>
           ) : (
-            'Choose a connection and how it will be enforced.'
+            open && sourceId !== null
+              ? `Choose which ${open.label} connection, and how it will be enforced.`
+              : 'Choose a database, then a connection and how it will be enforced.'
           )}
         </p>
         <Button
@@ -467,6 +603,45 @@ function IconTile({
     <span className={`tw:flex tw:size-10 tw:flex-none tw:items-center tw:justify-center tw:rounded-lg ${tone}`}>
       <Icon className="tw:size-5" />
     </span>
+  );
+}
+
+/** A database product: how many connections run it and how they are enforced. */
+function EngineCard({
+  group,
+  selected,
+  onSelect,
+}: {
+  group: EngineGroup;
+  selected: boolean;
+  onSelect: () => void;
+}) {
+  const count = group.sources.length;
+  const tables = group.sources.reduce((sum, entry) => sum + entry.assetCount, 0);
+  const modes = [...new Set(group.sources.map((entry) => entry.defaultEnforcementMode))];
+  return (
+    <Choice
+      disabled={count === 0}
+      icon={<EngineMark id={group.id} label={group.label} />}
+      label={group.label}
+      onSelect={onSelect}
+      selected={selected}>
+      <p className="tw:truncate tw:text-sm tw:font-semibold tw:text-primary">{group.label}</p>
+      <p className="tw:mt-0.5 tw:truncate tw:text-sm tw:text-tertiary">
+        {count === 0
+          ? 'No connection registered yet'
+          : `${count} ${count === 1 ? 'connection' : 'connections'} · ${tables} ${tables === 1 ? 'table' : 'tables'}`}
+      </p>
+      {modes.length > 0 && (
+        <div className="tw:mt-2 tw:flex tw:flex-wrap tw:gap-1.5">
+          {modes.map((entry) => (
+            <Badge color={modeColor(entry)} key={entry} size="sm" type="pill-color">
+              {modeLabel(entry)}
+            </Badge>
+          ))}
+        </div>
+      )}
+    </Choice>
   );
 }
 

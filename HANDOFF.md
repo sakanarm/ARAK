@@ -641,7 +641,32 @@ M36 → M14 · M21 · M29 · M30 (ทุกตัวต้องมี principal
 
 ---
 
-## รอบนี้ — **ข้อ CX: เพิ่ม local account จากหน้า People · server บังคับเปลี่ยนรหัสผ่านจริง · empty state ของหน้า Policies ตาม filter**
+## รอบนี้ — **ข้อ CY: *Where it runs* เลือกยี่ห้อ database ก่อน แล้วค่อยเลือก connection · โลโก้จริง · การ์ด Databricks ไปหน้าแยก**
+
+ผู้ใช้ขอ *"Which connection เปลี่ยนเป็นชื่อ ชื่อยี่ห้อสิ แล้วอาจจะค่อยสามารถเลือก Connection ได้อีกที"* · *"ออกแบบดีๆให้หน่อย"* · *"ต้องใส่ logo จริง ของยี่ห้อนั้นๆด้วยสิ"* และ *"ให้เลือกเพิ่ม Databrick ด้วยนะ ทำเป็นหน้าไว้ก่อน … ทำหน้ากากไว้ให้เขาเชื่อม"*
+
+**`PolicyTargetPicker`** — section *Which connection* → **Which database**
+- การ์ด: Every connection · หนึ่งใบต่อ engine จาก `/v1/sources/engines` (ตามลำดับของ server · engine ที่ยังไม่มี connection แสดงแต่กดไม่ได้ *No connection registered yet*) · engine ที่ server ไม่รู้จักแต่มี source อยู่ได้การ์ดของตัวเอง (`engineGroups()`)
+- การ์ดยี่ห้อบอก จำนวน connection · จำนวน table · โหมดที่ใช้ (badge ไม่ซ้ำ)
+- กดยี่ห้อ → แผง **Which &lt;ยี่ห้อ&gt; connection** ด้านล่าง (การ์ด connection เดิม: version · tables · โหมด · Disabled) · มีช่องค้นหาเมื่อเกิน 6 ตัว · ยี่ห้อที่มี connection เดียวเลือกให้เลย · เปลี่ยนยี่ห้อแล้ว connection เดิมที่ไม่ใช่ยี่ห้อนั้นถูกล้าง
+- ปุ่ม *Change* จากฟอร์มกลับมาแล้วเปิดยี่ห้อของ connection เดิมให้
+- แถบล่าง: *on demo-pg (PostgreSQL)*
+- ⚠️ เลือกยี่ห้อ ≠ policy คลุมทุก connection ของยี่ห้อนั้น — selector ไม่มี facet engine (มีแค่ `service`) · ถ้าจะเอาแบบนั้นต้องเพิ่ม facet ใหม่ · ตอนนี้ใช้ Every connection + step 3
+
+**โลโก้** — `EngineMark.tsx` + `src/assets/engines/*.svg` (มี README บอกที่มา/license/หมายเหตุเครื่องหมายการค้า)
+- PostgreSQL · SQL Server · MySQL จาก devicon 2.17.0 (MIT) · Databricks จาก Simple Icons 16.33.0 (CC0, เติมสี `#FF3621`)
+- engine ที่ไม่มีไฟล์โลโก้ → ตัวอักษร 2 ตัวบนกล่องเทา
+
+**Databricks** — การ์ดคงที่ในหน้า (backend ยังไม่มี engine นี้) → `/policies/new/databricks?kind=…` (`pages/policies/databricks/DatabricksPolicyPage.tsx`)
+- เป็นหน้ากากรอ builder ที่อีกคนกำลังทำ · ไม่บันทึกอะไร · เชื่อมโดยวาง builder แทน `<BuilderPending />` · รับ `kind` ทาง query string
+
+**test** — `PolicyBuilderPage.test` 32 ผ่าน (+3: ยี่ห้อก่อนแล้วค่อย connection · ยี่ห้อที่ไม่มี connection กดไม่ได้ · Databricks ไปหน้าของตัวเอง) · jest ทั้งชุด 86 suites / 881 ผ่าน · type-check ผ่าน · lint มีแต่ของเดิม · ลองจริงใน local (:8150) ไม่มี page error
+- ไม่มี migration · ไม่แตะ backend
+- docs: `user-guide.md` (Writing a policy → Which database) · DESIGN M4
+
+**PR** — branch `sakan/connection-by-engine` · ผู้ใช้สั่ง *"เอาขึ้น main และ Prod เลย"*
+
+## รอบก่อน — **ข้อ CX: เพิ่ม local account จากหน้า People · server บังคับเปลี่ยนรหัสผ่านจริง · empty state ของหน้า Policies ตาม filter**
 
 ผู้ใช้ขอ *"add local account -> เอาใส่ใน People & attributes ด้วย เวลาจะสร้าง local user"* และ *"แก้ไข Bug ด้วยนะ"*
 
@@ -668,7 +693,7 @@ M36 → M14 · M21 · M29 · M30 (ทุกตัวต้องมี principal
 
 **PR** — branch `sakan/people-add-account` · ผู้ใช้สั่ง *"เอาขึ้น main + prod ทั้งหมด"* → merge แล้ว deploy prod พร้อมข้อ CU–CW
 
-## รอบก่อน — **ข้อ CW: หน้า Policies บอกว่าแต่ละ policy รันที่ connection ไหน ด้วยโหมดอะไร และ filter ได้**
+## รอบก่อนหน้า — **ข้อ CW: หน้า Policies บอกว่าแต่ละ policy รันที่ connection ไหน ด้วยโหมดอะไร และ filter ได้**
 
 ผู้ใช้ขอ *"หน้า ภาพรวม policy ต่างๆ อาจจะต้องแสดงว่า policy เป็น Type ไหน สำหรับ source ไหน Every หรือ connection ไหน ต้อง Filter ได้"*
 
