@@ -75,9 +75,15 @@ stamp_of() { if [[ -f "$RUN/$1.stamp" ]]; then cat "$RUN/$1.stamp"; fi; }
 
 # ---- backend ----
 # The docs the assistant answers from are packed into the jar (HelpDocs).
-want="$(tree_stamp pom.xml .mvn mvnw backend docs/user-guide.md docs/policy-conflict-resolution.md docs/policy-spec.md)"
+# This script is in the stamp too, so a change to how the jar is built builds it.
+want="$(tree_stamp pom.xml .mvn mvnw backend deploy/start.sh docs/user-guide.md docs/policy-conflict-resolution.md docs/policy-spec.md)"
 if [[ "$want" != "$(stamp_of backend)" || ! -f "$RUN/dac-service.jar" ]]; then
   echo "-- backend sources changed · building the jar"
+  # The build is incremental, and a resource deleted or renamed in the source
+  # stays behind in target/classes and goes into the jar. For a migration that
+  # is fatal: a renamed V<n> leaves two files with one version, and Flyway
+  # refuses to start. Copied fresh every build, so removing them costs nothing.
+  rm -rf backend/*/target/classes/db/migration
   # bash, not ./mvnw: the file was committed from Windows and may lack +x.
   # nice, because a build takes both cores for minutes and the applications
   # beside this one are serving people while it does.
