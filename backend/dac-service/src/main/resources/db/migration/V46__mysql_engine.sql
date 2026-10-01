@@ -1,4 +1,9 @@
--- V45 — MySQL joins the engines a source may name.
+-- V46 — MySQL joins the engines a source may name.
+--
+-- Numbered 46, not 45: main took V45 (grant_access.purpose) while this was on
+-- its branch, and two migrations with one number stop the service starting.
+-- A development database that ran this as V45 already has the row, so the
+-- insert leaves an existing one alone rather than failing on it.
 --
 -- V18 made this list a table so that adding an engine is a row rather than a
 -- rewritten CHECK. The code is the authoritative side
@@ -16,4 +21,5 @@
 -- proxy can do on MySQL is in the code, beside the rewriter that has to do it.
 
 INSERT INTO source_engine (id, display_name, default_port, supports_schemas) VALUES
-  ('MYSQL', 'MySQL', 3306, false);
+  ('MYSQL', 'MySQL', 3306, false)
+ON CONFLICT (id) DO NOTHING;
