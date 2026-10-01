@@ -641,7 +641,16 @@ M36 → M14 · M21 · M29 · M30 (ทุกตัวต้องมี principal
 
 ---
 
-## รอบนี้ — **แก้ migration เลขซ้ำ: `V45__mysql_engine.sql` → `V46__mysql_engine.sql`**
+## รอบนี้ — **`start.sh` ลบ migration ที่ค้างใน `target/classes` ก่อน build backend**
+
+หลัง PR #14 (V45 → V46) ขึ้น prod แล้ว service ยังไม่ start — jar ใหม่ยังมี `V45__mysql_engine.sql` ติดไปคู่กับ `V46__mysql_engine.sql` → Flyway เจอ V45 สองไฟล์เหมือนเดิม
+- สาเหตุ: build บน prod เป็นแบบ incremental (ไม่ `clean`) · ไฟล์ resource ที่ถูกลบหรือเปลี่ยนชื่อใน source ยังค้างอยู่ใน `target/classes` และถูกอัดเข้า jar
+- แก้: ก่อน `mvnw package` ลบ `backend/*/target/classes/db/migration` ทุกครั้ง (Maven copy ใหม่ทุก build อยู่แล้ว)
+- ใส่ `deploy/start.sh` เข้าไปใน stamp ของ backend ด้วย — แก้วิธี build แล้วต้อง build ใหม่ ไม่งั้น prod เห็น stamp เท่าเดิมแล้วข้าม build
+- ทดสอบในเครื่อง: วางไฟล์ V45 เก่าไว้ใน `target/classes` แล้วรันขั้นตอนเดียวกับ `start.sh` → jar มีแค่ V44 · V45 `grant_purpose` · V46 `mysql_engine`
+- **migration ใหม่ถัดไปคือ V47**
+
+## รอบก่อน — **แก้ migration เลขซ้ำ: `V45__mysql_engine.sql` → `V46__mysql_engine.sql`**
 
 PR #13 (MySQL) merge เข้า main พร้อม migration สองไฟล์ที่เป็น V45 (`grant_purpose` ของ main + `mysql_engine` ของ branch) → Flyway ไม่ยอม start ("Found more than one migration with version 45") และ CI ของ main หลัง merge fail
 - เปลี่ยนชื่อเป็น **V46** — prod มี V45 `grant_purpose` อยู่แล้ว (deploy 2026-09-30) จึงต่อด้วย V46 ได้ตรงๆ
