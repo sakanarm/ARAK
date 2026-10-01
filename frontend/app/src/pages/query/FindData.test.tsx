@@ -184,6 +184,12 @@ describe('the statement a found table offers', () => {
     );
   });
 
+  it('keeps a mixed-case name on MySQL too, and qualifies the table with its database', () => {
+    expect(draftFor({ fqn: 'demo-my.default.sales.Customer', columns: ['CustomerID'], engine: 'MYSQL' })).toBe(
+      'SELECT CustomerID\nFROM sales.Customer'
+    );
+  });
+
   it('reads the language from the sentence', () => {
     expect(findLanguage('customer emails')).toBe('English');
     expect(findLanguage('อีเมลลูกค้า')).toBe('Thai');

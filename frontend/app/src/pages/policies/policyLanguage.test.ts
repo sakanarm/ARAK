@@ -121,7 +121,7 @@ test('an engine nobody wrote notes for is reported as unverified, not as SQL Ser
     },
   };
 
-  const native = capabilities(policy, 'MYSQL').find(
+  const native = capabilities(policy, 'ORACLE').find(
     (note) => note.mode === 'NATIVE_CONFIG'
   )!;
   expect(native.support).not.toBe('full');

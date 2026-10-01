@@ -1,5 +1,6 @@
 package com.mfec.dac.common.engine;
 
+import java.util.List;
 import java.util.Set;
 
 /** PostgreSQL. */
@@ -52,6 +53,20 @@ public final class PostgresEngine implements SourceEngine {
   @Override
   public String dialectId() {
     return "POSTGRES";
+  }
+
+  /**
+   * {@inheritDoc}
+   *
+   * <p>A backslash in a plain string has been an ordinary character since 9.1,
+   * but only by default: a server or a role can still be configured the old
+   * way, and then {@code 'a\''} is one string to the server and one and a bit
+   * to the parser the proxy checks statements with. Stated here so that what
+   * the proxy read is what the server reads, whatever the server's defaults.
+   */
+  @Override
+  public List<String> sessionSetup() {
+    return List.of("SET standard_conforming_strings = on");
   }
 
   @Override

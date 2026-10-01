@@ -63,6 +63,10 @@ public class QueryLimitsConfiguration {
   @JsonProperty("maxCostSqlServer")
   private double maxCostSqlServer = 5_000;
 
+  @Min(0)
+  @JsonProperty("maxCostMySql")
+  private double maxCostMySql = 10_000_000;
+
   @Min(1)
   @JsonProperty("exportTimeoutSeconds")
   private int exportTimeoutSeconds = 600;
@@ -73,6 +77,7 @@ public class QueryLimitsConfiguration {
 
   /** Engine id to ceiling, in the form {@code QueryCostGuard} takes. */
   public Map<String, Double> costCeilings() {
-    return Map.of("POSTGRES", maxCostPostgres, "SQLSERVER", maxCostSqlServer);
+    return Map.of(
+        "POSTGRES", maxCostPostgres, "SQLSERVER", maxCostSqlServer, "MYSQL", maxCostMySql);
   }
 }

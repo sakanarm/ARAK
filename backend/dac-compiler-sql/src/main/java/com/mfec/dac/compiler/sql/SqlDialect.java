@@ -23,7 +23,7 @@ import com.mfec.dac.schema.api.MaskingSpec;
  */
 public interface SqlDialect {
 
-  /** {@code POSTGRES} or {@code SQLSERVER}, matching the source registry. */
+  /** {@code POSTGRES}, {@code SQLSERVER} or {@code MYSQL}, matching the source registry. */
   String name();
 
   /** Wraps one identifier so that a reserved word or odd casing survives. */

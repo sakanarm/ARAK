@@ -2,6 +2,7 @@ package com.mfec.dac.source;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.mfec.dac.common.engine.SourceEngines;
 import java.time.Instant;
 import java.util.List;
 import java.util.Locale;
@@ -39,10 +40,14 @@ import org.jdbi.v3.core.statement.UnableToExecuteStatementException;
  */
 public class DataSourceStore {
 
-  /** What the platform can generate SQL for today (Phase 1). */
+  /**
+   * What the platform can generate SQL for today. One name per entry of
+   * {@link SourceEngines}, which is where everything else about an engine is.
+   */
   public enum Engine {
     POSTGRES,
-    SQLSERVER
+    SQLSERVER,
+    MYSQL
   }
 
   /**
@@ -438,6 +443,17 @@ public class DataSourceStore {
             ? EnforcementMode.NONE
             : parseEnum(EnforcementMode.class, in.defaultEnforcementMode(), "enforcement mode");
 
+    // Refused where the mode is chosen, not at the first apply: a source set
+    // to a mode that cannot be installed on it reads as protected on the
+    // registry screen while nothing will ever be put there.
+    if (mode == EnforcementMode.SECURE_VIEW
+        && !SourceEngines.of(engine.name()).supportsSecureViews()) {
+      throw new InvalidSourceException(
+          "Secure views are not available on "
+              + SourceEngines.of(engine.name()).displayName()
+              + " sources. Enforce this source through the query proxy instead");
+    }
+
     String host = trimmed(in.host());
     if (host == null) {
       throw new InvalidSourceException("Give the host the database answers on");
@@ -618,7 +634,7 @@ public class DataSourceStore {
   }
 
   private static int defaultPort(Engine engine) {
-    return engine == Engine.SQLSERVER ? 1433 : 5432;
+    return SourceEngines.of(engine.name()).defaultPort();
   }
 
   private static String trimmed(String value) {

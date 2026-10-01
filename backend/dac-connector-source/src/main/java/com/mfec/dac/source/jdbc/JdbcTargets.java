@@ -5,6 +5,7 @@ import com.mfec.dac.common.engine.SourceEngines;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.SQLException;
+import java.sql.Statement;
 import java.util.Properties;
 
 /**
@@ -20,7 +21,14 @@ import java.util.Properties;
  * is not decoration: the proxy mode's whole safety argument is that a DBA can
  * tell our traffic apart from a user connecting directly, and
  * {@code pg_stat_activity} / {@code sys.dm_exec_sessions} is where they will
- * look (FR-6.3.1).
+ * look (FR-6.3.1). MySQL takes the name in its URL instead, and shows it in
+ * {@code performance_schema.session_connect_attrs}.
+ *
+ * <p>Every connection is also put into the state its engine asks for
+ * ({@link SourceEngine#sessionSetup()}) before it is handed to anybody, and one
+ * that cannot be is closed. That is here, rather than with the callers, because
+ * the proxy's reading of a statement is only right on a session set up this
+ * way, and a fourth caller must not be able to forget it.
  */
 public final class JdbcTargets {
 
@@ -70,7 +78,7 @@ public final class JdbcTargets {
     int previous = DriverManager.getLoginTimeout();
     DriverManager.setLoginTimeout(loginTimeoutSeconds);
     try {
-      Connection connection = DriverManager.getConnection(url(target), properties(credential));
+      Connection connection = connect(target, credential);
       try {
         connection.setReadOnly(true);
       } catch (SQLException ignored) {
@@ -98,9 +106,42 @@ public final class JdbcTargets {
     int previous = DriverManager.getLoginTimeout();
     DriverManager.setLoginTimeout(loginTimeoutSeconds);
     try {
-      return DriverManager.getConnection(url(target), properties(credential));
+      return connect(target, credential);
     } finally {
       DriverManager.setLoginTimeout(previous);
+    }
+  }
+
+  /**
+   * Connects and sets the session up, under whatever login timeout the caller
+   * has put in force.
+   */
+  static Connection connect(SourceProbe.Target target, CredentialResolver.Credential credential)
+      throws SQLException {
+    SourceEngine engine = SourceEngines.of(target.engine());
+    Connection connection =
+        DriverManager.getConnection(engine.jdbcUrl(coordinates(target)), properties(credential));
+    try {
+      setUp(connection, engine);
+      return connection;
+    } catch (SQLException | RuntimeException e) {
+      try {
+        connection.close();
+      } catch (SQLException ignored) {
+        // The failure worth reporting is the one that got us here.
+      }
+      throw e;
+    }
+  }
+
+  private static void setUp(Connection connection, SourceEngine engine) throws SQLException {
+    if (engine.sessionSetup().isEmpty()) {
+      return;
+    }
+    try (Statement statement = connection.createStatement()) {
+      for (String sql : engine.sessionSetup()) {
+        statement.execute(sql);
+      }
     }
   }
 }

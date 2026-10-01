@@ -70,8 +70,12 @@ class SourceCatalogImporterIT {
     when(introspector.tables(any(), any(), any(), any()))
         .thenAnswer(
             call -> {
+              String schema = call.getArgument(2, String.class);
               BiPredicate<String, String> keep = call.getArgument(3, BiPredicate.class);
-              return atSource.stream().filter(t -> keep.test(t.schema(), t.name())).toList();
+              return atSource.stream()
+                  .filter(t -> schema == null || schema.equalsIgnoreCase(t.schema()))
+                  .filter(t -> keep.test(t.schema(), t.name()))
+                  .toList();
             });
   }
 
@@ -277,5 +281,62 @@ class SourceCatalogImporterIT {
                     .list());
     assertThat(kept).containsExactly("openmetadata:Written in OpenMetadata:true");
     assertThat(verification("sales_service.salesdb.sales.customer")).isEqualTo("MATCHED");
+  }
+
+  // ------------------------------------------------ where a database is the schema
+
+  private DataSourceStore.Source registerMySql(String database) {
+    return sources.create(
+        new DataSourceStore.SourceInput(
+            "demo_mysql", "MYSQL", null, "db.example.test", 3306, database,
+            "vault://secret/data/demo", "NONE", null, null, null, true, null, null, null));
+  }
+
+  @Test
+  @DisplayName("a MySQL table is named the way OpenMetadata names it: service.default.database.table")
+  void aMySqlDatabaseSitsAtTheSchemaLevel() {
+    DataSourceStore.Source source = registerMySql("sales");
+
+    importer.importFrom(source.id(), null);
+
+    assertThat(currentTables())
+        .containsExactly(
+            "demo_mysql.default.sales.customer",
+            "demo_mysql.default.sales.orders",
+            "demo_mysql.default.sales.tmp_load");
+    // What the query proxy resolves a table by: the MySQL database, as the schema.
+    String mapped =
+        jdbi.withHandle(
+            handle ->
+                handle
+                    .createQuery(
+                        "SELECT database_name || '/' || schema_name || '/' || object_name"
+                            + " FROM asset_fqn_map WHERE om_fqn = :fqn")
+                    .bind("fqn", "demo_mysql.default.sales.customer")
+                    .mapTo(String.class)
+                    .one());
+    assertThat(mapped).isEqualTo("default/sales/customer");
+  }
+
+  @Test
+  @DisplayName("a MySQL source that names a database reads that one, and calls nothing in the others missing")
+  void namingAMySqlDatabaseDoesNotOrphanTheOthers() {
+    atSource.add(table("hr", "staff"));
+    DataSourceStore.Source source = registerMySql(null);
+    importer.importFrom(source.id(), null);
+    assertThat(currentTables()).contains("demo_mysql.default.hr.staff");
+
+    sources.update(
+        source.id(),
+        new DataSourceStore.SourceInput(
+            "demo_mysql", "MYSQL", null, "db.example.test", 3306, "sales",
+            "vault://secret/data/demo", "NONE", null, null, null, true, null, null, null));
+    SourceCatalogImporter.Report report = importer.importFrom(source.id(), null);
+
+    // hr was not read this time, which is not the same as hr.staff being gone.
+    assertThat(report.tables()).isEqualTo(3);
+    assertThat(report.missingTables()).isEmpty();
+    assertThat(verification("demo_mysql.default.hr.staff")).isEqualTo("MATCHED");
+    assertThat(currentTables()).contains("demo_mysql.default.hr.staff");
   }
 }

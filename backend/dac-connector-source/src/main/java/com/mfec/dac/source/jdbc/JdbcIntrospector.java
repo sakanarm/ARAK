@@ -1,10 +1,13 @@
 package com.mfec.dac.source.jdbc;
 
+import com.mfec.dac.common.engine.SourceEngine;
+import com.mfec.dac.common.engine.SourceEngines;
 import java.sql.Connection;
 import java.sql.DatabaseMetaData;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -25,6 +28,12 @@ import java.util.function.BiPredicate;
  * <p>It is also how a source that OpenMetadata has never ingested becomes
  * usable here at all: introspection produces assets with provenance
  * {@code discovered}, which the OpenMetadata sync is not allowed to overwrite.
+ *
+ * <p>On an engine with no schema level (MySQL) the database is read as the
+ * schema, which is where it sits in an FQN, and the server shows one connection
+ * every database its login may see. There the database the source names is
+ * what gets read when no schema is asked for; a source that names none reads
+ * them all.
  *
  * <p>Strictly read-only. It opens a connection, reads {@link DatabaseMetaData},
  * and closes.
@@ -56,7 +65,10 @@ public final class JdbcIntrospector {
     }
   }
 
-  /** Schemas that belong to the engine, never to the business. */
+  /**
+   * Schemas that belong to the engine, never to the business, whichever engine
+   * it is. An engine adds its own through {@link SourceEngine#systemSchemas()}.
+   */
   private static final Set<String> SYSTEM_SCHEMAS =
       Set.of(
           "information_schema",
@@ -113,6 +125,8 @@ public final class JdbcIntrospector {
       throws SQLException, CredentialResolver.UnresolvableCredentialException {
 
     CredentialResolver.Credential credential = credentials.resolve(credentialRef);
+    SourceEngine engine = SourceEngines.of(target.engine());
+    schemaFilter = schemaToRead(target, schemaFilter);
     try (Connection connection = JdbcTargets.open(target, credential, timeoutSeconds)) {
       String database = database(connection, target);
       DatabaseMetaData metadata = connection.getMetaData();
@@ -121,7 +135,7 @@ public final class JdbcIntrospector {
       // without a nested query per table, which on a wide catalog is the
       // difference between one round trip and a thousand.
       Map<String, Draft> drafts = new LinkedHashMap<>();
-      for (Name found : list(metadata, database, schemaFilter)) {
+      for (Name found : list(metadata, engine, database, schemaFilter)) {
         if (keep.test(found.schema(), found.name())) {
           drafts.put(found.qualified(), new Draft(found.schema(), found.name(), found.kind()));
         }
@@ -169,9 +183,30 @@ public final class JdbcIntrospector {
       throws SQLException, CredentialResolver.UnresolvableCredentialException {
 
     CredentialResolver.Credential credential = credentials.resolve(credentialRef);
+    SourceEngine engine = SourceEngines.of(target.engine());
     try (Connection connection = JdbcTargets.open(target, credential, timeoutSeconds)) {
-      return list(connection.getMetaData(), database(connection, target), schemaFilter);
+      return list(
+          connection.getMetaData(),
+          engine,
+          database(connection, target),
+          schemaToRead(target, schemaFilter));
     }
+  }
+
+  /**
+   * The schema a read is limited to: the one asked for, or, where the database
+   * is the schema, the database the source names. Null reads them all.
+   *
+   * <p>Public because a caller that goes on to decide which tables have
+   * disappeared has to know what was read, not what it asked for: a table in a
+   * database this read never looked at has not gone anywhere.
+   */
+  public static String schemaToRead(SourceProbe.Target target, String schemaFilter) {
+    if (schemaFilter != null || SourceEngines.of(target.engine()).supportsSchemas()) {
+      return schemaFilter;
+    }
+    String database = target.database();
+    return database == null || database.isBlank() ? null : database.trim();
   }
 
   private static String database(Connection connection, SourceProbe.Target target)
@@ -180,14 +215,22 @@ public final class JdbcIntrospector {
     return database == null || database.isBlank() ? target.database() : database;
   }
 
-  private static List<Name> list(DatabaseMetaData metadata, String database, String schemaFilter)
+  private static List<Name> list(
+      DatabaseMetaData metadata, SourceEngine engine, String database, String schemaFilter)
       throws SQLException {
+    Set<String> system = new HashSet<>(SYSTEM_SCHEMAS);
+    system.addAll(engine.systemSchemas());
     List<Name> out = new ArrayList<>();
     try (ResultSet rs =
         metadata.getTables(database, schemaFilter, "%", new String[] {"TABLE", "VIEW"})) {
       while (rs.next()) {
         String schema = rs.getString("TABLE_SCHEM");
-        if (schema == null || SYSTEM_SCHEMAS.contains(schema.toLowerCase(Locale.ROOT))) {
+        if (schema == null || system.contains(schema.toLowerCase(Locale.ROOT))) {
+          continue;
+        }
+        // The driver takes the filter as a LIKE pattern, so sales_db also
+        // brings back salesXdb. One schema was asked for; one is read.
+        if (schemaFilter != null && !schemaFilter.equalsIgnoreCase(schema)) {
           continue;
         }
         String name = rs.getString("TABLE_NAME");

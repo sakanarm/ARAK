@@ -11,7 +11,7 @@
   </parent>
   <artifactId>dac-connector-source</artifactId>
   <name>DAC :: Source Connector</name>
-  <description>JDBC introspection, DDL apply/rollback, drift detection, DB principal provisioning for PostgreSQL and SQL Server.</description>
+  <description>JDBC introspection, DDL apply/rollback, drift detection, DB principal provisioning for PostgreSQL, SQL Server and MySQL.</description>
 
   <dependencies>
     <dependency><groupId>${project.groupId}</groupId><artifactId>dac-spec</artifactId></dependency>
@@ -19,9 +19,11 @@
     <dependency><groupId>${project.groupId}</groupId><artifactId>dac-compiler-sql</artifactId></dependency>
     <dependency><groupId>org.postgresql</groupId><artifactId>postgresql</artifactId></dependency>
     <dependency><groupId>com.microsoft.sqlserver</groupId><artifactId>mssql-jdbc</artifactId></dependency>
+    <dependency><groupId>com.mysql</groupId><artifactId>mysql-connector-j</artifactId></dependency>
     <dependency><groupId>com.zaxxer</groupId><artifactId>HikariCP</artifactId></dependency>
     <dependency><groupId>org.testcontainers</groupId><artifactId>postgresql</artifactId><scope>test</scope></dependency>
     <dependency><groupId>org.testcontainers</groupId><artifactId>mssqlserver</artifactId><scope>test</scope></dependency>
+    <dependency><groupId>org.testcontainers</groupId><artifactId>mysql</artifactId><scope>test</scope></dependency>
     <dependency><groupId>org.testcontainers</groupId><artifactId>junit-jupiter</artifactId><scope>test</scope></dependency>
   </dependencies>
 </project>

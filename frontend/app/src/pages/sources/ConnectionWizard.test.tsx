@@ -26,8 +26,9 @@ jest.mock('../../api/client', () => ({
 }));
 
 const ENGINES: SourceEngineInfo[] = [
-  { id: 'POSTGRES', displayName: 'PostgreSQL', defaultPort: 5432, supportsSchemas: true, proxyCapabilities: [] },
-  { id: 'MSSQL', displayName: 'SQL Server', defaultPort: 1433, supportsSchemas: true, proxyCapabilities: [] },
+  { id: 'POSTGRES', displayName: 'PostgreSQL', defaultPort: 5432, supportsSchemas: true, supportsSecureViews: true, proxyCapabilities: [] },
+  { id: 'MSSQL', displayName: 'SQL Server', defaultPort: 1433, supportsSchemas: true, supportsSecureViews: true, proxyCapabilities: [] },
+  { id: 'MYSQL', displayName: 'MySQL', defaultPort: 3306, supportsSchemas: false, supportsSecureViews: false, proxyCapabilities: [] },
 ] as SourceEngineInfo[];
 
 const STORED: Source = {
@@ -120,6 +121,42 @@ describe('ConnectionWizard', () => {
     // Back to the engine is allowed from the stepper.
     fireEvent.click(within(steps).getByRole('button', { name: /Choose the engine/ }));
     expect(screen.getByRole('radio', { name: /PostgreSQL/ })).toHaveAttribute('aria-checked', 'true');
+  });
+
+  it('offers MySQL with its own port, and says what a blank database means there', async () => {
+    show();
+    const mysql = await screen.findByRole('radio', { name: /MySQL/ });
+    expect(mysql).toHaveTextContent('Port 3306');
+    // No schema level: a MySQL database is where the other two have a schema.
+    expect(mysql).toHaveTextContent('database › table');
+    fireEvent.click(mysql);
+    fireEvent.click(screen.getByRole('button', { name: 'Next' }));
+
+    expect(screen.getByLabelText('Port')).toHaveValue(3306);
+    expect(
+      screen.getByText('The database the import reads. Blank reads every database the login can see.')
+    ).toBeInTheDocument();
+  });
+
+  it('does not carry a secure view over to an engine that has none', async () => {
+    updateSource.mockImplementation(async (id, input) => ({ ...STORED, ...input, id }));
+    show({ ...STORED, defaultEnforcementMode: 'SECURE_VIEW' });
+    expect(screen.getByText(/^Secure view · /)).toBeInTheDocument();
+
+    const steps = screen.getByRole('list', { name: 'Steps' });
+    fireEvent.click(within(steps).getByRole('button', { name: /Choose the engine/ }));
+    fireEvent.click(await screen.findByRole('radio', { name: /MySQL/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Next' }));
+
+    // The server refuses the mode on MySQL; better said here than at Save.
+    expect(screen.getByText(/^Not enforced yet · /)).toBeInTheDocument();
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+    });
+    expect(updateSource).toHaveBeenCalledWith(
+      'src-1',
+      expect.objectContaining({ engine: 'MYSQL', defaultEnforcementMode: 'NONE' })
+    );
   });
 
   it('holds Register until a name, a host and a credential are given', async () => {

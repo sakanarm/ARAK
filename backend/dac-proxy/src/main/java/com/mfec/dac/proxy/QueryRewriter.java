@@ -52,7 +52,7 @@ import net.sf.jsqlparser.statement.select.WithItem;
  *
  * <h2>Fail closed, and provably so</h2>
  *
- * <p>Two gates, not one. The first is the walk below, which refuses anything
+ * <p>Three gates, not one. The first is the walk below, which refuses anything
  * that is not a {@code SELECT}, any table it cannot resolve to an asset, and
  * any asset the principal is not subscribed to. The second runs <em>after</em>
  * the rewrite: every table reference in the parser's own tree of the statement
@@ -67,6 +67,12 @@ import net.sf.jsqlparser.statement.select.WithItem;
  * output still names the physical table — inside the derived table we built,
  * which is the entire point — so counting references there can only pass
  * everything or fail everything.
+ *
+ * <p>The third is about the text rather than the tree. Both gates above trust
+ * the parser's reading of the statement, and the source reads the same text
+ * with its own lexer; {@link LexicalGate} refuses whatever the two could read
+ * differently, so that a table cannot travel inside something only the parser
+ * took for a string.
  *
  * <h2>Functions</h2>
  *
@@ -172,6 +178,15 @@ public final class QueryRewriter {
    * Parses as the source's engine writes SQL. On SQL Server {@code [name]} is a
    * quoted name, which is also how its dialect quotes the enforced form; read as
    * an array subscript instead, no statement against that engine gets through.
+   *
+   * <p>MySQL needs nothing asked of the parser, which reads a backtick as a
+   * quoted name already. It is the server that is asked instead: left alone it
+   * takes a backslash in a string for an escape and this parser does not, so
+   * the two would disagree about where a string ends. Every connection to a
+   * MySQL source is opened with {@code NO_BACKSLASH_ESCAPES}
+   * ({@code MySqlEngine#sessionSetup}), which makes the server read a string
+   * the way it was read here. {@code "text"} stays a string there and a name
+   * here, which changes nothing about where it ends.
    */
   private Statement parse(String sql) throws JSQLParserException {
     boolean brackets = "SQLSERVER".equals(dialect.name());
@@ -536,6 +551,8 @@ public final class QueryRewriter {
   /**
    * The second gate: every table the caller named must be one the walk put a
    * policy in front of — that very reference, not merely one with the same name.
+   * The third follows it: the text must read the same to the source as it did
+   * to the parser ({@link LexicalGate}).
    *
    * @param tree the parser's tree of the statement as it arrived, which holds
    *     every table reference in every position, including the ones the walk
@@ -552,6 +569,7 @@ public final class QueryRewriter {
     } catch (JSQLParserException e) {
       throw new RefusedException("The rewritten statement did not parse; it was not run", false);
     }
+    LexicalGate.check(dialect.name(), rewritten);
 
     for (SimpleNode node : nodesOf(tree)) {
       if (node.getId() != CCJSqlParserTreeConstants.JJTTABLENAME) {

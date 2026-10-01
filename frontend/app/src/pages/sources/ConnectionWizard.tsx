@@ -192,11 +192,17 @@ export default function ConnectionWizard({
   const canSave = Boolean(draft.name.trim() && draft.host.trim() && credentialReady && !scopeIssue);
 
   function chooseEngine(id: SourceEngine) {
+    const chosen = engines?.find((entry) => entry.id === id);
     patch({
       engine: id,
       // Only when the box is empty, so a deliberate port survives a change of
       // mind about the engine.
       port: draft.port ?? enginePort(engines, id) ?? null,
+      // A mode picked for one engine does not follow to one that has no such
+      // mode: the server would refuse the save, several fields later.
+      ...(draft.defaultEnforcementMode === 'SECURE_VIEW' && chosen?.supportsSecureViews === false
+        ? { defaultEnforcementMode: 'NONE' as EnforcementMode }
+        : {}),
     });
   }
 
@@ -301,7 +307,11 @@ export default function ConnectionWizard({
                 </span>
               </div>
               <FormField
-                hint="The database the import reads. Blank uses the login's default."
+                hint={
+                  engine?.supportsSchemas === false
+                    ? 'The database the import reads. Blank reads every database the login can see.'
+                    : "The database the import reads. Blank uses the login's default."
+                }
                 label="Database">
                 <TextField
                   ariaLabel="Database"
@@ -408,7 +418,7 @@ export default function ConnectionWizard({
             scope={scope}
           />
 
-          <AdvancedCard draft={draft} patch={patch} />
+          <AdvancedCard draft={draft} patch={patch} secureViews={engine?.supportsSecureViews !== false} />
 
           {problem && <Notice tone="error">{problem}</Notice>}
 
@@ -930,12 +940,16 @@ function RuleBuilder({
 function AdvancedCard({
   draft,
   patch,
+  secureViews,
 }: {
   draft: SourceInput;
   patch: (next: Partial<SourceInput>) => void;
+  /** False on an engine no secure view can be installed on, where the mode is not offered. */
+  secureViews: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const mode = ENFORCEMENT_MODES.find((entry) => entry.value === draft.defaultEnforcementMode);
+  const modes = ENFORCEMENT_MODES.filter((entry) => secureViews || entry.value !== 'SECURE_VIEW');
 
   return (
     <Card
@@ -951,7 +965,7 @@ function AdvancedCard({
         <Field className="tw:sm:col-span-2" hint={mode?.what} label="Default enforcement mode">
           <Select
             onChange={(next) => patch({ defaultEnforcementMode: next as EnforcementMode })}
-            options={ENFORCEMENT_MODES.map((entry) => ({ value: entry.value, label: entry.label }))}
+            options={modes.map((entry) => ({ value: entry.value, label: entry.label }))}
             value={draft.defaultEnforcementMode}
           />
         </Field>

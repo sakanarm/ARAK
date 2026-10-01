@@ -76,6 +76,14 @@ class JdbcTargetsTest {
   }
 
   @Test
+  void aMySqlConnectionCarriesTheSameNameInItsUrl() {
+    // Connector/J has no ApplicationName property; what a DBA sees there is a
+    // connection attribute, which has to be the name the other engines show.
+    assertThat(JdbcTargets.url(new SourceProbe.Target("MYSQL", "db.example.test", 3306, "sales")))
+        .contains("connectionAttributes=program_name:" + JdbcTargets.APPLICATION_NAME);
+  }
+
+  @Test
   void everyConnectionAnnouncesItselfUnderTheSameName() {
     // The proxy's safety argument in FR-6.3.1 is that a DBA can tell our
     // traffic from a user's in pg_stat_activity, which only holds if the

@@ -95,6 +95,22 @@ const NATIVE_MASK_NOTES: Record<string, string> = {
 const UNKNOWN_ENGINE_MASK_NOTE =
   'Native column masking on this engine has not been verified. Until it has, use a secure view or the query API for masking rather than assuming the source will apply it.';
 
+/**
+ * A mode that cannot be used on an engine at all, whatever the policy says.
+ *
+ * Prose about a product again, so keyed the same way. The server is what
+ * refuses the mode; this is so the builder says it while the policy is being
+ * written, in the same place it says everything else about a mode.
+ */
+const MODE_UNAVAILABLE: Record<string, Partial<Record<EnforcementMode, string>>> = {
+  MYSQL: {
+    SECURE_VIEW:
+      'Secure views are not available on MySQL sources yet. Use the query API to enforce this policy.',
+    NATIVE_CONFIG:
+      'MySQL has no row-level security and no column masking of its own, so there is nothing to push these rules into. Use the query API to enforce this policy.',
+  },
+};
+
 const FEATURES: Feature[] = [
   {
     used: (policy) => (policy.data?.rowFilters?.length ?? 0) > 0,
@@ -158,6 +174,10 @@ const FEATURES: Feature[] = [
 /** How well each mode would carry this policy, on this engine. */
 export function capabilities(policy: Policy, engine: Engine): CapabilityNote[] {
   return MODES.map(({ mode }) => {
+    const unavailable = MODE_UNAVAILABLE[engine]?.[mode];
+    if (unavailable) {
+      return { mode, support: 'none', gaps: [unavailable] };
+    }
     const gaps: string[] = [];
     for (const feature of FEATURES) {
       if (!feature.used(policy)) continue;

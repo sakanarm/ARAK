@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mfec.dac.auth.AuthenticatedUser;
 import com.mfec.dac.auth.Secured;
 import com.mfec.dac.catalog.SourceCatalogImporter;
+import com.mfec.dac.common.engine.SourceEngine;
 import com.mfec.dac.common.engine.SourceEngines;
 import com.mfec.dac.crypto.SecretBox;
 import com.mfec.dac.source.DataSourceStore;
@@ -217,6 +218,7 @@ public class SourceResource {
                     "displayName", engine.displayName(),
                     "defaultPort", engine.defaultPort(),
                     "supportsSchemas", engine.supportsSchemas(),
+                    "supportsSecureViews", engine.supportsSecureViews(),
                     // What the proxy can express, not what the engine can
                     // enforce natively. The console uses it to warn before a
                     // source is pointed at a mode that will refuse its
@@ -432,7 +434,9 @@ public class SourceResource {
     } else if (existing != null) {
       port = existing.port();
     } else {
-      port = "SQLSERVER".equalsIgnoreCase(engine) ? 1433 : 5432;
+      // An engine nobody registered has no port to offer, and the probe says
+      // so by name a few lines on; the connection is never attempted.
+      port = SourceEngines.find(engine).map(SourceEngine::defaultPort).orElse(1);
     }
     if (port < 1 || port > 65_535) {
       throw new BadRequestException("Port must be between 1 and 65535");

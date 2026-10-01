@@ -39,6 +39,10 @@ import java.util.Set;
  *       left out; a deny that reaches it through a role is not traced.
  * </ul>
  *
+ * <p>MySQL is not read yet. Its grants are in tables a read-only login
+ * usually cannot see, and a list made from the part it can see would leave
+ * people out; the check is refused there rather than answered short.
+ *
  * <p>A role that cannot log in is listed with the logins that inherit it, since
  * a role nobody can log in as is only a risk through its members.
  *
@@ -352,7 +356,12 @@ public final class DirectAccessReader {
         case "POSTGRES", "POSTGRESQL" -> POSTGRES;
         case "SQLSERVER", "MSSQL" -> SQLSERVER;
         default ->
-            throw new IllegalArgumentException("Cannot read who holds a table on " + engine);
+            // Said as "cannot", never as an empty list: no holders found would
+            // read as nobody else being able to reach the table.
+            throw new IllegalArgumentException(
+                "Who can read a table directly cannot be checked on a "
+                    + engine
+                    + " source yet. Restrict direct logins at the database itself");
       };
     }
   }

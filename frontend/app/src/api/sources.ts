@@ -30,8 +30,16 @@ export interface SourceEngineInfo {
   id: SourceEngine;
   displayName: string;
   defaultPort: number;
-  /** False where a database is the schema, as in MySQL, which shortens the FQN. */
+  /**
+   * False where a database is the schema, as in MySQL. A table there is
+   * `service.default.<database>.<table>`, the way OpenMetadata names it.
+   */
   supportsSchemas: boolean;
+  /**
+   * Whether a secure view can be installed on this engine. Where it cannot,
+   * the server refuses the mode, so the console does not offer it.
+   */
+  supportsSecureViews: boolean;
   /**
    * What the query proxy can express on this engine — not what the engine can
    * enforce natively. A policy needing a treatment missing from this list is

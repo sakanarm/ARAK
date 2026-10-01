@@ -1,5 +1,6 @@
 package com.mfec.dac.common.engine;
 
+import java.util.List;
 import java.util.Set;
 
 /**
@@ -62,10 +63,13 @@ public interface SourceEngine {
    * Whether this engine has a schema level between the database and the table.
    *
    * <p>Not cosmetic and not a formatting question: MySQL's "database" and
-   * "schema" are the same object, so an FQN built for it has one fewer level
-   * than one built for Postgres. Anything that parses or assembles an FQN has
-   * to ask rather than assume, which is why this is on the interface before an
-   * engine that answers {@code false} exists.
+   * "schema" are the same object, so a table there has one fewer level above
+   * it than one on Postgres. The FQN keeps its four segments all the same,
+   * because OpenMetadata's does: the MySQL database sits at the schema level
+   * and the database level is the placeholder {@link #PLACEHOLDER_DATABASE},
+   * so a table imported here and the same table crawled from OpenMetadata get
+   * one FQN rather than two. Anything that assembles an FQN or lists a
+   * catalog has to ask rather than assume.
    */
   boolean supportsSchemas();
 
@@ -93,6 +97,55 @@ public interface SourceEngine {
    * compared, but this set is the one the proxy obeys.
    */
   Set<String> proxyCapabilities();
+
+  /**
+   * Statements to run on every connection before anything else is sent on it.
+   *
+   * <p>For what has to be true of the session for the rest of this platform to
+   * be right about it, and that a connection property cannot say. The use so
+   * far is making a backslash an ordinary character in a string, on the
+   * engines where that is a setting, because the parser the proxy checks
+   * statements with always reads it as one.
+   *
+   * <p>A statement here that fails means no connection: whoever opens one runs
+   * these and gives the connection up if any of them is refused, rather than
+   * going on with a session that is not what the proxy assumed.
+   */
+  default List<String> sessionSetup() {
+    return List.of();
+  }
+
+  /**
+   * Schemas that belong to this engine and never to the business, lower case,
+   * beyond the ones every engine here shares.
+   *
+   * <p>On the engine because the names are not reserved anywhere else: a
+   * schema called {@code mysql} on a PostgreSQL server is somebody's data, and
+   * a single list for all engines would leave it out of the catalog without
+   * saying so.
+   */
+  default Set<String> systemSchemas() {
+    return Set.of();
+  }
+
+  /**
+   * Whether the secure-view mode (5.1.2) has been written for this engine.
+   *
+   * <p>A fact about this build, like {@link #proxyCapabilities()}: the mode
+   * installs a view and entitlement tables whose DDL, and whose idea of who is
+   * reading, are spelled per engine. An engine that answers {@code false} can
+   * still be catalogued and read through the proxy; a secure view on it is
+   * refused by name instead of failing halfway through a {@code CREATE VIEW}.
+   */
+  default boolean supportsSecureViews() {
+    return true;
+  }
+
+  /**
+   * The database segment of an FQN on an engine with no schema level, which is
+   * what OpenMetadata calls it when its connector is given no other name.
+   */
+  String PLACEHOLDER_DATABASE = "default";
 
   /** Coordinates of one database on one host; the credential is deliberately not here. */
   record JdbcCoordinates(String host, int port, String database) {

@@ -20,5 +20,7 @@
     <dependency><groupId>${project.groupId}</groupId><artifactId>dac-compiler-sql</artifactId></dependency>
     <dependency><groupId>${project.groupId}</groupId><artifactId>dac-connector-source</artifactId></dependency>
     <dependency><groupId>com.github.jsqlparser</groupId><artifactId>jsqlparser</artifactId></dependency>
+    <dependency><groupId>org.testcontainers</groupId><artifactId>mysql</artifactId><scope>test</scope></dependency>
+    <dependency><groupId>org.testcontainers</groupId><artifactId>junit-jupiter</artifactId><scope>test</scope></dependency>
   </dependencies>
 </project>

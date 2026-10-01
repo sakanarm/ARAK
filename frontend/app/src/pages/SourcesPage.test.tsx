@@ -59,7 +59,7 @@ beforeEach(() => {
   jest.clearAllMocks();
   admin = true;
   fetchEngines.mockResolvedValue([
-    { id: 'POSTGRES', displayName: 'PostgreSQL', defaultPort: 5432, supportsSchemas: true, proxyCapabilities: [] },
+    { id: 'POSTGRES', displayName: 'PostgreSQL', defaultPort: 5432, supportsSchemas: true, supportsSecureViews: true, proxyCapabilities: [] },
   ] as SourceEngineInfo[]);
   fetchSources.mockResolvedValue([SOURCE]);
 });
