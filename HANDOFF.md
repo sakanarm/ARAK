@@ -641,7 +641,14 @@ M36 → M14 · M21 · M29 · M30 (ทุกตัวต้องมี principal
 
 ---
 
-## รอบนี้ — **ข้อ CZ: ปุ่ม New policy เป็นเมนูเลือกชนิด · เลือกชนิดมาแล้ว หน้าไม่ถามซ้ำ · แยกหน้า Subscription / Data Access Policy เป็นไฟล์และ route ของตัวเอง**
+## รอบนี้ — **แก้ migration เลขซ้ำ: `V45__mysql_engine.sql` → `V46__mysql_engine.sql`**
+
+PR #13 (MySQL) merge เข้า main พร้อม migration สองไฟล์ที่เป็น V45 (`grant_purpose` ของ main + `mysql_engine` ของ branch) → Flyway ไม่ยอม start ("Found more than one migration with version 45") และ CI ของ main หลัง merge fail
+- เปลี่ยนชื่อเป็น **V46** — prod มี V45 `grant_purpose` อยู่แล้ว (deploy 2026-09-30) จึงต่อด้วย V46 ได้ตรงๆ
+- `INSERT … ON CONFLICT (id) DO NOTHING` — DB สำหรับ dev ที่เคยรัน MySQL เป็น V45 มีแถว `MYSQL` อยู่แล้ว · DB แบบนั้นต้องลบแถว `45 | mysql engine` ใน `flyway_schema_history` หนึ่งแถวก่อน start (ข้อมูลอื่นไม่ต้องแตะ)
+- ไม่แตะ migration อื่น
+
+## รอบก่อน — **ข้อ CZ: ปุ่ม New policy เป็นเมนูเลือกชนิด · เลือกชนิดมาแล้ว หน้าไม่ถามซ้ำ · แยกหน้า Subscription / Data Access Policy เป็นไฟล์และ route ของตัวเอง**
 
 ผู้ใช้ขอ *"ตอนกด new policy ให้มี sub menu 1. Subscription 2. Data"* และ *"ถ้าเลือก Subscription Policy ชื่อหน้าต้อง Subscription policy และ ไม่ต้องให้เห็น option data policy"*
 
