@@ -50,6 +50,8 @@ export interface NativeSource {
   engine: string;
   enabled: boolean;
   database: string;
+  /** The connection's enforcement mode; roles are pushed only under NATIVE_CONFIG. */
+  mode: string | null;
   credential: NativeCredentialInfo;
   logins: number;
   roles: number;

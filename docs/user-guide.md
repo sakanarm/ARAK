@@ -859,9 +859,12 @@ asks **where the policy runs**, on a page of its own, before the form opens:
   out and marked *Not set on this connection*. **Every connection** keeps all
   three, since each connection is enforced by its own mode. The builder checks
   the policy against this mode while you write it and marks it *Chosen* in the
-  rail. *Query API* is not offered on an engine it has nothing for. *Native
-  source config* is marked *Checked, not applied yet*: ARAK does not push
-  native config yet.
+  rail. *Query API* is not offered on an engine it has nothing for. For a
+  subscription policy on PostgreSQL (or on **Every connection**), *Native
+  source config* is marked *Pushed as PostgreSQL roles*: once the policy is
+  saved, plan and apply its role under the policy's **PostgreSQL roles** tab.
+  Everywhere else, and for every data policy, it is marked *Checked, not
+  applied yet*: ARAK does not push that native config yet.
 
 The mode is **not saved in the policy**. A policy is always enforced by the mode
 its connection is set to under **Sources**, so a policy cannot quietly stop
@@ -1016,8 +1019,8 @@ in, and can use nothing else until they do.
   anything changed since the review), and **Roll back** undoes it after
   confirmation.
 - **PostgreSQL roles**, a tab on a subscription policy's page, pushes that
-  policy to a PostgreSQL source as a database role, so people read with their
-  own login. See *PostgreSQL roles* below.
+  policy as a database role to a PostgreSQL source set to *Native source
+  config*, so people read with their own login. See *PostgreSQL roles* below.
 - **Settings → OpenMetadata connection** and **Sync & reconcile** control where
   metadata comes from and when it is refreshed. **Service & build** shows the
   running version and the last crawl.
@@ -1025,15 +1028,31 @@ in, and can use nothing else until they do.
 ## PostgreSQL roles: a subscription policy on the database itself
 
 A subscription policy is normally enforced on the Query page. On a PostgreSQL
-source it can also be pushed to the database as a **role**, so that people
-read with their own database login, from any tool, and the database itself
-lets them in or keeps them out.
+source set to **Native source config** it is also pushed to the database as a
+**role**, so that people read with their own database login, from any tool,
+and the database itself lets them in or keeps them out.
 
 Open a subscription policy and choose the **PostgreSQL roles** tab (data
 policies do not have it). ARAK keeps one role for the policy on each
-PostgreSQL source, named `arak_sub_<policy>_<source>` after the first eight
-characters of each id. The role cannot log in. It holds the tables the policy
-applies to, and its members are the logins of the people the policy lets in.
+PostgreSQL source set to Native source config, named
+`arak_sub_<policy>_<source>` after the first eight characters of each id. The
+role cannot log in. It holds the tables the policy applies to, and its members
+are the logins of the people the policy lets in.
+
+**The connection's mode.** A connection has one enforcement mode, set under
+**Sources**, and it holds for its subscription and data policies alike. Roles
+are planned and applied only on a source set to *Native source config*. On a
+source set to any other mode the tab marks it *Not set to native*, says which
+mode it is enforced by, and Plan is off. On a native source the Query page
+keeps working: a query sent there is still checked by ARAK against every
+policy.
+
+A source with a role on it keeps its native mode. To change its mode under
+Sources, roll back each policy's role on it first; until then saving another
+mode is refused and says so. If a role is ever found on a source that is no
+longer native, it lets nobody in: **Check** says *Nobody should hold the
+role: roll it back*, and the sweep takes its members out. Check and Roll back
+still work there.
 
 **Levels.** Choose one before you plan:
 
@@ -1116,7 +1135,8 @@ back.
 
 **The sweep.** Every 10 minutes ARAK takes people out of the role who no
 longer qualify: they left the group, their login was unmapped, the policy was
-disabled or ended. It never adds anybody: new people join at the next apply.
+disabled or ended, or the source is no longer set to native source config. It
+never adds anybody: new people join at the next apply.
 Each removal is on the history as *EXPIRE* by `system:native-sweep`. A source
 that is switched off, or has no push account, is skipped.
 

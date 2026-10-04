@@ -272,6 +272,15 @@ public class DataSourceStore {
     return find(id).orElseThrow();
   }
 
+  /**
+   * Saves a source.
+   *
+   * <p>A source whose subscription policies are pushed as PostgreSQL roles
+   * keeps its native mode until those roles are rolled back: the mode is what
+   * says where the policies are enforced, and roles left behind under another
+   * mode would keep letting people in that the new mode no longer accounts for.
+   * The check sits in the UPDATE itself, so an apply cannot slip in between.
+   */
   public Source update(UUID id, SourceInput input) {
     find(id).orElseThrow(() -> new NoSuchSourceException(id));
     Validated v = validate(input, true);
@@ -295,6 +304,13 @@ public class DataSourceStore {
                                  enabled = :enabled,
                                  updated_at = now()
                            WHERE id = :id
+                             AND (:mode = 'NATIVE_CONFIG'
+                                  OR default_enforcement_mode = :mode
+                                  OR NOT EXISTS (
+                                       SELECT 1 FROM native_role r
+                                        WHERE r.data_source_id = data_source.id
+                                          AND r.status <> 'ROLLED_BACK'
+                                          AND r.applied_fingerprint IS NOT NULL))
                           """)
                       .bind("id", id)
                       .bind("name", v.name)
@@ -313,7 +329,12 @@ public class DataSourceStore {
                       .bind("enabled", v.enabled)
                       .execute());
       if (rows == 0) {
-        throw new NoSuchSourceException(id);
+        Source current = find(id).orElseThrow(() -> new NoSuchSourceException(id));
+        throw new SourceConflictException(
+            current.name()
+                + " has subscription policies pushed to it as PostgreSQL roles. Roll them back "
+                + "first, under each policy's PostgreSQL roles tab, then change its enforcement "
+                + "mode.");
       }
     } catch (UnableToExecuteStatementException e) {
       throw nameTaken(e, v.name);

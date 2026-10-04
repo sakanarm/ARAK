@@ -783,6 +783,116 @@ class NativeSubscriptionServiceIT {
         .hasMessageContaining("is disabled");
   }
 
+  // ------------------------------------------------- the connection's mode
+
+  @Test
+  @DisplayName("a source set to the query proxy is not planned: one connection, one mode")
+  void aProxySourceIsNotPlanned() throws SQLException {
+    UUID policy = activePolicy("Sales readers");
+    bind(policy, "orders");
+    letIn("alice", policy);
+    setMode("PROXY");
+
+    assertThatThrownBy(() -> service.plan(policy, src, null, ADMIN, ADMIN_IP))
+        .isInstanceOf(NativeSubscriptionService.RefusedException.class)
+        .hasMessageContaining("is enforced by the query proxy")
+        .hasMessageContaining("Set it to native source config");
+    assertThat(roleExists(PostgresGrantCompiler.roleName(policy, src))).isFalse();
+    assertThat(service.history(policy, src, 1))
+        .extracting(EnforcementStateStore.AuditEntry::action)
+        .containsExactly("DRY_RUN");
+    assertThat(service.sources())
+        .singleElement()
+        .extracting(NativeSubscriptionService.SourceView::mode)
+        .isEqualTo("PROXY");
+  }
+
+  @Test
+  @DisplayName("a plan reviewed under native cannot be applied once the source has moved off it")
+  void aPlanIsNotAppliedAfterTheModeChanged() throws SQLException {
+    UUID policy = activePolicy("Sales readers");
+    bind(policy, "orders");
+    letIn("alice", policy);
+    NativeSubscriptionService.Preview preview = service.plan(policy, src, null, ADMIN, ADMIN_IP);
+    setMode("SECURE_VIEW");
+
+    assertThatThrownBy(() -> service.apply(policy, src, preview.reviewId(), ADMIN, ADMIN_IP))
+        .isInstanceOf(NativeSubscriptionService.RefusedException.class)
+        .hasMessageContaining("is enforced by secure views");
+    assertThat(roleExists(PostgresGrantCompiler.roleName(policy, src))).isFalse();
+  }
+
+  @Test
+  @DisplayName("while roles are installed the source keeps native source config")
+  void installedRolesHoldTheMode() throws SQLException {
+    UUID policy = activePolicy("Sales readers");
+    bind(policy, "orders");
+    letIn("alice", policy);
+    applyNow(policy, null);
+
+    assertThatThrownBy(() -> setMode("PROXY"))
+        .isInstanceOf(DataSourceStore.SourceConflictException.class)
+        .hasMessageContaining("Roll them back first");
+    assertThat(rowsAs("alice", "SELECT count(*) FROM sales.orders")).containsExactly("2");
+
+    service.rollback(policy, src, ADMIN, ADMIN_IP);
+    setMode("PROXY");
+    assertThat(sources.find(src).orElseThrow().defaultEnforcementMode())
+        .isEqualTo(DataSourceStore.EnforcementMode.PROXY);
+  }
+
+  @Test
+  @DisplayName("roles left on a source under another mode are swept empty, checked as nobody's,"
+      + " and can still be rolled back")
+  void rolesUnderAnotherModeAreSweptEmpty() throws SQLException {
+    UUID policy = activePolicy("Sales readers");
+    bind(policy, "orders");
+    letIn("alice", policy);
+    applyNow(policy, null);
+    String role = PostgresGrantCompiler.roleName(policy, src);
+    // How a source pushed to before modes were enforced looks: the store
+    // itself no longer lets the mode move while the role is installed.
+    jdbi.useHandle(
+        handle ->
+            handle.execute(
+                "UPDATE data_source SET default_enforcement_mode = 'PROXY' WHERE id = ?", src));
+
+    NativeSubscriptionService.Check check = service.check(policy, src, ADMIN, ADMIN_IP);
+    assertThat(check.warnings()).anyMatch(n -> n.contains("Nobody should hold the role"));
+    assertThat(check.satisfied()).isFalse();
+    assertThat(rowsAs("alice", "SELECT count(*) FROM sales.orders")).containsExactly("2");
+
+    assertThat(service.sweep().revoked()).isEqualTo(1);
+    assertThatThrownBy(() -> rowsAs("alice", "SELECT 1"))
+        .hasMessageContaining("permission denied for database");
+    assertThat(roleExists(role)).isTrue();
+    String detail =
+        jdbi.withHandle(
+            handle ->
+                handle
+                    .createQuery("SELECT detail FROM native_role WHERE role_name = ?")
+                    .bind(0, role)
+                    .mapTo(String.class)
+                    .one());
+    assertThat(detail)
+        .startsWith("Taken away because nobody should hold the role: revoke member alice")
+        .contains("is enforced by the query proxy");
+
+    assertThat(service.rollbackPlan(policy, src).script()).contains("DROP ROLE");
+    assertThat(service.rollback(policy, src, ADMIN, ADMIN_IP).role().status())
+        .isEqualTo("ROLLED_BACK");
+    assertThat(roleExists(role)).isFalse();
+  }
+
+  private void setMode(String mode) {
+    sources.update(
+        src,
+        new DataSourceStore.SourceInput(
+            "it_pg", "POSTGRES", null, POSTGRES.getHost(),
+            POSTGRES.getMappedPort(PostgreSQLContainer.POSTGRESQL_PORT), db,
+            "env:IT_SOURCE_LOGIN", mode, "it_pg", "sec", "{table}", true));
+  }
+
   // ---------------------------------------------------------- rollback
 
   @Test
