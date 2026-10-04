@@ -646,13 +646,13 @@ M36 → M14 · M21 · M29 · M30 (ทุกตัวต้องมี principal
 ## รอบนี้ — **ข้อ DB: push ตามโหมดของ connection (แก้กติกาของข้อ DA)**
 
 ผู้ใช้ (2026-10-04): *"Connection 1 อัน ถ้า set เป็น proxy ก็คือ ใช้ proxy ทั้ง Subscription และ data policy ถ้า set เป็น Push down ก็ต้องทั้ง Subscription และ data policy"* · ข้อ DA ทำ push เป็น tab ต่อ policy ที่ plan / apply ได้แม้ source ตั้งเป็น Query proxy → ผิดกติกานี้ · *"แก้เลย แล้วทดสอบใหม่หมด เขียน case excel ให้ใหม่ด้วย"* · *"อย่าให้กระทบ proxy เดิม"*
-branch `sakan/native-follows-connection-mode` → PR · **ยังไม่ merge ยังไม่ deploy** (รอผู้ใช้สั่ง)
+branch `sakan/native-follows-connection-mode` → PR #17 · **merge แล้ว** 2026-10-04 (`1c938e8`) · **deploy prod แล้ว** 2026-10-04
 
 **การตัดสินใจของผู้ใช้ (2026-10-04)**
 - โหมดเป็นของ connection (`data_source.default_enforcement_mode`) ไม่ใช่ของ policy · ไม่ต้องแยก policy ตามโหมด
 - แก้ฝั่ง subscription ตอนนี้ · push ของ Data policy **เพื่อนทำ** (ใช้ push account / gate / ล็อกโหมดชุดเดียวกัน)
 - source ที่เป็น Native **ยัง query ผ่าน ARAK ได้** — proxy ไม่ดูโหมด และข้อนี้ไม่แตะ proxy เลย
-- prod: ตอน deploy เปลี่ยน source PostgreSQL ของ prod เป็น Native source config (ทำเมื่อผู้ใช้สั่ง deploy)
+- prod: ตอน deploy เปลี่ยน source PostgreSQL ของ prod เป็น Native source config — **ทำแล้ว** 2026-10-04
 
 **ทำอะไร**
 - `NativeSubscriptionService` — plan / apply บน source ที่ไม่ใช่ `NATIVE_CONFIG` → 422 *"<source> is enforced by the query proxy, not native source config, so its policies are not pushed to it as roles…"* (ลง audit `REFUSED`) · apply ตรวจโหมดซ้ำ (plan ตอน Native แล้วสลับโหมดก่อน apply → ปฏิเสธ ไม่มี role เกิด)
@@ -678,8 +678,9 @@ branch `sakan/native-follows-connection-mode` → PR · **ยังไม่ mer
 - column grant ไม่มีผลถ้า role ถือ SELECT ทั้ง table → ต้องแก้ `PostgresGrantCompiler` ร่วมกัน · `NativeMembership` ตอนนี้กันคนที่มี row filter / mask / hidden column ที่ Read ออกทั้ง role · mask บน PG ต้องใช้ `anon` → ปฏิเสธไปก่อน
 
 **ยังไม่ได้ทำ / prod**
-- merge + deploy รอผู้ใช้สั่ง → แล้วเปลี่ยน source PostgreSQL ของ prod เป็น Native source config
-- DBA ยังต้องสร้าง push account บน prod (ข้อความที่ส่งไปแล้วใช้ได้ ไม่ต้องแก้) → หลังจากนั้นทดสอบ native บน prod + Excel ของ prod
+- **prod (2026-10-04)** — source PostgreSQL ของ prod เปลี่ยนเป็น Native source config ก่อน deploy (แก้แค่โหมด field อื่นเหมือนเดิม) · merge PR #17 แล้ว deploy · หลัง deploy source ยังเป็น Native · pm2 restart แค่ `arak` แอปอื่นไม่ขยับ
+- เปลี่ยนเป็น Native ไม่เปลี่ยนผลของ query ผ่าน ARAK เพราะ proxy ไม่ดูโหมด (NM-12 ในเครื่อง: 410 query ไม่ต่าง)
+- **รอ DBA** ให้ role `arak_push` (push account) บน prod (ข้อความที่ส่งไปแล้วใช้ได้ ไม่ต้องแก้) → หลังจากนั้นผู้ใช้ทดสอบ native บน prod + Excel ของ prod
 - ข้อนี้ไม่มี migration · migration ใหม่ถัดไปยังเป็น **V48**
 
 ## รอบก่อน — **ข้อ DA: Subscription policy ลงไปเป็น role บน PostgreSQL (M6 · 5.1.1 · push-down ส่วนแรก)**
