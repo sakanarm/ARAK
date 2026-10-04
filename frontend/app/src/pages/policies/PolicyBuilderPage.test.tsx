@@ -373,14 +373,54 @@ describe('where a new policy runs', () => {
     expect(screen.queryByText('Not set on this connection')).not.toBeInTheDocument();
   });
 
-  test('native config is checked but not applied yet', async () => {
+  test('a data policy under native config is checked but not applied yet', async () => {
     renderNew('/policies/new');
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Every connection' }));
+    fireEvent.click(await screen.findByRole('button', { name: /Data policy/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Every connection' }));
     fireEvent.click(screen.getByRole('button', { name: 'Native source config' }));
 
     expect(screen.getByText('Checked, not applied yet')).toBeInTheDocument();
     expect(screen.getByText(/does not push native config to a source yet/)).toBeInTheDocument();
+  });
+
+  test('a subscription policy under native config is pushed as PostgreSQL roles', async () => {
+    renderNew('/policies/new/subscription');
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Every connection' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Native source config' }));
+
+    expect(screen.getByText('Pushed as PostgreSQL roles')).toBeInTheDocument();
+    expect(screen.getByText(/as a PostgreSQL role to each PostgreSQL source set to native/)).toBeInTheDocument();
+    expect(screen.queryByText('Checked, not applied yet')).not.toBeInTheDocument();
+  });
+
+  test('a subscription policy on a native PostgreSQL connection names it', async () => {
+    fetchSources.mockResolvedValue([source({ defaultEnforcementMode: 'NATIVE_CONFIG' })]);
+    renderNew('/policies/new/subscription');
+
+    fireEvent.click(await screen.findByRole('button', { name: 'PostgreSQL' }));
+
+    expect(screen.getByRole('button', { name: 'Native source config' })).toHaveAttribute(
+      'aria-pressed',
+      'true'
+    );
+    expect(screen.getByText(/ARAK pushes this policy to demo-pg as a PostgreSQL role/)).toBeInTheDocument();
+    expect(screen.getByText(/under its PostgreSQL roles tab/)).toBeInTheDocument();
+  });
+
+  test('a subscription policy on another engine is not pushed', async () => {
+    fetchSources.mockResolvedValue([
+      source({ id: 'src-my', name: 'demo-my', engine: 'MYSQL', defaultEnforcementMode: 'NATIVE_CONFIG' }),
+    ]);
+    renderNew('/policies/new/subscription');
+
+    fireEvent.click(await screen.findByRole('button', { name: 'MySQL' }));
+
+    await waitFor(() =>
+      expect(screen.getByText(/to PostgreSQL only so far, not to demo-my/)).toBeInTheDocument()
+    );
+    expect(screen.getByText('Checked, not applied yet')).toBeInTheDocument();
   });
 
   test('the query API is not offered on an engine it has nothing for', async () => {

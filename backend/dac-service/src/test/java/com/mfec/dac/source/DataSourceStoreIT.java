@@ -357,6 +357,93 @@ class DataSourceStoreIT {
     assertThat(storedScope(created.id())).isNull();
   }
 
+  private static DataSourceStore.SourceInput withMode(String mode, String host) {
+    DataSourceStore.SourceInput base = valid("prod_pg");
+    return new DataSourceStore.SourceInput(
+        base.name(), base.engine(), base.engineVersion(), host, base.port(),
+        base.defaultDatabase(), base.credentialRef(), mode, base.omServiceFqn(),
+        base.secureSchema(), base.secureObjectPattern(), base.enabled());
+  }
+
+  @Test
+  @DisplayName("a source with roles pushed to it keeps native source config until they are"
+      + " rolled back")
+  void pushedRolesHoldTheNativeMode() {
+    UUID id = store.create(withMode("NATIVE_CONFIG", "db.example.test")).id();
+    insertRole(id, "APPLIED", "fingerprint-1");
+
+    for (String other : List.of("PROXY", "SECURE_VIEW", "NONE")) {
+      assertThatThrownBy(() -> store.update(id, withMode(other, "db.example.test")))
+          .isInstanceOf(DataSourceStore.SourceConflictException.class)
+          .hasMessageContaining("pushed to it as PostgreSQL roles")
+          .hasMessageContaining("Roll them back first");
+    }
+    assertThat(store.find(id).orElseThrow().defaultEnforcementMode())
+        .isEqualTo(DataSourceStore.EnforcementMode.NATIVE_CONFIG);
+
+    // The rest of it can still change.
+    assertThat(store.update(id, withMode("NATIVE_CONFIG", "db2.example.test")).host())
+        .isEqualTo("db2.example.test");
+
+    rollBack(id);
+    assertThat(store.update(id, withMode("PROXY", "db2.example.test")).defaultEnforcementMode())
+        .isEqualTo(DataSourceStore.EnforcementMode.PROXY);
+  }
+
+  @Test
+  @DisplayName("a role that was planned or failed but never applied does not hold the mode")
+  void aRoleNeverAppliedHoldsNothing() {
+    UUID id = store.create(withMode("NATIVE_CONFIG", "db.example.test")).id();
+    insertRole(id, "FAILED", null);
+
+    assertThat(store.update(id, withMode("PROXY", "db.example.test")).defaultEnforcementMode())
+        .isEqualTo(DataSourceStore.EnforcementMode.PROXY);
+  }
+
+  @Test
+  @DisplayName("roles left on a source under another mode do not stop it being edited, or"
+      + " being set to native")
+  void rolesLeftUnderAnotherMode() {
+    UUID id = store.create(withMode("PROXY", "db.example.test")).id();
+    insertRole(id, "APPLIED", "fingerprint-1");
+
+    assertThat(store.update(id, withMode("PROXY", "db2.example.test")).host())
+        .isEqualTo("db2.example.test");
+    assertThatThrownBy(() -> store.update(id, withMode("SECURE_VIEW", "db2.example.test")))
+        .isInstanceOf(DataSourceStore.SourceConflictException.class);
+    assertThat(store.update(id, withMode("NATIVE_CONFIG", "db2.example.test"))
+            .defaultEnforcementMode())
+        .isEqualTo(DataSourceStore.EnforcementMode.NATIVE_CONFIG);
+  }
+
+  private void insertRole(UUID sourceId, String status, String fingerprint) {
+    jdbi.useHandle(
+        handle ->
+            handle
+                .createUpdate(
+                    """
+                    INSERT INTO native_role (policy_id, data_source_id, role_name, database_name,
+                                             access_level, status, applied_fingerprint)
+                    VALUES (gen_random_uuid(), :sourceId, :roleName, 'salesdb', 'READ', :status,
+                            :fingerprint)
+                    """)
+                .bind("sourceId", sourceId)
+                .bind("roleName", "arak_sub_" + UUID.randomUUID().toString().substring(0, 8))
+                .bind("status", status)
+                .bind("fingerprint", fingerprint)
+                .execute());
+  }
+
+  private void rollBack(UUID sourceId) {
+    jdbi.useHandle(
+        handle ->
+            handle
+                .createUpdate(
+                    "UPDATE native_role SET status = 'ROLLED_BACK' WHERE data_source_id = :id")
+                .bind("id", sourceId)
+                .execute());
+  }
+
   @Test
   @DisplayName("a scope that would read nothing is refused with the form's sentence")
   void anEmptyOnlyScopeIsRefused() {

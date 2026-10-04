@@ -191,14 +191,24 @@ export function lockedMode(source: Source | null): EnforcementMode | null {
 }
 
 /**
+ * Whether ARAK pushes this kind of policy to this source under native config:
+ * a subscription policy goes to PostgreSQL as a role. Every connection may
+ * hold a PostgreSQL source, so it counts too.
+ */
+export function pushesNative(kind: PolicyKind, source: Source | null): boolean {
+  return kind === 'SUBSCRIPTION' && (!source || source.engine === 'POSTGRES');
+}
+
+/**
  * What choosing this mode on this source means, or null when it means nothing
  * more than what the card says.
  */
-export function modeNote(source: Source | null, mode: EnforcementMode): string | null {
-  const planned =
-    mode === 'NATIVE_CONFIG'
-      ? 'ARAK does not push native config to a source yet. The policy is written and checked for it, and enforced meanwhile by the mode its source is set to.'
-      : null;
+export function modeNote(
+  source: Source | null,
+  mode: EnforcementMode,
+  kind: PolicyKind,
+): string | null {
+  const planned = mode === 'NATIVE_CONFIG' ? nativeNote(kind, source) : null;
   if (!source) {
     return (
       planned ??
@@ -213,6 +223,19 @@ export function modeNote(source: Source | null, mode: EnforcementMode): string |
     return `${source.name} is enforced by ${modeLabel(current).toLowerCase()} today, and stays that way: writing the policy for another mode does not switch the connection. An administrator changes it under Sources.`;
   }
   return planned;
+}
+
+function nativeNote(kind: PolicyKind, source: Source | null): string {
+  if (kind !== 'SUBSCRIPTION') {
+    return 'ARAK does not push native config to a source yet. The policy is written and checked for it, and enforced meanwhile by the mode its source is set to.';
+  }
+  if (!source) {
+    return 'ARAK pushes this policy as a PostgreSQL role to each PostgreSQL source set to native source config; other engines are not pushed to yet. Once the policy is saved, plan and apply the role under its PostgreSQL roles tab.';
+  }
+  if (pushesNative(kind, source)) {
+    return `ARAK pushes this policy to ${source.name} as a PostgreSQL role. Once the policy is saved, plan and apply the role under its PostgreSQL roles tab.`;
+  }
+  return `ARAK pushes subscription policies to PostgreSQL only so far, not to ${source.name}. The policy is written and checked for native config, and enforced meanwhile by the mode its source is set to.`;
 }
 
 export default function PolicyTargetPicker({
@@ -504,7 +527,7 @@ export default function PolicyTargetPicker({
                     )}
                     {entry.mode === 'NATIVE_CONFIG' && (
                       <Badge color="gray" size="sm" type="pill-color">
-                        Checked, not applied yet
+                        {pushesNative(kind, source) ? 'Pushed as PostgreSQL roles' : 'Checked, not applied yet'}
                       </Badge>
                     )}
                     {unavailable && (
@@ -535,10 +558,10 @@ export default function PolicyTargetPicker({
               .
             </p>
           )}
-          {chosen && mode && modeNote(source, mode) && (
+          {chosen && mode && modeNote(source, mode, kind) && (
             <p className="tw:mt-3 tw:flex tw:gap-2 tw:rounded-lg tw:border tw:border-secondary tw:bg-secondary tw:p-3 tw:text-sm tw:text-tertiary">
               <AlertTriangle className="tw:mt-0.5 tw:size-4 tw:flex-none tw:text-warning-primary" />
-              {modeNote(source, mode)}
+              {modeNote(source, mode, kind)}
             </p>
           )}
         </Section>

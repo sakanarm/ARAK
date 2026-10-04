@@ -72,6 +72,7 @@ function source(overrides: Partial<NativeSource> = {}): NativeSource {
     engine: 'POSTGRES',
     enabled: true,
     database: 'salesdb',
+    mode: 'NATIVE_CONFIG',
     credential: {
       configured: true,
       scheme: 'fernet',
@@ -290,6 +291,44 @@ test('a policy a role cannot carry says why and cannot be planned', async () => 
   expect(await screen.findByText('A database role cannot carry this policy')).toBeInTheDocument();
   expect(screen.getByText(/It has a time window/)).toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Plan' })).toBeDisabled();
+});
+
+test('a source not set to native says which mode it is on and cannot be planned', async () => {
+  fetchNativeSources.mockResolvedValue(sources([source({ mode: 'PROXY' })]));
+  renderAs(ADMIN);
+
+  expect(await screen.findByText(/demo-pg is enforced by Query API/)).toBeInTheDocument();
+  expect(screen.getByText('Not set to native')).toBeInTheDocument();
+  expect(screen.getByText(/Change its mode under Sources to plan here/)).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Plan' })).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'Read' })).toBeDisabled();
+  expect(planNative).not.toHaveBeenCalled();
+});
+
+test('a role left on a source under another mode can still be checked and rolled back', async () => {
+  fetchNativeSources.mockResolvedValue(sources([source({ mode: 'SECURE_VIEW', roles: 1 })]));
+  fetchNativePolicy.mockResolvedValue(policy({ roles: [role()] }));
+  renderAs(ADMIN);
+
+  expect(await screen.findByText(/demo-pg is enforced by Secure view/)).toBeInTheDocument();
+  expect(screen.getByText(/The role still on it lets nobody in/)).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Plan' })).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'Check' })).toBeEnabled();
+  expect(screen.getByRole('button', { name: 'Roll back' })).toBeEnabled();
+});
+
+test('opens on a source set to native before one that is not', async () => {
+  fetchNativeSources.mockResolvedValue(
+    sources([
+      source({ id: '77777777-7777-7777-7777-777777777777', name: 'proxy-pg', mode: 'PROXY' }),
+      source(),
+    ])
+  );
+  renderAs(AUTHOR);
+
+  expect(await screen.findByRole('heading', { name: 'demo-pg' })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Plan' })).toBeEnabled();
+  expect(screen.queryByText('Not set to native')).not.toBeInTheDocument();
 });
 
 test('a draft policy is told it lets nobody in yet', async () => {

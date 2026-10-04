@@ -36,6 +36,7 @@ import {
 } from '../../../api/nativeSubscription';
 import { useAuthStore } from '../../../auth/authStore';
 import { TextField } from '../controls';
+import { MODES } from '../enforcement';
 
 /**
  * Enforcement mode 5.1.1 for a subscription policy: a PostgreSQL role on the
@@ -72,9 +73,12 @@ export default function NativePushPanel({ policyId }: { policyId: string }) {
   const roleOn = (sourceId: string) =>
     policy.data.roles.find((role) => role.dataSourceId === sourceId) ?? null;
   // Open on a source this policy already has a role on, else the first one
-  // that is switched on.
+  // that is switched on and set to native, else the first switched on.
   const fallback =
-    list.find((source) => roleOn(source.id)) ?? list.find((source) => source.enabled) ?? list[0];
+    list.find((source) => roleOn(source.id)) ??
+    list.find((source) => source.enabled && isNative(source)) ??
+    list.find((source) => source.enabled) ??
+    list[0];
   const source = list.find((each) => each.id === chosen) ?? fallback;
 
   return (
@@ -82,8 +86,9 @@ export default function NativePushPanel({ policyId }: { policyId: string }) {
       <p className="tw:flex tw:max-w-3xl tw:items-start tw:gap-2 tw:rounded-lg tw:bg-utility-blue-50 tw:px-3 tw:py-2 tw:text-sm tw:text-secondary">
         <Database01 className="tw:mt-0.5 tw:size-4 tw:shrink-0 tw:text-fg-brand-primary" />
         <span>
-          ARAK keeps one role for this policy on a PostgreSQL source. The role holds the tables
-          the policy applies to, and its members are the logins of the people it lets in. Plan
+          ARAK keeps one role for this policy on each PostgreSQL source set to Native source
+          config. The role holds the tables the policy applies to, and its members are the logins
+          of the people it lets in. Plan
           first and read the SQL; an administrator applies that plan. Every{' '}
           {sources.data.sweepMinutes} minutes ARAK takes out people who no longer qualify. It
           never adds anyone on its own: new people join at the next apply.
@@ -247,6 +252,7 @@ function SourceCard({
   });
 
   const installed = role !== null && role.status !== 'ROLLED_BACK';
+  const native = isNative(source);
   const busy =
     plan.isPending || apply.isPending || verify.isPending || readRollback.isPending || rollback.isPending;
   const failure = plan.error ?? apply.error ?? verify.error ?? readRollback.error ?? rollback.error;
@@ -276,6 +282,11 @@ function SourceCard({
             {!source.credential.configured && (
               <Badge color="warning" size="sm" type="pill-color">
                 No push account
+              </Badge>
+            )}
+            {!native && (
+              <Badge color="warning" size="sm" type="pill-color">
+                Not set to native
               </Badge>
             )}
           </div>
@@ -310,13 +321,28 @@ function SourceCard({
         </div>
       </div>
 
+      {!native && (
+        <div className="tw:border-t tw:border-secondary tw:px-5 tw:py-3">
+          <p className="tw:flex tw:items-start tw:gap-2 tw:rounded-lg tw:bg-utility-warning-50 tw:px-3 tw:py-2 tw:text-sm tw:text-warning-primary">
+            <AlertTriangle className="tw:mt-0.5 tw:size-4 tw:shrink-0" />
+            <span>
+              {source.name} is enforced by {modeTitle(source.mode)}. A connection has one mode for
+              its subscription and data policies alike, so roles are pushed only to a source set to
+              Native source config. Change its mode under Sources to plan here.
+              {installed &&
+                ' The role still on it lets nobody in: the sweep takes its members out. Roll it back to drop it.'}
+            </span>
+          </p>
+        </div>
+      )}
+
       <div className="tw:flex tw:flex-wrap tw:items-center tw:gap-2 tw:border-t tw:border-secondary tw:px-5 tw:py-3">
         <div aria-label="Access level" className="tw:flex tw:gap-1" role="group">
           {(['BROWSE', 'READ'] as NativeLevel[]).map((each) => (
             <Button
               aria-pressed={level === each}
               color={level === each ? 'primary' : 'secondary'}
-              isDisabled={busy}
+              isDisabled={busy || !native}
               key={each}
               onPress={() => setLevel(each)}
               size="sm">
@@ -353,7 +379,7 @@ function SourceCard({
           )}
           <Button
             color="primary"
-            isDisabled={busy || blocked}
+            isDisabled={busy || blocked || !native}
             onPress={() => plan.mutate()}
             size="sm">
             {plan.isPending ? 'Planning…' : 'Plan'}
@@ -1050,6 +1076,19 @@ function Notice({ tone, children }: { tone: 'error' | 'success'; children: React
       <span>{children}</span>
     </p>
   );
+}
+
+/** Roles are pushed only to a source whose one mode is native source config. */
+export function isNative(source: NativeSource): boolean {
+  return source.mode === 'NATIVE_CONFIG';
+}
+
+/** The mode a source is set to, as the Sources screen names it. */
+export function modeTitle(mode: string | null): string {
+  if (!mode || mode === 'NONE') {
+    return 'no mode';
+  }
+  return MODES.find((entry) => entry.mode === mode)?.title ?? mode;
 }
 
 function count(n: number, noun: string): string {

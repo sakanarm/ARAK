@@ -149,6 +149,19 @@ public final class NativeSubscriptionService {
     }
   }
 
+  /**
+   * The source is not set to native source config, so its policies are
+   * enforced somewhere else and nobody should hold a role on it. To the sweep,
+   * the same as a policy that is gone.
+   */
+  static final class NotNativeException extends RefusedException {
+    private static final long serialVersionUID = 1L;
+
+    NotNativeException(String message) {
+      super(message);
+    }
+  }
+
   // ------------------------------------------------------------ public types
 
   /**
@@ -174,6 +187,7 @@ public final class NativeSubscriptionService {
       String engine,
       boolean enabled,
       String database,
+      String mode,
       NativeRoleStore.CredentialInfo credential,
       int logins,
       int roles) {}
@@ -374,6 +388,9 @@ public final class NativeSubscriptionService {
               source.engine().name(),
               source.enabled(),
               source.defaultDatabase(),
+              source.defaultEnforcementMode() == null
+                  ? null
+                  : source.defaultEnforcementMode().name(),
               roles.credential(source.id()),
               logins.count(source.id()),
               roleCounts.getOrDefault(source.id(), 0)));
@@ -683,7 +700,7 @@ public final class NativeSubscriptionService {
         Prepared prepared = prepare(policyId, sourceId, level);
         wanted = prepared.desired();
         notes.addAll(prepared.warnings());
-      } catch (PolicyGoneException | PolicyUnusableException e) {
+      } catch (PolicyGoneException | PolicyUnusableException | NotNativeException e) {
         wanted = nobody(role, null);
         notes.add(e.getMessage() + " Nobody should hold the role: roll it back.");
       }
@@ -879,7 +896,7 @@ public final class NativeSubscriptionService {
     Desired wanted;
     try {
       wanted = prepare(role.policyId(), role.dataSourceId(), level).desired();
-    } catch (PolicyGoneException | PolicyUnusableException e) {
+    } catch (PolicyGoneException | PolicyUnusableException | NotNativeException e) {
       wanted = nobody(role, actual.comment());
       why = e.getMessage();
     }
@@ -940,7 +957,9 @@ public final class NativeSubscriptionService {
         PostgresGrantCompiler.compile(wanted, applied.after(), version).isSatisfied();
     String status = satisfied ? "APPLIED" : drifted ? "DRIFTED" : "PENDING";
     String detail =
-        "Taken away because the policy no longer gives it: "
+        (why == null
+                ? "Taken away because the policy no longer gives it: "
+                : "Taken away because nobody should hold the role: ")
             + describe(changes)
             + (why == null ? "" : " (" + why + ")");
     if (drifted) {
@@ -990,6 +1009,7 @@ public final class NativeSubscriptionService {
   Prepared prepare(UUID policyId, UUID sourceId, AccessLevel requested) {
     PolicyStore.StoredPolicy stored = policyOf(policyId);
     DataSourceStore.Source source = sourceOf(sourceId);
+    nativeMode(source);
     Policy document = stored.document();
     usable(document);
     CredentialResolver.Credential credential = pushCredential(source);
@@ -1338,6 +1358,33 @@ public final class NativeSubscriptionService {
           source.name() + " has no default database, so there is nothing to grant CONNECT on.");
     }
     return source;
+  }
+
+  /**
+   * A connection has one enforcement mode, for its subscription and its data
+   * policies alike. Roles are pushed only to a source set to native source
+   * config; under any other mode its policies are enforced there instead.
+   * Rolling back works under every mode, so roles left from before can go.
+   */
+  private static void nativeMode(DataSourceStore.Source source) {
+    DataSourceStore.EnforcementMode mode = source.defaultEnforcementMode();
+    if (mode != DataSourceStore.EnforcementMode.NATIVE_CONFIG) {
+      throw new NotNativeException(
+          source.name()
+              + " is enforced by "
+              + (mode == null ? "no mode" : modeLabel(mode))
+              + ", not native source config, so its policies are not pushed to it as roles."
+              + " Set it to native source config under Sources to push them.");
+    }
+  }
+
+  private static String modeLabel(DataSourceStore.EnforcementMode mode) {
+    return switch (mode) {
+      case PROXY -> "the query proxy";
+      case SECURE_VIEW -> "secure views";
+      case NATIVE_CONFIG -> "native source config";
+      case NONE -> "no mode";
+    };
   }
 
   /** The push account. Never the source's own, which the proxy reads with. */

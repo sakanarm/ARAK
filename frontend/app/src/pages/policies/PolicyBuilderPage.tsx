@@ -949,9 +949,9 @@ function PolicyBuilder({ kind }: { kind?: PolicyKind }) {
               The mode is chosen per data source and can be overridden per asset.
               This says which of them would carry this policy whole.
             </p>
-            {isNew && modeParam && modeNote(target, modeParam) && (
+            {isNew && modeParam && modeNote(target, modeParam, draft.policyType) && (
               <p className="tw:mt-2 tw:text-xs tw:text-warning-primary">
-                {modeNote(target, modeParam)}
+                {modeNote(target, modeParam, draft.policyType)}
               </p>
             )}
             <div className="tw:mt-3 tw:flex tw:flex-col tw:gap-3">
