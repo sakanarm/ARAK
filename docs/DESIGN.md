@@ -513,7 +513,7 @@ login ด้วย **PAT / service account** (M14) ไม่ใช่รหั�
 
 ## 6. แผน Milestone และสถานะจริง
 
-สถานะ ณ 2026-09-30 · รายละเอียดทีละรอบอยู่ใน `HANDOFF.md`
+สถานะ ณ 2026-10-04 · รายละเอียดทีละรอบอยู่ใน `HANDOFF.md`
 
 | M | งาน | ประเมิน | สถานะ |
 |---|---|---|---|
@@ -523,7 +523,7 @@ login ด้วย **PAT / service account** (M14) ไม่ใช่รหั�
 | **M3** | Policy IR · AssetSelector resolver + `policy_binding` materializer · SubjectRule evaluator · layered composer · ConflictResolver · decision cache · Simulator | 5 wk | 🚧 **~97%** — เหลือ ANTLR grammar ของ `expr` |
 | **M4** | Policy Authoring UI (global + local builder, data policy builder, หน้า effective policy, view-as-user, impact analysis) | 4 wk | ✅ **เสร็จ** · หน้า *Where it runs* ก่อนฟอร์ม (kind · connection · โหมด) ✅ 2026-09-30 (ข้อ CU) · step 3 แสดง table ที่ draft จะครอบ + subscription เลือกได้ทุกระดับ + connection เดียวเลือกได้แค่โหมดของมัน ✅ 2026-09-30 (ข้อ CV) · หน้า Policies แสดง connection + โหมดของแต่ละ policy และ filter ได้ ✅ 2026-09-30 (ข้อ CW) · *Where it runs* เลือกยี่ห้อ database (มีโลโก้) ก่อนแล้วค่อยเลือก connection + การ์ด Databricks ไปหน้าแยก (ยังเป็นหน้าว่างรอ builder) ✅ 2026-09-30 (ข้อ CY) |
 | **M5** | **5.1.2 Secure View** — ViewCompiler + dialect · `row_entitlement` maintainer · `DbPrincipalProvisioner` · cutover helper · dry-run/rollback · golden-file + Testcontainers | 4 wk | 🚧 **~85%** |
-| **M6** | **5.1.1 Push config** — PG `CREATE POLICY` + column GRANT + `anon` · MSSQL `CREATE SECURITY POLICY` + granular UNMASK + `CREATE USER FROM EXTERNAL PROVIDER` · capability matrix · **ไม่ทำ DDM** (FR-6.2a) | 3 wk | ⏸️ **ON HOLD** (ผู้ใช้สั่ง 2026-09-24) |
+| **M6** | **5.1.1 Push config** — PG `CREATE POLICY` + column GRANT + `anon` · MSSQL `CREATE SECURITY POLICY` + granular UNMASK + `CREATE USER FROM EXTERNAL PROVIDER` · capability matrix · **ไม่ทำ DDM** (FR-6.2a) | 3 wk | 🚧 **~30%** — PG subscription push-down ✅ 2026-10-04 (role ต่อ policy ต่อ source, Browse/Read, login เดิมจาก `db_principal_map`, plan → apply → check · sweep ถอนอย่างเดียว · rollback) · เหลือ PG RLS / column GRANT / `anon` · MSSQL ทั้งหมด (ส่วนที่เหลือยัง hold) |
 | **M7** | **5.2a Query API** — JSqlParser rewrite · table resolution (CTE/sub-query/`SELECT *`) · fail-closed · stream · row limit/timeout · direct-access detector | 3 wk | ✅ — direct-access detector ✅ (FR-6.3.1) · result cache ✅ (FR-6.3) |
 | **M7b** | Cross-mode consistency harness + CI | 1 wk | ⬜ ต้องมี M5 / M6 ก่อน |
 | **M8** | Audit 3 ตาราง · DriftDetector + re-apply · manual grant + auto-revoke · compliance report · metrics · Vault | 3 wk | 🚧 **~35%** |
