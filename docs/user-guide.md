@@ -1015,9 +1015,119 @@ in, and can use nothing else until they do.
   run and the rollback, **Apply** runs what was reviewed (and refuses if
   anything changed since the review), and **Roll back** undoes it after
   confirmation.
+- **PostgreSQL roles**, a tab on a subscription policy's page, pushes that
+  policy to a PostgreSQL source as a database role, so people read with their
+  own login. See *PostgreSQL roles* below.
 - **Settings → OpenMetadata connection** and **Sync & reconcile** control where
   metadata comes from and when it is refreshed. **Service & build** shows the
   running version and the last crawl.
+
+## PostgreSQL roles: a subscription policy on the database itself
+
+A subscription policy is normally enforced on the Query page. On a PostgreSQL
+source it can also be pushed to the database as a **role**, so that people
+read with their own database login, from any tool, and the database itself
+lets them in or keeps them out.
+
+Open a subscription policy and choose the **PostgreSQL roles** tab (data
+policies do not have it). ARAK keeps one role for the policy on each
+PostgreSQL source, named `arak_sub_<policy>_<source>` after the first eight
+characters of each id. The role cannot log in. It holds the tables the policy
+applies to, and its members are the logins of the people the policy lets in.
+
+**Levels.** Choose one before you plan:
+
+- **Browse**: connect to the database and use the schemas, with no rows.
+- **Read**: Browse, and `SELECT` on every table the policy applies to.
+
+Under Browse, `information_schema` lists only the tables a person holds a
+privilege on. PostgreSQL's own catalogue (`pg_tables`, `pg_attribute`) still
+shows every table and column name to anybody who can connect, and the plan
+warns about it. If every login may connect to the database (PostgreSQL's
+default `CONNECT` for `PUBLIC`), the plan warns about that too. ARAK reports
+it and does not change it.
+
+**Source setup (administrators).** Below the role, **Source setup** holds:
+
+- **Push account**: the login ARAK uses to make the role. It needs
+  `CREATEROLE`, and it must own, or hold `GRANT OPTION` on, the tables. It
+  must not be a superuser. It must not be the read-only login the query proxy
+  uses: ARAK refuses that one. Give a login and password, which ARAK seals at
+  once, or a reference (`vault://`, `azurekeyvault://`, `env:`). The account
+  is never shown again. Without it nothing can be planned or applied, and the
+  sweep cannot take anybody out.
+- **Database logins**: which existing login belongs to which person. ARAK never
+  creates a login. Nobody can map their own. One login used by several
+  people joins the role only when every one of them qualifies.
+- **Setup history**: every change to the account and the logins, with who and
+  when.
+
+**Plan.** **Plan** works out the role and changes nothing on the source.
+Policy authors and administrators can plan. The plan shows:
+
+- how many people were decided, the logins in the role, the tables and the
+  statements;
+- **Members**, with the people each login stands for;
+- **Kept out**, with the reason for each person, for example *denied by* a
+  DENY policy, *not let in by* another policy that every reader of the table
+  also has to pass, or an exemption;
+- **Let in, but no login here** and **Shared logins left out**;
+- **Others who can already read these tables**: grants ARAK did not make,
+  which it leaves alone;
+- **Will run** (the exact SQL) and **Rollback, if needed**.
+
+A plan expires after a while. At Read, people whose view of a table is
+narrowed by a data policy (a row filter, a mask or hidden columns) are kept
+out, because a plain `SELECT` would show them what the data policy hides. They
+still read that table on the Query page.
+
+**All or nothing.** A role gives the same access on every table in it. A
+person refused on any one of its tables stays out of the whole role, and the
+plan lists the tables they lose with it. If that is not what you want, split
+the policy so each part binds the tables that belong together.
+
+**Apply (administrators).** **Apply this plan** runs exactly the plan you
+read. ARAK refuses a plan that was already applied, that belongs to another
+policy, or that no longer matches what the policy says or what the source
+holds. Plan again to see the difference.
+
+**What a role cannot carry.** A role cannot check the time, the client's
+address, a purpose or an expression over the request. The tab says *A database
+role cannot carry this policy*, and Plan is refused, for:
+
+- a policy with time windows, a network range, a purpose or a `context.`
+  expression;
+- a DENY policy. A DENY has no role of its own: it keeps the people it names
+  out of the roles of the ALLOW policies it overlaps, and their plans say who.
+
+Keep such a policy on the query proxy, or split the parts a role can hold into
+their own policy. Plan is also refused for a policy that binds no table in the
+source's database. Tables in another database on the same server are left out
+with a warning, because the role connects to one database. A draft or
+disabled policy lets nobody in, so its plan gives the role no members.
+
+**Check.** **Check** reads the source and compares it with the policy. The
+role shows **Applied**, **Drifted** (somebody changed what ARAK granted, by
+hand), **Behind the policy** (the policy has moved on since the last apply),
+**Failed**, **Rolled back** or **No role yet**. ARAK owns only the grants its
+push account made. A grant somebody else made to the role is reported and
+never revoked. ARAK does not repair drift on its own: plan and apply to put it
+back.
+
+**The sweep.** Every 10 minutes ARAK takes people out of the role who no
+longer qualify: they left the group, their login was unmapped, the policy was
+disabled or ended. It never adds anybody: new people join at the next apply.
+Each removal is on the history as *EXPIRE* by `system:native-sweep`. A source
+that is switched off, or has no push account, is skipped.
+
+**Roll back (administrators).** **Roll back** shows the statements first.
+**Drop the role** revokes what ARAK granted and drops the role, and its
+members lose that access at once. If somebody else granted something to the
+role, that grant stays, and so does the role.
+
+**History** lists every plan, apply, check, sweep and rollback for the policy
+on that source, with who did it and why. No password and no client address is
+ever shown.
 
 ## The assistant (NokRak)
 
@@ -1066,5 +1176,10 @@ forbid personal gateways, and decide per role which jobs the assistant may do
   could read it differently, a table could slip past the policy, so the
   statement is refused. Take out the hint, write the string as a plain
   `'...'`, or put the value in the statement instead of a variable.
+- **Why is somebody not in a policy's PostgreSQL role?** Open the policy's
+  **PostgreSQL roles** tab and press **Plan**. *Kept out* gives each person's
+  reason, and *Let in, but no login here* lists those who need a login mapped.
+  Somebody who qualifies only after the last apply joins at the next one: the
+  sweep takes people out, and never puts anybody in.
 - **Can the assistant give me access?** No. It can open the request form's page
   for you; a person decides.

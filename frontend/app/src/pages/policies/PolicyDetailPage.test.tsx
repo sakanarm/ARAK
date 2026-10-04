@@ -663,3 +663,34 @@ test('an archived policy shows its history but offers no restore', async () => {
   expect(within(row).getByText(/archived, which is final/)).toBeInTheDocument();
   expect(within(row).queryByRole('button', { name: 'Restore v1' })).toBeNull();
 });
+
+// ------------------------------------------------------------------ PostgreSQL roles
+
+// The panel has its own tests; here only where it appears.
+jest.mock('./subscription/NativePushPanel', () => ({
+  __esModule: true,
+  default: () => 'PostgreSQL roles panel',
+}));
+
+test('a data policy offers no PostgreSQL roles', async () => {
+  renderPage();
+
+  await screen.findByText('Mask PII columns');
+  expect(screen.queryByRole('tab', { name: 'PostgreSQL roles' })).not.toBeInTheDocument();
+});
+
+test('a subscription policy opens its PostgreSQL roles in a tab', async () => {
+  fetchPolicy.mockResolvedValue(
+    stored({
+      document: document({
+        policyType: 'SUBSCRIPTION',
+        effect: 'ALLOW',
+        subject: { principals: [{ role: 'analyst' }] },
+      }),
+    })
+  );
+  renderPage();
+
+  await openTab(/PostgreSQL roles/);
+  expect(await screen.findByText('PostgreSQL roles panel')).toBeInTheDocument();
+});

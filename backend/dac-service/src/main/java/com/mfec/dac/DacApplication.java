@@ -81,12 +81,18 @@ import com.mfec.dac.resources.ExpressionResource;
 import com.mfec.dac.resources.DecisionResource;
 import com.mfec.dac.resources.QueryResource;
 import com.mfec.dac.resources.DirectAccessResource;
+import com.mfec.dac.resources.NativeSubscriptionResource;
 import com.mfec.dac.resources.EnforcementResource;
 import com.mfec.dac.enforcement.AppDbEntitlementSource;
 import com.mfec.dac.enforcement.DirectAccessService;
 import com.mfec.dac.enforcement.EnforcementStateStore;
 import com.mfec.dac.enforcement.ReviewedPlans;
 import com.mfec.dac.enforcement.SecureViewService;
+import com.mfec.dac.enforcement.NativeLoginMap;
+import com.mfec.dac.enforcement.NativeReviews;
+import com.mfec.dac.enforcement.NativeRoleStore;
+import com.mfec.dac.enforcement.NativeSubscriptionJob;
+import com.mfec.dac.enforcement.NativeSubscriptionService;
 import com.mfec.dac.source.jdbc.SecureViewApplier;
 import com.mfec.dac.source.jdbc.JdbcIntrospector;
 import com.mfec.dac.source.jdbc.QueryExecutor;
@@ -111,6 +117,7 @@ import com.mfec.dac.resources.SourceResource;
 import com.mfec.dac.source.DataSourceStore;
 import com.mfec.dac.source.jdbc.CredentialResolver;
 import com.mfec.dac.source.jdbc.DirectAccessReader;
+import com.mfec.dac.source.jdbc.NativeGrantApplier;
 import com.mfec.dac.source.jdbc.SourceProbe;
 import com.mfec.dac.resources.SyncResource;
 import com.mfec.dac.resources.SystemResource;
@@ -548,6 +555,26 @@ public class DacApplication extends Application<DacConfiguration> {
         new DirectAccessResource(
             new DirectAccessService(
                 secureViews, directAccess::read, enforcementStates, java.time.Clock.systemUTC())));
+    // Enforcement mode 5.1.1 for subscription policies on PostgreSQL: one
+    // role per policy and source, pushed with an account of its own and never
+    // the proxy's read-only one. Plans are held in this process like the
+    // secure view's; the sweep only takes away, every ten minutes.
+    NativeSubscriptionService nativeSubscriptions =
+        new NativeSubscriptionService(
+            jdbi,
+            policyStore,
+            sources,
+            credentials,
+            new NativeGrantApplier(),
+            NativeSubscriptionService.everyone(jdbi, principalLoader, decisionService),
+            new NativeRoleStore(jdbi),
+            new NativeLoginMap(jdbi),
+            enforcementStates,
+            new NativeReviews());
+    Duration nativeSweep = Duration.ofMinutes(10);
+    environment.jersey().register(
+        new NativeSubscriptionResource(nativeSubscriptions, secretBox, nativeSweep));
+    environment.lifecycle().manage(new NativeSubscriptionJob(nativeSubscriptions, nativeSweep));
     // Registered before the auth filter for no reason other than reading order;
     // the filter is a @Secured name binding and this resource carries no
     // annotation, so it is never in its path. Its authentication is the HMAC.

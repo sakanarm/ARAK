@@ -42,6 +42,7 @@ import PolicyFlowChart from './PolicyFlowChart';
 import PolicyDiagram from './PolicyDiagram';
 import PolicyExplain from './PolicyExplain';
 import TabStrip, { panelId, tabId, type TabItem } from '../../components/TabStrip';
+import NativePushPanel from './subscription/NativePushPanel';
 
 /**
  * One policy, read rather than edited.
@@ -56,8 +57,8 @@ import TabStrip, { panelId, tabId, type TabItem } from '../../components/TabStri
  * Editing is one button away and lives on its own route.
  */
 
-type DetailTab = 'overview' | 'coverage' | 'impact' | 'conflicts' | 'history';
-const TABS: DetailTab[] = ['overview', 'coverage', 'impact', 'conflicts', 'history'];
+type DetailTab = 'overview' | 'coverage' | 'impact' | 'conflicts' | 'history' | 'native';
+const TABS: DetailTab[] = ['overview', 'coverage', 'impact', 'conflicts', 'history', 'native'];
 
 /** What made each version, in the words the timeline shows. */
 const ACTION: Record<
@@ -236,6 +237,8 @@ export default function PolicyDetailPage() {
     { id: 'impact', label: 'Impact', count: impact.data?.principalsAffected },
     { id: 'conflicts', label: 'Other policies', count: conflicts.data?.length },
     { id: 'history', label: 'History', count: versions.data?.length },
+    // A subscription policy can also be pushed down as a role on PostgreSQL.
+    ...(isData ? [] : [{ id: 'native' as const, label: 'PostgreSQL roles' }]),
   ];
   const diagram = reading === 'diagram';
 
@@ -448,6 +451,8 @@ export default function PolicyDetailPage() {
         {tab === 'history' && (
           <History current={policy} data={versions.data} error={versions.error} />
         )}
+
+        {tab === 'native' && !isData && <NativePushPanel policyId={policy.id} />}
       </div>
     </div>
   );
