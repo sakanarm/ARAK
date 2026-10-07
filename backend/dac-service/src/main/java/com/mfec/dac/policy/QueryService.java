@@ -5,6 +5,7 @@ import com.mfec.dac.audit.ClientAddress;
 import com.mfec.dac.common.engine.SourceEngines;
 import com.mfec.dac.compiler.sql.SqlDialect;
 import com.mfec.dac.compiler.sql.SqlDialects;
+import com.mfec.dac.enforcement.NativeReadGate;
 import com.mfec.dac.proxy.ProxyCapabilities;
 import com.mfec.dac.proxy.QueryRewriter;
 import com.mfec.dac.purpose.SensitiveData;
@@ -181,6 +182,7 @@ public class QueryService {
   private final QueryCostGuard costs;
   private final Clock clock;
   private final SensitiveData sensitive;
+  private final NativeReadGate nativeGate;
   private final LookupBinder lookups;
 
   public QueryService(
@@ -250,6 +252,25 @@ public class QueryService {
       QueryCostGuard costs,
       Clock clock,
       SensitiveData sensitive) {
+    this(jdbi, json, sources, decisions, executor, results, admission, costs, clock, sensitive, null);
+  }
+
+  /**
+   * @param nativeGate what a source whose policies are pushed down natively
+   *     lets the proxy read; null reads every source as the policy decides
+   */
+  public QueryService(
+      Jdbi jdbi,
+      ObjectMapper json,
+      DataSourceStore sources,
+      DecisionService decisions,
+      QueryExecutor executor,
+      QueryResultCache results,
+      QueryAdmission admission,
+      QueryCostGuard costs,
+      Clock clock,
+      SensitiveData sensitive,
+      NativeReadGate nativeGate) {
     this.jdbi = jdbi;
     this.json = json;
     this.sources = sources;
@@ -260,6 +281,7 @@ public class QueryService {
     this.costs = costs == null ? QueryCostGuard.off() : costs;
     this.clock = clock == null ? Clock.systemUTC() : clock;
     this.sensitive = sensitive == null ? SensitiveData.off() : sensitive;
+    this.nativeGate = nativeGate;
     this.lookups = new LookupBinder(jdbi, json, sources, this::readLookup);
   }
 
@@ -1043,6 +1065,16 @@ public class QueryService {
     }
     if (concern != null) {
       warnings.putIfAbsent(fqn.get(), concern);
+    }
+
+    // On a source whose policies are pushed down, the proxy reads only what the
+    // role on the source also gives: recorded as the policy decided, refused
+    // here, and audited as refused by the caller like any other refusal.
+    if (nativeGate != null) {
+      Optional<String> refused = nativeGate.refusal(source, schema, table, decision);
+      if (refused.isPresent()) {
+        throw new RejectedException(refused.get(), null, false);
+      }
     }
 
     // Recorded first, refused second. A query that is about to be turned away
