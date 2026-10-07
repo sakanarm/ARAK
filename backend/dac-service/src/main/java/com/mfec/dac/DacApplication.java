@@ -90,6 +90,7 @@ import com.mfec.dac.enforcement.ReviewedPlans;
 import com.mfec.dac.enforcement.SecureViewService;
 import com.mfec.dac.enforcement.NativeLoginMap;
 import com.mfec.dac.enforcement.NativeReviews;
+import com.mfec.dac.enforcement.NativeReadGate;
 import com.mfec.dac.enforcement.NativeRoleStore;
 import com.mfec.dac.enforcement.NativeSubscriptionJob;
 import com.mfec.dac.enforcement.NativeSubscriptionService;
@@ -518,7 +519,8 @@ public class DacApplication extends Application<DacConfiguration> {
                 queryAdmission,
                 queryCosts,
                 java.time.Clock.systemUTC(),
-                sensitiveData),
+                sensitiveData,
+                NativeReadGate.of(new NativeRoleStore(jdbi))),
             eligibility,
             config.getQueryLimits().getExportTimeoutSeconds(),
             purposes));

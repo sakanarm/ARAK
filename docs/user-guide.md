@@ -898,6 +898,8 @@ Data owners can write policies only at or below what they own.
 
 A policy moves through **DRAFT → PENDING_APPROVAL → ACTIVE**, and can later be
 **DISABLED** or **ARCHIVED**. Only ACTIVE policies are enforced.
+ARCHIVED is final: an archived policy is shown as **Archived (Not active)**,
+lets nobody in and keeps nobody out, and stays only as history.
 
 The person who wrote a policy cannot activate it: a second person approves it
 out of PENDING_APPROVAL. Every edit is saved as a new version.
@@ -1046,6 +1048,15 @@ source set to any other mode the tab marks it *Not set to native*, says which
 mode it is enforced by, and Plan is off. On a native source the Query page
 keeps working: a query sent there is still checked by ARAK against every
 policy.
+
+**The Query page on a native source.** It reads a table only when the
+database would let the same person in too: the role of a policy that lets
+them in must be applied (or waiting on a newer plan), at Read, and hold that
+table. Before the first apply, after a roll back, at Browse, or after
+somebody changed the role by hand, the query is refused with the policy's
+name and the reason, and the refusal is on the audit like any other. A
+direct grant has no role of its own and is let through. Plan and apply the
+role to read the table again.
 
 A source with a role on it keeps its native mode. To change its mode under
 Sources, roll back each policy's role on it first; until then saving another
