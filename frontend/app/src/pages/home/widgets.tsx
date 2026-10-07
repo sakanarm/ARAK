@@ -433,7 +433,7 @@ function RecentPoliciesWidget({ widget }: { widget: HomeWidget }) {
                       color={stateColor(policy.lifecycleState)}
                       size="sm"
                       type="pill-color">
-                      {humanise(policy.lifecycleState)}
+                      {policyState(policy.lifecycleState)}
                     </Badge>
                     <Badge color="gray" size="sm" type="pill-color">
                       {policy.document.policyType === 'DATA'
@@ -703,7 +703,7 @@ function ChartWidget({ widget }: { widget: HomeWidget }) {
     case 'CHART_POLICIES_BY_STATE':
       loading = policies.data === undefined;
       slices = countBy(policies.data ?? [], (policy) =>
-        humanise(policy.lifecycleState)
+        policyState(policy.lifecycleState)
       );
       empty = 'No policy has been written yet.';
       action = { label: 'All policies', to: '/policies' };
@@ -1256,6 +1256,11 @@ function stateColor(state: string): 'success' | 'warning' | 'gray' | 'brand' {
     default:
       return 'gray';
   }
+}
+
+/** A policy's state as it reads; archived says outright that it no longer applies. */
+function policyState(state: string): string {
+  return state === 'ARCHIVED' ? 'Archived (Not active)' : humanise(state);
 }
 
 /** ENUM_CASE as a sentence, which is how every label on this page reads. */

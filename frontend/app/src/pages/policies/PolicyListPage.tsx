@@ -59,7 +59,7 @@ const STATE_LABEL: Record<string, string> = {
   DRAFT: 'Draft',
   PENDING_APPROVAL: 'Pending approval',
   DISABLED: 'Disabled',
-  ARCHIVED: 'Archived',
+  ARCHIVED: 'Archived (Not active)',
 };
 
 const LEVEL_LABEL: Record<string, string> = {
