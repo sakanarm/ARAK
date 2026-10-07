@@ -83,6 +83,10 @@ const STATE_TONE: Record<string, 'success' | 'gray' | 'warning'> = {
   ARCHIVED: 'gray',
 };
 
+/** A state as its badge reads; archived says outright that it no longer applies. */
+const stateLabel = (state: string): string =>
+  state === 'ARCHIVED' ? 'Archived (Not active)' : state.replace('_', ' ').toLowerCase();
+
 /**
  * The relations, worst first, with the word and colour each is shown in.
  *
@@ -266,7 +270,7 @@ export default function PolicyDetailPage() {
                   color={STATE_TONE[policy.lifecycleState] ?? 'gray'}
                   size="sm"
                   type="pill-color">
-                  {policy.lifecycleState.replace('_', ' ').toLowerCase()}
+                  {stateLabel(policy.lifecycleState)}
                 </Badge>
               </div>
               <p className="tw:mt-0.5 tw:font-mono tw:text-xs tw:break-all tw:text-quaternary">
@@ -914,7 +918,7 @@ function Conflicts({
                 </Badge>
                 {row.lifecycleState !== 'ACTIVE' && (
                   <Badge color="warning" size="sm" type="pill-color">
-                    {row.lifecycleState.replace('_', ' ').toLowerCase()}
+                    {stateLabel(row.lifecycleState)}
                   </Badge>
                 )}
                 <span className="tw:ml-auto tw:text-xs tw:text-tertiary">
