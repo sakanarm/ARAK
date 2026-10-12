@@ -56,6 +56,24 @@ class IdentityAdminStoreTest {
     }
 
     @Test
+    @DisplayName("lets a person go without a password only with an email Microsoft can match")
+    void microsoftOnly() {
+      IdentityAdminStore.NewLocalPrincipal noEmail =
+          new IdentityAdminStore.NewLocalPrincipal(
+              "analyst_a", "Analyst A", null, "USER", "", List.of());
+      assertThatThrownBy(() -> store.createLocal(noEmail, "admin", null))
+          .isInstanceOf(IdentityAdminStore.InvalidPrincipalException.class)
+          .hasMessageContaining("email");
+      // A service account never signs in with Microsoft, so it keeps needing one.
+      IdentityAdminStore.NewLocalPrincipal service =
+          new IdentityAdminStore.NewLocalPrincipal(
+              "etl_job", "ETL job", "etl@example.com", "SERVICE", null, List.of());
+      assertThatThrownBy(() -> store.createLocal(service, "admin", null))
+          .isInstanceOf(IdentityAdminStore.InvalidPrincipalException.class)
+          .hasMessageContaining("password");
+    }
+
+    @Test
     @DisplayName("will not give a group a password, because nobody signs in as one")
     void type() {
       IdentityAdminStore.NewLocalPrincipal group =

@@ -33,6 +33,9 @@ export function LocalAccountForm({
   // and an app role on it would act on nobody, so it takes neither.
   const group = principalType === 'GROUP';
   const scoped = !group && appRole === 'DATA_OWNER';
+  // A person with no password signs in with Microsoft only, which finds them
+  // by email; the server refuses the pair without one, so the form does too.
+  const microsoftOnly = principalType === 'USER' && password === '';
 
   const create = useMutation({
     mutationFn: () =>
@@ -41,7 +44,7 @@ export function LocalAccountForm({
         displayName: displayName.trim(),
         email: email.trim() || null,
         principalType,
-        password: group ? null : password,
+        password: group || microsoftOnly ? null : password,
         roles: !group && appRole ? [{ appRole, scopeFqn: scoped ? scopeFqn : null }] : [],
       }),
     onSuccess: (created) => {
@@ -56,7 +59,7 @@ export function LocalAccountForm({
   const ready =
     username.trim().length >= 2 &&
     displayName.trim().length >= 2 &&
-    (group || password.length >= 10) &&
+    (group || password.length >= 10 || (microsoftOnly && email.trim().includes('@'))) &&
     (!scoped || Boolean(scopeFqn));
 
   return (
@@ -67,7 +70,8 @@ export function LocalAccountForm({
       <p className="tw:mt-1 tw:max-w-3xl tw:text-pretty tw:text-sm tw:text-tertiary">
         For service integrations, tests, and people no directory holds. The
         password below is a first one only: the holder is asked to choose their
-        own the first time they sign in.
+        own the first time they sign in. Leave it empty for a person who signs
+        in with Microsoft only; they are matched by their email.
       </p>
 
       <div className="tw:mt-4 tw:grid tw:gap-4 tw:lg:grid-cols-2">
@@ -105,7 +109,11 @@ export function LocalAccountForm({
           />
         </Field>
         <Field
-          hint="Optional. Only used to recognise the same person elsewhere."
+          hint={
+            microsoftOnly
+              ? 'Required without a password: Sign in with Microsoft finds them by this address.'
+              : 'Optional. Used to sign in with Microsoft and to recognise the same person elsewhere.'
+          }
           label="Email">
           <TextField
             onChange={setEmail}
@@ -115,7 +123,13 @@ export function LocalAccountForm({
           />
         </Field>
         {!group && (
-        <Field hint="Ten characters at least, and not the username." label="First password">
+        <Field
+          hint={
+            principalType === 'USER'
+              ? 'Ten characters at least, and not the username. Leave empty for Microsoft sign-in only.'
+              : 'Ten characters at least, and not the username.'
+          }
+          label="First password">
           <TextField
             onChange={setPassword}
             placeholder="A passphrase they will replace"

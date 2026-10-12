@@ -7,8 +7,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Writes {@code audit_auth_event}: every sign-in through the gateway, and every
- * token made or ended. The table is append-only (V50); this only inserts.
+ * Writes {@code audit_auth_event}: every sign-in through the gateway or through
+ * Microsoft, and every token made or ended. The table is append-only (V50);
+ * this only inserts.
  */
 public class AuthEventLog {
 
@@ -17,7 +18,9 @@ public class AuthEventLog {
   public enum Event {
     GATEWAY_LOGIN,
     TOKEN_CREATE,
-    TOKEN_REVOKE
+    TOKEN_REVOKE,
+    /** A sign-in to the console through Microsoft (FR-2.1), let in or refused. */
+    SSO_LOGIN
   }
 
   private final Jdbi jdbi;

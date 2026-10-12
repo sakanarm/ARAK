@@ -47,9 +47,19 @@ form described above, so password accounts keep working as before.
   *You are signed in with Microsoft, but you do not have access to ARAK yet* until
   an administrator adds an account with your work email and gives it a
   platform role. Ask your ARAK administrator, then sign in again.
+- **More than one account has your email.** ARAK will not guess which one you
+  meant, so it signs nobody in and says so. An administrator sorts the
+  duplicate out.
+- **The sign-in service is not available.** Microsoft or the sign-in service
+  could not be reached. Nobody is let in while that is true; try again in a
+  few minutes.
 - **For administrators:** to let somebody in through Microsoft, add them under
   **People** with the same email address as their work account and give them
   at least one platform role. Nobody is created automatically by signing in.
+  Leave the first password empty and the account signs in with Microsoft only:
+  there is no password to guess and none to change, and the email is what the
+  sign-in matches, so an account made that way has to have one. Give a first
+  password instead and the person can use either way in.
 
 - **Profile** (click your name, or `/profile`) shows your username, email,
   account type, the directory the account comes from, your groups, your
@@ -1010,6 +1020,11 @@ display name, kind, email, a first password and a role to start with). The new
 account appears in the list at once, with a link to its page. No sync touches
 a local account. A person chooses their own password the first time they sign
 in, and can use nothing else until they do.
+
+Leaving the first password empty makes an account that signs in with Microsoft
+only. It then needs an email, because that is how a Microsoft sign-in finds the
+person, and the password form will not open it. Service accounts always need a
+password; groups never take one.
 
 ## Data sources and enforcement (administrators)
 

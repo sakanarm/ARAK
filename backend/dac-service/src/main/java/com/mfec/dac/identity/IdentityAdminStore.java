@@ -157,6 +157,11 @@ public class IdentityAdminStore {
    * account that signed in, never from its groups: a role given to a group
    * would show on the roles screen and act on nobody. It exists for policies
    * and grants, which do follow membership (FR-2.2).
+   *
+   * <p>A person may also be created without a password, when they sign in
+   * with Microsoft only. They must then have an email, because that is how a
+   * Microsoft sign-in finds them; with no local credential there is no
+   * password to guess and none to change.
    */
   public UUID createLocal(NewLocalPrincipal input, String actor, String clientIp) {
     if (input == null) {
@@ -195,6 +200,16 @@ public class IdentityAdminStore {
             "A group takes no app role: roles are read from the account that signed in, not "
                 + "from its groups. Give the role to the people instead");
       }
+    } else if ((password == null || password.isEmpty()) && "USER".equals(type)) {
+      // A person who signs in with Microsoft only. Without an email nothing
+      // could ever sign in as this account, which is the broken account the
+      // paragraph above warns about.
+      if (email == null) {
+        throw new InvalidPrincipalException(
+            "A person without a password signs in with Microsoft, which finds them by email: "
+                + "give an email, or a first password");
+      }
+      password = null;
     } else {
       password = required(password, "password");
       if (password.length() < MIN_PASSWORD || password.length() > MAX_PASSWORD) {
@@ -205,7 +220,7 @@ public class IdentityAdminStore {
         throw new InvalidPrincipalException("The password cannot be the username");
       }
     }
-    String firstPassword = password;
+    String firstPassword = group ? null : password;
     for (RoleRequest role : roles) {
       checkRole(role);
     }
@@ -257,7 +272,7 @@ public class IdentityAdminStore {
                   .one();
 
           audit(handle, actor, "CREATE_PRINCIPAL", id, username, "local", null, null, null, ip);
-          if (!group) {
+          if (firstPassword != null) {
             handle
                 .createUpdate(
                     """
