@@ -41,6 +41,15 @@ public class AuthFilter implements ContainerRequestFilter {
 
   private static final String BEARER = "Bearer ";
 
+  /**
+   * Request property: true when this request arrived on a token issued through
+   * the password door with a change still pending. A resource that reports the
+   * obligation to the browser reads it, so that a session opened some other way
+   * — a Microsoft sign-in, say — is not told to replace a password it did not
+   * use and may not have.
+   */
+  public static final String PASSWORD_CHANGE_PENDING = "arak.passwordChangePending";
+
   private final JwtService tokens;
   private final Predicate<UUID> mustChangePassword;
 
@@ -71,6 +80,7 @@ public class AuthFilter implements ContainerRequestFilter {
     }
 
     AuthenticatedUser caller = session.get().user();
+    request.setProperty(PASSWORD_CHANGE_PENDING, session.get().passwordChangePending());
     // 403 rather than 401: the token is good, and the UI already shows the
     // password form for it. A 401 would send the user back to a login that
     // hands out the same kind of token.

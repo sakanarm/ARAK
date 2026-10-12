@@ -11,6 +11,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import com.mfec.dac.auth.AuthFilter;
 import com.mfec.dac.auth.AuthenticatedUser;
 import com.mfec.dac.auth.JwtService;
 import com.mfec.dac.auth.LocalIdentityDao;
@@ -19,6 +20,7 @@ import com.mfec.dac.auth.PasswordHasher;
 import com.mfec.dac.config.IdentityConfiguration;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.ws.rs.WebApplicationException;
+import jakarta.ws.rs.container.ContainerRequestContext;
 import jakarta.ws.rs.core.SecurityContext;
 import java.security.Principal;
 import java.time.Duration;
@@ -166,7 +168,7 @@ class AuthResourceTest {
     when(identities.loadUser(analyst.id())).thenReturn(Optional.of(analyst));
     holds(account(analyst, CURRENT, true, null));
 
-    AuthResource.Me me = resource.me(as(analyst));
+    AuthResource.Me me = resource.me(as(analyst), throughThePasswordDoor());
     assertThat(me.mustChangePassword()).isTrue();
     assertThat(me.username()).isEqualTo("analyst_a");
     assertThat(me.id()).isEqualTo(analyst.id().toString());
@@ -178,8 +180,38 @@ class AuthResourceTest {
     AuthenticatedUser entra = user("analyst_b", "entra");
     when(identities.loadUser(entra.id())).thenReturn(Optional.of(entra));
 
-    assertThat(resource.me(as(entra)).mustChangePassword()).isFalse();
+    assertThat(resource.me(as(entra), throughThePasswordDoor()).mustChangePassword())
+        .isFalse();
     verify(identities, never()).findLocalAccount(anyString());
+  }
+
+  @Test
+  @DisplayName("/me does not ask a Microsoft sign-in to replace a password it did not use")
+  void microsoftSignInIsNeverAskedForTheOldPassword() {
+    when(identities.loadUser(analyst.id())).thenReturn(Optional.of(analyst));
+    // The account does still hold a password somebody else set.
+    holds(account(analyst, CURRENT, true, null));
+
+    // ...but this session was opened with Microsoft, so the token carries no
+    // pending change, and AuthFilter is not holding it back either.
+    assertThat(resource.me(as(analyst), throughMicrosoft()).mustChangePassword()).isFalse();
+  }
+
+  /** A request on a token issued by the password door with a change pending. */
+  private static ContainerRequestContext throughThePasswordDoor() {
+    return requestWhere(true);
+  }
+
+  /** A request on a token from any other door: a Microsoft sign-in. */
+  private static ContainerRequestContext throughMicrosoft() {
+    return requestWhere(false);
+  }
+
+  private static ContainerRequestContext requestWhere(boolean passwordChangePending) {
+    ContainerRequestContext request = mock(ContainerRequestContext.class);
+    when(request.getProperty(AuthFilter.PASSWORD_CHANGE_PENDING))
+        .thenReturn(passwordChangePending);
+    return request;
   }
 
   private static SecurityContext as(Principal who) {
