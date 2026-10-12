@@ -325,7 +325,7 @@ export default function LoginPage() {
 function MicrosoftButton({ href, label }: { href: string; label: string }) {
   return (
     <a
-      className="tw:flex tw:h-11 tw:w-full tw:items-center tw:justify-center tw:gap-3 tw:rounded-lg tw:bg-linear-to-r tw:from-brand-700 tw:via-indigo-600 tw:to-violet-600 tw:px-4 tw:text-md tw:font-semibold tw:text-white tw:shadow-[0_4px_16px_-4px_rgb(105_39_218/0.55)] tw:transition tw:duration-150 tw:hover:from-brand-800 tw:hover:via-indigo-700 tw:hover:to-violet-700 tw:hover:shadow-[0_6px_22px_-4px_rgb(105_39_218/0.7)] tw:focus-visible:outline-2 tw:focus-visible:outline-offset-2 tw:focus-visible:outline-brand-600"
+      className="tw:flex tw:h-11 tw:w-full tw:items-center tw:justify-center tw:gap-3 tw:rounded-lg tw:bg-linear-to-r tw:from-violet-700 tw:via-brand-600 tw:via-30% tw:to-cyan-500 tw:px-4 tw:text-md tw:font-semibold tw:text-white tw:shadow-[0_4px_16px_-4px_rgb(21_112_239/0.55)] tw:transition tw:duration-150 tw:hover:from-violet-800 tw:hover:via-brand-700 tw:hover:to-cyan-600 tw:hover:shadow-[0_6px_22px_-4px_rgb(21_112_239/0.7)] tw:focus-visible:outline-2 tw:focus-visible:outline-offset-2 tw:focus-visible:outline-brand-600"
       href={href}>
       <span className="tw:flex tw:size-7 tw:items-center tw:justify-center tw:rounded-md tw:bg-white">
         <MicrosoftLogo />
