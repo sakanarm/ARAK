@@ -125,12 +125,15 @@ public class AuthResource {
 
   public record PasswordChangeRequest(String currentPassword, String newPassword) {}
 
-  /** What the login screen needs before anyone has logged in. */
+  /**
+   * What the login screen needs before anyone has logged in.
+   *
+   * <p>No tenant or client id: the service sends the browser to Microsoft
+   * itself, so the page needs to know only that the button works and what it
+   * says.
+   */
   public record AuthConfig(
-      boolean localLoginEnabled,
-      boolean entraEnabled,
-      String entraTenantId,
-      String entraClientId) {}
+      boolean localLoginEnabled, boolean entraEnabled, String entraButtonLabel) {}
 
   private final LocalIdentityDao identities;
   private final JwtService tokens;
@@ -146,12 +149,11 @@ public class AuthResource {
   @GET
   @Path("/config")
   public AuthConfig config() {
-    // The client secret is deliberately absent: this endpoint is unauthenticated
-    // and only the public half of the Entra registration belongs in a browser.
-    boolean entra =
-        isSet(config.getEntraTenantId()) && isSet(config.getEntraClientId());
+    // Unauthenticated, so it says only whether Microsoft sign-in is set up,
+    // never with what.
+    boolean entra = config.isEntraLoginConfigured();
     return new AuthConfig(
-        config.isAllowLocalUsers(), entra, config.getEntraTenantId(), config.getEntraClientId());
+        config.isAllowLocalUsers(), entra, entra ? config.getEntraLoginButtonLabel() : null);
   }
 
   @POST
@@ -167,8 +169,14 @@ public class AuthResource {
 
     char[] password = request.password().toCharArray();
     try {
-      Optional<LocalIdentityDao.LocalAccount> found =
-          identities.findLocalAccount(request.username().trim());
+      String name = request.username().trim();
+      Optional<LocalIdentityDao.LocalAccount> found = identities.findLocalAccount(name);
+      if (found.isEmpty() && name.contains("@")) {
+        // The form says "email or username". A username wins when both match,
+        // so somebody who signed in by name before still reaches the same
+        // account however their email is recorded elsewhere.
+        found = identities.findLocalAccountByEmail(name);
+      }
 
       if (found.isEmpty()) {
         PasswordHasher.verify(password, DECOY_HASH);

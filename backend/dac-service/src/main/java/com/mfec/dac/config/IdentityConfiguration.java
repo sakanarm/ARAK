@@ -18,6 +18,45 @@ public class IdentityConfiguration {
   @JsonProperty("entraClientSecret")
   private String entraClientSecret;
 
+  /**
+   * The Entra app registration people sign in through (FR-2.1). Separate from
+   * the fields above, which are for reading the directory, because one login
+   * registration is shared by several applications so that nobody is asked to
+   * consent again for each of them.
+   */
+  @JsonProperty("entraLoginTenantId")
+  private String entraLoginTenantId;
+
+  @JsonProperty("entraLoginClientId")
+  private String entraLoginClientId;
+
+  /** A credential reference or the secret itself from the environment; never logged or returned. */
+  @JsonProperty("entraLoginClientSecret")
+  private String entraLoginClientSecret;
+
+  /**
+   * The address Microsoft sends the browser back to, ending in
+   * {@code /api/auth/callback/microsoft-entra-id}. It must be registered on
+   * the app registration exactly as written here.
+   */
+  @JsonProperty("entraLoginRedirectUri")
+  private String entraLoginRedirectUri;
+
+  @JsonProperty("entraLoginButtonLabel")
+  private String entraLoginButtonLabel = "Sign in with Microsoft";
+
+  /**
+   * The shared auth service asked, on every Microsoft sign-in, whether this
+   * person may use this application. Unset means ARAK's own accounts and roles
+   * decide alone.
+   */
+  @JsonProperty("authServiceUrl")
+  private String authServiceUrl;
+
+  /** This application's key for the auth service; never logged or returned. */
+  @JsonProperty("authServiceApiKey")
+  private String authServiceApiKey;
+
   @JsonProperty("allowLocalUsers")
   private boolean allowLocalUsers = true;
 
@@ -61,4 +100,16 @@ public class IdentityConfiguration {
    */
   @JsonProperty("bootstrapAdminPassword")
   private String bootstrapAdminPassword;
+
+  /** Microsoft sign-in is offered only when everything it needs is set. */
+  public boolean isEntraLoginConfigured() {
+    return isSet(entraLoginTenantId)
+        && isSet(entraLoginClientId)
+        && isSet(entraLoginClientSecret)
+        && isSet(entraLoginRedirectUri);
+  }
+
+  private static boolean isSet(String value) {
+    return value != null && !value.isBlank();
+  }
 }

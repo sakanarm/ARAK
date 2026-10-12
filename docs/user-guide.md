@@ -31,8 +31,25 @@ which rows and which columns, and applies that decision when the data is read.
 
 ## Signing in and your account
 
-Sign in on the login page with the username and password an administrator gave
-you. Your platform roles decide which pages you see in the left-hand menu.
+Sign in on the login page with the password an administrator gave you. Type
+either your username or the email address on your account in **Email or
+username**; both reach the same account. Your platform roles decide which pages
+you see in the left-hand menu.
+
+When your organisation has turned on Microsoft sign-in, the login page shows a
+**Sign in with ...** button (the words are your organisation's, for example
+*Sign in with Microsoft*) above **Sign in with email**. The Microsoft button
+signs you in with your work account; **Sign in with email** opens the password
+form described above, so password accounts keep working as before.
+
+- **Microsoft knows you but ARAK does not yet.** Signing in with Microsoft
+  proves who you are; it does not give you access. The first time, ARAK says
+  *You are signed in with Microsoft, but you do not have access to ARAK yet* until
+  an administrator adds an account with your work email and gives it a
+  platform role. Ask your ARAK administrator, then sign in again.
+- **For administrators:** to let somebody in through Microsoft, add them under
+  **People** with the same email address as their work account and give them
+  at least one platform role. Nobody is created automatically by signing in.
 
 - **Profile** (click your name, or `/profile`) shows your username, email,
   account type, the directory the account comes from, your groups, your

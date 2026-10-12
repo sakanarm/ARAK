@@ -1,11 +1,11 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Navigate, useLocation } from 'react-router-dom';
-import { AlertCircle, Columns01, Rows01, ShieldTick } from '@untitledui/icons';
+import { Navigate, useLocation, useNavigate } from 'react-router-dom';
+import { AlertCircle, Columns01, Mail01, Rows01, ShieldTick } from '@untitledui/icons';
 import { Button } from '@openmetadata/ui-core-components/components/base/buttons/button';
 import { Input } from '@openmetadata/ui-core-components/components/base/input/input';
 import { PasswordInput } from '@openmetadata/ui-core-components/components/base/input/password-input';
-import { apiErrorMessage, fetchAuthConfig } from '../api/client';
+import { apiErrorMessage, entraStartUrl, fetchAuthConfig } from '../api/client';
 import { AUTH_SPLASH_MS, useAuthSplash } from '../auth/AuthSplash';
 import { useAuthStore } from '../auth/authStore';
 import logo from '../assets/arak-logo.png';
@@ -15,26 +15,66 @@ interface FromState {
 }
 
 /**
+ * What the service means by each reason it sends back after a Microsoft
+ * sign-in that did not end in a session. Signing in with Microsoft proves who
+ * somebody is; whether they may use ARAK is ARAK's own accounts and roles, and
+ * a first sign-in usually ends at "not_registered" until an administrator adds
+ * the person.
+ */
+const SSO_ERRORS: Record<string, string> = {
+  not_registered:
+    'You are signed in with Microsoft, but you do not have access to ARAK yet. Ask an ARAK administrator to add your account.',
+  ambiguous:
+    'More than one ARAK account uses your email address. Ask an ARAK administrator to sort it out.',
+  not_allowed: 'Your account is not set up to use ARAK. Ask your administrator.',
+  unavailable: 'The sign-in service is not available at the moment. Try again in a few minutes.',
+  cancelled: 'Sign-in with Microsoft was cancelled.',
+};
+
+const SSO_FAILED = 'Sign-in with Microsoft did not finish. Try again.';
+
+/** A console path, never another site: the value came back through the address bar. */
+function safePath(value: string | null): string | null {
+  if (!value || !value.startsWith('/') || value.startsWith('//') || value.startsWith('/\\')) {
+    return null;
+  }
+  return value.startsWith('/login') ? null : value;
+}
+
+/**
  * Sign-in.
  *
- * Local username and password is the only method wired up (FR-2.2), which is
- * what the platform needs before a tenant exists and what every test fixture
- * uses. The Entra ID button is rendered from /auth/config rather than from a
- * build flag so that turning OIDC on later is a backend change and a redirect,
- * not a rewrite of this screen.
+ * Two ways in when Microsoft sign-in is set up: the Microsoft button, and
+ * email (or username) with a password, which every local account keeps. When
+ * it is not set up, the password form is the whole page, as before.
+ *
+ * A Microsoft sign-in leaves this page for Microsoft and comes back to it
+ * with ?sso=<code>, a one-time code the service trades for a session, or with
+ * ?sso_error=<reason>.
  */
 export default function LoginPage() {
   const location = useLocation();
+  const navigate = useNavigate();
   const token = useAuthStore((state) => state.token);
   const signIn = useAuthStore((state) => state.signIn);
+  const signInWithSso = useAuthStore((state) => state.signInWithSso);
   const splash = useAuthSplash();
+
+  const params = new URLSearchParams(location.search);
+  const ssoCode = params.get('sso');
+  const ssoError = params.get('sso_error');
+  const ssoTarget = safePath(params.get('to'));
 
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(
+    ssoError ? (SSO_ERRORS[ssoError] ?? SSO_FAILED) : null
+  );
   const [submitting, setSubmitting] = useState(false);
+  const [emailChosen, setEmailChosen] = useState(false);
+  const exchanged = useRef<string | null>(null);
 
-  const { data: config } = useQuery({
+  const { data: config, isPending } = useQuery({
     queryKey: ['auth-config'],
     queryFn: fetchAuthConfig,
     retry: false,
@@ -50,9 +90,29 @@ export default function LoginPage() {
   // as React allowed, and the page it left behind would be blank.
   const from = (location.state as FromState | null)?.from;
   const target =
-    from?.pathname && from.pathname !== '/login'
+    ssoTarget ??
+    (from?.pathname && from.pathname !== '/login'
       ? `${from.pathname}${from.search ?? ''}${from.hash ?? ''}`
-      : '/';
+      : '/');
+
+  useEffect(() => {
+    // Once per code. The code works a single time, and React runs an effect
+    // twice in development, so a second exchange would replace a session that
+    // worked with an error that is not true.
+    if (!ssoCode || exchanged.current === ssoCode) {
+      return;
+    }
+    exchanged.current = ssoCode;
+    splash.show('signing-in');
+    signInWithSso(ssoCode)
+      .then(() => splash.hideAfter(AUTH_SPLASH_MS))
+      .catch((caught) => {
+        splash.hide();
+        setError(apiErrorMessage(caught, SSO_FAILED));
+        // Off the address bar, so a reload does not spend a used code again.
+        navigate('/login', { replace: true });
+      });
+  }, [ssoCode, signInWithSso, splash, navigate]);
 
   if (token) {
     return <Navigate replace to={target} />;
@@ -61,7 +121,7 @@ export default function LoginPage() {
   const onSubmit = async (event: FormEvent) => {
     event.preventDefault();
     if (!username.trim() || !password) {
-      setError('Enter your username and password.');
+      setError('Enter your email or username, and your password.');
       return;
     }
     setSubmitting(true);
@@ -95,6 +155,19 @@ export default function LoginPage() {
   };
 
   const localDisabled = config?.localLoginEnabled === false;
+  const entra = config?.entraEnabled === true;
+  // With Microsoft sign-in on, the form waits behind "Sign in with email" so
+  // that the button most people want is the first thing on the page.
+  const showForm = !localDisabled && (!entra || emailChosen);
+
+  const alert = error && (
+    <div
+      className="tw:flex tw:items-start tw:gap-2 tw:rounded-lg tw:border tw:border-error_subtle tw:bg-error-primary tw:p-3"
+      role="alert">
+      <AlertCircle aria-hidden className="tw:mt-0.5 tw:size-4 tw:shrink-0 tw:text-error-primary" />
+      <p className="tw:text-sm tw:text-error-primary">{error}</p>
+    </div>
+  );
 
   return (
     <div className="tw:grid tw:min-h-screen tw:grid-cols-1 tw:bg-primary tw:lg:grid-cols-2">
@@ -120,81 +193,96 @@ export default function LoginPage() {
             Data access control over your OpenMetadata catalog.
           </p>
 
-          <form className="tw:mt-8 tw:flex tw:flex-col tw:gap-5" onSubmit={onSubmit}>
-            <Input
-              // The visible label carries a required asterisk, and PasswordInput
-              // renders its label outside the field so the input ends up with no
-              // accessible name at all. Naming both explicitly fixes the second
-              // and keeps the two fields consistent.
-              aria-label="Username"
-              autoComplete="username"
-              autoFocus
-              isDisabled={submitting || localDisabled}
-              isRequired
-              label="Username"
-              name="username"
-              onChange={setUsername}
-              placeholder="admin"
-              value={username}
-            />
+          {/* Nothing until the service says which ways in it offers, so the
+              page does not show the form and then swap it for buttons. */}
+          {!isPending && (
+            <div className="tw:mt-8 tw:flex tw:flex-col tw:gap-4">
+              {entra && (
+                <>
+                  <MicrosoftButton
+                    href={entraStartUrl(target)}
+                    label={config?.entraButtonLabel || 'Sign in with Microsoft'}
+                  />
+                  {!showForm && !localDisabled && (
+                    <Button
+                      className="tw:w-full"
+                      color="secondary"
+                      iconLeading={Mail01}
+                      onClick={() => {
+                        setEmailChosen(true);
+                        setError(null);
+                      }}
+                      size="lg"
+                      type="button">
+                      Sign in with email
+                    </Button>
+                  )}
+                  {!showForm && alert}
+                </>
+              )}
 
-            <PasswordInput
-              aria-label="Password"
-              autoComplete="current-password"
-              isDisabled={submitting || localDisabled}
-              isRequired
-              label="Password"
-              name="password"
-              onChange={setPassword}
-              placeholder="Enter your password"
-              value={password}
-            />
+              {showForm && (
+                <>
+                  {entra && (
+                    <div className="tw:flex tw:items-center tw:gap-3">
+                      <hr className="tw:h-px tw:flex-1 tw:border-none tw:bg-border-secondary" />
+                      <span className="tw:text-xs tw:text-quaternary">or sign in with email</span>
+                      <hr className="tw:h-px tw:flex-1 tw:border-none tw:bg-border-secondary" />
+                    </div>
+                  )}
+                  <form className="tw:flex tw:flex-col tw:gap-5" onSubmit={onSubmit}>
+                    <Input
+                      // The visible label carries a required asterisk, and PasswordInput
+                      // renders its label outside the field so the input ends up with no
+                      // accessible name at all. Naming both explicitly fixes the second
+                      // and keeps the two fields consistent.
+                      aria-label="Email or username"
+                      autoComplete="username"
+                      autoFocus
+                      isDisabled={submitting}
+                      isRequired
+                      label="Email or username"
+                      name="username"
+                      onChange={setUsername}
+                      placeholder="you@example.com"
+                      value={username}
+                    />
 
-            {error && (
-              <div
-                className="tw:flex tw:items-start tw:gap-2 tw:rounded-lg tw:border tw:border-error_subtle tw:bg-error-primary tw:p-3"
-                role="alert">
-                <AlertCircle aria-hidden className="tw:mt-0.5 tw:size-4 tw:shrink-0 tw:text-error-primary" />
-                <p className="tw:text-sm tw:text-error-primary">{error}</p>
-              </div>
-            )}
+                    <PasswordInput
+                      aria-label="Password"
+                      autoComplete="current-password"
+                      isDisabled={submitting}
+                      isRequired
+                      label="Password"
+                      name="password"
+                      onChange={setPassword}
+                      placeholder="Enter your password"
+                      value={password}
+                    />
 
-            <Button
-              className="tw:w-full"
-              isDisabled={localDisabled}
-              isLoading={submitting}
-              showTextWhileLoading
-              size="lg"
-              type="submit">
-              Sign in
-            </Button>
-          </form>
+                    {alert}
 
-          {config?.entraEnabled && (
-            <div className="tw:mt-6">
-              <div className="tw:flex tw:items-center tw:gap-3">
-                <hr className="tw:h-px tw:flex-1 tw:border-none tw:bg-border-secondary" />
-                <span className="tw:text-xs tw:text-quaternary">or</span>
-                <hr className="tw:h-px tw:flex-1 tw:border-none tw:bg-border-secondary" />
-              </div>
-              <Button
-                className="tw:mt-6 tw:w-full"
-                color="secondary"
-                isDisabled
-                size="lg"
-                type="button">
-                Continue with Microsoft Entra ID
-              </Button>
-              <p className="tw:mt-2 tw:text-center tw:text-xs tw:text-quaternary">
-                Single sign-on is configured but not yet enabled in this build.
-              </p>
+                    <Button
+                      className="tw:w-full"
+                      isLoading={submitting}
+                      showTextWhileLoading
+                      size="lg"
+                      type="submit">
+                      Sign in
+                    </Button>
+                  </form>
+                </>
+              )}
+
+              {localDisabled && (
+                <>
+                  {alert}
+                  <p className="tw:text-sm tw:text-tertiary">
+                    Local sign-in is disabled on this deployment. Use single sign-on.
+                  </p>
+                </>
+              )}
             </div>
-          )}
-
-          {localDisabled && (
-            <p className="tw:mt-6 tw:text-sm tw:text-tertiary">
-              Local sign-in is disabled on this deployment. Use single sign-on.
-            </p>
           )}
         </div>
       </main>
@@ -227,6 +315,35 @@ export default function LoginPage() {
         </ul>
       </aside>
     </div>
+  );
+}
+
+/**
+ * The single sign-on button: a plain link, because the service answers with
+ * a redirect to Microsoft and the whole page has to follow it.
+ */
+function MicrosoftButton({ href, label }: { href: string; label: string }) {
+  return (
+    <a
+      className="tw:flex tw:h-11 tw:w-full tw:items-center tw:justify-center tw:gap-3 tw:rounded-lg tw:bg-linear-to-r tw:from-brand-600 tw:to-brand-800 tw:px-4 tw:text-md tw:font-semibold tw:text-white tw:shadow-xs tw:transition tw:duration-100 tw:hover:from-brand-700 tw:hover:to-brand-900 tw:focus-visible:outline-2 tw:focus-visible:outline-offset-2 tw:focus-visible:outline-brand-600"
+      href={href}>
+      <span className="tw:flex tw:size-7 tw:items-center tw:justify-center tw:rounded-md tw:bg-white">
+        <MicrosoftLogo />
+      </span>
+      {label}
+    </a>
+  );
+}
+
+/** Microsoft's four squares, drawn rather than fetched. */
+function MicrosoftLogo() {
+  return (
+    <svg aria-hidden className="tw:size-4" viewBox="0 0 21 21">
+      <rect fill="#f25022" height="10" width="10" x="0" y="0" />
+      <rect fill="#7fba00" height="10" width="10" x="11" y="0" />
+      <rect fill="#00a4ef" height="10" width="10" x="0" y="11" />
+      <rect fill="#ffb900" height="10" width="10" x="11" y="11" />
+    </svg>
   );
 }
 

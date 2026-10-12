@@ -92,6 +92,19 @@ identity:
   entraTenantId: "${ENTRA_TENANT_ID:-}"
   entraClientId: "${ENTRA_CLIENT_ID:-}"
   entraClientSecret: "${ENTRA_CLIENT_SECRET:-}"
+  # Microsoft sign-in (FR-2.1). One app registration shared by several
+  # applications. All four must be set for the button to appear. The redirect
+  # URI is https://<host>/<base path>/api/auth/callback/microsoft-entra-id and
+  # must be registered on the app registration exactly as written.
+  entraLoginTenantId: "${ENTRA_LOGIN_TENANT_ID:-}"
+  entraLoginClientId: "${ENTRA_LOGIN_CLIENT_ID:-}"
+  entraLoginClientSecret: "${ENTRA_LOGIN_CLIENT_SECRET:-}"
+  entraLoginRedirectUri: "${ENTRA_LOGIN_REDIRECT_URI:-}"
+  entraLoginButtonLabel: "${ENTRA_LOGIN_BUTTON_LABEL:-Sign in with Microsoft}"
+  # The shared auth service asked whether a person may use ARAK at all. Unset
+  # means ARAK's own accounts and roles decide alone.
+  authServiceUrl: "${AUTH_SERVICE_URL:-}"
+  authServiceApiKey: "${AUTH_SERVICE_API_KEY:-}"
   allowLocalUsers: ${IDENTITY_ALLOW_LOCAL_USERS:-true}
   attributeCacheTtlSeconds: 300
   # Console session token. No default on purpose: the app refuses to start
