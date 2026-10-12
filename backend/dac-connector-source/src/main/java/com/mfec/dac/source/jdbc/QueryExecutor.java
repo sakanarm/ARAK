@@ -152,6 +152,26 @@ public final class QueryExecutor {
     }
 
     /**
+     * The next row as the source wrote each value in text, null after the last.
+     *
+     * <p>For a caller that hands values on in the source's own text form, such
+     * as the gateway: {@link #next()} renders values for JSON and loses what a
+     * client needs to read them back exactly (a timestamp's offset, a numeric's
+     * scale).
+     */
+    public List<String> nextText() throws SQLException {
+      if (finished || !rows.next()) {
+        finished = true;
+        return null;
+      }
+      List<String> row = new ArrayList<>(columns.size());
+      for (int i = 1; i <= columns.size(); i++) {
+        row.add(rows.getString(i));
+      }
+      return row;
+    }
+
+    /**
      * Gives the connection back. A read stopped part-way is cancelled first, so
      * the source stops producing rows nobody will take.
      */

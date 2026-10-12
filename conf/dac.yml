@@ -152,6 +152,38 @@ queryLimits:
   # runs longer than this.
   exportTimeoutSeconds: ${QUERY_EXPORT_TIMEOUT_SECONDS:-600}
 
+gateway:
+  # The ARAK Gateway (FR-19): a PostgreSQL port in front of the query proxy, so
+  # DBeaver, Power BI, Excel and psql read as the person signed in. Off unless
+  # GATEWAY_ENABLED is true. The password a client sends is a personal access
+  # token (POST /api/v1/me/tokens), never the person's own password.
+  enabled: ${GATEWAY_ENABLED:-false}
+  bindHost: "${GATEWAY_BIND_HOST:-127.0.0.1}"
+  port: ${GATEWAY_PORT:-5439}
+  # PKCS#12 holding the server certificate and key; the password is a
+  # credential reference (env:NAME holding user:password, fernet:, vault://).
+  keyStorePath: "${GATEWAY_KEYSTORE_PATH:-}"
+  keyStorePassword: "${GATEWAY_KEYSTORE_PASSWORD_REF:-}"
+  # A client that does not ask for TLS is turned away before it sends a token.
+  # Turn off only for a trial on one machine.
+  requireTls: ${GATEWAY_REQUIRE_TLS:-true}
+  maxConnections: ${GATEWAY_MAX_CONNECTIONS:-64}
+  maxConnectionsPerUser: ${GATEWAY_MAX_CONNECTIONS_PER_USER:-8}
+  authTimeoutSeconds: ${GATEWAY_AUTH_TIMEOUT_SECONDS:-30}
+  idleTimeoutSeconds: ${GATEWAY_IDLE_TIMEOUT_SECONDS:-1800}
+  maxRows: ${GATEWAY_MAX_ROWS:-100000}
+  statementTimeoutSeconds: ${GATEWAY_STATEMENT_TIMEOUT_SECONDS:-120}
+  maxFailuresPerAddress: ${GATEWAY_MAX_FAILURES_PER_ADDRESS:-10}
+  failureWindowSeconds: ${GATEWAY_FAILURE_WINDOW_SECONDS:-900}
+  maxTokenDays: ${GATEWAY_MAX_TOKEN_DAYS:-90}
+  # The catalog sandbox: a separate, empty PostgreSQL that answers the tools'
+  # questions about tables and columns. Never the source and never the app
+  # database. The credential is the account that builds one database per shape
+  # of what people may see (needs CREATEDB and membership of the reader role).
+  sandboxJdbcUrl: "${GATEWAY_SANDBOX_JDBC_URL:-}"
+  sandboxCredentialRef: "${GATEWAY_SANDBOX_CREDENTIAL_REF:-}"
+  sandboxReaderRole: "${GATEWAY_SANDBOX_READER_ROLE:-arak_gateway_reader}"
+
 secrets:
   provider: ${SECRETS_PROVIDER:-FERNET}
   fernetKey: "${FERNET_KEY:-}"

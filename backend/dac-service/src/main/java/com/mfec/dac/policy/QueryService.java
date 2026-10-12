@@ -315,7 +315,8 @@ public class QueryService {
       String purpose,
       boolean fresh) {
 
-    Enforced enforced = enforce(sourceId, sql, principal, runBy, clientIp, purpose, false);
+    Enforced enforced =
+        enforce(sourceId, sql, principal, runBy, clientIp, purpose, null, Via.WEB);
     DataSourceStore.Source source = enforced.source();
     QueryRewriter.Rewritten rewritten = enforced.rewritten();
     Set<String> touched = enforced.touched();
@@ -363,7 +364,7 @@ public class QueryService {
             touched,
             runBy,
             true,
-            false);
+            Via.WEB);
         return new Result(
             held.columns(),
             held.columnTypes(),
@@ -402,7 +403,7 @@ public class QueryService {
               TIMEOUT_SECONDS,
               ceiling);
     } catch (Exception e) {
-      throw notRun(e, enforced, sql, principal, runBy, clientIp, started, false);
+      throw notRun(e, enforced, sql, principal, runBy, clientIp, started, Via.WEB);
     }
 
     audit(
@@ -418,7 +419,7 @@ public class QueryService {
         touched,
         runBy,
         false,
-        false);
+        Via.WEB);
 
     if (ceiling > 0 && costs.admitted(page.estimatedCost(), page.unpricedBecause())) {
       LOG.info(
@@ -472,7 +473,8 @@ public class QueryService {
   public Download export(
       UUID sourceId, String sql, String principal, String clientIp, String purpose, int maxSeconds) {
 
-    Enforced enforced = enforce(sourceId, sql, principal, principal, clientIp, purpose, true);
+    Enforced enforced =
+        enforce(sourceId, sql, principal, principal, clientIp, purpose, null, Via.EXPORT);
     DataSourceStore.Source source = enforced.source();
     long started = System.nanoTime();
     int seconds = maxSeconds <= 0 ? DEFAULT_EXPORT_SECONDS : maxSeconds;
@@ -493,7 +495,7 @@ public class QueryService {
       if (slot != null) {
         slot.close();
       }
-      throw notRun(e, enforced, sql, principal, principal, clientIp, started, true);
+      throw notRun(e, enforced, sql, principal, principal, clientIp, started, Via.EXPORT);
     }
   }
 
@@ -614,7 +616,7 @@ public class QueryService {
           enforced.touched(),
           principal,
           false,
-          true);
+          Via.EXPORT);
     }
 
     @Override
@@ -624,6 +626,184 @@ public class QueryService {
       }
       closed = true;
       record("FAILED", "The download was prepared and never sent.", 0);
+      cursor.close();
+      slot.close();
+    }
+  }
+
+  // -------------------------------------------------------------- gateway
+
+  /**
+   * Starts a read for the gateway (M29): a tool speaking the PostgreSQL
+   * protocol, sending as the signed-in person and as nobody else.
+   *
+   * <p>The same steps as {@link #run}: one policy, one rewrite, one audit row.
+   * What differs is what comes back. A BI tool asks for whole tables and reads
+   * them a batch at a time, so rows are handed over as the source sends them,
+   * in the source's own text, up to {@code maxRows}; nothing is cached, since a
+   * tool that refreshes wants the table as it is now.
+   *
+   * @param defaultSchema where an unqualified table is looked for: the
+   *     client's {@code search_path}
+   * @param timeoutSeconds how long the source may take to start answering
+   * @throws RejectedException when the policy, the statement or the source
+   *     refused it; audited
+   * @throws BusyException when the source has no room; audited
+   */
+  public Feed feed(
+      UUID sourceId,
+      String sql,
+      String principal,
+      String clientIp,
+      String purpose,
+      String defaultSchema,
+      Via via,
+      int maxRows,
+      int timeoutSeconds) {
+
+    Enforced enforced =
+        enforce(sourceId, sql, principal, principal, clientIp, purpose, defaultSchema, via);
+    DataSourceStore.Source source = enforced.source();
+    long started = System.nanoTime();
+
+    QueryAdmission.Permit slot = null;
+    try {
+      slot = admission.admit(source.id(), principal);
+      QueryExecutor.Cursor cursor =
+          executor.open(
+              target(source),
+              source.credentialRef(),
+              enforced.rewritten().sql(),
+              timeoutSeconds,
+              costs.ceilingFor(source.engine().name()),
+              EXPORT_FETCH_SIZE);
+      return new Feed(enforced, sql, principal, clientIp, via, cursor, slot, started, maxRows);
+    } catch (Exception e) {
+      if (slot != null) {
+        slot.close();
+      }
+      throw notRun(e, enforced, sql, principal, principal, clientIp, started, via);
+    }
+  }
+
+  /**
+   * A gateway read the source has started answering.
+   *
+   * <p>Audited once, when it is closed: with the rows that went out and, if it
+   * stopped early, why. Whoever opens one closes it, on every path, because it
+   * holds a source connection and a slot until then.
+   */
+  public final class Feed implements AutoCloseable {
+    private final Enforced enforced;
+    private final String sql;
+    private final String principal;
+    private final String clientIp;
+    private final Via via;
+    private final QueryExecutor.Cursor cursor;
+    private final QueryAdmission.Permit slot;
+    private final long started;
+    private final int maxRows;
+    private long sent;
+    private boolean capped;
+    private String failure;
+    private boolean closed;
+
+    private Feed(
+        Enforced enforced,
+        String sql,
+        String principal,
+        String clientIp,
+        Via via,
+        QueryExecutor.Cursor cursor,
+        QueryAdmission.Permit slot,
+        long started,
+        int maxRows) {
+      this.enforced = enforced;
+      this.sql = sql;
+      this.principal = principal;
+      this.clientIp = clientIp;
+      this.via = via;
+      this.cursor = cursor;
+      this.slot = slot;
+      this.started = started;
+      this.maxRows = maxRows;
+    }
+
+    public List<String> columns() {
+      return cursor.columns();
+    }
+
+    /** The source's type name for each column, as its driver reports it. */
+    public List<String> columnTypes() {
+      return cursor.columnTypes();
+    }
+
+    /**
+     * The next row in the source's text form; null after the last one, or
+     * once {@code maxRows} have gone out ({@link #capped} then says so).
+     */
+    public List<String> next() throws SQLException {
+      if (closed || capped) {
+        return null;
+      }
+      if (maxRows > 0 && sent >= maxRows) {
+        capped = cursor.nextText() != null;
+        return null;
+      }
+      List<String> row;
+      try {
+        row = cursor.nextText();
+      } catch (SQLException e) {
+        failure = "The source stopped answering after " + sent + " rows: " + e.getMessage();
+        LOG.warn("Gateway read from {} failed part-way: {}", enforced.source().name(), e.toString());
+        throw e;
+      }
+      if (row != null) {
+        sent++;
+      }
+      return row;
+    }
+
+    /** Whether rows were left unsent because the read reached its cap. */
+    public boolean capped() {
+      return capped;
+    }
+
+    public long sent() {
+      return sent;
+    }
+
+    /** Why the read stopped early, for the audit row; the first reason wins. */
+    public void stopped(String reason) {
+      if (failure == null) {
+        failure = reason;
+      }
+    }
+
+    @Override
+    public void close() {
+      if (closed) {
+        return;
+      }
+      closed = true;
+      String reason =
+          failure != null
+              ? failure
+              : capped ? "Stopped at the gateway's limit of " + maxRows + " rows." : null;
+      audit(
+          principal,
+          enforced.source().id(),
+          sql,
+          enforced.rewritten().sql(),
+          failure == null ? "EXECUTED" : "FAILED",
+          reason,
+          sent,
+          (int) Math.min(Integer.MAX_VALUE, (System.nanoTime() - started) / 1_000_000),
+          clientIp,
+          enforced.touched(),
+          principal,
+          false,
+          via);
       cursor.close();
       slot.close();
     }
@@ -639,11 +819,56 @@ public class QueryService {
       List<SensitiveData.Concern> warnings) {}
 
   /**
+   * How a statement came in, as its audit row records it.
+   *
+   * @param exported a read of every row, written out as a copy
+   * @param channel {@code WEB} for the console and the REST API, {@code GATEWAY}
+   *     for a tool speaking the PostgreSQL protocol (M29)
+   * @param clientApp the name the tool gave for itself, as it gave it; only the
+   *     gateway has one
+   */
+  public record Via(boolean exported, String channel, String clientApp) {
+    static final Via WEB = new Via(false, "WEB", null);
+    static final Via EXPORT = new Via(true, "WEB", null);
+
+    public static Via gateway(String clientApp) {
+      return new Via(
+          false,
+          "GATEWAY",
+          clientApp == null || clientApp.isBlank()
+              ? null
+              : clientApp.substring(0, Math.min(clientApp.length(), 64)));
+    }
+  }
+
+  /**
+   * Audits a gateway statement that never reached the policy engine: one the
+   * gateway refused itself, such as a write, or a question about the catalog
+   * that its sandbox answered. The row names no asset and has no rewritten
+   * statement, which is how an auditor tells it from a read of data.
+   */
+  public void auditGateway(
+      UUID sourceId,
+      String principal,
+      String sql,
+      String outcome,
+      String reason,
+      Long rowCount,
+      Integer millis,
+      String clientIp,
+      Via via) {
+    audit(principal, sourceId, sql, null, outcome, reason, rowCount, millis, clientIp, Set.of(),
+        null, false, via);
+  }
+
+  /**
    * Finds the source, governs every table the statement names and rewrites it,
    * auditing and throwing on anything that stops it there.
    *
-   * @param exported whether this is a download of every row, as the audit row
-   *     records it -- a refused download is still somebody trying to take a copy
+   * @param defaultSchema the schema an unqualified table is read from; null
+   *     refuses one, as the console does
+   * @param via how the statement came in, as the audit row records it -- a
+   *     refused download is still somebody trying to take a copy
    */
   private Enforced enforce(
       UUID sourceId,
@@ -652,7 +877,8 @@ public class QueryService {
       String runBy,
       String clientIp,
       String purpose,
-      boolean exported) {
+      String defaultSchema,
+      Via via) {
 
     // Audited before anything else can go right, because a query aimed at a
     // source that is gone or switched off is still someone trying to read data
@@ -663,19 +889,19 @@ public class QueryService {
     if (found.isEmpty()) {
       String reason = "No data source " + sourceId;
       audit(principal, null, sql, null, "REJECTED", reason, null, null, clientIp, Set.of(), runBy,
-          false, exported);
+          false, via);
       throw new RejectedException(reason);
     }
     DataSourceStore.Source source = found.get();
     if (!source.enabled()) {
       String reason = source.name() + " is disabled";
       audit(principal, source.id(), sql, null, "REJECTED", reason, null, null, clientIp, Set.of(),
-          runBy, false, exported);
+          runBy, false, via);
       throw new RejectedException(reason);
     }
 
     SqlDialect dialect = dialectFor(source);
-    QueryRewriter rewriter = new QueryRewriter(dialect, null);
+    QueryRewriter rewriter = new QueryRewriter(dialect, defaultSchema);
 
     // Every governed table the rewriter resolved, in the order it met them,
     // including the one a refusal names: the query log files each row under
@@ -697,7 +923,7 @@ public class QueryService {
         touched.add(denied.assetFqn());
       }
       audit(principal, source.id(), sql, null, "REJECTED", e.getMessage(), null, null, clientIp,
-          touched, runBy, false, exported);
+          touched, runBy, false, via);
       throw new RejectedException(
           e.getMessage(),
           e instanceof QueryRewriter.DeniedException denied ? denied.assetFqn() : null,
@@ -719,7 +945,7 @@ public class QueryService {
           touched,
           runBy,
           false,
-          exported);
+          via);
       throw e;
     }
     return new Enforced(source, rewritten, touched, List.copyOf(warnings.values()));
@@ -737,7 +963,7 @@ public class QueryService {
       String runBy,
       String clientIp,
       long started,
-      boolean exported) {
+      Via via) {
     DataSourceStore.Source source = enforced.source();
     String rewritten = enforced.rewritten().sql();
     Set<String> touched = enforced.touched();
@@ -749,7 +975,7 @@ public class QueryService {
       // wording, so a throttle is never read as somebody refused access.
       String reason = busy(full, source);
       audit(principal, source.id(), sql, rewritten, "REJECTED", reason, null, millis, clientIp,
-          touched, runBy, false, exported);
+          touched, runBy, false, via);
       return new BusyException(reason, full.retryAfterSeconds());
     }
     if (e instanceof QueryExecutor.CostExceededException over) {
@@ -762,19 +988,19 @@ public class QueryService {
               + " set for "
               + source.engine().name()
               + " sources, so it was not run. "
-              + (exported
+              + (via.exported()
                   ? "A download reads every row, so it is priced without the row limit the"
                       + " screen uses. A WHERE that narrows it to the rows you need usually"
                       + " brings it under."
                   : "A WHERE on an indexed column, fewer joins or less to sort usually brings"
                       + " it under.");
       audit(principal, source.id(), sql, rewritten, "REJECTED", reason, null, millis, clientIp,
-          touched, runBy, false, exported);
+          touched, runBy, false, via);
       // About the statement, so the console offers to narrow it.
       return new RejectedException(reason, null, true);
     }
     audit(principal, source.id(), sql, rewritten, "FAILED", e.getMessage(), null, millis, clientIp,
-        touched, runBy, false, exported);
+        touched, runBy, false, via);
     // The source's message can name objects the caller is not entitled to
     // know exist, so it goes to the log and a shorter one goes back.
     LOG.warn("Query against {} failed: {}", source.name(), e.toString());
@@ -1170,7 +1396,7 @@ public class QueryService {
       Set<String> assets,
       String runBy,
       boolean fromCache,
-      boolean exported) {
+      Via via) {
 
     try {
       jdbi.useHandle(
@@ -1181,10 +1407,11 @@ public class QueryService {
                       INSERT INTO audit_query (principal_name, data_source_id, original_sql,
                                                rewritten_sql, outcome, reject_reason, row_count,
                                                duration_ms, client_ip, asset_fqns, run_by,
-                                               served_from_cache, exported)
+                                               served_from_cache, exported, channel,
+                                               client_app)
                       VALUES (:principal, CAST(:sourceId AS uuid), :original, :rewritten,
                               :outcome, :reason, :rowCount, :millis, CAST(:ip AS inet),
-                              :assets, :runBy, :fromCache, :exported)
+                              :assets, :runBy, :fromCache, :exported, :channel, :clientApp)
                       """)
                   .bind("principal", principal)
                   .bind("sourceId", sourceId)
@@ -1198,7 +1425,9 @@ public class QueryService {
                   .bindArray("assets", String.class, assets.toArray(new String[0]))
                   .bind("runBy", runBy == null || runBy.equalsIgnoreCase(principal) ? null : runBy)
                   .bind("fromCache", fromCache)
-                  .bind("exported", exported)
+                  .bind("exported", via.exported())
+                  .bind("channel", via.channel())
+                  .bind("clientApp", via.clientApp())
                   .execute());
     } catch (Exception e) {
       LOG.error("Could not write the query audit row for {}", principal, e);
