@@ -101,12 +101,30 @@ public class IdentityConfiguration {
   @JsonProperty("bootstrapAdminPassword")
   private String bootstrapAdminPassword;
 
-  /** Microsoft sign-in is offered only when everything it needs is set. */
+  /** What {@link #entraLoginRedirectUri} has to end with: where the callback is served. */
+  public static final String ENTRA_LOGIN_CALLBACK_PATH = "/api/auth/callback/microsoft-entra-id";
+
+  /**
+   * Microsoft sign-in is offered only when everything it needs is set, and the
+   * redirect address is one the callback can be reached at. A button that
+   * leads to an error page helps nobody; startup logs which value is wrong.
+   */
   public boolean isEntraLoginConfigured() {
     return isSet(entraLoginTenantId)
         && isSet(entraLoginClientId)
         && isSet(entraLoginClientSecret)
-        && isSet(entraLoginRedirectUri);
+        && isSet(entraLoginRedirectUri)
+        && entraLoginRedirectUri.trim().endsWith(ENTRA_LOGIN_CALLBACK_PATH);
+  }
+
+  /** True when some Microsoft sign-in value is set but sign-in is still off. */
+  public boolean isEntraLoginHalfConfigured() {
+    boolean any =
+        isSet(entraLoginTenantId)
+            || isSet(entraLoginClientId)
+            || isSet(entraLoginClientSecret)
+            || isSet(entraLoginRedirectUri);
+    return any && !isEntraLoginConfigured();
   }
 
   private static boolean isSet(String value) {

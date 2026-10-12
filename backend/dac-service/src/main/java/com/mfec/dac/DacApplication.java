@@ -20,9 +20,13 @@ import com.mfec.dac.llm.LlmSecretRef;
 import com.mfec.dac.llm.LlmFeatureStore;
 import com.mfec.dac.llm.LlmSettingStore;
 import com.mfec.dac.auth.AuthFilter;
+import com.mfec.dac.auth.AuthServiceClient;
+import com.mfec.dac.auth.EntraLogin;
+import com.mfec.dac.auth.EntraLoginState;
 import com.mfec.dac.auth.JwtService;
 import com.mfec.dac.auth.LocalIdentityDao;
 import com.mfec.dac.auth.PasswordHasher;
+import com.mfec.dac.auth.SsoCodeStore;
 import com.mfec.dac.catalog.CatalogChangeApplier;
 import com.mfec.dac.catalog.CatalogQuery;
 import com.mfec.dac.catalog.CatalogSyncService;
@@ -88,6 +92,7 @@ import com.mfec.dac.resources.QueryResource;
 import com.mfec.dac.resources.DirectAccessResource;
 import com.mfec.dac.resources.NativeSubscriptionResource;
 import com.mfec.dac.resources.EnforcementResource;
+import com.mfec.dac.resources.EntraLoginResource;
 import com.mfec.dac.enforcement.AppDbEntitlementSource;
 import com.mfec.dac.enforcement.DirectAccessService;
 import com.mfec.dac.enforcement.EnforcementStateStore;
@@ -538,6 +543,7 @@ public class DacApplication extends Application<DacConfiguration> {
     AccessTokenStore accessTokens =
         new AccessTokenStore(jdbi, java.time.Clock.systemUTC(), gatewayConfig.getMaxTokenDays());
     AuthEventLog authEvents = new AuthEventLog(jdbi);
+    registerEntraLogin(environment, identity, identities, tokens, authEvents);
     environment.jersey().register(
         new AccessTokenResource(accessTokens, authEvents));
     // The ARAK Gateway (FR-19, M29a): a PostgreSQL port in front of the query
@@ -827,6 +833,61 @@ public class DacApplication extends Application<DacConfiguration> {
    * in a deployment file would silently reset the administrator password on
    * every restart, quietly undoing a rotation nobody would think to check.
    */
+  /**
+   * Microsoft sign-in (FR-2.1). The endpoints are registered either way and
+   * answer 404 until all four ENTRA_LOGIN values are set, which is also when
+   * the login page starts showing the button.
+   */
+  private void registerEntraLogin(
+      Environment environment,
+      IdentityConfiguration identity,
+      LocalIdentityDao identities,
+      JwtService tokens,
+      AuthEventLog authEvents) {
+    java.time.Clock clock = java.time.Clock.systemUTC();
+    EntraLogin entra = null;
+    if (identity.isEntraLoginConfigured()) {
+      entra =
+          new EntraLogin(
+              identity.getEntraLoginTenantId(),
+              identity.getEntraLoginClientId(),
+              identity.getEntraLoginClientSecret(),
+              identity.getEntraLoginRedirectUri(),
+              EntraLogin.httpTransport(),
+              environment.getObjectMapper(),
+              clock);
+    }
+    AuthServiceClient authService =
+        new AuthServiceClient(
+            identity.getAuthServiceUrl(),
+            identity.getAuthServiceApiKey(),
+            AuthServiceClient.httpTransport(),
+            environment.getObjectMapper());
+    EntraLoginResource login =
+        new EntraLoginResource(
+            entra,
+            new EntraLoginState(identity.getJwtSecret(), clock),
+            authService,
+            new SsoCodeStore(clock),
+            identities,
+            tokens,
+            authEvents);
+    environment.jersey().register(login);
+    environment.jersey().register(new EntraLoginResource.Callback(login));
+    if (identity.isEntraLoginHalfConfigured()) {
+      LOG.error(
+          "Microsoft sign-in is off: set all of ENTRA_LOGIN_TENANT_ID, ENTRA_LOGIN_CLIENT_ID, "
+              + "ENTRA_LOGIN_CLIENT_SECRET and ENTRA_LOGIN_REDIRECT_URI, and end the redirect URI "
+              + "with {}",
+          IdentityConfiguration.ENTRA_LOGIN_CALLBACK_PATH);
+    }
+    if (entra != null) {
+      LOG.info(
+          "Microsoft sign-in is on; the auth service is {}",
+          authService.isConfigured() ? "asked on every sign-in" : "not configured");
+    }
+  }
+
   private void bootstrapLocalAdmin(IdentityConfiguration identity, LocalIdentityDao identities) {
     String password = identity.getBootstrapAdminPassword();
     if (password == null || password.isBlank()) {

@@ -83,6 +83,42 @@ public class LocalIdentityDao {
     return found.size() == 1 ? Optional.of(found.get(0)) : Optional.empty();
   }
 
+  /** A person who may be the one Microsoft just signed in, and how many platform roles they hold. */
+  public record SsoCandidate(UUID id, String username, int roles) {}
+
+  /**
+   * Every enabled person whose email is this one, from any directory, with
+   * the number of platform roles each holds.
+   *
+   * <p>The caller decides between them; this only reads. A disabled account,
+   * a group and a service account are left out: none of them is a person who
+   * may sign in.
+   */
+  public List<SsoCandidate> findSsoCandidates(String email) {
+    return jdbi.withHandle(
+        handle ->
+            handle
+                .createQuery(
+                    """
+                    SELECT p.id, p.username,
+                           (SELECT count(*) FROM app_role_assignment a
+                            WHERE a.principal_id = p.id) AS roles
+                    FROM principal p
+                    WHERE p.principal_type = 'USER'
+                      AND p.enabled = true
+                      AND lower(p.email) = lower(:email)
+                    ORDER BY p.username
+                    """)
+                .bind("email", email)
+                .map(
+                    (rs, ctx) ->
+                        new SsoCandidate(
+                            rs.getObject("id", UUID.class),
+                            rs.getString("username"),
+                            rs.getInt("roles")))
+                .list());
+  }
+
   private static final String LOCAL_ACCOUNT_SELECT =
       """
       SELECT p.id, p.username, p.email, p.display_name, p.enabled,

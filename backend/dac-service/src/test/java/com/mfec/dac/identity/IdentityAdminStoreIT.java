@@ -111,6 +111,25 @@ class IdentityAdminStoreIT {
     }
 
     @Test
+    @DisplayName("a person made for Microsoft sign-in has no password, and Microsoft finds them")
+    void microsoftOnly() {
+      UUID id =
+          store.createLocal(
+              new IdentityAdminStore.NewLocalPrincipal(
+                  "analyst_m", "Analyst M", "Analyst_M@example.com", "USER", null,
+                  List.of(new IdentityAdminStore.RoleRequest("AUDITOR", null))),
+              "admin",
+              "192.0.2.10");
+
+      LocalIdentityDao dao = new LocalIdentityDao(jdbi);
+      assertThat(dao.findLocalAccount("analyst_m").orElseThrow().hasCredential()).isFalse();
+      assertThat(dao.findLocalAccountByEmail("analyst_m@example.com")).isEmpty();
+      assertThat(dao.mustChangePassword(id)).isFalse();
+      assertThat(dao.findSsoCandidates("analyst_m@example.com"))
+          .containsExactly(new LocalIdentityDao.SsoCandidate(id, "analyst_m", 1));
+    }
+
+    @Test
     @DisplayName("changing the password oneself clears must_change and the lock, and is audited")
     void changingOnesOwnPassword() {
       UUID id = create("analyst_a");
