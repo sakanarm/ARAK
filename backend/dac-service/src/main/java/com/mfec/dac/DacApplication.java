@@ -36,6 +36,11 @@ import com.mfec.dac.catalog.OpenMetadataLink;
 import com.mfec.dac.catalog.SyncStateDao;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.mfec.dac.config.DacConfiguration;
+import com.mfec.dac.config.GatewayConfiguration;
+import com.mfec.dac.gateway.AccessTokenStore;
+import com.mfec.dac.gateway.AuthEventLog;
+import com.mfec.dac.gateway.PgWireServer;
+import com.mfec.dac.resources.AccessTokenResource;
 import com.mfec.dac.config.IdentityConfiguration;
 import com.mfec.dac.config.WebConfiguration;
 import com.mfec.dac.json.JsonMapperProvider;
@@ -507,23 +512,45 @@ public class DacApplication extends Application<DacConfiguration> {
                 java.time.Clock.systemUTC()));
     environment.jersey().register(new AccessWorkflowResource(accessWorkflows));
     environment.jersey().register(new RequestTemplateResource(requestTemplates, purposes));
+    QueryService queryService =
+        new QueryService(
+            jdbi,
+            environment.getObjectMapper(),
+            sources,
+            decisionService,
+            new QueryExecutor(credentials, 10),
+            resultCache,
+            queryAdmission,
+            queryCosts,
+            java.time.Clock.systemUTC(),
+            sensitiveData,
+            NativeReadGate.of(new NativeRoleStore(jdbi)));
     environment.jersey().register(
         new QueryResource(
-            new QueryService(
-                jdbi,
-                environment.getObjectMapper(),
-                sources,
-                decisionService,
-                new QueryExecutor(credentials, 10),
-                resultCache,
-                queryAdmission,
-                queryCosts,
-                java.time.Clock.systemUTC(),
-                sensitiveData,
-                NativeReadGate.of(new NativeRoleStore(jdbi))),
+            queryService,
             eligibility,
             config.getQueryLimits().getExportTimeoutSeconds(),
             purposes));
+    // Personal access tokens: the password a client tool sends to the gateway.
+    // The tokens exist whether or not the gateway is on, so a person can make
+    // one before the port opens.
+    GatewayConfiguration gatewayConfig = config.getGateway();
+    AccessTokenStore accessTokens =
+        new AccessTokenStore(jdbi, java.time.Clock.systemUTC(), gatewayConfig.getMaxTokenDays());
+    AuthEventLog authEvents = new AuthEventLog(jdbi);
+    environment.jersey().register(
+        new AccessTokenResource(accessTokens, authEvents));
+    // The ARAK Gateway (FR-19, M29a): a PostgreSQL port in front of the query
+    // proxy. Off unless configured; it refuses to start without TLS or without
+    // its catalog sandbox rather than start weaker.
+    if (gatewayConfig.isEnabled()) {
+      environment
+          .lifecycle()
+          .manage(
+              new PgWireServer(
+                  gatewayConfig, jdbi, accessTokens, authEvents, sources, purposes,
+                  decisionService, queryService, credentials));
+    }
     // Statements kept under a name; the text only, never what it returned.
     environment.jersey().register(new SavedQueryResource(new SavedQueryStore(jdbi)));
     // The query log (FR-8.3, M10): each reader sees the rows that are theirs

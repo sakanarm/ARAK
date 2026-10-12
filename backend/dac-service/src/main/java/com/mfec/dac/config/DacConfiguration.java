@@ -62,4 +62,9 @@ public class DacConfiguration extends Configuration {
   @NotNull
   @JsonProperty("web")
   private WebConfiguration web = new WebConfiguration();
+
+  @Valid
+  @NotNull
+  @JsonProperty("gateway")
+  private GatewayConfiguration gateway = new GatewayConfiguration();
 }

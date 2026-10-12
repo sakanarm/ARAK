@@ -1160,6 +1160,169 @@ role, that grant stays, and so does the role.
 on that source, with who did it and why. No password and no client address is
 ever shown.
 
+## Connecting DBeaver, Power BI, Excel and other tools (ARAK Gateway)
+
+The ARAK Gateway lets a desktop tool read a source as you, through ARAK. It
+speaks the PostgreSQL protocol, so any tool that can connect to PostgreSQL can
+connect to it. Every statement goes through the same query proxy as the Query
+page: the same subscription and data policies, row filters, masks and hidden
+columns apply, and every statement is on the **Query log** with the tool's
+name. The gateway only reads. Writes, `COPY`, `SELECT INTO` and `SET ROLE`
+are refused.
+
+The gateway is off unless an administrator turns it on. It currently serves
+PostgreSQL sources only.
+
+**What you need**
+
+| Field in the tool | What to type |
+|---|---|
+| Host / Server | the gateway's address, from your administrator (for example `arak.example.com`) |
+| Port | `5439`, unless your administrator says otherwise |
+| Database | the source's name, as it appears under **Settings → Registered sources** |
+| User | your ARAK username |
+| Password | a personal access token (below), never your own password |
+| SSL / TLS | required. Choose `require`, or `verify-full` if your administrator gives you the certificate authority. A tool that does not ask for TLS is turned away. |
+
+**Personal access tokens.** A token is a password for tools. It belongs to you,
+lasts at most 90 days (an administrator can set a shorter limit), is shown once
+when it is made, and can be revoked at any time. There is no page for tokens in
+the app yet, so they are made with the API while you are signed in:
+
+- Make one: `POST /api/v1/me/tokens` with `{"name": "DBeaver on my laptop", "days": 30}`.
+  The answer holds the token's secret; copy it into the tool and do not keep it
+  anywhere else.
+- See yours: `GET /api/v1/me/tokens` (the secret is never shown again).
+- Revoke one: `POST /api/v1/me/tokens/{id}/revoke` with `{"reason": "laptop replaced"}`.
+  It stops working at once. A revoked or expired token stays on the list as
+  ended, so the Query log can still say which token was used.
+
+Administrators can list everyone's tokens with `GET /api/v1/tokens` and revoke
+any of them. When your account is disabled, all your tokens stop working.
+
+**Declaring a purpose.** If a policy allows a table only for a purpose, declare
+the purpose for the connection. Either send it when connecting, as the
+connection option `-c arak.purpose=reporting`, or run
+`SET arak.purpose = 'reporting'` after connecting. `SHOW arak.purpose` tells you
+which one is in force. A purpose that is not on **Purposes** is refused.
+
+### DBeaver
+
+1. **Database → New Database Connection → PostgreSQL**.
+2. On **Main**: Host, Port, Database as above. **Authentication**: *Database
+   Native*. Username = your ARAK username, Password = the token. Leave **Show
+   all databases** off.
+3. On **SSL**: tick **Use SSL** and set **SSL mode** to `require` (or
+   `verify-full` with the root certificate your administrator gives you).
+4. For a purpose: **Driver properties** → `options` = `-c arak.purpose=reporting`.
+5. **Test Connection**. The navigator shows only the tables you may read, with
+   only the columns you may see.
+
+### psql
+
+```
+psql "host=arak.example.com port=5439 dbname=<source> user=<username> sslmode=require options='-c arak.purpose=reporting'"
+```
+
+psql asks for the password; paste the token. `\dn`, `\dt` and `\d <table>`
+work and show only what you may see.
+
+### JDBC (Java applications, DataGrip, SQuirreL)
+
+Use the standard PostgreSQL driver:
+
+```
+jdbc:postgresql://arak.example.com:5439/<source>?sslmode=require&options=-c%20arak.purpose%3Dreporting
+```
+
+User = your ARAK username, password = the token. Prepared statements, fetch
+sizes and transactions work as they do against PostgreSQL.
+
+### Python
+
+```python
+import psycopg2
+conn = psycopg2.connect(host="arak.example.com", port=5439, dbname="<source>",
+                        user="<username>", password=token, sslmode="require",
+                        options="-c arak.purpose=reporting")
+```
+
+Read the token from an environment variable or a secret store, not from the
+script.
+
+### Power BI Desktop and Excel (Power Query)
+
+1. **Get Data → PostgreSQL database**.
+2. **Server**: `arak.example.com:5439`. **Database**: the source's name.
+   Import and DirectQuery both work. DirectQuery sends a query for every
+   visual, and each one is on the Query log.
+3. When asked for credentials, choose **Database**, then type your ARAK
+   username and the token.
+4. Power BI and Excel check the gateway's certificate. If the connection fails
+   with a certificate error, ask your administrator to have the certificate
+   authority trusted on your computer. Do not turn certificate checks off.
+
+The built-in connector has no place for connection options, so it cannot
+declare a purpose. For a table that needs one, connect through ODBC instead
+(below).
+
+Power BI Service needs an on-premises data gateway that can reach the ARAK
+Gateway; the data source settings are the same.
+
+### ODBC (Excel, Power BI, Qlik, SAS)
+
+Install the PostgreSQL ODBC driver (psqlODBC) and add a DSN in **ODBC Data
+Sources**: Database = the source's name, Server, Port, User Name = your ARAK
+username, Password = the token, **SSL Mode** = `require`. For a purpose, open
+**Datasource → Page 2** and put `SET arak.purpose = 'reporting'` in **Connect
+Settings**.
+
+### Tableau
+
+**Connect → PostgreSQL**: Server, Port, Database, Username, Password as above,
+and tick **Require SSL**. For a purpose, put `SET arak.purpose = 'reporting'`
+in **Initial SQL**.
+
+### What is different from a real PostgreSQL server
+
+- Questions about tables and columns (`pg_catalog`, `information_schema`, `\d`)
+  are answered from a copy that holds only what you may see and no rows. It
+  never reaches the source. `current_database()` there returns an internal name
+  (the source's name followed by `~` and a code), and `version()` reports the
+  copy's PostgreSQL version.
+- A query that mixes those catalog tables with the source's own tables is
+  refused. Ask one or the other.
+- Results stop at 100,000 rows and a statement stops after 120 seconds, unless
+  your administrator set other limits.
+- SQL is PostgreSQL's dialect.
+- After too many failed sign-ins from one address (10 in 15 minutes by
+  default), that address is refused for a while.
+
+Tested with psql 16, the PostgreSQL JDBC driver 42.7 (the driver DBeaver uses)
+and psycopg2.
+
+### Turning the gateway on (administrators)
+
+- Set `GATEWAY_ENABLED=true` and give the gateway a certificate:
+  `GATEWAY_KEYSTORE_PATH` (a PKCS#12 file) and `GATEWAY_KEYSTORE_PASSWORD_REF`
+  (a credential reference such as `env:` or `vault://`, never the password).
+  `GATEWAY_BIND_HOST` and `GATEWAY_PORT` choose where it listens; the default
+  is the local machine only.
+- The gateway needs its own empty PostgreSQL server for catalog questions:
+  `GATEWAY_SANDBOX_JDBC_URL` and `GATEWAY_SANDBOX_CREDENTIAL_REF` (an account
+  with `CREATEDB` that is a member of `GATEWAY_SANDBOX_READER_ROLE`, a role
+  with no rights of its own). Never point it at a source or at ARAK's own
+  database. ARAK keeps one small database there per set of tables and columns
+  that someone may see, and drops the ones nobody has used for a while.
+- Limits: `GATEWAY_MAX_CONNECTIONS`, `GATEWAY_MAX_CONNECTIONS_PER_USER`,
+  `GATEWAY_MAX_ROWS`, `GATEWAY_STATEMENT_TIMEOUT_SECONDS`,
+  `GATEWAY_IDLE_TIMEOUT_SECONDS`, `GATEWAY_MAX_TOKEN_DAYS`,
+  `GATEWAY_MAX_FAILURES_PER_ADDRESS`, `GATEWAY_FAILURE_WINDOW_SECONDS`.
+- Let only ARAK reach the source over the network. Anyone who can connect to
+  the source directly is not held by the gateway's policies.
+- Open the port beyond the local network only after the penetration test of
+  the gateway (see *docs/security/soc2-type2.md*).
+
 ## The assistant (NokRak)
 
 NokRak is ARAK's assistant, in the corner of every page and behind **Ask NokRak**

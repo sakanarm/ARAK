@@ -381,7 +381,7 @@ profile สถิติผ่าน proxy ด้วยสิทธิ์ขอ�
 LLM เห็นแค่ชื่อ / คำอธิบาย column ไม่เห็นแถวจริง · ตรวจ exact / near match + membership inference ก่อนส่งมอบ · รายงาน ε + คะแนน fidelity / privacy แทนการอ้าง 100% ·
 ส่งออกเป็นไฟล์ หรือเขียนลง sandbox ที่ ARAK เป็นเจ้าของ (ข้อตัดสินใจที่ 8)
 
-### FR-19 ARAK Gateway — เครื่องมือภายนอกต่อตรง แต่ query วิ่งผ่าน ARAK — M29 ⬜ (ผู้ใช้ถาม 2026-09-26)
+### FR-19 ARAK Gateway — เครื่องมือภายนอกต่อตรง แต่ query วิ่งผ่าน ARAK — M29 🟡 M29a ✅ 2026-10-12 (ผู้ใช้ถาม 2026-09-26)
 *"ถ้า user จะไปต่อ Query tool ตัวอื่น แต่ตอน Query ต้องวิ่งผ่านเรา"* — DBeaver · Excel · Power BI · Tableau · database tool อื่นๆ ·
 ARAK ฟัง **PostgreSQL wire protocol (v3)** บน TLS (เช่น `:5439`) — ทุกตัวข้างบนมี PostgreSQL connector ในตัว (Power BI = Npgsql, Import และ DirectQuery ·
 Power BI Service ต้องมี On-premises Data Gateway · Excel = Power Query "From PostgreSQL" หรือ psqlODBC · Tableau / DBeaver / DataGrip / pgAdmin / psql = driver ปกติ) ·
@@ -500,6 +500,15 @@ login ด้วย **PAT / service account** (M14) ไม่ใช่รหั�
 - เป็น principal: policy และ grant ใช้กติกาเดียวกับคน · ไม่มี role admin เป็นค่าเริ่มต้น · อนุมัติคำขอไม่ได้ · เจ้าของออก = ระงับ + เข้ารอบทบทวน (FR-22)
 - เป็นฐานของ M14 (Org Key) · M29 (เครื่องมือ BI) · M30 (pipeline CI) · M21 (AI agent ทำงานในนาม service account + ในนามผู้ใช้)
 
+#### FR-27 Security assurance — VA scan · pen test · พร้อมตรวจ SOC 2 Type 2 (M37) — ⬜ (ผู้ใช้ขอ 2026-10-12)
+รายละเอียด control · gap · หลักฐาน อยู่ที่ `docs/security/soc2-type2.md`
+- **M37a scan ใน CI (ทุก PR + ทุกคืน)** — SAST (CodeQL Java + TypeScript) · SCA (OSV-Scanner / OWASP Dependency-Check · `yarn audit`) · image scan (Trivy) · SBOM CycloneDX แนบทุก release · secret scan (gitleaks มีแล้ว) · **High / Critical ห้าม merge** เว้นแต่มีใบรับความเสี่ยงที่มีวันหมดอายุ
+- **M37b VA scan (Vulnerability Assessment) ของเครื่องที่รัน ARAK** — authenticated scan ด้วยเครื่องมือขององค์กร (เช่น Greenbone / Nessus) ทุกเดือน + หลังเปลี่ยน infra · ตรวจ TLS (`testssl.sh`) ของ HTTPS และ gateway · ตรวจว่าเปิดแค่ port ที่ตั้งใจ · DAST (OWASP ZAP baseline) กับเครื่อง staging ทุกสัปดาห์
+- **M37c Pen test โดยบุคคลที่สาม** — ปีละครั้ง + ก่อนเปิดของใหม่ที่หันออกนอก (**M29 gateway ต้องผ่าน pen test ก่อนเปิด port บน prod**) · ขอบเขต: เว็บ · REST API · pgwire gateway · login / token · การเลี่ยง policy ของ proxy · อ้าง OWASP ASVS L2 + WSTG · retest หลังแก้ · รายงานเก็บเป็นหลักฐาน
+- **M37d SLA ปิดช่องโหว่** — Critical 7 วัน · High 30 · Medium 90 · Low 180 (นับจากวันที่พบ) · ทะเบียนช่องโหว่ + เจ้าของ + วันปิด · เลยกำหนดต้องมีใบรับความเสี่ยงที่มีวันหมดอายุ · KPI: จำนวนที่ค้างเกิน SLA · เวลาปิดเฉลี่ย · % PR ที่ scan ผ่าน
+- **M37e ปิด gap ที่รู้อยู่แล้ว** — revoke session ได้ + logout ฝั่ง server · audit การ login ลง DB · audit แบบ append-only (owner แยก + retention + ส่งออก SIEM) · client IP จริงหลัง reverse proxy · security header + CSP · rate limit ต่อ IP ตอน login · Vault / Key Vault ใช้ได้จริง · MFA ผ่าน Entra · คนอื่น approve PR ก่อน merge (แยกหน้าที่)
+- **M37f หลักฐาน SOC 2 Type 2** — ช่วงสังเกต 3–12 เดือน · เก็บหลักฐานอัตโนมัติ (ผล scan · PR review · deploy log · access review M32 · backup restore test) · ต้องมี control ระดับองค์กรด้วย (HR · vendor · incident response · BCP/DR) ซึ่ง code ทำแทนไม่ได้
+
 ### FR-10 Non-Functional
 | # | | สถานะ |
 |---|---|---|
@@ -546,7 +555,7 @@ login ด้วย **PAT / service account** (M14) ไม่ใช่รหั�
 | **M25** | On-Demand Test Data Synthesis (FR-18) | – | ⬜ |
 | **M26** | LLM Fix with AI (query ที่พัง) + Explain query — SQL + error + metadata เท่านั้น · ผลเป็นข้อเสนอใน editor | – | ✅ 2026-09-26 — `POST /v1/llm/assist/fix` + `/explain` · refusal มี `fixable` (ไม่เคย true กับ refusal ที่ policy ตัดสิน) · error ตัดค่าที่ quote ออกก่อนส่ง LLM · ปุ่ม Explain + Fix with AI ในหน้า Query · ไม่ run เอง |
 | **M27** | ขอสิทธิ์ในนามกลุ่ม | – | ⬜ ต่อยอด M9 |
-| **M29** | **ARAK Gateway** — ให้ DBeaver / Excel / Power BI / Tableau / pgAdmin ต่อตรงแต่ query วิ่งผ่าน ARAK (FR-19 · 5.2b) · M29a pgwire + PAT + pg_catalog emulation (PG source) · M29b SQL ที่ BI tool สร้าง (subquery ซ้อน) + result cache · M29c SQL Server source (แปลง dialect หรือ TDS) · M29d Power BI / Tableau connector (optional) · JDBC/ODBC = driver PG มาตรฐาน · API = `/v1/query` + PAT | 3–4 wk | ⬜ ผู้ใช้ถาม 2026-09-26 · ต่อยอด M7 |
+| **M29** | **ARAK Gateway** — ให้ DBeaver / Excel / Power BI / Tableau / pgAdmin ต่อตรงแต่ query วิ่งผ่าน ARAK (FR-19 · 5.2b) · M29a pgwire + PAT + pg_catalog emulation (PG source) · M29b SQL ที่ BI tool สร้าง (subquery ซ้อน) + result cache · M29c SQL Server source (แปลง dialect หรือ TDS) · M29d Power BI / Tableau connector (optional) · JDBC/ODBC = driver PG มาตรฐาน · API = `/v1/query` + PAT | 3–4 wk | 🟡 **M29a เสร็จ 2026-10-12** — pgwire v3 + TLS บังคับ · login ด้วย PAT (`/v1/me/tokens` · hash · หมดอายุ ≤ 90 วัน · revoke) · simple + extended protocol · ทุก statement ผ่าน `QueryService` (channel `GATEWAY` ใน audit · V50) · คำถาม catalog ตอบจาก sandbox PG แยก — 1 database ต่อ shape (ตารางและ column ที่คนนั้นเห็น) เก็บไว้ใช้ซ้ำ ให้ OID คงที่ (psql `\d` · DBeaver navigator) · write / COPY / SET ROLE / catalog ปนข้อมูล = ปฏิเสธ + audit · ทดสอบ psql · pgjdbc · psycopg2 · ⬜ หน้า Access tokens ใน UI · ⬜ ทดสอบ Power BI / Excel / Tableau จริง · M29b–d ⬜ · ห้ามเปิดบน prod ก่อน M37c |
 | **M28** | Conversational ARAK Agent — แชทใน mascot + Catalog · ค้น catalog · ตอบ SQL syntax · เขียน query · พาไปหน้าในแอพ · metadata เท่านั้น · ไม่ apply อะไรเอง | – | ✅ 2026-09-26 — `POST /v1/llm/assist/chat` (tool calling ตามสิทธิ์คนคุย) · Ask NokRak ใน Catalog + global search · สิทธิ์ต่องานของ AI ต่อ role (V29 `llm_feature_access`, admin ตั้งใน Settings, บังคับที่ server) · **ตอบคำถามวิธีใช้ ARAK จากคู่มือ** (2026-09-27 · tool `search_docs` ให้ทุกคน · `docs/user-guide.md` + เอกสาร policy แพ็กเข้า jar ใต้ `help/` · ห้ามอธิบายแอปจากความรู้ทั่วไป · HANDOFF ข้อ CF) |
 | **M28b** | ปุ่ม NokRak บนหน้างาน — New policy "NokRak, help me" (draft เข้า form · ตัด id/lifecycleState · ไม่ save/activate) · Query "NokRak, write it" (Use this = ใส่ editor ไม่ run) · Query console จัดแบบ BigQuery (แถบ editor แถวเดียว · Query settings popover · panel ลอย · Explain ข้าง editor) · prompt `/policy` ส่ง `type/facet.json` ด้วย · **หน้า Edit ก็มี "NokRak, help me" (2026-09-27)** — ส่ง form ปัจจุบันเป็น `current` (server ตัด id / version / lifecycleState / updatedAt / updatedBy · ไม่ใช่ JSON object หรือเกิน 50,000 ตัวอักษร = 400) · form เปลี่ยน + panel Before / Suggested + Undo · ACTIVE เตือนว่า Save = มีผลทันที · **Save เท่านั้นที่ถึง store** | – | ✅ 2026-09-26 · edit 2026-09-27 |
 | **M30** | **IaC + Configuration as Code** (FR-20) — M30a YAML (`apiVersion: arak/v1`) + `validate` / `plan` / `apply` / `export` API · M30b CLI `arak` + policy test ผ่าน Simulator · M30c template GitHub Actions + GitLab CI (PR = plan + comment · main = dev · uat/prod ต้องกดอนุมัติ) · M30d Helm chart + Terraform module ติดตั้ง ARAK · M30e Terraform provider (optional) · secret เป็น reference เท่านั้น · policy ลงเป็น DRAFT เว้นแต่ PR ผ่านคนอื่น approve | 3–4 wk | ⬜ ผู้ใช้ขอ 2026-09-26 · ต้องมี M14 (PAT) · ต่อยอด FR-9 + M17 |
@@ -556,6 +565,7 @@ login ด้วย **PAT / service account** (M14) ไม่ใช่รหั�
 | **M34** | **Rule ที่ใช้ซ้ำได้** (FR-24) — mask / row filter ตั้งชื่อครั้งเดียว หลาย policy อ้าง · impact + ประวัติ (M17) ตอนแก้ | – | ⬜ ผู้ใช้ขอ 2026-09-28 · ทำแยกได้ |
 | **M35** | **Policy test case** (FR-25) — ผลที่คาดต่อคน × table รันผ่าน Simulator ทุกครั้งที่ save / activate และทุกคืน | – | ⬜ ผู้ใช้ขอ 2026-09-28 · ทำแยกได้ · M30b ใช้ชุดเดียวกัน |
 | **M36** | **Service account / API client** (FR-26) — principal ที่ไม่ใช่คน · เจ้าของ · scope · token hash + วันหมดอายุ | – | ⬜ ผู้ใช้ขอ 2026-09-28 · ต้องมีก่อน M14 / M21 / M29 / M30 |
+| **M37** | **Security assurance** (FR-27) — M37a scan ใน CI (SAST · SCA · image · SBOM · secret) · M37b VA scan เครื่อง + TLS + DAST · M37c pen test บุคคลที่สาม (ปีละครั้ง + ก่อนเปิด gateway) · M37d SLA ปิดช่องโหว่ · M37e ปิด gap ที่รู้แล้ว · M37f หลักฐาน SOC 2 Type 2 | – | ⬜ ผู้ใช้ขอ 2026-10-12 · M37c ต้องเสร็จก่อนเปิด M29 บน prod · แผนอยู่ที่ `docs/security/soc2-type2.md` |
 
 **ลำดับ:** M0 → M1 → M2 → M3 → (M4 ‖ M5 ‖ M6 ‖ M7) → M7b → M8
 หลัง M3 fix `PolicyDecision` แล้ว **compiler 3 ตัวทำขนานกันได้** — นี่คือผลตอบแทนของการลงทุนทำ Policy IR ตั้งแต่ต้น

@@ -643,7 +643,56 @@ M36 → M14 · M21 · M29 · M30 (ทุกตัวต้องมี principal
 
 ---
 
-## รอบนี้ — **ข้อ DC: Query ผ่าน ARAK บน source native อ่านได้เฉพาะเมื่อ role บน source มีผลจริง · label Archived (Not active)**
+## รอบนี้ — **ข้อ DD: ARAK Gateway (M29a) — DBeaver / psql / Power BI ต่อตรงด้วย PostgreSQL protocol แต่ query วิ่งผ่าน proxy ของ ARAK · แผน SOC 2 Type 2 + VA scan / pen test (FR-27 · M37)**
+
+ผู้ใช้ (2026-10-12): *"ให้ทำ proxy postgres ที่ต่อ third party ตามที่วางไว้ให้ได้ และช่วยออกแบบว่าจะทำให้ผ่านมาตรฐาน Security เช่น SOC 2 Type 2 ยังไง"* · ต่อด้วย *"ทดสอบโดยการสร้าง connection ใหม่ ให้เป็นแบบ proxy อย่าทับอันเดิม แล้วใส่ policy ที่เคยทดสอบไว้ทั้งหมด … รวมถึงวิธีต่อ DBeaver, Power BI"* · แล้ว *"เอาขึ้น main ด้วย"*
+ข้อตกลง: migration **V50** · คำถาม catalog ไปที่ **sandbox PG แยก** (ไม่ใช่ source ไม่ใช่ App DB) · งาน MySQL native subscription หยุดไว้ก่อน (branch สะอาด)
+
+**สิ่งที่ทำ — package `gateway` (ใหม่)**
+- `PgWireServer` ฟัง PostgreSQL protocol v3 · **TLS บังคับ** (client ที่ไม่ขอ TLS ถูกตัดก่อนส่ง token) · GSSENC ตอบ `N` · จำกัด connection รวม / ต่อคน · auth timeout · idle timeout · ปิดเป็นค่าเริ่มต้น (`GATEWAY_ENABLED`)
+- login: user = username ของ ARAK · password = **personal access token** · database = ชื่อ source
+  - `AccessTokenStore` เก็บแค่ SHA-256 · หมดอายุไม่เกิน `maxTokenDays` (90) · revoke ต้องมีเหตุผล · ไม่ลบ แค่จบ · คน disabled = token ใช้ไม่ได้ทันที
+  - `AccessTokenResource`: `GET/POST /v1/me/tokens` · `POST /v1/me/tokens/{id}/revoke` · admin: `GET /v1/tokens` · `POST /v1/tokens/{id}/revoke` · secret แสดงครั้งเดียว
+  - `LoginThrottle` ผิดเกิน 10 ครั้ง / 15 นาที ต่อ address = ปฏิเสธ · `AuthEventLog` บันทึก login
+- `PgSession` รองรับ simple + extended protocol (Parse / Bind / Describe / Execute / portal suspend) · `SET` / `SHOW` · `options -c` ตอน startup · `SET arak.purpose` (purpose ต้องอยู่ในทะเบียน)
+- `SqlText.route` แยก DATA / CATALOG / MIXED
+  - DATA → `QueryService.feed` เส้นเดียวกับหน้า Query (rewrite + mask + RLS + hidden column + audit · channel `GATEWAY` + ชื่อ tool จาก `application_name`)
+  - CATALOG → `SandboxCatalog` · MIXED → ปฏิเสธ
+  - write · `SELECT INTO` · `COPY` · `SET ROLE` / `SESSION AUTHORIZATION` → ปฏิเสธ
+- **ทุกครั้งที่ gateway ปฏิเสธเอง และทุกคำถาม catalog ลง `audit_query` ด้วย** (`QueryService.auditGateway` · แถวไม่มี asset และไม่มี rewritten SQL) — เดิมหลุด ไม่ตรงกติกา "every attempt is audited" → แก้แล้ว
+- `SandboxCatalog`: **1 database ต่อ shape** (ชุดตาราง + column ที่คนนั้นเห็น · ชื่อ = ชื่อ source + `~` + hash 16 ตัว) สร้างครั้งเดียว commit แล้วใช้ซ้ำ · คนที่เห็นเหมือนกันใช้ database เดียวกัน · คำถามรันเป็น reader role ใน transaction ที่ rollback · shape ที่ไม่มีใครใช้เกิน 10 นาทีถูก drop ตอนสร้าง shape ใหม่ของ source เดียวกัน · ยังมี database ชื่อ source เปล่าๆ ไว้ให้ tool หา `pg_database WHERE datname = ?`
+  - **ทำไมไม่สร้างแล้ว rollback ทุกคำถาม (แบบแรก):** OID เปลี่ยนทุกคำถาม → psql `\d` ล้ม ("Did not find any relation with OID …") และ DBeaver navigator โหลดตารางด้วย `relnamespace = ?` / column ด้วย `attrelid` จากคำถามก่อนหน้า (ตรวจจาก plugin ของ DBeaver ในเครื่อง) → schema ว่าง
+  - **ทำไมไม่ถือ transaction ยาวต่อ session:** สอง session สร้าง schema / table ชื่อเดียวกันใน database เดียวกันพร้อมกัน → ตัวที่สองรอ lock จนตัวแรกจบ
+- config ใหม่ใน `conf/dac.yml` หมวด `gateway:` (ทุกค่ามาจาก env · password ของ keystore และ sandbox เป็น credential reference)
+- V50: `gateway_access_token` + channel `GATEWAY` ใน `audit_query`
+- `QueryExecutor` / `DacApplication` / `DacConfiguration` ต่อสายให้ gateway
+
+**เอกสาร**
+- `docs/user-guide.md` หัวข้อใหม่ *Connecting DBeaver, Power BI, Excel and other tools (ARAK Gateway)* — DBeaver · psql · JDBC · Python · Power BI / Excel · ODBC · Tableau · การประกาศ purpose · token · ข้อต่างจาก PostgreSQL จริง · วิธีเปิดสำหรับ admin
+- `docs/security/soc2-type2.md` — control ตาม Trust Services Criteria · gap ที่รู้แล้ว · scan (SAST / SCA / image / secret / DAST / VA) · pen test · SLA ปิดช่องโหว่ · หลักฐานที่ต้องเก็บ
+- `docs/DESIGN.md` — FR-27 + M37 (VA scan · pen test · SOC 2) · FR-19 / M29 = M29a เสร็จ
+
+**ทดสอบ (local · source ทดสอบแบบ proxy ตัวใหม่ ไม่ทับ source และ policy เดิม)**
+- unit: backend ทั้งหมด 1,483 ผ่าน (ใหม่: `SqlTextTest` · `PgTypesTest` · `LoginThrottleTest` · `SandboxCatalogTest`)
+- psycopg2 44/44: RLS · mask ทุกแบบ · hidden column · expression deny · LOOKUP · DENY · purpose ทั้ง `SET` และ `options` · purpose ที่ไม่ลงทะเบียน · ALWAYS_FALSE · write / SET ROLE / COPY / pg_sleep ถูกปฏิเสธ · catalog กรองตามคน · MIXED ถูกปฏิเสธ · ไม่ใช้ TLS / รหัสผิด / token ของคนอื่น / token ที่ revoke แล้ว ถูกปฏิเสธ
+- pgjdbc 8/8 (driver ของ DBeaver): `getTables` / `getColumns` เห็นเฉพาะที่มีสิทธิ์ · prepared statement 6 รอบ · parameter injection เป็นค่า · transaction · DELETE ถูกปฏิเสธ · fetchSize
+- psql `\dn` `\dt` `\d` `\d+` ผ่าน · ขั้นตอนแบบ DBeaver navigator (OID ข้ามคำถาม) ผ่าน
+- REST ชุดเดิม 21/22 — ตัวที่ล้มคือ cell mask (ดูด้านล่าง) ไม่เกี่ยวกับ gateway
+- **ยังไม่ได้ทดสอบกับ Power BI / Excel / Tableau ตัวจริง** — คู่มือเขียนตามช่องของแต่ละ tool
+
+**บั๊กที่เจอระหว่างทดสอบ (มีอยู่ก่อน ไม่ได้แก้ในรอบนี้):** cell mask ที่เงื่อนไขอ้าง `row.<column>` / `user.<attribute>` ใช้ไม่ได้ เพราะเงื่อนไขถูกเอาไปต่อเป็น SQL ตรงๆ — ต้องแปลง `row.x` เป็น identifier ที่ quote แล้ว และ `user.x` เป็น literal ที่ escape แล้ว + ตรวจเงื่อนไขตอน save ใน `PolicyStore` (ข้อความดิบเป็นช่อง injection) → แยก branch แก้
+
+**ข้อจำกัดที่รู้แล้ว**
+- `current_database()` ในคำถาม catalog = ชื่อ shape · `version()` = รุ่นของ sandbox · `current_user` = reader role · reader เห็นชื่อ database ใน sandbox (`pg_database`)
+- Power BI / Excel connector ในตัวประกาศ purpose ไม่ได้ → ใช้ ODBC (Connect Settings)
+- ยังไม่มีหน้า Access tokens ใน UI — สร้างผ่าน API
+- SQL Server / MySQL source = M29c
+
+**ผลบน prod:** ยังไม่ deploy · gateway ปิดเป็นค่าเริ่มต้น · **ห้ามเปิด port บน prod ก่อน pen test (M37c)** · ต้องมี sandbox PG แยกและ firewall ให้ source รับเฉพาะ ARAK
+
+**ถัดไป:** หน้า Settings → Access tokens · แก้ cell mask (branch แยก) · ทดสอบ Power BI / Excel / Tableau จริง · M29b (SQL ซ้อนจาก BI + result cache) · M37a scan ใน CI
+
+## รอบก่อน — **ข้อ DC: Query ผ่าน ARAK บน source native อ่านได้เฉพาะเมื่อ role บน source มีผลจริง · label Archived (Not active)**
 
 ผู้ใช้ (2026-10-07): *"ถ้า Query ผ่าน arak ไปที่ source ที่มี policy แบบ Native ควรเป็นแบบไหน ระหว่าง ส่ง Credentail ไปรัน กับทำ proxy"* → ตกลงกันว่าใช้ **proxy เหมือนเดิม (service account ของ source) + guard แบบ fail closed** · *"ช่วยเพิ่ม label ไปด้วยว่า Archived (Not active)"*
 
