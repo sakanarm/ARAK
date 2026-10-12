@@ -29,6 +29,8 @@ export interface AuthState {
   /** The password signed in with was set by an administrator; see PasswordChangeGate. */
   mustChangePassword: boolean;
   signIn: (username: string, password: string) => Promise<void>;
+  /** Finishes a Microsoft sign-in with the one-time code the service handed back. */
+  signInWithSso: (code: string) => Promise<void>;
   signOut: () => void;
   /** The holder has chosen their own password, so nothing stands in front of the console. */
   passwordChanged: () => void;
@@ -49,6 +51,18 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       token: result.accessToken,
       user: result.user,
       mustChangePassword: result.mustChangePassword,
+      initialising: false,
+    });
+  },
+
+  signInWithSso: async (code) => {
+    const result = await api.exchangeSsoCode(code);
+    writeSession(result.accessToken, result.user);
+    // Never true for a Microsoft sign-in: there is no ARAK password to replace.
+    set({
+      token: result.accessToken,
+      user: result.user,
+      mustChangePassword: false,
       initialising: false,
     });
   },

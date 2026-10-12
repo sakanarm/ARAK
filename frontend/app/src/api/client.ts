@@ -92,13 +92,35 @@ export async function fetchSystemVersion(): Promise<SystemVersion> {
 export interface AuthConfig {
   localLoginEnabled: boolean;
   entraEnabled: boolean;
-  entraTenantId: string | null;
-  entraClientId: string | null;
+  /** The words on the single sign-on button, for example "Sign in with Microsoft". */
+  entraButtonLabel: string | null;
 }
 
 /** What the login screen needs before anyone has authenticated. */
 export async function fetchAuthConfig(): Promise<AuthConfig> {
   const { data } = await apiClient.get<AuthConfig>('/v1/auth/config');
+  return data;
+}
+
+/**
+ * Where the browser goes to start a Microsoft sign-in.
+ *
+ * A full navigation rather than a request: the service answers with a
+ * redirect to Microsoft, and Microsoft sends the browser back to the service,
+ * not to this page. `to` is the console path to open afterwards.
+ */
+export function entraStartUrl(to: string): string {
+  return `${withBase('api/v1/auth/entra/start')}?to=${encodeURIComponent(to)}`;
+}
+
+/**
+ * Trades the one-time code the service put on /login after a Microsoft
+ * sign-in for a session. The code works once, for a minute.
+ */
+export async function exchangeSsoCode(code: string): Promise<LoginResponse> {
+  const { data } = await apiClient.post<LoginResponse>('/v1/auth/entra/exchange', {
+    code,
+  });
   return data;
 }
 

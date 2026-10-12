@@ -1,6 +1,8 @@
 package com.mfec.dac.auth;
 
 import com.mfec.dac.audit.ClientAddress;
+import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
@@ -9,6 +11,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import org.jdbi.v3.core.Jdbi;
+import org.jdbi.v3.core.statement.StatementContext;
 
 /**
  * Reads and updates local credentials (FR-2.2).
@@ -50,32 +53,60 @@ public class LocalIdentityDao {
     return jdbi.withHandle(
         handle ->
             handle
-                .createQuery(
-                    """
-                    SELECT p.id, p.username, p.email, p.display_name, p.enabled,
-                           c.password_hash, c.must_change, c.failed_attempts, c.locked_until
-                    FROM principal p
-                    LEFT JOIN local_credential c ON c.principal_id = p.id
-                    WHERE p.source = 'local'
-                      AND p.principal_type <> 'GROUP'
-                      AND lower(p.username) = lower(:username)
-                    """)
+                .createQuery(LOCAL_ACCOUNT_SELECT + " AND lower(p.username) = lower(:username)")
                 .bind("username", username)
-                .map(
-                    (rs, ctx) ->
-                        new LocalAccount(
-                            rs.getObject("id", UUID.class),
-                            rs.getString("username"),
-                            rs.getString("email"),
-                            rs.getString("display_name"),
-                            rs.getBoolean("enabled"),
-                            rs.getString("password_hash"),
-                            rs.getBoolean("must_change"),
-                            rs.getInt("failed_attempts"),
-                            rs.getTimestamp("locked_until") == null
-                                ? null
-                                : rs.getTimestamp("locked_until").toInstant()))
+                .map(LocalIdentityDao::localAccount)
                 .findOne());
+  }
+
+  /**
+   * The one local account that signs in with a password and carries this
+   * email address, for people who type their email on the sign-in form.
+   *
+   * <p>Empty when no account or more than one account matches: an email is
+   * not unique the way a username is, and guessing between two accounts would
+   * let one person's password open the other's.
+   */
+  public Optional<LocalAccount> findLocalAccountByEmail(String email) {
+    List<LocalAccount> found =
+        jdbi.withHandle(
+            handle ->
+                handle
+                    .createQuery(
+                        LOCAL_ACCOUNT_SELECT
+                            + " AND p.principal_type = 'USER'"
+                            + " AND c.password_hash IS NOT NULL"
+                            + " AND lower(p.email) = lower(:email)")
+                    .bind("email", email)
+                    .map(LocalIdentityDao::localAccount)
+                    .list());
+    return found.size() == 1 ? Optional.of(found.get(0)) : Optional.empty();
+  }
+
+  private static final String LOCAL_ACCOUNT_SELECT =
+      """
+      SELECT p.id, p.username, p.email, p.display_name, p.enabled,
+             c.password_hash, c.must_change, c.failed_attempts, c.locked_until
+      FROM principal p
+      LEFT JOIN local_credential c ON c.principal_id = p.id
+      WHERE p.source = 'local'
+        AND p.principal_type <> 'GROUP'
+      """;
+
+  private static LocalAccount localAccount(ResultSet rs, StatementContext ctx)
+      throws SQLException {
+    return new LocalAccount(
+        rs.getObject("id", UUID.class),
+        rs.getString("username"),
+        rs.getString("email"),
+        rs.getString("display_name"),
+        rs.getBoolean("enabled"),
+        rs.getString("password_hash"),
+        rs.getBoolean("must_change"),
+        rs.getInt("failed_attempts"),
+        rs.getTimestamp("locked_until") == null
+            ? null
+            : rs.getTimestamp("locked_until").toInstant());
   }
 
   /**
