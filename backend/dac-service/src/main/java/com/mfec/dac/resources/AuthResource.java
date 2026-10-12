@@ -1,5 +1,6 @@
 package com.mfec.dac.resources;
 
+import com.mfec.dac.auth.AuthFilter;
 import com.mfec.dac.auth.AuthenticatedUser;
 import com.mfec.dac.auth.JwtService;
 import com.mfec.dac.auth.LocalIdentityDao;
@@ -14,6 +15,7 @@ import jakarta.ws.rs.POST;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.WebApplicationException;
+import jakarta.ws.rs.container.ContainerRequestContext;
 import jakarta.ws.rs.core.Context;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
@@ -241,7 +243,7 @@ public class AuthResource {
   @Path("/me")
   @Secured
   @PasswordChangeExempt
-  public Me me(@Context SecurityContext security) {
+  public Me me(@Context SecurityContext security, @Context ContainerRequestContext request) {
     AuthenticatedUser caller = caller(security);
     // Read through to the database rather than replay the token claims, so a
     // role change takes effect on the next page load.
@@ -250,8 +252,15 @@ public class AuthResource {
             .loadUser(caller.id())
             .orElseThrow(
                 () -> error(Response.Status.UNAUTHORIZED, "this account no longer exists"));
+    // Only a session that came through the password door carries the
+    // obligation. Someone who signed in with Microsoft is not asked to replace
+    // a password they did not use: the account may not even have one, and the
+    // filter is not holding that session back either. The database still has
+    // the last word for the password door, so changing it clears the gate on
+    // the next page load rather than at the next login.
     boolean mustChange =
-        "local".equals(user.source())
+        Boolean.TRUE.equals(request.getProperty(AuthFilter.PASSWORD_CHANGE_PENDING))
+            && "local".equals(user.source())
             && localPassword(user).map(LocalIdentityDao.LocalAccount::mustChange).orElse(false);
     return Me.of(user, mustChange);
   }

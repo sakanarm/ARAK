@@ -55,6 +55,21 @@ class AuthFilterTest {
 
   /** Runs the filter against one endpoint and returns the aborting response, or null. */
   private static Response run(String endpoint, String token, Set<UUID> pending) throws Exception {
+    ContainerRequestContext request = ran(endpoint, token, pending);
+    ArgumentCaptor<Response> aborted = ArgumentCaptor.forClass(Response.class);
+    try {
+      verify(request).abortWith(aborted.capture());
+      verify(request, never()).setSecurityContext(any(SecurityContext.class));
+      return aborted.getValue();
+    } catch (AssertionError notAborted) {
+      verify(request).setSecurityContext(any(SecurityContext.class));
+      return null;
+    }
+  }
+
+  /** Runs the filter and hands back the request it ran against. */
+  private static ContainerRequestContext ran(String endpoint, String token, Set<UUID> pending)
+      throws Exception {
     AuthFilter filter = new AuthFilter(TOKENS, pending::contains);
     ResourceInfo info = mock(ResourceInfo.class);
     Method method = Endpoints.class.getMethod(endpoint);
@@ -72,15 +87,20 @@ class AuthFilterTest {
     when(request.getUriInfo()).thenReturn(uri);
 
     filter.filter(request);
-    ArgumentCaptor<Response> aborted = ArgumentCaptor.forClass(Response.class);
-    try {
-      verify(request).abortWith(aborted.capture());
-      verify(request, never()).setSecurityContext(any(SecurityContext.class));
-      return aborted.getValue();
-    } catch (AssertionError notAborted) {
-      verify(request).setSecurityContext(any(SecurityContext.class));
-      return null;
-    }
+    return request;
+  }
+
+  @Test
+  @DisplayName("the request says which door the session came through")
+  void theDoorIsRecordedOnTheRequest() throws Exception {
+    // So that a resource reporting the obligation to the browser can tell a
+    // password session from one opened with Microsoft. Without it /me asks
+    // somebody who signed in with Microsoft to replace a password they never
+    // used, and the console sits on the password form.
+    verify(ran("exempt", TOKENS.issue(user(), true), Set.of(ID)))
+        .setProperty(AuthFilter.PASSWORD_CHANGE_PENDING, true);
+    verify(ran("ordinary", TOKENS.issue(user()), Set.of(ID)))
+        .setProperty(AuthFilter.PASSWORD_CHANGE_PENDING, false);
   }
 
   @Test

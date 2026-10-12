@@ -82,6 +82,11 @@ form described above, so password accounts keep working as before.
   Until the new password is saved the account can do nothing else in ARAK:
   every other request is refused, whether it comes from the browser or from
   a script signing in with the same account.
+- **Signing in with Microsoft never asks for that.** The page only appears for
+  a session opened with a password. If an administrator set a first password
+  on your account and you then sign in with Microsoft, you go straight to the
+  page you were going for; the password itself still has to be replaced the
+  next time anybody signs in with it.
 - A wrong current password counts as a failed sign-in. After too many in a row
   the account is locked for a while and both signing in and changing the
   password are refused until the lock ends. An administrator can reset the
