@@ -1,6 +1,8 @@
 package com.mfec.dac.common.engine;
 
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -79,6 +81,48 @@ public interface SourceEngine {
   /** The JDBC URL for these coordinates. */
   String jdbcUrl(JdbcCoordinates coordinates);
 
+  /** Whether a source of this engine is told apart by an HTTP path as well as a host. */
+  default boolean usesHttpPath() {
+    return false;
+  }
+
+  /**
+   * Refuses coordinates this engine cannot connect with.
+   *
+   * <p>Separate from {@link #jdbcUrl} because the URL is built for display and
+   * for tests as well as for connecting, and an engine that needs a detail the
+   * others do not (a Databricks source cannot be reached without the HTTP path
+   * of its SQL warehouse) must say so in a sentence the operator can act on,
+   * rather than produce a URL that fails inside the driver. Called before every
+   * connection by the one class that opens them.
+   *
+   * @throws IllegalArgumentException naming what is missing or not acceptable
+   */
+  default void requireComplete(JdbcCoordinates coordinates) {}
+
+  /**
+   * Whether the connector may announce itself with the {@code ApplicationName}
+   * property. False for a driver that names itself another way, or that folds
+   * property names to lower case and so reads the two spellings as one key and
+   * refuses the connection.
+   */
+  default boolean readsApplicationName() {
+    return true;
+  }
+
+  /**
+   * The driver properties that carry this credential.
+   *
+   * <p>Most drivers read {@code user} and {@code password}. One that does not
+   * names its own here, so that the connector never has to know which.
+   */
+  default Map<String, String> credentialProperties(String username, String password) {
+    Map<String, String> properties = new LinkedHashMap<>();
+    properties.put("user", username);
+    properties.put("password", password);
+    return properties;
+  }
+
   /**
    * The id of the SQL dialect this engine is written in.
    *
@@ -147,8 +191,18 @@ public interface SourceEngine {
    */
   String PLACEHOLDER_DATABASE = "default";
 
-  /** Coordinates of one database on one host; the credential is deliberately not here. */
-  record JdbcCoordinates(String host, int port, String database) {
+  /**
+   * Coordinates of one database on one host; the credential is deliberately not here.
+   *
+   * @param httpPath where on the host an HTTP-transport engine listens (the SQL
+   *     warehouse of a Databricks workspace); null for every engine that has a
+   *     socket of its own
+   */
+  record JdbcCoordinates(String host, int port, String database, String httpPath) {
+
+    public JdbcCoordinates(String host, int port, String database) {
+      this(host, port, database, null);
+    }
 
     public JdbcCoordinates {
       if (host == null || host.isBlank()) {
@@ -158,6 +212,7 @@ public interface SourceEngine {
         throw new IllegalArgumentException("Port " + port + " is not a port.");
       }
       database = database == null || database.isBlank() ? null : database.trim();
+      httpPath = httpPath == null || httpPath.isBlank() ? null : httpPath.trim();
     }
 
     /** The database name, or {@code fallback} when the operator named none. */

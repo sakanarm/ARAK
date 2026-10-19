@@ -1,6 +1,7 @@
+import EngineMark from './policies/EngineMark';
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Database01, Plus, Server01 } from '@untitledui/icons';
+import { Plus, Server01 } from '@untitledui/icons';
 import { Chip as Badge } from '../components/chips';
 import { Button } from '@openmetadata/ui-core-components/components/base/buttons/button';
 import { apiErrorMessage } from '../api/client';
@@ -201,11 +202,7 @@ function SourceCard({
   return (
     <li className="tw:rounded-xl tw:border tw:border-secondary tw:bg-primary tw:shadow-xs">
       <div className="tw:flex tw:flex-wrap tw:items-start tw:gap-4 tw:px-5 tw:py-4">
-        <span
-          aria-hidden
-          className="tw:flex tw:size-10 tw:shrink-0 tw:items-center tw:justify-center tw:rounded-lg tw:bg-utility-brand-50">
-          <Database01 className="tw:size-5 tw:text-fg-brand-primary" />
-        </span>
+        <EngineMark id={source.engine} label={engineLabel(engines, source.engine)} />
 
         <div className="tw:min-w-0 tw:flex-1">
           <div className="tw:flex tw:flex-wrap tw:items-center tw:gap-2">

@@ -121,6 +121,63 @@ class DataSourceStoreIT {
         .isEqualTo(DataSourceStore.EnforcementMode.PROXY);
   }
 
+  private static DataSourceStore.SourceInput databricks(String catalog, String httpPath) {
+    return new DataSourceStore.SourceInput(
+        "dbx", "DATABRICKS", null, "adb-1.example.test", null, catalog, "env:DBX", "PROXY", null,
+        null, null, true, null, null, null, httpPath);
+  }
+
+  @Test
+  @DisplayName("a Databricks source keeps its warehouse path and its catalog, on port 443")
+  void keepsTheWarehouseOfADatabricksSource() {
+    DataSourceStore.Source created =
+        store.create(databricks("main", "/sql/1.0/warehouses/abc123"));
+
+    assertThat(created.engine()).isEqualTo(DataSourceStore.Engine.DATABRICKS);
+    assertThat(created.port()).isEqualTo(443);
+    assertThat(created.defaultDatabase()).isEqualTo("main");
+    assertThat(created.httpPath()).isEqualTo("/sql/1.0/warehouses/abc123");
+    assertThat(store.find(created.id())).contains(created);
+
+    DataSourceStore.Source moved =
+        store.update(created.id(), databricks("main", "/sql/1.0/warehouses/def456"));
+    assertThat(moved.httpPath()).isEqualTo("/sql/1.0/warehouses/def456");
+  }
+
+  @Test
+  @DisplayName("a Databricks source without its warehouse or catalog is refused, in words for the form")
+  void refusesADatabricksSourceThatCannotBeReached() {
+    assertThatThrownBy(() -> store.create(databricks("main", null)))
+        .isInstanceOf(DataSourceStore.InvalidSourceException.class)
+        .hasMessageContaining("HTTP path");
+    assertThatThrownBy(() -> store.create(databricks(null, "/sql/1.0/warehouses/abc123")))
+        .isInstanceOf(DataSourceStore.InvalidSourceException.class)
+        .hasMessageContaining("catalog");
+    assertThatThrownBy(
+            () -> store.create(databricks("main", "/sql/1.0/warehouses/abc;UseNativeQuery=0")))
+        .isInstanceOf(DataSourceStore.InvalidSourceException.class);
+    assertThatThrownBy(
+            () ->
+                store.create(
+                    new DataSourceStore.SourceInput(
+                        "dbx", "DATABRICKS", null, "adb-1.example.test", null, "main", "env:DBX",
+                        "SECURE_VIEW", null, null, null, true, null, null, null,
+                        "/sql/1.0/warehouses/abc123")))
+        .isInstanceOf(DataSourceStore.InvalidSourceException.class)
+        .hasMessageContaining("Secure views are not available on Databricks");
+  }
+
+  @Test
+  @DisplayName("a path typed for one engine is not kept when the source is another")
+  void dropsAWarehousePathFromAnEngineThatHasNone() {
+    DataSourceStore.Source postgres =
+        store.create(
+            new DataSourceStore.SourceInput(
+                "pg", "POSTGRES", null, "h", null, "salesdb", "env:PG", null, null, null, null,
+                true, null, null, null, "/sql/1.0/warehouses/abc123"));
+    assertThat(postgres.httpPath()).isNull();
+  }
+
   @Test
   @DisplayName("a password in the credential field is refused, whatever it looks like")
   void refusesARawCredential() {

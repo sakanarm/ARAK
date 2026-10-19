@@ -122,7 +122,8 @@ public class SourceResource {
         source.enabled(),
         source.createdAt(),
         source.updatedAt(),
-        source.assetCount());
+        source.assetCount(),
+        source.httpPath());
   }
 
   /**
@@ -183,7 +184,8 @@ public class SourceResource {
         input.enabled(),
         null,
         null,
-        input.tableScope());
+        input.tableScope(),
+        input.httpPath());
   }
 
   @GET
@@ -218,6 +220,7 @@ public class SourceResource {
                     "displayName", engine.displayName(),
                     "defaultPort", engine.defaultPort(),
                     "supportsSchemas", engine.supportsSchemas(),
+                    "usesHttpPath", engine.usesHttpPath(),
                     "supportsSecureViews", engine.supportsSecureViews(),
                     // What the proxy can express, not what the engine can
                     // enforce natively. The console uses it to warn before a
@@ -403,6 +406,7 @@ public class SourceResource {
     String engine = blankToNull(asText(body.get("engine")));
     String host = blankToNull(asText(body.get("host")));
     String database = blankToNull(asText(body.get("defaultDatabase")));
+    String httpPath = blankToNull(asText(body.get("httpPath")));
     String username = blankToNull(asText(body.get("username")));
     String password = asText(body.get("password"));
     String ref = blankToNull(asText(body.get("credentialRef")));
@@ -444,6 +448,9 @@ public class SourceResource {
     if (database == null && existing != null) {
       database = existing.defaultDatabase();
     }
+    if (httpPath == null && existing != null) {
+      httpPath = existing.httpPath();
+    }
 
     // Order matters: a credential typed into the form is what the operator is
     // trying out, so it wins over whatever is already stored.
@@ -465,7 +472,7 @@ public class SourceResource {
       throw new BadRequestException(
           "Give a username and password, or a credential reference, to " + what + " with");
     }
-    return new Unsaved(new SourceProbe.Target(engine, host, port, database), credentialRef);
+    return new Unsaved(new SourceProbe.Target(engine, host, port, database, httpPath), credentialRef);
   }
 
   /**
@@ -486,7 +493,11 @@ public class SourceResource {
     SourceProbe.Result result =
         probe.probe(
             new SourceProbe.Target(
-                source.engine().name(), source.host(), source.port(), source.defaultDatabase()),
+                source.engine().name(),
+                source.host(),
+                source.port(),
+                source.defaultDatabase(),
+                source.httpPath()),
             source.credentialRef());
 
     if (result.reachable() && result.engineVersion() != null) {

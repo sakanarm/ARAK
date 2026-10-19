@@ -36,6 +36,11 @@ export interface SourceEngineInfo {
    */
   supportsSchemas: boolean;
   /**
+   * True where a source is told apart by an HTTP path as well as a host, as a
+   * Databricks SQL warehouse is. The form then asks for it.
+   */
+  usesHttpPath?: boolean;
+  /**
    * Whether a secure view can be installed on this engine. Where it cannot,
    * the server refuses the mode, so the console does not offer it.
    */
@@ -103,6 +108,8 @@ export interface Source {
   updatedAt: string;
   /** Tables and views the crawl has attributed to this source. */
   assetCount: number;
+  /** The SQL warehouse of a Databricks workspace; null on every other engine. */
+  httpPath?: string | null;
 }
 
 export interface SourceInput {
@@ -118,6 +125,8 @@ export interface SourceInput {
   host: string;
   port: number | null;
   defaultDatabase: string | null;
+  /** Only for an engine that `usesHttpPath`; the server drops it for the others. */
+  httpPath?: string | null;
   credentialRef: string;
   defaultEnforcementMode: EnforcementMode;
   omServiceFqn: string | null;

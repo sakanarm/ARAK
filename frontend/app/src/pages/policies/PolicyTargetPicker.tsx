@@ -270,7 +270,12 @@ export default function PolicyTargetPicker({
       ? null
       : (sources.data?.find((entry) => entry.id === sourceId) ?? null);
   const chosen = sourceId === null || source !== null;
-  const groups = engineGroups(sources.data ?? [], engines);
+  // Databricks has the fixed card below, which opens its own builder. The
+  // server lists it as an engine now that a source can be registered on it, and
+  // a second card for the same product would only offer a form it has no use for.
+  const groups = engineGroups(sources.data ?? [], engines).filter(
+    (group) => group.id !== 'DATABRICKS'
+  );
   const openId = engineId === undefined ? (source?.engine ?? null) : engineId;
   const open = groups.find((group) => group.id === openId) ?? null;
   const needle = search.trim().toLowerCase();

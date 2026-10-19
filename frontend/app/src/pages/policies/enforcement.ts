@@ -103,6 +103,12 @@ const UNKNOWN_ENGINE_MASK_NOTE =
  * written, in the same place it says everything else about a mode.
  */
 const MODE_UNAVAILABLE: Record<string, Partial<Record<EnforcementMode, string>>> = {
+  DATABRICKS: {
+    SECURE_VIEW:
+      'Secure views are not available on Databricks sources yet. Use the query API to enforce this policy.',
+    NATIVE_CONFIG:
+      'Databricks column masks and row filters are not pushed from here yet. Use the query API to enforce this policy.',
+  },
   MYSQL: {
     SECURE_VIEW:
       'Secure views are not available on MySQL sources yet. Use the query API to enforce this policy.',

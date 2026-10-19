@@ -358,6 +358,16 @@ public final class QueryRewriter {
       return item;
     }
 
+    // A name with a catalog in front is resolved here by schema and table
+    // alone, which on Databricks would answer for the table of the source's
+    // own catalog while the statement asked for another's.
+    if ("DATABRICKS".equals(dialect.name()) && table.getDatabase() != null
+        && table.getDatabase().getDatabaseName() != null) {
+      throw new RefusedException(
+          "Write " + name + " as schema.table, without a catalog: the proxy reads the catalog"
+              + " this source was registered with");
+    }
+
     String schema = unquote(table.getSchemaName());
     if (schema == null) {
       schema = defaultSchema;

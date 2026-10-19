@@ -104,7 +104,11 @@ public class SourceCatalogImporter {
 
     SourceProbe.Target target =
         new SourceProbe.Target(
-            source.engine().name(), source.host(), source.port(), source.defaultDatabase());
+            source.engine().name(),
+            source.host(),
+            source.port(),
+            source.defaultDatabase(),
+            source.httpPath());
     // What is read, which decides what may be called missing further down.
     String schemaFilter = JdbcIntrospector.schemaToRead(target, asked);
 

@@ -2,6 +2,7 @@ package com.mfec.dac.source;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.mfec.dac.common.engine.SourceEngine;
 import com.mfec.dac.common.engine.SourceEngines;
 import java.time.Instant;
 import java.util.List;
@@ -47,7 +48,8 @@ public class DataSourceStore {
   public enum Engine {
     POSTGRES,
     SQLSERVER,
-    MYSQL
+    MYSQL,
+    DATABRICKS
   }
 
   /**
@@ -72,6 +74,8 @@ public class DataSourceStore {
    * @param assetCount tables the crawl has attributed to this source; it is what
    *     makes the difference between an unused row and one that is load-bearing
    *     visible before anybody edits or removes it
+   * @param httpPath the SQL warehouse of a Databricks workspace, which is what
+   *     tells two sources on one host apart; null on every other engine
    */
   public record Source(
       UUID id,
@@ -90,7 +94,34 @@ public class DataSourceStore {
       boolean enabled,
       Instant createdAt,
       Instant updatedAt,
-      long assetCount) {}
+      long assetCount,
+      String httpPath) {
+
+    /** The shape every caller used before a source could carry an HTTP path. */
+    public Source(
+        UUID id,
+        String name,
+        Engine engine,
+        String engineVersion,
+        String host,
+        int port,
+        String defaultDatabase,
+        String credentialRef,
+        EnforcementMode defaultEnforcementMode,
+        String omServiceFqn,
+        String secureSchema,
+        String secureObjectPattern,
+        TableScope tableScope,
+        boolean enabled,
+        Instant createdAt,
+        Instant updatedAt,
+        long assetCount) {
+      this(
+          id, name, engine, engineVersion, host, port, defaultDatabase, credentialRef,
+          defaultEnforcementMode, omServiceFqn, secureSchema, secureObjectPattern, tableScope,
+          enabled, createdAt, updatedAt, assetCount, null);
+    }
+  }
 
   /**
    * What a caller may send; the server owns everything else on the row.
@@ -121,7 +152,31 @@ public class DataSourceStore {
       Boolean enabled,
       String username,
       String password,
-      TableScope tableScope) {
+      TableScope tableScope,
+      String httpPath) {
+
+    /** The shape every caller used before a source could carry an HTTP path. */
+    public SourceInput(
+        String name,
+        String engine,
+        String engineVersion,
+        String host,
+        Integer port,
+        String defaultDatabase,
+        String credentialRef,
+        String defaultEnforcementMode,
+        String omServiceFqn,
+        String secureSchema,
+        String secureObjectPattern,
+        Boolean enabled,
+        String username,
+        String password,
+        TableScope tableScope) {
+      this(
+          name, engine, engineVersion, host, port, defaultDatabase, credentialRef,
+          defaultEnforcementMode, omServiceFqn, secureSchema, secureObjectPattern, enabled,
+          username, password, tableScope, null);
+    }
 
     /** The shape every caller used before a table scope could be set. */
     public SourceInput(
@@ -229,7 +284,7 @@ public class DataSourceStore {
       """
       s.id, s.name, s.engine, s.engine_version, s.host, s.port, s.default_database,
       s.credential_ref, s.default_enforcement_mode, s.om_service_fqn, s.secure_schema,
-      s.secure_object_pattern, s.table_scope, s.enabled, s.created_at, s.updated_at,
+      s.secure_object_pattern, s.table_scope, s.enabled, s.created_at, s.updated_at, s.http_path,
       (SELECT count(*) FROM asset a
         WHERE a.data_source_id = s.id AND a.is_current
           AND a.asset_type IN ('TABLE', 'VIEW')) AS asset_count
@@ -296,6 +351,7 @@ public class DataSourceStore {
                                  host = :host, port = :port, default_database = :defaultDatabase,
                                  credential_ref = :credentialRef,
                                  default_enforcement_mode = :mode,
+                                 http_path = :httpPath,
                                  om_service_fqn = :omServiceFqn,
                                  secure_schema = :secureSchema,
                                  secure_object_pattern = :securePattern,
@@ -321,6 +377,7 @@ public class DataSourceStore {
                       .bind("defaultDatabase", v.defaultDatabase)
                       .bind("credentialRef", v.credentialRef)
                       .bind("mode", v.mode.name())
+                      .bind("httpPath", v.httpPath)
                       .bind("omServiceFqn", v.omServiceFqn)
                       .bind("secureSchema", v.secureSchema)
                       .bind("securePattern", v.securePattern)
@@ -439,7 +496,8 @@ public class DataSourceStore {
       String secureSchema,
       String securePattern,
       TableScope scope,
-      boolean enabled) {}
+      boolean enabled,
+      String httpPath) {}
 
   private Validated validate(SourceInput in, boolean requireCredential) {
     if (in == null) {
@@ -482,6 +540,17 @@ public class DataSourceStore {
     int port = in.port() == null ? defaultPort(engine) : in.port();
     if (port < 1 || port > 65_535) {
       throw new InvalidSourceException("Port must be between 1 and 65535");
+    }
+
+    // Kept only where the engine uses it, so a path typed for one engine and
+    // left behind after the operator switched to another is not stored.
+    SourceEngine sourceEngine = SourceEngines.of(engine.name());
+    String httpPath = sourceEngine.usesHttpPath() ? trimmed(in.httpPath()) : null;
+    try {
+      sourceEngine.requireComplete(
+          new SourceEngine.JdbcCoordinates(host, port, trimmed(in.defaultDatabase()), httpPath));
+    } catch (IllegalArgumentException e) {
+      throw new InvalidSourceException(e.getMessage());
     }
 
     String credentialRef = trimmed(in.credentialRef());
@@ -547,7 +616,8 @@ public class DataSourceStore {
         secureSchema,
         pattern,
         scope,
-        in.enabled() == null || in.enabled());
+        in.enabled() == null || in.enabled(),
+        httpPath);
   }
 
   private Optional<UUID> insert(Validated v) {
@@ -561,10 +631,11 @@ public class DataSourceStore {
                                                default_database, credential_ref,
                                                default_enforcement_mode, om_service_fqn,
                                                secure_schema, secure_object_pattern,
-                                               table_scope, enabled)
+                                               table_scope, enabled, http_path)
                       VALUES (:name, :engine, :engineVersion, :host, :port, :defaultDatabase,
                               :credentialRef, :mode, :omServiceFqn, :secureSchema,
-                              :securePattern, CAST(:scope AS jsonb), :enabled)
+                              :securePattern, CAST(:scope AS jsonb), :enabled,
+                              :httpPath)
                       RETURNING id
                       """)
                   .bind("name", v.name)
@@ -580,6 +651,7 @@ public class DataSourceStore {
                   .bind("securePattern", v.securePattern)
                   .bind("scope", stored(v.scope))
                   .bind("enabled", v.enabled)
+                  .bind("httpPath", v.httpPath)
                   .mapTo(UUID.class)
                   .findOne());
     } catch (UnableToExecuteStatementException e) {
@@ -684,6 +756,7 @@ public class DataSourceStore {
         rs.getBoolean("enabled"),
         rs.getTimestamp("created_at").toInstant(),
         rs.getTimestamp("updated_at").toInstant(),
-        rs.getLong("asset_count"));
+        rs.getLong("asset_count"),
+        rs.getString("http_path"));
   }
 }

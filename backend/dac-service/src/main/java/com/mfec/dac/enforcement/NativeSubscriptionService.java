@@ -1444,7 +1444,11 @@ public final class NativeSubscriptionService {
 
   private static SourceProbe.Target target(DataSourceStore.Source source) {
     return new SourceProbe.Target(
-        source.engine().name(), source.host(), source.port(), source.defaultDatabase());
+        source.engine().name(),
+        source.host(),
+        source.port(),
+        source.defaultDatabase(),
+        source.httpPath());
   }
 
   /** A role that should hold nothing and nobody, keeping the comment it has. */

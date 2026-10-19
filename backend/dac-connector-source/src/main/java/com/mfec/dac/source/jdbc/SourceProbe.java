@@ -28,8 +28,18 @@ import java.sql.SQLException;
  */
 public final class SourceProbe {
 
-  /** Where to connect. Mirrors the registry row, without the credential. */
-  public record Target(String engine, String host, int port, String database) {}
+  /**
+   * Where to connect. Mirrors the registry row, without the credential.
+   *
+   * @param database the database, or on Databricks the catalog
+   * @param httpPath the SQL warehouse of a Databricks workspace; null elsewhere
+   */
+  public record Target(String engine, String host, int port, String database, String httpPath) {
+
+    public Target(String engine, String host, int port, String database) {
+      this(engine, host, port, database, null);
+    }
+  }
 
   /**
    * @param reachable    whether a connection was opened and metadata read

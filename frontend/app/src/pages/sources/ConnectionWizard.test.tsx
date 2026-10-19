@@ -29,6 +29,7 @@ const ENGINES: SourceEngineInfo[] = [
   { id: 'POSTGRES', displayName: 'PostgreSQL', defaultPort: 5432, supportsSchemas: true, supportsSecureViews: true, proxyCapabilities: [] },
   { id: 'MSSQL', displayName: 'SQL Server', defaultPort: 1433, supportsSchemas: true, supportsSecureViews: true, proxyCapabilities: [] },
   { id: 'MYSQL', displayName: 'MySQL', defaultPort: 3306, supportsSchemas: false, supportsSecureViews: false, proxyCapabilities: [] },
+  { id: 'DATABRICKS', displayName: 'Databricks', defaultPort: 443, supportsSchemas: true, usesHttpPath: true, supportsSecureViews: false, proxyCapabilities: [] },
 ] as SourceEngineInfo[];
 
 const STORED: Source = {
@@ -136,6 +137,53 @@ describe('ConnectionWizard', () => {
     expect(
       screen.getByText('The database the import reads. Blank reads every database the login can see.')
     ).toBeInTheDocument();
+  });
+
+  it('asks a Databricks source for its warehouse and catalog, and sends them', async () => {
+    createSource.mockImplementation(async (input) => ({ ...STORED, ...input, id: 'src-2' }));
+    show();
+    const databricks = await screen.findByRole('radio', { name: /Databricks/ });
+    expect(databricks).toHaveTextContent('Port 443');
+    expect(databricks).toHaveTextContent('catalog › schema › table');
+    fireEvent.click(databricks);
+    fireEvent.click(screen.getByRole('button', { name: 'Next' }));
+
+    expect(screen.getByLabelText('Port')).toHaveValue(443);
+    // A warehouse and a catalog are not optional here: the host alone reaches nothing.
+    expect(screen.getByLabelText('HTTP path')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Database')).not.toBeInTheDocument();
+    expect(screen.getByText('3 required')).toBeInTheDocument();
+
+    type('Name', 'lakehouse');
+    type('Host', 'adb-1.example.test');
+    type('HTTP path', '/sql/1.0/warehouses/abc123');
+    expect(screen.getByText('1 required')).toBeInTheDocument();
+    type('Catalog', 'main');
+    expect(screen.getByText('Complete')).toBeInTheDocument();
+
+    const register = screen.getByRole('button', { name: 'Register' });
+    expect(register).toBeDisabled();
+    type('Username', 'token');
+    type('Password', 'not-a-real-token');
+    expect(register).toBeEnabled();
+    await act(async () => {
+      fireEvent.click(register);
+    });
+    expect(createSource).toHaveBeenCalledWith(
+      expect.objectContaining({
+        engine: 'DATABRICKS',
+        host: 'adb-1.example.test',
+        port: 443,
+        defaultDatabase: 'main',
+        httpPath: '/sql/1.0/warehouses/abc123',
+      })
+    );
+  });
+
+  it('shows no HTTP path on an engine that has none', async () => {
+    await toConnectStep();
+    expect(screen.queryByLabelText('HTTP path')).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Database')).toBeInTheDocument();
   });
 
   it('does not carry a secure view over to an engine that has none', async () => {
