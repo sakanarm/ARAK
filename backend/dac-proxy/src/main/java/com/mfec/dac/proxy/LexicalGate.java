@@ -47,14 +47,27 @@ final class LexicalGate {
       "This statement could not be read in full, so it cannot be enforced and will not be run";
 
   /**
-   * @param dialect {@code POSTGRES}, {@code SQLSERVER} or {@code MYSQL}, as
-   *     {@code SqlDialect#name}; any other is held to every rule here
+   * @param dialect {@code POSTGRES}, {@code SQLSERVER}, {@code MYSQL} or
+   *     {@code DATABRICKS}, as {@code SqlDialect#name}; any other is held to every rule here
    * @throws QueryRewriter.RefusedException when the text could be read two ways
    */
   static void check(String dialect, String sql) {
     boolean postgres = "POSTGRES".equals(dialect);
     boolean sqlServer = "SQLSERVER".equals(dialect);
     boolean mySql = "MYSQL".equals(dialect);
+    boolean databricks = "DATABRICKS".equals(dialect);
+
+    // Databricks reads a backslash inside a string as an escape and has no
+    // setting to turn that off, where the other engines are opened so that it
+    // is an ordinary character. So 'a\' ends a quote later there than it does
+    // for the parser, and from that quote on the two disagree about what is
+    // data and what is SQL: a table the parser took for text is one the
+    // warehouse reads. Refused wherever it is, inside a string included.
+    if (databricks && sql.indexOf('\\') >= 0) {
+      throw new QueryRewriter.RefusedException(
+          "A backslash is not allowed in a statement for this source, even inside a string,"
+              + " because the source reads it as an escape. Take it out and try again");
+    }
 
     int length = sql.length();
     int i = 0;
@@ -66,9 +79,19 @@ final class LexicalGate {
           requirePlainString(sql, i);
           i = closing(sql, i, '\'');
         }
-        case '"' -> i = closing(sql, i, '"');
+        case '"' -> {
+          // A double-quoted word is a string on Databricks and a name to the
+          // parser that read the statement, so the two would disagree about
+          // what is data and what is a table.
+          if (databricks) {
+            throw new QueryRewriter.RefusedException(
+                "A double quote does not quote a name on this source. Quote names with `...` and"
+                    + " write strings as '...' and try again");
+          }
+          i = closing(sql, i, '"');
+        }
         case '`' -> {
-          if (!mySql) {
+          if (!mySql && !databricks) {
             throw new QueryRewriter.RefusedException(
                 "A backtick does not quote a name on this source. Quote names with "
                     + (sqlServer ? "[...]" : "\"...\"")

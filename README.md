@@ -1,7 +1,7 @@
 # ARAK — Data Access Control Platform
 
 Subscription and data policies over the governance metadata already curated in
-OpenMetadata, enforced on SQL Server and PostgreSQL, and on MySQL through the
+OpenMetadata, enforced on SQL Server and PostgreSQL, and on MySQL and Databricks through the
 query proxy.
 
 OpenMetadata answers *what data exists and how it is classified*. This platform

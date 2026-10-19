@@ -1040,7 +1040,11 @@ public class QueryService {
 
   private static SourceProbe.Target target(DataSourceStore.Source source) {
     return new SourceProbe.Target(
-        source.engine().name(), source.host(), source.port(), source.defaultDatabase());
+        source.engine().name(),
+        source.host(),
+        source.port(),
+        source.defaultDatabase(),
+        source.httpPath());
   }
 
   /** Why there was no room, in the words of whichever ceiling was full. */

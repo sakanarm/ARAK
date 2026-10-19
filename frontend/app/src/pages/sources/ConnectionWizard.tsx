@@ -5,7 +5,6 @@ import {
   ArrowRight,
   Check,
   ChevronDown,
-  Database01,
   Eye,
   EyeOff,
   Lock01,
@@ -35,6 +34,7 @@ import {
   type TableScope,
 } from '../../api/sources';
 import { enginePort, useSourceEngines } from '../../engines';
+import EngineMark from '../policies/EngineMark';
 import { FIELD, Field, Select, TextField, ViewToggle } from '../policies/controls';
 import { ImportReportView } from './ImportReport';
 import { Notice } from './Notice';
@@ -77,6 +77,7 @@ const BLANK: SourceInput = {
   host: '',
   port: null,
   defaultDatabase: null,
+  httpPath: null,
   credentialRef: '',
   username: '',
   password: '',
@@ -94,6 +95,7 @@ function draftOf(source: Source): SourceInput {
     host: source.host,
     port: source.port,
     defaultDatabase: source.defaultDatabase,
+    httpPath: source.httpPath ?? null,
     // Served as `fernet:stored` for a sealed credential. Kept as-is and sent
     // back unchanged, which the server reads as "leave it alone"; blanking it
     // here would make every edit demand the password again.
@@ -188,8 +190,17 @@ export default function ConnectionWizard({
       : Boolean(draft.credentialRef.trim() && draft.credentialRef !== SEALED_CREDENTIAL);
   // Blank on an edit keeps what is stored, so only a new source must give one.
   const credentialReady = credentialGiven || hasStoredCredential;
-  const missingConnection = draft.host.trim() ? 0 : 1;
-  const canSave = Boolean(draft.name.trim() && draft.host.trim() && credentialReady && !scopeIssue);
+  // A Databricks source cannot be reached without its warehouse or its catalog,
+  // so the form asks for both before Save rather than the server refusing later.
+  const needsHttpPath = engine?.usesHttpPath === true;
+  const databricks = needsHttpPath;
+  const missingConnection =
+    (draft.host.trim() ? 0 : 1) +
+    (needsHttpPath && !draft.httpPath?.trim() ? 1 : 0) +
+    (needsHttpPath && !draft.defaultDatabase?.trim() ? 1 : 0);
+  const canSave = Boolean(
+    draft.name.trim() && missingConnection === 0 && credentialReady && !scopeIssue
+  );
 
   function chooseEngine(id: SourceEngine) {
     const chosen = engines?.find((entry) => entry.id === id);
@@ -306,17 +317,33 @@ export default function ConnectionWizard({
                   {defaultPort ? ` A blank port uses ${defaultPort}.` : ''}
                 </span>
               </div>
+              {needsHttpPath && (
+                <FormField
+                  hint="On the SQL warehouse's Connection details tab. Arak reads and queries through this warehouse."
+                  label="HTTP path"
+                  required>
+                  <TextField
+                    ariaLabel="HTTP path"
+                    onChange={(next) => patch({ httpPath: next || null })}
+                    placeholder="/sql/1.0/warehouses/…"
+                    value={draft.httpPath ?? ''}
+                  />
+                </FormField>
+              )}
               <FormField
                 hint={
-                  engine?.supportsSchemas === false
-                    ? 'The database the import reads. Blank reads every database the login can see.'
-                    : "The database the import reads. Blank uses the login's default."
+                  databricks
+                    ? 'The Unity Catalog catalog this source governs. Its schemas and tables are imported.'
+                    : engine?.supportsSchemas === false
+                      ? 'The database the import reads. Blank reads every database the login can see.'
+                      : "The database the import reads. Blank uses the login's default."
                 }
-                label="Database">
+                label={databricks ? 'Catalog' : 'Database'}
+                required={databricks}>
                 <TextField
-                  ariaLabel="Database"
+                  ariaLabel={databricks ? 'Catalog' : 'Database'}
                   onChange={(next) => patch({ defaultDatabase: next || null })}
-                  placeholder="SalesDB"
+                  placeholder={databricks ? 'main' : 'SalesDB'}
                   value={draft.defaultDatabase ?? ''}
                 />
               </FormField>
@@ -375,13 +402,17 @@ export default function ConnectionWizard({
                   <TextField
                     ariaLabel="Username"
                     onChange={(next) => patch({ username: next })}
-                    placeholder="arak"
+                    placeholder={databricks ? 'token' : 'arak'}
                     value={draft.username ?? ''}
                   />
                 </FormField>
                 <FormField
-                  hint="Encrypted with the deployment key before it is stored."
-                  label="Password"
+                  hint={
+                    databricks
+                      ? 'The username is the word token and this is a personal access token. Encrypted with the deployment key before it is stored.'
+                      : 'Encrypted with the deployment key before it is stored.'
+                  }
+                  label={databricks ? 'Access token' : 'Password'}
                   required={!hasStoredCredential}>
                   <PasswordInput onChange={(next) => patch({ password: next })} value={draft.password ?? ''} />
                 </FormField>
@@ -497,7 +528,9 @@ function EnginePicker({
   onChoose,
   onNext,
 }: {
-  engines: { id: string; displayName: string; defaultPort: number; supportsSchemas: boolean }[] | undefined;
+  engines:
+    | { id: string; displayName: string; defaultPort: number; supportsSchemas: boolean; usesHttpPath?: boolean }[]
+    | undefined;
   loading: boolean;
   selected: string;
   onChoose: (id: SourceEngine) => void;
@@ -533,18 +566,18 @@ function EnginePicker({
               }}
               role="radio"
               type="button">
-              <span
-                aria-hidden
-                className="tw:flex tw:size-10 tw:shrink-0 tw:items-center tw:justify-center tw:rounded-lg tw:bg-utility-brand-50">
-                <Database01 className="tw:size-5 tw:text-fg-brand-primary" />
-              </span>
+              <EngineMark id={engine.id} label={engine.displayName} />
               <span className="tw:min-w-0">
                 <span className="tw:block tw:text-sm tw:font-semibold tw:text-primary">
                   {engine.displayName}
                 </span>
                 <span className="tw:mt-0.5 tw:block tw:text-xs tw:text-tertiary">
                   Port {engine.defaultPort} ·{' '}
-                  {engine.supportsSchemas ? 'database › schema › table' : 'database › table'}
+                  {engine.usesHttpPath
+                    ? 'catalog › schema › table'
+                    : engine.supportsSchemas
+                      ? 'database › schema › table'
+                      : 'database › table'}
                 </span>
               </span>
               {chosen && (

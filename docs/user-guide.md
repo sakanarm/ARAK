@@ -521,6 +521,14 @@ the statement before it reaches the database.
   variable (`@name`) on MySQL and SQL Server, `$` outside a string on
   PostgreSQL, and `#` outside a string on MySQL. The refusal says which it was.
   Ordinary comments are fine: they are taken out before the statement is sent.
+- On a Databricks source, name a table as `schema.table`, without the catalog:
+  ARAK reads the catalog the source was registered with, and refuses a name that
+  carries another. Quote a name with backticks. A double quote is refused there,
+  because Databricks reads `"abc"` as a string where ARAK reads it as a name,
+  and so is a backslash anywhere in the statement, even inside a string, because
+  Databricks reads it as an escape. A quote inside a string cannot be written by
+  doubling it either; build the value with `chr(39)` (`concat('O', chr(39),
+  'Hare')`).
 - On a MySQL source, name a table as `database.table`. A backslash inside a
   string is an ordinary character there, so write a quote inside a string by
   doubling it (`'it''s'`), not as `\'`. Double-quoted strings work as usual.
@@ -1034,7 +1042,7 @@ password; groups never take one.
 ## Data sources and enforcement (administrators)
 
 - **Settings → Registered sources** (`/sources`) lists the databases ARAK queries
-  and enforces policy in: PostgreSQL, SQL Server and MySQL. A source's credential
+  and enforces policy in: PostgreSQL, SQL Server, MySQL and Databricks. A source's credential
   is always a reference to a secret store, never a password typed into ARAK.
 - **Registering a MySQL source**: choose MySQL on the first step (port 3306 is
   offered), then give the host and a login that can read the tables. In MySQL a
@@ -1052,6 +1060,28 @@ password; groups never take one.
   refuses it. The check of who can read a table directly at the source is not
   available on MySQL either, so restrict direct logins to the database
   yourself. Tested with MySQL 8.4.
+- **Registering a Databricks source**: choose Databricks on the first step (port
+  443 is offered) and give the workspace host (like
+  `dbc-example.cloud.databricks.com`, without `https://`), the **HTTP path** of the
+  SQL warehouse ARAK should read and query through (on the warehouse's
+  *Connection details* tab, like `/sql/1.0/warehouses/<id>`), and the
+  **Catalog** to govern. The username is the word `token` and the password is a
+  personal access token (or a service principal's token) that can read the
+  catalog. ARAK imports every schema and table of that catalog; a table is named
+  `source.catalog.schema.table`, which is how OpenMetadata names a Databricks
+  table, so linking the source to an OpenMetadata service gives one asset per
+  table. A catalog is the unit: register one source per catalog.
+- **What Databricks sources can and cannot do**: policy on a Databricks source is
+  enforced on the Query page (the query proxy), with row filters, column masks,
+  cell masks and hidden columns. Secure views are not available, so that mode is
+  not offered and **Enforcement** refuses it. Pushing row filters and column
+  masks into Unity Catalog, and the check of who can read a table directly at
+  the workspace, are not available either, so restrict direct access to the
+  catalog yourself. The cost guard does not price Databricks statements; the row
+  limit, the time limit and the limit on concurrent queries still apply. OAuth
+  sign-in to the workspace is not offered yet. Not yet tried against a live
+  workspace: test the connection and run a query on the Query page before
+  relying on it.
 - **Enforcement** reviews, applies and rolls back **secure views**: a view that
   applies the policy inside the database. **Dry run** shows exactly what would
   run and the rollback, **Apply** runs what was reviewed (and refuses if

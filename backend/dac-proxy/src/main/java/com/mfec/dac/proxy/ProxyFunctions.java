@@ -20,7 +20,7 @@ import java.util.Set;
  * <p>A name is compared the way the engine would resolve it. Unquoted names fold
  * to lower case. A double-quoted name on PostgreSQL is case-sensitive, so it is
  * allowed only when it is spelled exactly as listed; SQL Server and MySQL
- * compare names without regard to case either way. A schema-qualified name is
+ * compare names without regard to case either way, as does Databricks. A schema-qualified name is
  * never allowed:
  * the list is of built-ins, and a qualified call is the way to reach one that is
  * not.
@@ -100,11 +100,43 @@ final class ProxyFunctions {
           "json_type", "json_valid", "json_contains", "json_contains_path", "json_keys",
           "json_object", "json_array");
 
+  /**
+   * What is left out on purpose: {@code reflect} and {@code java_method} call
+   * into the JVM, the {@code ai_*} functions send values to a model endpoint,
+   * {@code current_user}, {@code is_member}, {@code current_catalog} and
+   * {@code input_file_name} say who or what the account is, and
+   * {@code read_files}, {@code http_request} and the table-valued functions
+   * reach data the rewritten statement never named.
+   */
+  private static final Set<String> DATABRICKS =
+      Set.of(
+          "collect_list", "collect_set", "array_agg", "bool_and", "bool_or", "every", "any",
+          "some", "stddev", "stddev_pop", "stddev_samp", "std", "variance", "var_pop", "var_samp",
+          "percentile", "percentile_approx", "approx_count_distinct", "median", "mode", "corr",
+          "covar_pop", "covar_samp", "first", "last", "any_value", "max_by", "min_by", "nth_value",
+          "greatest", "least", "ifnull", "nvl", "nvl2", "if", "isnull", "isnotnull", "length",
+          "len", "char_length", "character_length", "octet_length", "bit_length", "substr",
+          "lpad", "rpad", "locate", "instr", "position", "repeat", "space", "initcap", "split",
+          "split_part", "format_number", "format_string", "printf", "base64", "unbase64", "hex",
+          "unhex", "lcase", "ucase", "chr", "char", "regexp_replace", "regexp_like", "regexp_extract",
+          "regexp_extract_all", "regexp_count", "regexp_instr", "regexp_substr", "md5", "sha",
+          "sha1", "sha2", "crc32", "hash", "xxhash64", "ceil", "mod", "pmod", "pow", "ln", "log2",
+          "cbrt", "degrees", "radians", "bround", "rint", "now", "current_date", "current_timestamp",
+          "curdate", "date", "timestamp", "year", "month", "day", "dayofmonth", "dayofweek",
+          "dayofyear", "hour", "minute", "second", "quarter", "weekofyear", "last_day", "next_day",
+          "date_format", "date_trunc", "trunc", "date_add", "date_sub", "dateadd", "datediff",
+          "date_diff", "add_months", "months_between", "make_date", "make_timestamp", "to_date",
+          "to_timestamp", "to_utc_timestamp", "from_utc_timestamp", "unix_timestamp",
+          "from_unixtime", "extract", "date_part", "cast", "try_cast", "to_number", "to_char",
+          "to_varchar", "get_json_object", "json_array_length", "json_object_keys", "size",
+          "cardinality", "array_contains", "array_distinct", "array_join", "array_max", "array_min",
+          "element_at", "map_keys", "map_values", "sort_array");
+
   private ProxyFunctions() {}
 
   /**
-   * @param dialect {@code POSTGRES}, {@code SQLSERVER} or {@code MYSQL}, as
-   *     {@code SqlDialect#name}
+   * @param dialect {@code POSTGRES}, {@code SQLSERVER}, {@code MYSQL} or
+   *     {@code DATABRICKS}, as {@code SqlDialect#name}
    * @param name the name as written, each part of a qualified name in turn
    */
   static boolean allowed(String dialect, List<String> name) {
@@ -126,6 +158,7 @@ final class ProxyFunctions {
   private static final Set<String> FOR_POSTGRES = union(COMMON, POSTGRES);
   private static final Set<String> FOR_SQLSERVER = union(COMMON, SQLSERVER);
   private static final Set<String> FOR_MYSQL = union(COMMON, MYSQL);
+  private static final Set<String> FOR_DATABRICKS = union(COMMON, DATABRICKS);
 
   private static Set<String> listFor(String dialect) {
     if ("POSTGRES".equals(dialect)) {
@@ -136,6 +169,9 @@ final class ProxyFunctions {
     }
     if ("MYSQL".equals(dialect)) {
       return FOR_MYSQL;
+    }
+    if ("DATABRICKS".equals(dialect)) {
+      return FOR_DATABRICKS;
     }
     // An engine this list has not been written for gets the functions every
     // engine here spells the same way, and nothing it might mean differently.

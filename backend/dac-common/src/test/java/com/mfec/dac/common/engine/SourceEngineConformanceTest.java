@@ -1,6 +1,7 @@
 package com.mfec.dac.common.engine;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.util.List;
@@ -212,7 +213,7 @@ class SourceEngineConformanceTest {
   void offersTheEnginesInTheOrderTheyWereRegistered() {
     assertThat(SourceEngines.all())
         .extracting(SourceEngine::id)
-        .containsExactly("POSTGRES", "SQLSERVER", "MYSQL");
+        .containsExactly("POSTGRES", "SQLSERVER", "MYSQL", "DATABRICKS");
   }
 
   @Test
@@ -261,5 +262,84 @@ class SourceEngineConformanceTest {
         .isEqualTo(
             "jdbc:sqlserver://db.example.test:1433"
                 + ";encrypt=true;trustServerCertificate=true;databaseName=SalesDB");
+  }
+
+  private static SourceEngine.JdbcCoordinates warehouse(String host, String path, String catalog) {
+    return new SourceEngine.JdbcCoordinates(host, 443, catalog, path);
+  }
+
+  @Test
+  void databricksStatesWhatThePlatformReliesOnRatherThanInheritingIt() {
+    assertThat(
+            SourceEngines.of("DATABRICKS")
+                .jdbcUrl(
+                    warehouse("adb-1.example.test", "/sql/1.0/warehouses/abc123", "main")))
+        .isEqualTo(
+            "jdbc:databricks://adb-1.example.test:443/default"
+                + ";transportMode=http;ssl=1;AuthMech=3"
+                + ";httpPath=/sql/1.0/warehouses/abc123"
+                + ";ConnCatalog=main"
+                + ";UseNativeQuery=1;IgnoreTransactions=1;UserAgentEntry=arak-dac");
+  }
+
+  @Test
+  void databricksIsASchemaEngineWhoseCatalogIsItsDatabaseAndWhoseDialectIsItsOwn() {
+    SourceEngine engine = SourceEngines.of("DATABRICKS");
+    assertThat(engine.supportsSchemas()).isTrue();
+    assertThat(engine.usesHttpPath()).isTrue();
+    assertThat(engine.supportsSecureViews()).isFalse();
+    assertThat(engine.dialectId()).isEqualTo("DATABRICKS");
+    assertThat(SourceEngines.of("POSTGRES").usesHttpPath()).isFalse();
+    // information_schema is already left out for every engine; "default" is a
+    // schema a business may keep tables in.
+    assertThat(engine.systemSchemas()).doesNotContain("default");
+  }
+
+  @Test
+  void databricksReadsTheCredentialFromItsOwnPropertyNames() {
+    assertThat(SourceEngines.of("DATABRICKS").credentialProperties("token", "t0ken"))
+        .containsEntry("UID", "token")
+        .containsEntry("PWD", "t0ken")
+        .doesNotContainKey("user");
+    assertThat(SourceEngines.of("POSTGRES").credentialProperties("u", "p"))
+        .containsEntry("user", "u")
+        .containsEntry("password", "p");
+  }
+
+  @Test
+  void databricksRefusesWhatItCannotConnectWith() {
+    SourceEngine engine = SourceEngines.of("DATABRICKS");
+    assertThatCode(
+            () ->
+                engine.requireComplete(
+                    warehouse("adb-1.example.test", "/sql/1.0/warehouses/abc123", "main")))
+        .doesNotThrowAnyException();
+    assertThatThrownBy(() -> engine.requireComplete(warehouse("adb-1.example.test", null, "main")))
+        .hasMessageContaining("HTTP path");
+    assertThatThrownBy(
+            () ->
+                engine.requireComplete(
+                    warehouse("adb-1.example.test", "/sql/1.0/warehouses/abc123", null)))
+        .hasMessageContaining("catalog");
+  }
+
+  @Test
+  void databricksRefusesAnythingThatWouldAddASettingToTheUrl() {
+    // The driver reads ;name=value pairs, so a semicolon in any part is a way
+    // to switch off UseNativeQuery or point at another warehouse.
+    SourceEngine engine = SourceEngines.of("DATABRICKS");
+    for (SourceEngine.JdbcCoordinates bad :
+        List.of(
+            warehouse("adb-1.example.test;UseNativeQuery=0", "/sql/1.0/warehouses/a", "main"),
+            warehouse("https://adb-1.example.test", "/sql/1.0/warehouses/a", "main"),
+            warehouse("adb-1.example.test/x", "/sql/1.0/warehouses/a", "main"),
+            warehouse("adb-1.example.test", "/sql/1.0/warehouses/a;UseNativeQuery=0", "main"),
+            warehouse("adb-1.example.test", "/other/path", "main"),
+            warehouse("adb-1.example.test", "/sql/1.0/warehouses/a", "main;ConnSchema=x"),
+            warehouse("adb-1.example.test", "/sql/1.0/warehouses/a", "ma in"))) {
+      assertThatThrownBy(() -> engine.requireComplete(bad))
+          .as(bad.toString())
+          .isInstanceOf(IllegalArgumentException.class);
+    }
   }
 }

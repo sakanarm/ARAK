@@ -57,6 +57,9 @@
     <!-- MySQL JDBC, for MySQL sources (catalog import and mode 5.2). GPL-2.0
          with the Universal FOSS Exception, and it is packed into the fat jar. -->
     <mysql-connector-j.version>26.7.0</mysql-connector-j.version>
+    <!-- Databricks JDBC, for Databricks sources (catalog import and mode 5.2).
+         Apache-2.0. -->
+    <databricks-jdbc.version>3.3.3</databricks-jdbc.version>
     <!-- SQL AST parse + rewrite for enforcement mode 5.2 (app proxy). -->
     <jsqlparser.version>4.9</jsqlparser.version>
     <!-- Real PG / SQL Server in integration tests (NFR-5). -->
@@ -171,6 +174,7 @@
           <exclusion><groupId>com.google.protobuf</groupId><artifactId>protobuf-java</artifactId></exclusion>
         </exclusions>
       </dependency>
+      <dependency><groupId>com.databricks</groupId><artifactId>databricks-jdbc</artifactId><version>${databricks-jdbc.version}</version></dependency>
       <dependency><groupId>com.github.jsqlparser</groupId><artifactId>jsqlparser</artifactId><version>${jsqlparser.version}</version></dependency>
       <dependency><groupId>org.assertj</groupId><artifactId>assertj-core</artifactId><version>${assertj.version}</version><scope>test</scope></dependency>
       <dependency><groupId>org.mockito</groupId><artifactId>mockito-core</artifactId><version>${mockito.version}</version><scope>test</scope></dependency>

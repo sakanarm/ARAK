@@ -47,20 +47,41 @@ public final class JdbcTargets {
    * to prevent.
    */
   public static String url(SourceProbe.Target target) {
-    return SourceEngines.of(target.engine()).jdbcUrl(coordinates(target));
+    SourceEngine engine = SourceEngines.of(target.engine());
+    SourceEngine.JdbcCoordinates coordinates = coordinates(target);
+    engine.requireComplete(coordinates);
+    return engine.jdbcUrl(coordinates);
   }
 
   /** The coordinates of a target, validated. */
   static SourceEngine.JdbcCoordinates coordinates(SourceProbe.Target target) {
-    return new SourceEngine.JdbcCoordinates(target.host(), target.port(), target.database());
+    return new SourceEngine.JdbcCoordinates(
+        target.host(), target.port(), target.database(), target.httpPath());
   }
 
   public static Properties properties(CredentialResolver.Credential credential) {
+    return properties(null, credential);
+  }
+
+  /**
+   * The driver properties for this credential on this engine, which is
+   * {@code user} and {@code password} unless the engine's driver reads others.
+   */
+  public static Properties properties(
+      SourceEngine engine, CredentialResolver.Credential credential) {
     Properties properties = new Properties();
-    properties.setProperty("user", credential.username());
-    properties.setProperty("password", credential.password());
-    properties.setProperty("ApplicationName", APPLICATION_NAME);
-    properties.setProperty("applicationName", APPLICATION_NAME);
+    if (engine == null) {
+      properties.setProperty("user", credential.username());
+      properties.setProperty("password", credential.password());
+    } else {
+      engine
+          .credentialProperties(credential.username(), credential.password())
+          .forEach(properties::setProperty);
+    }
+    if (engine == null || engine.readsApplicationName()) {
+      properties.setProperty("ApplicationName", APPLICATION_NAME);
+      properties.setProperty("applicationName", APPLICATION_NAME);
+    }
     return properties;
   }
 
@@ -119,8 +140,10 @@ public final class JdbcTargets {
   static Connection connect(SourceProbe.Target target, CredentialResolver.Credential credential)
       throws SQLException {
     SourceEngine engine = SourceEngines.of(target.engine());
+    // The URL, not engine.jdbcUrl: url() is where an engine gets to refuse
+    // coordinates it cannot connect with, before the driver is asked to.
     Connection connection =
-        DriverManager.getConnection(engine.jdbcUrl(coordinates(target)), properties(credential));
+        DriverManager.getConnection(url(target), properties(engine, credential));
     try {
       setUp(connection, engine);
       return connection;

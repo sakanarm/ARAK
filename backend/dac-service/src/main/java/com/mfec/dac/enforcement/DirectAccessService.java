@@ -106,7 +106,11 @@ public final class DirectAccessService {
         report =
             reader.read(
                 new SourceProbe.Target(
-                    source.engine().name(), source.host(), source.port(), source.defaultDatabase()),
+                    source.engine().name(),
+                    source.host(),
+                    source.port(),
+                    source.defaultDatabase(),
+                    source.httpPath()),
                 source.credentialRef(),
                 at.schema(),
                 at.table());

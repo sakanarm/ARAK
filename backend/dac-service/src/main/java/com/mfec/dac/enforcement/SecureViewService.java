@@ -766,7 +766,11 @@ public final class SecureViewService {
 
   private static SourceProbe.Target target(DataSourceStore.Source source) {
     return new SourceProbe.Target(
-        source.engine().name(), source.host(), source.port(), source.defaultDatabase());
+        source.engine().name(),
+        source.host(),
+        source.port(),
+        source.defaultDatabase(),
+        source.httpPath());
   }
 
   static String viewName(String pattern, String table) {

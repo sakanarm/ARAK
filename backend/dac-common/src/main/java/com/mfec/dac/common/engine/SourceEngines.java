@@ -31,7 +31,8 @@ public final class SourceEngines {
   private static final Map<String, SourceEngine> REGISTRY = register(
       new PostgresEngine(),
       new SqlServerEngine(),
-      new MySqlEngine());
+      new MySqlEngine(),
+      new DatabricksEngine());
 
   private static Map<String, SourceEngine> register(SourceEngine... engines) {
     Map<String, SourceEngine> map = new LinkedHashMap<>();

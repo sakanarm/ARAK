@@ -255,6 +255,28 @@ describe('where a new policy runs', () => {
     expect(sqlServer).toHaveTextContent('No connection registered yet');
   });
 
+  test('Databricks keeps its one card once the server lists it as an engine', async () => {
+    fetchEngines.mockResolvedValue([
+      ...engines,
+      {
+        id: 'DATABRICKS',
+        displayName: 'Databricks',
+        defaultPort: 443,
+        supportsSchemas: true,
+        supportsSecureViews: false,
+        proxyCapabilities: [],
+      },
+    ]);
+    renderNew('/policies/new/data');
+
+    await screen.findByRole('button', { name: 'Databricks' });
+    expect(screen.getAllByRole('button', { name: 'Databricks' })).toHaveLength(1);
+    fireEvent.click(screen.getByRole('button', { name: 'Databricks' }));
+    expect(
+      await screen.findByRole('heading', { name: 'New Databricks policy' })
+    ).toBeInTheDocument();
+  });
+
   test('Databricks opens a builder of its own, keeping the kind', async () => {
     renderNew('/policies/new/data');
 

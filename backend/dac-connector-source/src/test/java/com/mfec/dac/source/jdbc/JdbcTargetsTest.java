@@ -42,13 +42,47 @@ class JdbcTargetsTest {
   @MethodSource("engineIds")
   void buildsTheSameUrlTheEngineWouldBuild(String id) {
     SourceEngine engine = SourceEngines.of(id);
+    // An engine that is told apart by an HTTP path cannot be built without one.
+    String httpPath = engine.usesHttpPath() ? "/sql/1.0/warehouses/abc123" : null;
     SourceProbe.Target target =
-        new SourceProbe.Target(id, "db.example.test", engine.defaultPort(), "salesdb");
+        new SourceProbe.Target(id, "db.example.test", engine.defaultPort(), "salesdb", httpPath);
     assertThat(JdbcTargets.url(target))
         .isEqualTo(
             engine.jdbcUrl(
                 new SourceEngine.JdbcCoordinates(
-                    "db.example.test", engine.defaultPort(), "salesdb")));
+                    "db.example.test", engine.defaultPort(), "salesdb", httpPath)));
+  }
+
+  @Test
+  void aDatabricksUrlNeedsItsWarehouseAndCatalogAndSaysSo() {
+    assertThatThrownBy(
+            () -> JdbcTargets.url(new SourceProbe.Target("DATABRICKS", "dbx.example.test", 443, "main")))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("HTTP path");
+    assertThatThrownBy(
+            () ->
+                JdbcTargets.url(
+                    new SourceProbe.Target(
+                        "DATABRICKS", "dbx.example.test", 443, null, "/sql/1.0/warehouses/abc123")))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("catalog");
+  }
+
+  @Test
+  void aDatabricksTokenGoesInTheDriversOwnPropertyNames() {
+    Properties properties =
+        JdbcTargets.properties(
+            SourceEngines.of("DATABRICKS"),
+            new CredentialResolver.Credential("token", "not-a-token"));
+    assertThat(properties.getProperty("UID")).isEqualTo("token");
+    assertThat(properties.getProperty("PWD")).isEqualTo("not-a-token");
+    assertThat(properties.getProperty("user")).isNull();
+    // The driver folds names to lower case, so the two spellings the other
+    // engines are sent are one duplicate key to it and the connection is refused.
+    assertThat(properties.stringPropertyNames())
+        .extracting(String::toLowerCase)
+        .doesNotHaveDuplicates()
+        .doesNotContain("applicationname");
   }
 
   @Test

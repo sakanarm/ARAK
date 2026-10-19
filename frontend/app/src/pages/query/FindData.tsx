@@ -40,7 +40,7 @@ const RESERVED = new Set([
 ]);
 
 // Engines where a bare column name means the column whatever its case.
-const KEEPS_CASE = new Set(['SQLSERVER', 'MYSQL']);
+const KEEPS_CASE = new Set(['SQLSERVER', 'MYSQL', 'DATABRICKS']);
 
 /**
  * The statement a found table offers: its columns when every one can be

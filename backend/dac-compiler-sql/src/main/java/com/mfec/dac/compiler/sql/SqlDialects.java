@@ -34,6 +34,7 @@ public final class SqlDialects {
     map.put("POSTGRES", PostgresDialect::new);
     map.put("SQLSERVER", SqlServerDialect::new);
     map.put("MYSQL", MySqlDialect::new);
+    map.put("DATABRICKS", DatabricksDialect::new);
     return Map.copyOf(map);
   }
 

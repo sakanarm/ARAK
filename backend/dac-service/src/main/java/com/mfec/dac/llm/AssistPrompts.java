@@ -91,6 +91,26 @@ public final class AssistPrompts {
   // ---------------------------------------------------------------- NL -> SQL
 
   /**
+   * How to write a string and a name for this engine.
+   *
+   * <p>Databricks differs from the rest: a doubled quote is not an escape there
+   * and a backslash is, so the platform refuses both, and a double quote is a
+   * string rather than a name. Telling the model the general rule would have it
+   * write a statement the platform then refuses.
+   */
+  private static String stringRule(String engine) {
+    if (engine != null && engine.trim().equalsIgnoreCase("DATABRICKS")) {
+      return "- Write a string as a plain '...' literal that holds no quote and no backslash."
+          + " Quote a table or column name with backticks, never double quotes. Write a table as"
+          + " schema.table, without a catalog. No optimizer hints, variables, comments or JDBC"
+          + " escapes: the platform refuses a statement that has one.\n";
+    }
+    return "- Write a string as a plain '...' literal, with a quote inside it doubled; a backslash"
+        + " is an ordinary character there. No E'...' strings, optimizer hints, variables or JDBC"
+        + " escapes: the platform refuses a statement that has one.\n";
+  }
+
+  /**
    * The standing instruction for turning a question into a statement.
    *
    * <p>It does not promise the caller will see what the statement selects, and
@@ -109,9 +129,7 @@ public final class AssistPrompts {
         + "- Use only the tables and columns listed. Write table names exactly as they are"
         + " listed. Never invent a column.\n"
         + "- Name the columns you want. Avoid SELECT *.\n"
-        + "- Write a string as a plain '...' literal, with a quote inside it doubled; a backslash"
-        + " is an ordinary character there. No E'...' strings, optimizer hints, variables or JDBC"
-        + " escapes: the platform refuses a statement that has one.\n"
+        + stringRule(engine)
         + "- A column marked with a tag is governed. You may select it; the platform decides"
         + " whether the reader sees it, and will mask or drop it after you. Do not try to mask,"
         + " hash or redact anything yourself.\n"
@@ -154,9 +172,7 @@ public final class AssistPrompts {
         + " ordering the writer chose.\n"
         + "- Use only the tables and columns listed. Write table names exactly as they are"
         + " listed, with their schema. Never invent a column.\n"
-        + "- Write a string as a plain '...' literal, with a quote inside it doubled; a backslash"
-        + " is an ordinary character there. No E'...' strings, optimizer hints, variables or JDBC"
-        + " escapes: the platform refuses a statement that has one.\n"
+        + stringRule(engine)
         + "- The platform enforces access after you and may mask, hide or refuse. Never try to"
         + " get around that: do not swap a table for another that holds the same data, and do"
         + " not mask, hash or unmask anything yourself.\n"
